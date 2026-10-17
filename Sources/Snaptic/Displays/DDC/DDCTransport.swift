@@ -79,7 +79,7 @@ final class DDCTransport: @unchecked Sendable {
         guard request.count <= DDCPacket.maxBufferLength, replyLength <= DDCPacket.maxBufferLength,
               DDCPacket.isAllowedChip(endpoint.chipAddress), DDCPacket.isAllowedDataAddress(dataAddress) else { return nil }
         guard let data = try? SNDDC.transact(Data(request), endpoint: endpoint, dataAddress: dataAddress,
-                                             replyLength: replyLength,
+                                             replyLength: UInt(replyLength),
                                              replyDelayMicroseconds: replyLength > 0 ? replyDelayMicroseconds : 0)
         else { return nil }
         return [UInt8](data)
