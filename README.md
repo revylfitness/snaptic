@@ -2,7 +2,7 @@
 
 A free, open-source, Windows-style window switcher for macOS. Hold **⌥ Option**, tap **Tab**, and pick any window, not just any app.
 
-**Website:** [revylfitness.github.io/snaptic](https://revylfitness.github.io/snaptic/)
+**Website:** [snaptic.dev](https://snaptic.dev)
 
 Snaptic is MIT-licensed and written from scratch in Swift. It isn't affiliated with or derived from AltTab; it's an independent take on the same idea, with everything included and nothing behind a paywall.
 
@@ -116,7 +116,7 @@ A stably signed build inherits its permissions automatically, so only rebuild fr
 | `SwitcherView.swift` / `SwitcherWindow.swift` | The SwiftUI switcher in a non-activating panel, and the full-size preview overlay. |
 | `SettingsView.swift` / `Settings.swift` | Settings window and validated configuration. |
 | `PrivateAPIs.swift` | The few undocumented macOS calls a switcher needs (see below). |
-| `site/` | The project website, deployed to GitHub Pages by `.github/workflows/pages.yml`. |
+| `site/` | The project website at [snaptic.dev](https://snaptic.dev), deployed by Vercel on every push to `main`. |
 
 ### Undocumented APIs
 
