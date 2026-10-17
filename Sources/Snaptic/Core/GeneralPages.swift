@@ -221,7 +221,7 @@ private struct CommandLinePage: View {
 
     private var linkCommand: String {
         let executable = Bundle.main.executablePath ?? (Bundle.main.bundlePath + "/Contents/MacOS/Snaptic")
-        return "sudo ln -sf '" + executable + "' /usr/local/bin/snaptic"
+        return KitControl.installCommand(executable: executable)
     }
 
     var body: some View {
@@ -254,7 +254,7 @@ private struct CommandLinePage: View {
                         copied = true
                     }
                 }
-                Text(L("Or run it without installing: '") + (Bundle.main.executablePath ?? "Snaptic") + L("' cli help"))
+                Text(L("Or run it without installing: ") + KitControl.shellQuoted(Bundle.main.executablePath ?? "Snaptic") + " cli help")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)

@@ -100,6 +100,31 @@ final class KitControlTests: XCTestCase {
         XCTAssertEqual(KitControl.protectedSetting(verb: "module", arguments: ["cli"]), "cli")
         XCTAssertNil(KitControl.protectedSetting(verb: "set", arguments: ["brightness", "50"]))
         XCTAssertNil(KitControl.protectedSetting(verb: "disconnect", arguments: ["main"]))   // an action, not a setting
+        // The host's `feature disable` verb: protected features stay untouchable even off.
+        XCTAssertEqual(KitControl.protectedSetting(verb: "feature disable", arguments: ["disconnect"]), "disconnect")
+        XCTAssertEqual(KitControl.protectedSetting(verb: "feature disable", arguments: ["custom-actions"]), "customactions")
+        XCTAssertNil(KitControl.protectedSetting(verb: "feature disable", arguments: ["xdr"]))
+    }
+
+    func testShellQuoting() {
+        XCTAssertEqual(KitControl.shellQuoted("/Applications/Snaptic.app"), "'/Applications/Snaptic.app'")
+        XCTAssertEqual(KitControl.shellQuoted("/Users/o'neil/Snaptic"), "'/Users/o'\\''neil/Snaptic'")
+        XCTAssertEqual(KitControl.shellQuoted(""), "''")
+        XCTAssertEqual(KitControl.installCommand(executable: "/A B/Snaptic"),
+                       "sudo ln -sf '/A B/Snaptic' /usr/local/bin/snaptic")
+    }
+
+    func testFeatureNames() {
+        XCTAssertEqual(KitControl.feature(named: "xdr"), .xdr)
+        XCTAssertEqual(KitControl.feature(named: "night-shift"), .nightShift)
+        XCTAssertEqual(KitControl.feature(named: "NIGHT_SHIFT"), .nightShift)
+        XCTAssertEqual(KitControl.feature(named: "autoDisconnectBuiltin"), .autoDisconnectBuiltin)
+        XCTAssertNil(KitControl.feature(named: ""))
+        XCTAssertNil(KitControl.feature(named: "warp-drive"))
+        XCTAssertNil(KitControl.feature(named: String(repeating: "x", count: 200)))
+        for feature in DisplayFeature.allCases {
+            XCTAssertEqual(KitControl.feature(named: feature.rawValue), feature)
+        }
     }
 
     // MARK: Selectors and values

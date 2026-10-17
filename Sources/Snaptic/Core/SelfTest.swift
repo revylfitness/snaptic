@@ -24,8 +24,16 @@ enum SelfTest {
         }
     }
 
+    /// What a child writes once its prologue (fd closing, parent identity check) passed.
+    static let readyLine = "ready"
+    /// How long the parent waits for both children to report ready.
+    static let readySeconds: Double = 5
+
     private static func runChild(_ arguments: [String]) -> Never {
         _ = HelperPrologue.run(arguments, kind: .selftestChild, onLine: { _ in }, onEOF: { exit(0) })
+        // The parent waits for this before it kills itself, so the test proves that a child
+        // which passed the real prologue still sees EOF (not that it never started).
+        say(readyLine + "\n")
         CFRunLoopRun()
         exit(0)
     }
@@ -34,13 +42,28 @@ enum SelfTest {
         guard arguments.count == 3, tokenMatches(file: arguments[2]) else { exit(KitArgs.exitUsage) }
         MainActor.assumeIsolated {
             let spawner = HelperSpawner()
+            let ready = ReadyCounter()
             var lines: [String] = []
             for _ in 0..<2 {
-                guard let handle = try? spawner.spawn(.selftestChild, arguments: [], onLine: { _ in }, onExit: { _ in }) else {
-                    say("spawn failed\n")
+                let handle: HelperHandle
+                do {
+                    handle = try spawner.spawn(.selftestChild, arguments: [], onLine: { line in
+                        if String(decoding: line, as: UTF8.self) == readyLine { ready.count += 1 }
+                    }, onExit: { status in ready.exits.append(status) })
+                } catch {
+                    say("spawn failed: \(error)\n")
                     exit(1)
                 }
                 lines.append("child \(handle.pid) \(handle.startTime)\n")
+            }
+            // Lines arrive on the main queue; the run loop services it.
+            let deadline = Date().addingTimeInterval(readySeconds)
+            while ready.count < 2 && ready.exits.isEmpty && Date() < deadline {
+                _ = CFRunLoopRunInMode(.defaultMode, 0.05, false)
+            }
+            guard ready.count == 2 else {
+                say("children not ready: \(ready.count) ready, exits \(ready.exits)\n")
+                exit(1)
             }
             for line in lines { say(line) }
             // No cleanup on purpose: the children must notice our death by themselves.
@@ -77,4 +100,10 @@ enum SelfTest {
     private static func say(_ text: String) {
         text.withCString { pointer in _ = write(STDOUT_FILENO, pointer, strlen(pointer)) }
     }
+}
+
+/// Main-thread-only tallies for the self-test parent.
+private final class ReadyCounter {
+    var count = 0
+    var exits: [Int32] = []
 }

@@ -190,6 +190,17 @@ package enum KitControl {
         return .success(command)
     }
 
+    /// One POSIX shell word in single quotes ("it's" → 'it'\''s'), for commands that
+    /// Settings shows to copy (the `ln -s` line).
+    package static func shellQuoted(_ text: String) -> String {
+        "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    /// The command Settings offers to install `snaptic` as a symlink to our executable.
+    package static func installCommand(executable: String) -> String {
+        "sudo ln -sf " + shellQuoted(executable) + " /usr/local/bin/snaptic"
+    }
+
     // MARK: Verb matching
 
     /// Longest registered verb that prefixes `words` ("layout apply Office" → verb
@@ -222,6 +233,16 @@ package enum KitControl {
     /// An off-only verb may not be asked to turn anything on.
     package static func requestsTurningOn(_ arguments: [String]) -> Bool {
         arguments.contains { onWords.contains($0.lowercased()) }
+    }
+
+    /// "xdr", "night-shift", "NightShift" → the feature; case, dashes and underscores ignored.
+    package static func feature(named text: String) -> DisplayFeature? {
+        func normalize(_ s: String) -> String {
+            s.lowercased().replacingOccurrences(of: "-", with: "").replacingOccurrences(of: "_", with: "")
+        }
+        let wanted = normalize(text)
+        guard !wanted.isEmpty, wanted.utf8.count <= 64 else { return nil }
+        return DisplayFeature.allCases.first { normalize($0.rawValue) == wanted }
     }
 
     /// The protected setting a request would touch, if any.

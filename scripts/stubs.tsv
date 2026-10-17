@@ -287,3 +287,4 @@ Tests/SnapticKitTests/FilterSpecTests.swift	E	K3	FilterSpecTests	-
 Tests/SnapticKitTests/ConfigPIPTests.swift	E	K3	ConfigPIPTests	-
 Tests/SnapticKitTests/ConfigMenuTests.swift	F	K3	ConfigMenuTests	-
 Tests/SnapticKitTests/DisplaysUIModelTests.swift	F	L	-	-
+Tests/SnapticKitTests/SelfTestProbeTests.swift	A	L	-	-

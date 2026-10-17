@@ -280,6 +280,82 @@ import SnapticKit
                           summary: L("Show whether Snaptic runs in Safe Mode"), lifetime: lifetime) { [weak self] _ in
             .ok(self?.safeMode.isActive == true ? "on" : "off")
         }
+        commands.register("list", policy: .read, offOnly: false, cliAllowed: true,
+                          summary: L("List the displays (key, name, state)"), lifetime: lifetime) { [weak self] request in
+            self?.listDisplays(json: request.json) ?? .failure(ControlExit.unavailable, "")
+        }
+        commands.register("features", policy: .read, offOnly: false, cliAllowed: true,
+                          summary: L("List the Displays features and whether they are on"), lifetime: lifetime) { [weak self] request in
+            self?.listFeatures(json: request.json) ?? .failure(ControlExit.unavailable, "")
+        }
+        commands.register("feature disable", policy: .low, offOnly: true, cliAllowed: true,
+                          summary: L("Turn a Displays feature off: feature disable <feature>"),
+                          lifetime: lifetime) { [weak self] request in
+            self?.disableFeature(request.arguments) ?? .failure(ControlExit.unavailable, "")
+        }
+    }
+
+    /// `snaptic list`: names, keys and states only (no serials, EDID or window data).
+    private func listDisplays(json: Bool) -> ControlResponse {
+        guard isRunning(.displays) else {
+            return .failure(ControlExit.unavailable, L("The Displays module is off."))
+        }
+        let list = self.displays.runtime.displays.sorted { ($0.isMain ? 0 : 1, $0.name) < ($1.isMain ? 0 : 1, $1.name) }
+        if json {
+            let rows: [[String: Any]] = list.map { d in
+                ["key": d.key.rawValue, "name": d.name, "main": d.isMain, "builtin": d.isBuiltin, "online": d.isOnline,
+                 "active": d.isActive, "width": Int(d.bounds.width), "height": Int(d.bounds.height)]
+            }
+            let data = (try? JSONSerialization.data(withJSONObject: rows, options: [.sortedKeys])) ?? Data("[]".utf8)
+            return .ok(String(decoding: data, as: UTF8.self))
+        }
+        guard !list.isEmpty else { return .ok(L("No displays.")) }
+        return .ok(list.map { d -> String in
+            var flags: [String] = []
+            if d.isMain { flags.append("main") }
+            if d.isBuiltin { flags.append("built-in") }
+            if !d.isActive { flags.append("off") }
+            if d.mirrorOf != nil { flags.append("mirroring") }
+            let size = String(Int(d.bounds.width)) + "x" + String(Int(d.bounds.height))
+            return [d.key.rawValue, d.name, size, flags.joined(separator: ",")].joined(separator: "\t")
+        }.joined(separator: "\n"))
+    }
+
+    /// `snaptic features`: the saved choice, whether it is in effect, and why not.
+    private func listFeatures(json: Bool) -> ControlResponse {
+        let raw = displaysStore.value.rawFeatures
+        let runtime = displays.runtime
+        let running = isRunning(.displays)
+        let rows = DisplayFeature.allCases.map { feature -> (name: String, on: Bool, effective: Bool, note: String) in
+            let note: String
+            if case .unavailable(let reason)? = runtime.availability[feature] { note = reason }
+            else if let reason = otherApps.pauseReason(for: feature) { note = reason }
+            else { note = "" }
+            return (feature.rawValue, FeatureGraph.rawState(feature, in: raw),
+                    running && runtime.isEffective(feature), note)
+        }
+        if json {
+            let objects: [[String: Any]] = rows.map { ["feature": $0.name, "on": $0.on, "effective": $0.effective, "note": $0.note] }
+            let data = (try? JSONSerialization.data(withJSONObject: objects, options: [.sortedKeys])) ?? Data("[]".utf8)
+            return .ok(String(decoding: data, as: UTF8.self))
+        }
+        return .ok(rows.map { row in
+            let state = row.effective ? "active" : (row.on ? "on" : "off")
+            return [row.name, state, row.note].filter { !$0.isEmpty }.joined(separator: "\t")
+        }.joined(separator: "\n"))
+    }
+
+    /// `snaptic feature disable <feature>`: off only; protected features were refused by
+    /// the registry before this runs.
+    private func disableFeature(_ arguments: [String]) -> ControlResponse {
+        guard arguments.count == 1, let feature = KitControl.feature(named: arguments[0]) else {
+            return .failure(ControlExit.notFound, L("No such feature. Run “snaptic features” for the list."))
+        }
+        guard !FeatureGraph.alwaysOn.contains(feature) else {
+            return .failure(ControlExit.refused, L("This feature is always on."))
+        }
+        displaysStore.value.features[feature] = false
+        return .ok()
     }
 
     // MARK: Outside changes (PLAN §3.4)
