@@ -49,7 +49,7 @@ enum CaptureError: Error, Equatable {
 /// privacy-filtered display filters, keeps them current (app activation and launch,
 /// new windows, every 5 s), starts and stops streams with lifetime checks after
 /// every await [R2C c11], and runs the system content-sharing picker for windows.
-@MainActor final class CaptureService: ObservableObject, DisplayServiceLifecycle {
+@MainActor final class CaptureService: ObservableObject, DisplayServiceLifecycle, SessionParticipant {
     static var serviceID: DisplayServiceID { .capture }
     static var privateSymbols: [PrivateSymbol] { [] }
     weak var context: DisplaysContext?
@@ -89,6 +89,7 @@ enum CaptureError: Error, Equatable {
         guard self.lifetime == nil else { return }
         self.context = context
         self.lifetime = lifetime
+        context.registerSession(self, lifetime: lifetime)
         let ws = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.didLaunchApplicationNotification] {
             observers.append(ws.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
@@ -113,6 +114,24 @@ enum CaptureError: Error, Equatable {
         lifetime = nil
         context = nil
     }
+
+    // MARK: SessionParticipant
+
+    /// Lock, switch-out or sleep: every stream stops, whoever owns it (the controller
+    /// also suspends its sessions and clears their frames, and restarts them later).
+    func sessionDidPause() {
+        guard !active.isEmpty else { return }
+        let streams = Array(active.values)
+        active = [:]
+        tracked = [:]
+        stopTimers()
+        streams.forEach { finishStopping($0) }
+        cancelPick()
+        EventLog.shared.record(.pip, "Capture stopped for the session (\(streams.count) streams)")
+    }
+
+    /// Nothing restarts here; resuming is the controller's decision.
+    func sessionDidResume() {}
 
     var isActive: Bool { lifetime != nil }
     var activeStreamCount: Int { active.count }

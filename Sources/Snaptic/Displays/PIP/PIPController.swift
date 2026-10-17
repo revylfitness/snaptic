@@ -103,6 +103,8 @@ fileprivate extension DisplayActionID {
     private var sinks: [AnyCancellable] = []
     private var knownDisplays: Set<DisplayKey> = []
     private var sessionPaused = false
+    /// Between sleep (or display sleep) and wake: nothing resumes.
+    private var displaysAsleep = false
     private var resumeOffers: [StableID] = []
     private var resumeTimer: Timer?
     private var lutCache: [StableID: CubeLUT] = [:]
@@ -206,6 +208,7 @@ fileprivate extension DisplayActionID {
         if context?.capture.controller === self { context?.capture.controller = nil }
         menuItems = nil
         sessionPaused = false
+        displaysAsleep = false
         resumeOffers = []
         lifetime = nil
         context = nil
@@ -253,13 +256,13 @@ fileprivate extension DisplayActionID {
             s.window?.setStatus(L("Paused while the Mac is locked"))
             s.suspended = true
         }
-        if !sessions.isEmpty || !resumeOffers.isEmpty { startResumePoll() }
+        startResumePoll()
         EventLog.shared.record(.pip, "PIP suspended for the session")
         publish()
     }
 
     private func resumeIfPossible() {
-        guard sessionPaused, Self.isSessionOpen(), let ctx = context, let lifetime else { return }
+        guard sessionPaused, !displaysAsleep, Self.isSessionOpen(), let ctx = context, let lifetime else { return }
         sessionPaused = false
         resumeTimer?.invalidate()
         resumeTimer = nil
@@ -318,6 +321,9 @@ fileprivate extension DisplayActionID {
             }
             return nil
         }
+        // Someone at the Mac clicking a menu or button means the displays are awake.
+        if origin == .user { displaysAsleep = false }
+        if sessionPaused { resumeIfPossible() }
         guard !sessionPaused, Self.isSessionOpen() else { return remember(L("Unlock the Mac first.")) }
         guard sessions.count < PIPConfig.maxConcurrentSessions else {
             return remember(L("At most \(PIPConfig.maxConcurrentSessions) pictures in picture and streams can run at once."))
@@ -524,7 +530,10 @@ fileprivate extension DisplayActionID {
     /// Pause, hide and occlusion: drop frames and slow the capture to 1 fps.
     private func updateFlow(_ s: PIPSession) {
         s.receiver.setDropping(isDropping(s))
-        if s.hidden { s.window?.hide() } else { s.window?.show() }
+        // Only on a change: re-fronting on every occlusion change would defeat the pause.
+        if let w = s.window {
+            if s.hidden, w.isVisible { w.hide() } else if !s.hidden, !w.isVisible { w.show() }
+        }
         s.window?.isPaused = s.userPaused
         if s.userPaused { s.window?.setStatus(L("Paused")) } else if !s.suspended, s.receivedFirstFrame { s.window?.setStatus(nil) }
         applyCapture(s)
@@ -1067,20 +1076,30 @@ fileprivate extension DisplayActionID {
 
     private func observeSystem(_ ctx: DisplaysContext) {
         let ws = NSWorkspace.shared.notificationCenter
-        let stopNames: [Notification.Name] = [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification,
-                                              NSWorkspace.sessionDidResignActiveNotification]
-        for name in stopNames {
+        let sleepNames: [Notification.Name] = [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification]
+        for name in sleepNames {
             observers.append((ws, ws.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.suspendAll() }
+                MainActor.assumeIsolated {
+                    self?.displaysAsleep = true
+                    self?.suspendAll()
+                }
             }))
         }
-        let resumeNames: [Notification.Name] = [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification,
-                                                NSWorkspace.sessionDidBecomeActiveNotification]
-        for name in resumeNames {
+        observers.append((ws, ws.addObserver(forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main) {
+            [weak self] _ in MainActor.assumeIsolated { self?.suspendAll() }
+        }))
+        let wakeNames: [Notification.Name] = [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification]
+        for name in wakeNames {
             observers.append((ws, ws.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.resumeIfPossible() }
+                MainActor.assumeIsolated {
+                    self?.displaysAsleep = false
+                    self?.resumeIfPossible()
+                }
             }))
         }
+        observers.append((ws, ws.addObserver(forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: .main) {
+            [weak self] _ in MainActor.assumeIsolated { self?.resumeIfPossible() }
+        }))
         // Lock notifications only ever stop things (PLAN §4.9).
         let dnc = DistributedNotificationCenter.default()
         observers.append((dnc as NotificationCenter, dnc.addObserver(forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main) {
