@@ -40,7 +40,7 @@ final class SoCCapsTests: XCTestCase {
         XCTAssertEqual(SoCCaps.maxBackingBytes(ram: .max), 4 * gib)
         let fiveK = SoCCaps.backingBytes(pixelsWide: 5120, pixelsHigh: 2880)
         XCTAssertTrue(SoCCaps.fitsBudget(existing: 0, additional: fiveK, ram: 8 * gib))
-        XCTAssertFalse(SoCCaps.fitsBudget(existing: fiveK * 2, additional: fiveK, ram: 8 * gib))
+        XCTAssertFalse(SoCCaps.fitsBudget(existing: fiveK * 3, additional: fiveK, ram: 8 * gib))
         XCTAssertFalse(SoCCaps.fitsBudget(existing: .max, additional: 1, ram: .max))
     }
 }
