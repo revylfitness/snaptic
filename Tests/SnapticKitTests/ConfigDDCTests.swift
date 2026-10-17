@@ -16,7 +16,6 @@ final class ConfigDDCTests: XCTestCase {
         p.framing = .spec
         p.controls[VCPKey(0x10)] = DDCControlTuning()
         p.inputs = [DDCInputEntry(value: 0x0F, name: "Mac"), DDCInputEntry(value: 0x11, name: "PC", hidden: true)]
-        p.allowWithoutAsking = ["60:000F"]
         p.unlockedCodes = [VCPKey(0xE0)]
         p.customControls = [DDCCustomControl(name: "Mode", code: 0xDC, kind: .command, value: 3)]
         let decoded = try JSONDecoder().decode(PerDisplayDDC.self, from: JSONEncoder().encode(p))
@@ -35,7 +34,6 @@ final class ConfigDDCTests: XCTestCase {
         p.replyDelayMs = 0
         p.retries = 99
         p.writeCount = 5
-        p.allowWithoutAsking = ["60:000F", "60:000F", "bad", "10:0032"]
         p.unlockedCodes = [VCPKey(0x10), VCPKey(0xE0), VCPKey(0xE0), VCPKey(0x60)]
         p.inputs = (0..<40).map { DDCInputEntry(value: UInt16($0), name: String(repeating: "x", count: 300)) }
         p.inputs.append(DDCInputEntry(value: 1, name: "dup"))
@@ -49,7 +47,6 @@ final class ConfigDDCTests: XCTestCase {
         XCTAssertEqual(s.replyDelayMs, 10)
         XCTAssertEqual(s.retries, 8)
         XCTAssertEqual(s.writeCount, 2)
-        XCTAssertEqual(s.allowWithoutAsking, ["60:000F", "10:0032"])
         XCTAssertEqual(s.unlockedCodes, [VCPKey(0xE0)], "only unlockable codes can be unlocked")
         XCTAssertEqual(s.inputs.count, PerDisplayDDC.maxInputs)
         XCTAssertLessThanOrEqual(s.inputs[0].name.unicodeScalars.count, 64)
@@ -86,10 +83,7 @@ final class ConfigDDCTests: XCTestCase {
 
     func testAllowAndUnlockLookups() {
         var p = PerDisplayDDC()
-        p.allowWithoutAsking = [VCPPolicy.allowKey(code: 0x60, value: 0x11)]
         p.unlockedCodes = [VCPKey(0xE1)]
-        XCTAssertTrue(p.isAllowedWithoutAsking(code: 0x60, value: 0x11))
-        XCTAssertFalse(p.isAllowedWithoutAsking(code: 0x60, value: 0x12))
         XCTAssertTrue(p.isUnlocked(0xE1))
         XCTAssertFalse(p.isUnlocked(0xE2))
     }

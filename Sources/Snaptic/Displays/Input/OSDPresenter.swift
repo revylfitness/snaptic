@@ -132,7 +132,7 @@ enum VoiceOverAnnouncer {
     }
 
     private func broadcast(_ kind: OSDKind, _ value: Double, _ max: Double) {
-        guard broadcastEnabled, let context, context.sessionGate.isOpen, !AuthWindowWatcher.isSessionLocked() else { return }
+        guard broadcastEnabled, let context, context.sessionGate.isOpen, !context.sessionGate.isLocked else { return }
         let now = ProcessInfo.processInfo.systemUptime
         if now - lastBroadcast >= Self.broadcastInterval {
             post(kind, value, max)

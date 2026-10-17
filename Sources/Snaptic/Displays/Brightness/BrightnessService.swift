@@ -64,7 +64,15 @@ enum HostInfo {
     private var ddcPending: [DisplayKey: UInt16] = [:]
     private var ddcWriting: Set<DisplayKey> = []
     private var appleBlocked: Set<DisplayKey> = []
-    private let authWatcher = AuthWindowWatcher()
+    /// Watching for authentication windows while strong dimming is on (R5.7); ends to stop.
+    private var authLifetime: Lifetime?
+    /// The confirm panel is up: dimming is raised to ≥ 30% (PLAN §4.4).
+    private var panelRaise = false
+    /// Displays where dim to black is allowed now (Invariants.dimFloor == 0); refreshed on changes.
+    private var blackAllowed: Set<DisplayKey> = []
+    /// Last dimming reported to the registry, per desktop id.
+    private var reported: [UInt32: (Double?, Double?)] = [:]
+    static let raisedFloor = 0.3
     /// Displays held at the dim-on-lock level (key → level).
     private var lockDim: [DisplayKey: Double] = [:]
 
@@ -79,10 +87,10 @@ enum HostInfo {
     func activate(_ context: DisplaysContext, lifetime: Lifetime) {
         self.context = context
         self.lifetime = lifetime
-        authWatcher.onChange = { [weak self] present in
-            guard let self, let context = self.context else { return }
-            context.overlays.setAuthenticationHidden(present)
-            context.gamma.setAuthenticationRaise(present)
+        context.transactions.observePanel(lifetime: lifetime) { [weak self] showing in
+            guard let self else { return }
+            self.panelRaise = showing
+            for key in Array(self.states.keys) { self.apply(key, animated: false, interactive: false) }
         }
         context.registry.changes
             .receive(on: DispatchQueue.main)
@@ -117,8 +125,12 @@ enum HostInfo {
         observers.removeAll()
         pollTimer?.invalidate()
         pollTimer = nil
-        authWatcher.isEnabled = false
-        authWatcher.onChange = nil
+        authLifetime?.end()
+        authLifetime = nil
+        if let context { for id in reported.keys { context.registry.reportDim(desktopID: id, software: nil, overlay: nil) } }
+        reported.removeAll()
+        blackAllowed.removeAll()
+        panelRaise = false
         if let context {
             for state in states.values { if let token = state.overlay { context.overlays.remove(token) } }
             if context.ddc.onChange != nil { context.ddc.onChange = nil }
@@ -181,10 +193,21 @@ enum HostInfo {
                                       chipName: HostInfo.current.chipName)
     }
 
-    /// Whether dim to black applies to a display now (feature, invariant 3, guard).
-    func allowsBlack(_ key: DisplayKey) -> Bool {
-        guard let context, context.runtime.isEffective(.dimToBlack), context.guardClient.isAlive else { return false }
-        return context.registry.displays.contains { $0.key != key && $0.isStronglyVisible }
+    /// Whether dim to black applies to a display now (feature, invariant 3 via
+    /// Invariants.dimFloor, a running guard; never while the confirm panel shows).
+    func allowsBlack(_ key: DisplayKey) -> Bool { blackAllowed.contains(key) && !panelRaise }
+
+    private func refreshBlackAllowed() {
+        guard let context, context.runtime.isEffective(.dimToBlack), context.guardClient.isAlive,
+              let snapshot = context.registry.snapshot() else {
+            blackAllowed = []
+            return
+        }
+        var allowed: Set<DisplayKey> = []
+        for display in context.registry.displays where display.isOnline {
+            if Invariants.dimFloor(for: display.desktopID, in: snapshot) == 0 { allowed.insert(display.key) }
+        }
+        blackAllowed = allowed
     }
 
     var isDimToBlackActive: Bool {
@@ -267,6 +290,8 @@ enum HostInfo {
         context.edr.removeAll()
         context.gamma.restoreAll()
         lockDim.removeAll()
+        for id in reported.keys { context.registry.reportDim(desktopID: id, software: nil, overlay: nil) }
+        reported.removeAll()
         updateAuthWatcher()
     }
 
@@ -374,6 +399,7 @@ enum HostInfo {
     /// Re-chooses methods for every online display (registry, features, config changed).
     func reevaluate() {
         guard let context else { return }
+        refreshBlackAllowed()
         let displays = context.registry.displays.filter { $0.isOnline }
         let keys = Set(displays.map(\.key))
         for key in Array(states.keys) where !keys.contains(key) {
@@ -460,6 +486,7 @@ enum HostInfo {
         }
         var software = out.software
         if let lock = lockDim[key] { software = min(software, lock) }
+        if panelRaise { software = max(software, Self.raisedFloor) }
         let black = allowsBlack(key)
         switch s.software {
         case .gamma?:
@@ -483,6 +510,10 @@ enum HostInfo {
         }
         states[key] = s
         context.runtime.runtime(for: key).brightness = min(1, s.position)
+        if let display = context.registry.info(for: key) {
+            report(display.desktopID, software: s.software == .gamma ? software : nil,
+                   overlay: s.software == .overlay ? software : nil)
+        }
         if s.hardware == .apple, !s.appleVerified, interactive, let hw = out.hardware {
             verifyApple(key, value: hw)
         }
@@ -543,10 +574,33 @@ enum HostInfo {
         subject.send(Change(key: key, value: value, source: source))
     }
 
-    private func updateAuthWatcher() {
+    /// Tells the registry (invariants, long-arm) how dim a display is; 1 = none.
+    private func report(_ desktopID: UInt32, software: Double?, overlay: Double?) {
         guard let context else { return }
-        let strongOverlay = context.overlays.strongestDim > 0.5
-        authWatcher.isEnabled = strongOverlay || isDimToBlackActive
+        let rounded = (software.map { ($0 * 100).rounded() / 100 }, overlay.map { ($0 * 100).rounded() / 100 })
+        if let last = reported[desktopID], last.0 == rounded.0, last.1 == rounded.1 { return }
+        reported[desktopID] = rounded
+        context.registry.reportDim(desktopID: desktopID, software: rounded.0, overlay: rounded.1)
+    }
+
+    /// Watches authentication windows while dim to black or overlay dimming below 50% is on.
+    private func updateAuthWatcher() {
+        guard let context, let lifetime else { return }
+        let needed = context.overlays.strongestDim > 0.5 || isDimToBlackActive
+        if needed, authLifetime == nil {
+            let life = lifetime.child()
+            authLifetime = life
+            context.sessionGate.watchAuthWindows(lifetime: life) { [weak self] suppress in
+                guard let ctx = self?.context else { return }
+                ctx.overlays.setAuthenticationHidden(suppress)
+                ctx.gamma.setAuthenticationRaise(suppress)
+            }
+        } else if !needed, let life = authLifetime {
+            authLifetime = nil
+            life.end()
+            context.overlays.setAuthenticationHidden(false)
+            context.gamma.setAuthenticationRaise(false)
+        }
     }
 
     // MARK: Persistence, polling, wake

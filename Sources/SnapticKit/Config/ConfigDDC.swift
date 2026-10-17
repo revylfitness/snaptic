@@ -206,8 +206,6 @@ package struct PerDisplayDDC: ConfigModel {
     package var controls: LossyMap<VCPKey, DDCControlTuning>
     /// Input list in display order (≤ 32).
     package var inputs: [DDCInputEntry]
-    /// "Allow without asking" code + value pairs ("60:000F", ≤ 64).
-    package var allowWithoutAsking: [String]
     /// Manufacturer codes (0xE0–0xFF) unlocked by typing them (≤ 32).
     package var unlockedCodes: [VCPKey]
     package var customControls: [DDCCustomControl]
@@ -215,7 +213,6 @@ package struct PerDisplayDDC: ConfigModel {
     package var standbyValue: UInt16
 
     package static let maxInputs = 32
-    package static let maxAllow = 64
     package static let maxUnlocked = 32
     package static let maxCustom = 32
 
@@ -228,15 +225,13 @@ package struct PerDisplayDDC: ConfigModel {
         ignoreChecksum = false
         controls = LossyMap()
         inputs = []
-        allowWithoutAsking = []
         unlockedCodes = []
         customControls = []
         standbyValue = 4
     }
 
     private enum CodingKeys: String, CodingKey {
-        case enabled, framing, replyDelayMs, retries, writeCount, ignoreChecksum, controls, inputs, allowWithoutAsking,
-             unlockedCodes, customControls, standbyValue
+        case enabled, framing, replyDelayMs, retries, writeCount, ignoreChecksum, controls, inputs, unlockedCodes, customControls, standbyValue
     }
 
     package init(from decoder: Decoder) throws {
@@ -250,7 +245,6 @@ package struct PerDisplayDDC: ConfigModel {
         ignoreChecksum = c.lossy(.ignoreChecksum, false)
         controls = c.lossy(.controls, LossyMap())
         inputs = (c.lossy(.inputs, [LossyElement<DDCInputEntry>]())).compactMap(\.value)
-        allowWithoutAsking = c.lossy(.allowWithoutAsking, [String]())
         unlockedCodes = (c.lossy(.unlockedCodes, [LossyElement<VCPKey>]())).compactMap(\.value)
         customControls = (c.lossy(.customControls, [LossyElement<DDCCustomControl>]())).compactMap(\.value)
         standbyValue = c.lossy(.standbyValue, UInt16(4))
@@ -271,11 +265,6 @@ package struct PerDisplayDDC: ConfigModel {
             return e
         }
         c.inputs = Array(c.inputs.prefix(Self.maxInputs))
-        var allow: [String] = []
-        for key in allowWithoutAsking where VCPPolicy.isValidAllowKey(key) && !allow.contains(key) {
-            allow.append(key)
-        }
-        c.allowWithoutAsking = Array(allow.prefix(Self.maxAllow))
         var unlocked: [VCPKey] = []
         for key in unlockedCodes
         where VCPPolicy.tier(code: key.code, value: 0, capabilities: nil) == .unlockable && !unlocked.contains(key) {
@@ -295,10 +284,6 @@ package struct PerDisplayDDC: ConfigModel {
     }
 
     package func tuning(_ code: UInt8) -> DDCControlTuning { controls[VCPKey(code)] ?? DDCControlTuning() }
-
-    package func isAllowedWithoutAsking(code: UInt8, value: UInt16) -> Bool {
-        allowWithoutAsking.contains(VCPPolicy.allowKey(code: code, value: value))
-    }
 
     package func isUnlocked(_ code: UInt8) -> Bool { unlockedCodes.contains(VCPKey(code)) }
 }
