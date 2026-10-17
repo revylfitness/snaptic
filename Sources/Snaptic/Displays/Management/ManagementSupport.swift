@@ -19,37 +19,19 @@ func managementWallClock() -> Double { Date().timeIntervalSince1970 }
 
 // MARK: Modes (public CoreGraphics only)
 
-/// Reads modes with public CoreGraphics. B's DisplayModes owns the CGS ("Show all")
-/// list; this is the public, desktop-usable list every management feature uses.
+/// Desktop-usable public modes, through B's `DisplayModes` (the same lists the queue resolves
+/// against). The CGS "Show all" list stays with B (`DisplayModes.hiddenList`).
 enum ManagedModes {
-    private static let nativeFlag: UInt32 = 0x0200_0000
-    private static let defaultFlag: UInt32 = 0x0000_0004
-
-    static func ref(_ mode: CGDisplayMode) -> ModeRef {
-        ModeRef(ioModeID: mode.ioDisplayModeID, pixelWidth: mode.pixelWidth, pixelHeight: mode.pixelHeight,
-                pointWidth: mode.width, pointHeight: mode.height,
-                refreshMilliHz: Int((mode.refreshRate * 1000).rounded()))
-    }
-
-    static func descriptor(_ mode: CGDisplayMode) -> DisplayModeDescriptor {
-        DisplayModeDescriptor(ref: ref(mode), isNative: mode.ioFlags & nativeFlag != 0, isDefault: mode.ioFlags & defaultFlag != 0,
-                              isUsableForDesktop: mode.isUsableForDesktopGUI(), ioFlags: mode.ioFlags, bitDepth: 8)
-    }
-
-    /// Desktop-usable modes including the HiDPI duplicates, largest first, deduplicated.
+    /// Desktop-usable modes including the HiDPI duplicates, largest first.
     static func modes(for displayID: UInt32) -> [DisplayModeDescriptor] {
         guard displayID != 0 else { return [] }
-        let options = [kCGDisplayShowDuplicateLowResolutionModes: kCFBooleanTrue] as CFDictionary
-        guard let list = CGDisplayCopyAllDisplayModes(displayID, options) as? [CGDisplayMode] else { return [] }
-        var seen = Set<ModeRef>()
-        return list.filter { $0.isUsableForDesktopGUI() }.map(descriptor).filter { seen.insert($0.ref).inserted }
+        return DisplayModes.list(displayID).filter(\.isUsableForDesktop)
             .sorted { ($0.ref.pointWidth, $0.ref.pointHeight, $0.ref.isHiDPI ? 1 : 0, $0.ref.refreshMilliHz)
                 > ($1.ref.pointWidth, $1.ref.pointHeight, $1.ref.isHiDPI ? 1 : 0, $1.ref.refreshMilliHz) }
     }
 
     static func current(for displayID: UInt32) -> DisplayModeDescriptor? {
-        guard displayID != 0, let m = CGDisplayCopyDisplayMode(displayID) else { return nil }
-        return descriptor(m)
+        displayID == 0 ? nil : DisplayModes.current(displayID)
     }
 
     /// The display's native mode (by the IOKit flag, else the largest pixel size).
@@ -170,10 +152,30 @@ enum ManagedModes {
     }
 
     /// Awaits the outcome directly (CLI handlers).
+    /// Automatic requests carry the running plan's id (the rate limiter counts plans). A
+    /// restore refused because it would modeset the only strongly visible display becomes a
+    /// prompt: "Restore '<name>'? Keep / Not now", re-submitted as a trial on Keep (R5.2).
     static func run(_ ctx: DisplaysContext, _ request: TransactionRequest) async -> TransactionOutcome {
+        var request = request
+        if request.automatic && request.planID == nil { request.planID = ctx.connectPlanner.currentPlanID }
         let outcome = await ctx.transactions.submit(request)
         EventLog.shared.record(.transaction, "\(request.label): \(outcomeName(outcome))")
+        if request.risk == .restore, case .refused(let violations) = outcome,
+           violations.contains(where: { if case .onlyDisplayUnsupported = $0 { return true }; return false }) {
+            promptTrial(ctx, request)
+        }
         return outcome
+    }
+
+    static func promptTrial(_ ctx: DisplaysContext, _ request: TransactionRequest) {
+        let label = request.label
+        let changes = request.changes
+        let scope = request.finalScope
+        weak var weakCtx = ctx
+        ctx.toasts.show(L("Restore '\(label)'?"), action: ToastAction(title: L("Keep")) {
+            guard let ctx = weakCtx else { return }
+            submit(ctx, TransactionRequest(label: label, risk: .trial, changes: changes, finalScope: scope), lifetime: ctx.lifetime)
+        }, lifetime: ctx.lifetime)
     }
 
     static func outcomeName(_ o: TransactionOutcome) -> String {

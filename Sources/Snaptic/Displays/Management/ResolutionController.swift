@@ -64,6 +64,16 @@ import SnapticShims
             .receive(on: DispatchQueue.main)
             .sink { [weak self] displays in MainActor.assumeIsolated { self?.observe(displays) } }
             .store(in: &sinks)
+        // Every Snaptic transaction's mode changes are ours: learning ignores them (R5.3).
+        context.transactions.observe(lifetime: lifetime) { [weak self] report in
+            guard let self, let ctx = self.context, report.outcome == .applied || report.outcome == .kept else { return }
+            for change in report.changes {
+                guard case .mode(let id, let ref) = change, let key = ctx.registry.key(forDisplayID: id) else { continue }
+                self.expected[key] = (ref, report.at)
+                self.learning[key]?.cancel()
+                self.learning[key] = nil
+            }
+        }
     }
 
     func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) {

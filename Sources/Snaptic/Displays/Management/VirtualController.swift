@@ -163,6 +163,7 @@ import SnapticShims
               let initial = spec.initialMode else { return }
         busy.insert(id)
         defer { busy.remove(id); context?.requestMenuRebuild() }
+        ctx.virtualHosts.setHeadless(id, spec.headlessPrimary)
         do {
             var displayID = try await ctx.virtualHosts.create(spec: spec, initialMode: initial, limitToInitial: limited.contains(id))
             _ = await ctx.virtualHosts.waitUntilOnline(displayID)

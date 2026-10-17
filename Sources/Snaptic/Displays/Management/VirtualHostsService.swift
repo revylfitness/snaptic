@@ -68,16 +68,44 @@ import SnapticShims
     private var listenerSerial: UInt64 = 0
     private var lifetime: Lifetime?
     private var failures: [Double] = []
+    /// Smart HiDPI: spec → the physical display mirroring it (registry presents one display).
+    private var pairPhysical: [StableID: UInt32] = [:]
+    /// Headless-recipe screens (weakly visible, §4.1).
+    private var headlessSpecs: Set<StableID> = []
 
     init() {}
 
     func activate(_ context: DisplaysContext, lifetime: Lifetime) {
         self.context = context
         self.lifetime = lifetime
+        context.registry.virtualFacts = { [weak self] in self?.facts() ?? VirtualFacts() }
+    }
+
+    /// What the registry needs to present pairs and classify headless screens.
+    func facts() -> VirtualFacts {
+        let live = liveDisplays
+        var pairs: [UInt32: UInt32] = [:]
+        for (spec, physical) in pairPhysical { if let vid = live[spec] { pairs[vid] = physical } }
+        let headless = Set(headlessSpecs.compactMap { live[$0] })
+        return VirtualFacts(pairs: pairs, headless: headless)
+    }
+
+    /// Smart HiDPI binds (or unbinds, nil) a virtual to its physical display.
+    func setPairPhysical(_ specID: StableID, _ physicalID: UInt32?) {
+        guard pairPhysical[specID] != physicalID else { return }
+        pairPhysical[specID] = physicalID
+        context?.registry.refresh()
+    }
+
+    func setHeadless(_ specID: StableID, _ on: Bool) {
+        if on { headlessSpecs.insert(specID) } else { headlessSpecs.remove(specID) }
     }
 
     /// Synchronous: every host gets `shutdown` and its stdin closed; stragglers are killed after 1 s.
     func deactivate() {
+        context?.registry.virtualFacts = nil
+        pairPhysical = [:]
+        headlessSpecs = []
         for host in hosts.values { shutdownNow(host) }
         hosts = [:]
         listeners = []

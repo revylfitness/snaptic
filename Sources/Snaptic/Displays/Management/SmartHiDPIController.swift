@@ -171,12 +171,20 @@ import SnapticShims
         return vid
     }
 
+    /// The physical panel's own origin and main status (not the presented pair's).
     private func bindChanges(_ key: DisplayKey, virtualID: UInt32) -> [DisplayChange]? {
         guard let d = physical(key) else { return nil }
-        let r = ManagedDisplays.rect(d)
-        var changes: [DisplayChange] = [.mirror(d.hardwareID, of: virtualID), .origin(virtualID, x: r.x, y: r.y)]
-        if d.isMain { changes.append(.main(virtualID)) }
+        let b = CGDisplayBounds(d.hardwareID)
+        var changes: [DisplayChange] = [.mirror(d.hardwareID, of: virtualID),
+                                        .origin(virtualID, x: Int32(b.origin.x.rounded()), y: Int32(b.origin.y.rounded()))]
+        if d.hardwareID.isMain { changes.append(.main(virtualID)) }
         return changes
+    }
+
+    /// Tells the registry the pair exists, so it presents one display (B: `virtualFacts`).
+    private func markBound(_ key: DisplayKey, specID: StableID) {
+        guard let ctx = context, let d = physical(key) else { return }
+        ctx.virtualHosts.setPairPhysical(specID, d.hardwareID)
     }
 
     // MARK: User actions
@@ -225,6 +233,7 @@ import SnapticShims
                                                  afterRevert: { [weak self] in await self?.context?.virtualHosts.destroy(specID: specID) })
                 let outcome = await ManagedTransactions.run(ctx, request)
                 let ok = outcome == .applied || outcome == .kept
+                if ok { self.markBound(key, specID: specID) }
                 ctx.connectPlanner.endUserChange(changed: ok)
                 if ok {
                     if var p = self.pairs[key] {
@@ -249,6 +258,7 @@ import SnapticShims
     func disable(_ key: DisplayKey) async {
         guard let ctx = context, let pair = pairs[key] else { return }
         setPair(key, nil)
+        ctx.virtualHosts.setPairPhysical(pair.specID, nil)
         if let vid = ctx.virtualHosts.liveDisplays[pair.specID] {
             let mirrors = ctx.registry.displays.filter { $0.hardwareID != vid && $0.hardwareID.mirrorSource == vid }
             if !mirrors.isEmpty {
@@ -325,8 +335,9 @@ import SnapticShims
     func rebind(specID: StableID, physical key: DisplayKey) async {
         guard let ctx = context, let pair = pairs[key], pair.specID == specID, let vid = ctx.virtualHosts.liveDisplays[specID],
               let changes = bindChanges(key, virtualID: vid) else { return }
-        _ = await ManagedTransactions.run(ctx, TransactionRequest(label: L("Restore Smart HiDPI"), risk: .restore, changes: changes,
-                                                                  finalScope: .forSession, automatic: true))
+        let outcome = await ManagedTransactions.run(ctx, TransactionRequest(label: L("Restore Smart HiDPI"), risk: .restore,
+                                                                           changes: changes, finalScope: .forSession, automatic: true))
+        if outcome == .applied || outcome == .kept { markBound(key, specID: specID) }
     }
 
     /// No serial number to verify the panel: ask (trial).
@@ -336,7 +347,9 @@ import SnapticShims
             guard let self, let ctx = self.context, let lifetime = self.lifetime, let vid = ctx.virtualHosts.liveDisplays[specID],
                   let changes = self.bindChanges(key, virtualID: vid) else { return }
             ManagedTransactions.submit(ctx, TransactionRequest(label: L("Restore Smart HiDPI"), risk: .trial, changes: changes,
-                                                               finalScope: .forSession), lifetime: lifetime)
+                                                               finalScope: .forSession), lifetime: lifetime) { [weak self] outcome in
+                if outcome == .applied || outcome == .kept { self?.markBound(key, specID: specID) }
+            }
         }, lifetime: lifetime)
     }
 

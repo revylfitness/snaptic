@@ -43,6 +43,10 @@ import SnapticKit
     private var lastRunSteps: [String] = []
     private var lastRunAt: Double?
 
+    /// The id of the plan being executed; automatic requests carry it (B's rate limiter).
+    private(set) var currentPlanID: UInt64?
+    private var nextPlanID: UInt64 = 0
+
     /// Last connect, disconnect or wake (uptime seconds), for persisted-choice learning.
     private(set) var lastConnectOrWake: Double?
 
@@ -100,7 +104,16 @@ import SnapticKit
     }
 
     /// Seconds since the last wake or unlock (for Smart HiDPI grace and learning).
-    var secondsSinceWakeOrUnlock: Double? { lastWakeOrUnlock.map { managementUptime() - $0 } }
+    var secondsSinceWakeOrUnlock: Double? {
+        let gate = context.flatMap { [$0.sessionGate.lastWakeUptime, $0.sessionGate.lastUnlockUptime].compactMap { $0 }.max() }
+        let last = [lastWakeOrUnlock, gate].compactMap { $0 }.max()
+        return last.map { managementUptime() - $0 }
+    }
+
+    private func beginPlan() {
+        nextPlanID &+= 1
+        currentPlanID = nextPlanID
+    }
 
     // MARK: Triggers
 
@@ -137,7 +150,7 @@ import SnapticKit
         fullTimer = nil
         guard let ctx = context, let life = lifetime else { return }
         if running { rerunAfter = true; return }
-        if userChanges > 0 || ctx.transactions.isBusy {
+        if userChanges > 0 || ctx.transactions.isBusy || ctx.transactions.hasPendingTrial {
             scheduleFull(after: 1)
             return
         }
@@ -178,7 +191,9 @@ import SnapticKit
         let steps = ConnectPlan.visibilitySteps(inputs)
         if !steps.isEmpty {
             EventLog.shared.record(.planner, "Visibility restore: \(steps.count) step(s)")
+            beginPlan()
             for step in steps { await execute(step, ctx: ctx) }
+            currentPlanID = nil
         }
         scheduleGraceCheck(inputs)
     }
@@ -216,6 +231,8 @@ import SnapticKit
         if setChanged { prompted = [] }
         var counted = false
         var executed: [String] = []
+        beginPlan()
+        defer { currentPlanID = nil }
 
         if recapturePending && userChanges == 0 {
             recapturePending = false
