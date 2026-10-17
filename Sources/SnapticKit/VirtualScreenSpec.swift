@@ -44,6 +44,13 @@ package struct VirtualPrimaries: Codable, Equatable, Sendable {
         self.whiteY = whiteY
     }
 
+    /// From a panel's EDID chromaticity (R5.6: EDID first), or nil when it isn't plausible.
+    package init?(edid c: Chromaticity) {
+        self.init(redX: c.redX, redY: c.redY, greenX: c.greenX, greenY: c.greenY, blueX: c.blueX, blueY: c.blueY,
+                  whiteX: c.whiteX, whiteY: c.whiteY)
+        guard isPlausible else { return nil }
+    }
+
     package static let sRGB = VirtualPrimaries(redX: 0.64, redY: 0.33, greenX: 0.30, greenY: 0.60,
                                                blueX: 0.15, blueY: 0.06, whiteX: 0.3127, whiteY: 0.3290)
     package static let displayP3 = VirtualPrimaries(redX: 0.680, redY: 0.320, greenX: 0.265, greenY: 0.690,

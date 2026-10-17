@@ -59,6 +59,17 @@ import SnapticShims
             for k in keys where self.pairs[k] != nil { await self.disable(k) }
             return .ok()
         }
+        // R5.4 exposure name; off-only: turns Smart HiDPI off on the given (or every) display.
+        context.commands.register("toggle smarthidpi", policy: .low, offOnly: true, cliAllowed: true,
+                                  summary: L("toggle smarthidpi [<display>|all]: turn Smart HiDPI off"), lifetime: lifetime) { [weak self] req in
+            guard let self, let ctx = self.context else { return .failure(ManagementExit.unavailable, "") }
+            let sel = req.arguments.first ?? "all"
+            let keys = sel.lowercased() == "all" ? Array(self.pairs.keys) : ManagedDisplays.select(ctx, sel).map(\.key)
+            let on = keys.filter { self.pairs[$0] != nil }
+            guard !on.isEmpty else { return .failure(ManagementExit.refused, L("Smart HiDPI can only be turned off from the command line")) }
+            for k in on { await self.disable(k) }
+            return .ok()
+        }
     }
 
     func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) {
@@ -144,7 +155,19 @@ import SnapticShims
         if let i = modes.firstIndex(of: pair.mode) { modes.swapAt(0, i) } else { modes.insert(pair.mode, at: 0) }
         let hdr = pair.hdr && effective.contains(.smartHiDPI) && (context?.runtime.effectiveFeatures.contains(.hdrVirtual) ?? false)
         return VirtualScreenSpec(id: pair.specID, name: L("\(d.name) (Smart HiDPI)"), aspectWidth: aspect.width,
-                                 aspectHeight: aspect.height, sizeInches: inches, hiDPI: true, modes: modes, hdr: hdr)
+                                 aspectHeight: aspect.height, sizeInches: inches, hiDPI: true, modes: modes,
+                                 primaries: primaries(d), hdr: hdr)
+    }
+
+    /// The panel's primaries, so wide-gamut content isn't clamped to sRGB (§9.5). EDID
+    /// chromaticity first (R5.6); without it the virtual keeps macOS's default. The physical
+    /// display's ICC profile is deliberately not copied onto the virtual (R5.6).
+    private func primaries(_ d: DisplayInfo) -> VirtualPrimaries? {
+        guard let ctx = context else { return nil }
+        let info = ctx.privateAPI.function(.coreDisplayInfo, as: IORegistryDisplays.InfoDictionaryFn.self)
+        guard let edid = IORegistryDisplays.facts(for: d.hardwareID, coreDisplayInfo: info).edid,
+              let chroma = EDIDInfo.parse(edid)?.chromaticity else { return nil }
+        return VirtualPrimaries(edid: chroma)
     }
 
     private func serialSeed(_ d: DisplayInfo) -> String {

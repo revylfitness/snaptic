@@ -108,5 +108,13 @@ final class VirtualScreenSpecTests: XCTestCase {
     func testPrimaries() {
         XCTAssertTrue(VirtualPrimaries.sRGB.isPlausible)
         XCTAssertTrue(VirtualPrimaries.displayP3.isPlausible)
+        let p3 = Chromaticity(redX: 0.680, redY: 0.320, greenX: 0.265, greenY: 0.690, blueX: 0.150, blueY: 0.060,
+                              whiteX: 0.3127, whiteY: 0.3290)
+        XCTAssertEqual(VirtualPrimaries(edid: p3), .displayP3)
+        // A blank EDID block (zeros) or an edge value isn't copied onto the virtual.
+        XCTAssertNil(VirtualPrimaries(edid: Chromaticity(redX: 0, redY: 0, greenX: 0, greenY: 0, blueX: 0, blueY: 0,
+                                                         whiteX: 0.3127, whiteY: 0.3290)))
+        XCTAssertNil(VirtualPrimaries(edid: Chromaticity(redX: 1, redY: 0.3, greenX: 0.3, greenY: 0.6, blueX: 0.15, blueY: 0.06,
+                                                         whiteX: 0.3127, whiteY: 0.3290)))
     }
 }

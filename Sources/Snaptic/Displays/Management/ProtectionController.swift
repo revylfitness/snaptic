@@ -38,6 +38,16 @@ import SnapticKit
             ctx.config.value.features[.protection] = false
             return .ok()
         }
+        // R5.4 exposure name; off-only: it can turn protection off, never on.
+        context.commands.register("toggle protection", policy: .low, offOnly: true, cliAllowed: true,
+                                  summary: L("toggle protection: turn configuration protection off"), lifetime: lifetime) { [weak self] _ in
+            guard let self, let ctx = self.context else { return .failure(ManagementExit.unavailable, "") }
+            guard self.effective.contains(.protection) else {
+                return .failure(ManagementExit.refused, L("Protection can only be turned off from the command line"))
+            }
+            ctx.config.value.features[.protection] = false
+            return .ok(L("Protection is off"))
+        }
         activationObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil,
                                                                     queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.suspended = false }
