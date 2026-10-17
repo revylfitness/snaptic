@@ -7,7 +7,8 @@ import SnapticKit
 /// items, shortcuts and, when the user allows it per action, CLI commands. FeatureGraph
 /// keeps both off in Safe Mode, and hooks off while panic-latched; panic kills running
 /// commands.
-@MainActor final class AutomationController: DisplayFeatureController, PanicParticipant, DisplayMenuContributor {
+@MainActor final class AutomationController: DisplayFeatureController, PanicParticipant, DisplayMenuContributor,
+    DiagnosticsContributor {
     static var id: DisplayControllerID { .automation }
     static var privateSymbols: [PrivateSymbol] { [] }
     /// Weak: controllers outlive module restarts; never keep the context strongly.
@@ -39,6 +40,7 @@ import SnapticKit
         self.context = context
         self.lifetime = lifetime
         context.registerPanic(self, lifetime: lifetime)
+        context.diagnostics.register(self, section: L("Automation"), lifetime: lifetime)
         apply(effective)
     }
 
@@ -228,6 +230,23 @@ import SnapticKit
             return .failure(ControlExit.unavailable, problem)
         }
         return .ok()
+    }
+
+    // MARK: DiagnosticsContributor
+
+    /// Counts and states only: no paths, arguments or names.
+    func diagnostics() -> [(String, String)] {
+        guard let ctx = context else { return [] }
+        let automation = ctx.config.value.automation
+        return [
+            (L("Hooks"), hooksLifetime == nil ? L("off") : String(automation.hooks.filter(\.enabled).count) + L(" enabled")),
+            (L("Custom actions"), actionsLifetime == nil ? L("off")
+                : String(automation.actions.count) + L(" (") + String(automation.actions.filter(\.cliAllowed).count)
+                    + L(" allowed from the CLI)")),
+            (L("Commands running"), String(ctx.spawner.runningCount)),
+            (L("Helpers"), ctx.helpers.unavailable ?? L("available")),
+            (L("Last problem"), ctx.spawner.lastProblem == nil ? L("none") : L("see the Automation page")),
+        ]
     }
 
     // MARK: DisplayMenuContributor
