@@ -104,7 +104,7 @@ package enum FeatureGraph {
         .hdrVirtual: FeatureSpec(.experimental, any: [.virtualScreens, .smartHiDPI], uses: [.virtualHosts],
                                  controller: .virtual, page: "virtual"),
 
-        .pip: FeatureSpec(.optIn, uses: [.capture], controller: .pip, page: "pip", permissions: [.screenRecording]),
+        .pip: FeatureSpec(.optIn, uses: [.capture, .transactions], controller: .pip, page: "pip", permissions: [.screenRecording]),
         .pipFilters: FeatureSpec(.optIn, all: [.pip], uses: [.capture], controller: .pip, page: "pip",
                                  permissions: [.screenRecording]),
 
