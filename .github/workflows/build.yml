@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [main]
+    branches: [main, "feature/**"]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
@@ -11,7 +11,33 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same ref cancels the older run.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # Fast feedback (about a minute): lints plus the Foundation-only SnapticKit
+  # library and its tests, built with the open-source Swift toolchain.
+  kit-linux:
+    runs-on: ubuntu-latest
+    container: swift:5.10-jammy
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Lint
+        run: ./scripts/lint.sh
+
+      - name: Build SnapticKit and tests
+        run: swift build --build-tests
+
+      - name: Test SnapticKit
+        run: swift test --skip-build
+
   # Runs the repository's own code, so it only ever gets read access.
   build:
     runs-on: macos-15
@@ -23,19 +49,60 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Toolchain
-        run: swift --version
+      # One exact Xcode, so the compiler and SDK can't change underneath us.
+      - name: Select Xcode
+        run: |
+          XCODE=/Applications/Xcode_16.4.app
+          if [ ! -d "$XCODE" ]; then
+            echo "Xcode 16.4 is not on this runner image. Available:"
+            ls -d /Applications/Xcode*.app
+            exit 1
+          fi
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+          swift --version
 
+      - name: Lint
+        run: ./scripts/lint.sh
+
+      - name: Build (debug, with tests)
+        run: |
+          set -o pipefail
+          swift build --build-tests 2>&1 | tee build.log
+
+      - name: Test
+        run: swift test --skip-build
+
+      - name: Warnings summary
+        if: always()
+        run: |
+          {
+            echo "### Compiler warnings"
+            if [ -f build.log ]; then grep -E ': warning:' build.log | sort -u | head -200 || true; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The universal release build runs only for pushes (feature branches,
+      # main, tags); pull requests get the faster native debug build above.
       - name: Build universal app
+        if: github.event_name == 'push'
         run: ARCHS="arm64 x86_64" ./scripts/build-app.sh
 
+      - name: Check no private classes are linked
+        if: github.event_name == 'push'
+        run: |
+          BIN=build/Snaptic.app/Contents/MacOS/Snaptic
+          if nm -u -arch all "$BIN" | grep -E '_OBJC_CLASS_\$_(CGVirtualDisplay|MPDisplay|OSDManager|CBBlueLightClient)'; then
+            echo "Private Objective-C classes must be looked up at runtime, never linked." >&2
+            exit 1
+          fi
+
       - name: Package
+        if: github.event_name == 'push'
         run: ditto -c -k --keepParent build/Snaptic.app build/Snaptic.zip
 
-      # Only pushes publish a downloadable app; pull requests (including from
-      # forks) and manual runs only prove the code compiles.
+      # Only pushes to main and tags publish a downloadable app.
       - name: Upload app
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Snaptic
