@@ -32,13 +32,23 @@ jobs:
       - name: Lint
         run: |
           command -v python3 >/dev/null || { apt-get update -qq && apt-get install -y -qq python3 >/dev/null; }
-          ./scripts/lint.sh
+          set -o pipefail
+          ./scripts/lint.sh 2>&1 | tee lint.log
 
       - name: Build SnapticKit and tests
-        run: swift build --build-tests
+        run: |
+          set -o pipefail
+          swift build --build-tests 2>&1 | tee build.log
 
       - name: Test SnapticKit
-        run: swift test --skip-build
+        run: |
+          set -o pipefail
+          swift test --skip-build 2>&1 | tee test.log
+
+      # Job logs may be unreachable from where results are read; annotations are not.
+      - name: Report errors as annotations
+        if: failure()
+        run: ./scripts/ci-annotate.sh kit-linux lint.log build.log test.log
 
   # Runs the repository's own code, so it only ever gets read access.
   build:
@@ -65,7 +75,9 @@ jobs:
           swift --version
 
       - name: Lint
-        run: ./scripts/lint.sh
+        run: |
+          set -o pipefail
+          ./scripts/lint.sh 2>&1 | tee lint.log
 
       - name: Build (debug, with tests)
         run: |
@@ -73,7 +85,9 @@ jobs:
           swift build --build-tests 2>&1 | tee build.log
 
       - name: Test
-        run: swift test --skip-build
+        run: |
+          set -o pipefail
+          swift test --skip-build 2>&1 | tee test.log
 
       - name: Warnings summary
         if: always()
@@ -87,7 +101,9 @@ jobs:
       # main, tags); pull requests get the faster native debug build above.
       - name: Build universal app
         if: github.event_name == 'push'
-        run: ARCHS="arm64 x86_64" ./scripts/build-app.sh
+        run: |
+          set -o pipefail
+          ARCHS="arm64 x86_64" ./scripts/build-app.sh 2>&1 | tee universal.log
 
       - name: Check no private classes are linked
         if: github.event_name == 'push'
@@ -97,6 +113,10 @@ jobs:
             echo "Private Objective-C classes must be looked up at runtime, never linked." >&2
             exit 1
           fi
+
+      - name: Report errors as annotations
+        if: failure()
+        run: ./scripts/ci-annotate.sh macos lint.log build.log test.log universal.log
 
       - name: Package
         if: github.event_name == 'push'
