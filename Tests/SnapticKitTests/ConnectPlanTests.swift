@@ -60,11 +60,11 @@ final class ConnectPlanTests: XCTestCase {
     }
 
     func testMainMustBeStrong() {
-        let v = PlanDisplay(key: key("v"), transport: .snapticVirtual, isBuiltin: false, isMain: true, strong: false)
+        let v = PlanDisplay(key: key("7"), transport: .snapticVirtual, isBuiltin: false, isMain: true, strong: false)
         let steps = ConnectPlan.plan(inputs: ConnectInputs(trigger: .reconfigure, displays: [builtin(main: false), v]))
         XCTAssertEqual(steps, [.moveMain(to: key("a"))])
         // Headless only (weak): main may stay.
-        let h = PlanDisplay(key: key("h"), transport: .snapticVirtual, isBuiltin: false, isMain: true, strong: false, weak: true)
+        let h = PlanDisplay(key: key("6"), transport: .snapticVirtual, isBuiltin: false, isMain: true, strong: false, weak: true)
         XCTAssertTrue(ConnectPlan.plan(inputs: ConnectInputs(trigger: .reconfigure, displays: [h])).isEmpty)
     }
 
@@ -141,10 +141,10 @@ final class ConnectPlanTests: XCTestCase {
         let s1 = PlanVirtualScreen(specID: sid(1), associations: [VirtualAssociation(target: key("a"))], wantsConnected: false)
         XCTAssertTrue(s1.desiredConnected(present: present))
         XCTAssertFalse(s1.desiredConnected(present: []))
-        let s2 = PlanVirtualScreen(specID: sid(2), associations: [VirtualAssociation(target: key("k"), autoConnect: .whileAbsent)],
+        let s2 = PlanVirtualScreen(specID: sid(2), associations: [VirtualAssociation(target: key("9"), autoConnect: .whileAbsent)],
                                    wantsConnected: false)
         XCTAssertTrue(s2.desiredConnected(present: present))
-        XCTAssertFalse(s2.desiredConnected(present: [key("k")]))
+        XCTAssertFalse(s2.desiredConnected(present: [key("9")]))
         let manual = PlanVirtualScreen(specID: sid(3), associations: [VirtualAssociation(target: key("a"), autoConnect: .never)],
                                        wantsConnected: true)
         XCTAssertTrue(manual.desiredConnected(present: []))
@@ -155,7 +155,7 @@ final class ConnectPlanTests: XCTestCase {
                                        wantsConnected: false)
         let stream = PlanVirtualScreen(specID: sid(5), associations: [VirtualAssociation(target: key("b"), presentation: .flippedStream)],
                                        wantsConnected: false)
-        let gone = PlanVirtualScreen(specID: sid(6), associations: [VirtualAssociation(target: key("z"))], wantsConnected: true)
+        let gone = PlanVirtualScreen(specID: sid(6), associations: [VirtualAssociation(target: key("8"))], wantsConnected: true)
         let i = ConnectInputs(trigger: .reconfigure, effective: all, displays: [builtin(), external()],
                               hosts: [PlanHost(specID: sid(4), purpose: .virtualScreen), PlanHost(specID: sid(5), purpose: .virtualScreen),
                                       PlanHost(specID: sid(6), purpose: .virtualScreen)],

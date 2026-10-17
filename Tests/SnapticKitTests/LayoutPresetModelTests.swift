@@ -98,7 +98,7 @@ final class LayoutPresetModelTests: XCTestCase {
     }
 
     func testSanitize() {
-        var s = SavedDisplaySettings(rotation: 45, mirrorOf: key("z"), mirrorSet: true, brightness: 4, volume: -1, identity: ident("a"))
+        var s = SavedDisplaySettings(rotation: 45, mirrorOf: key("8"), mirrorSet: true, brightness: 4, volume: -1, identity: ident("a"))
         s.adjustments = ["ok": 1, "nan": .nan]
         var l = layout(1, [key("a"): s, key("b"): SavedDisplaySettings(mirrorOf: key("a"), mirrorSet: true, identity: ident("b"))])
         l.name = "\u{0000}"
