@@ -47,6 +47,8 @@ import SnapticKit
     let relauncher: Relauncher
     let otherApps: OtherAppsMonitor
     let requestMenuRebuild: @MainActor () -> Void
+    /// Opens Settings, optionally at a page id (e.g. "displays.brightness").
+    let openSettings: @MainActor (String?) -> Void
     /// Ends when the Displays module stops.
     let lifetime: Lifetime
 
@@ -95,6 +97,7 @@ import SnapticKit
         relauncher = module.relauncher
         otherApps = module.otherApps
         requestMenuRebuild = module.requestMenuRebuild
+        openSettings = module.openSettings
         self.lifetime = lifetime
     }
 
