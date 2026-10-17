@@ -11,7 +11,7 @@
 <meta name="theme-color" content="#0d0d0f">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap">
 <style>
 /* Layout: a dark, left-aligned page of huge two-tone statements. The hero runs
    a working Mac desktop; a scroll story drives a big sticky switcher panel;
@@ -31,6 +31,7 @@
   --font: "DM Sans", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --bold-track: -0.1em;   /* every bold text: DM Sans 700 at -10% */
+  --body-track: -0.02em;  /* running text, a touch tighter */
 }
 
 * { box-sizing: border-box; }
@@ -44,8 +45,11 @@ body {
   font-family: var(--font);
   font-size: 18px;
   line-height: 1.5;
+  letter-spacing: var(--body-track);
+  font-optical-sizing: none;
   -webkit-font-smoothing: antialiased;
 }
+::selection { background: rgba(255, 255, 255, 0.22); color: var(--white); }
 a { color: inherit; }
 b, strong, h1, h2, h3, .bold { font-weight: 700; letter-spacing: var(--bold-track); }
 :focus-visible { outline: 2px solid var(--white); outline-offset: 3px; border-radius: 8px; }
@@ -80,7 +84,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .btn.big { height: 52px; padding: 0 26px; border-radius: 14px; font-size: 17px; }
 
 /* Type */
-.mega { font-size: clamp(56px, 10.4vw, 132px); line-height: 0.95; margin: 0; }
+.mega { font-size: clamp(52px, 10vw, 124px); line-height: 0.95; margin: 0; }
 .huge { font-size: clamp(48px, 8.4vw, 108px); line-height: 0.95; margin: 0; }
 .gray { color: var(--mute-2); }
 .lede { font-size: clamp(19px, 1.8vw, 22px); line-height: 1.45; color: var(--mute); max-width: 32ch; margin: 0; }
@@ -96,7 +100,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 @media (prefers-reduced-motion: reduce) { .word { animation: none; } }
 
 /* Device */
-.device { margin: 80px auto 0; max-width: 1080px; padding-inline: 12px; }
+.device { margin: 80px auto 0; max-width: 1080px; padding-inline: max(16px, 5.5%); }
 .lid {
   background: linear-gradient(#3a3a3f, #222225); border-radius: 22px 22px 6px 6px; padding: 1.6% 1.6% 2%;
   box-shadow: 0 0 0 1px #4a4a50 inset, 0 60px 120px -40px rgba(120, 110, 255, 0.25);
@@ -293,18 +297,29 @@ section.block { padding-block: 160px 0; }
 .keytable span strong { color: var(--ink); }
 
 /* Get */
-.get-steps { list-style: none; padding: 0; margin: 64px 0 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; counter-reset: s; }
+.download { margin-top: 64px; background: var(--white); color: #0d0d0f; border-radius: 26px; padding: 36px; display: flex; align-items: center; justify-content: space-between; gap: 24px 40px; flex-wrap: wrap; }
+.download > div { min-width: 0; flex: 1 1 340px; display: flex; flex-direction: column; gap: 8px; }
+.download h3 { font-size: clamp(30px, 3.4vw, 40px); line-height: 1; margin: 0; }
+.download p { margin: 0; color: #55555c; font-size: 16px; max-width: 46ch; }
+.download .btn { background: #0d0d0f; color: var(--white); flex: none; }
+.download .btn:hover { background: #2a2a30; }
+.download .btn svg { width: 18px; height: 18px; }
+.from-source { margin: 96px 0 0; font-size: clamp(30px, 3.4vw, 40px); line-height: 1; }
+.from-source + p { margin: 12px 0 0; color: var(--mute); font-size: 17px; max-width: 46ch; }
+.get-steps { list-style: none; padding: 0; margin: 40px 0 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; counter-reset: s; }
 .get-steps li { counter-increment: s; background: var(--card); border-radius: 26px; padding: 30px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .get-steps li::before { content: counter(s); font-size: 56px; line-height: 1; font-weight: 700; letter-spacing: var(--bold-track); color: var(--mute-2); }
 .get-steps h3 { font-size: 26px; margin: 0; line-height: 1.05; }
 .get-steps p { margin: 0; color: var(--mute); font-size: 16px; }
-.code { position: relative; margin-top: auto; }
-.code pre { margin: 0; padding: 14px 16px; padding-right: 70px; border-radius: 14px; background: var(--bg); overflow-x: auto; font: 13px/1.6 var(--mono); color: var(--ink); }
-.copy { position: absolute; top: 8px; right: 8px; height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: var(--card-2); color: var(--ink); font: 500 12px/1 var(--font); cursor: pointer; }
+.code { margin-top: auto; background: var(--bg); border-radius: 14px; overflow: hidden; }
+.code .bar { display: flex; align-items: center; justify-content: space-between; padding: 8px 8px 0 16px; color: var(--mute-2); font-size: 13px; }
+.code pre { margin: 0; padding: 8px 16px 14px; overflow-x: auto; font: 13px/1.6 var(--mono); letter-spacing: 0; color: var(--ink); }
+.copy { height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: var(--card-2); color: var(--ink); font: 500 12px/1 var(--font); cursor: pointer; }
 .copy:hover { background: #2c2c32; }
 
 footer { margin-top: 160px; border-top: 1px solid var(--line); padding-block: 40px 64px; color: var(--mute-2); font-size: 14px; }
 footer p { margin: 0 0 12px; max-width: 72ch; }
+footer .made { color: var(--ink); font-size: 16px; margin-bottom: 20px; }
 footer .links { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 24px; }
 footer .links a { color: var(--mute); text-decoration: none; }
 footer .links a:hover { color: var(--ink); }
@@ -313,7 +328,7 @@ footer .links a:hover { color: var(--ink); }
   .nav a.l.opt { display: none; }
   .story { grid-template-columns: minmax(0, 1fr); gap: 0; margin-top: 72px; }
   .sticky { top: calc(env(safe-area-inset-top, 0px) + 72px); z-index: 2; background: var(--bg); padding-bottom: 12px; order: -1; }
-  .step { min-height: 60vh; }
+  .step { min-height: 46vh; }
   .bento { grid-template-columns: minmax(0, 1fr); }
   .span-2, .span-3, .span-4 { grid-column: auto; }
   .shorts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -322,10 +337,26 @@ footer .links a:hover { color: var(--ink); }
   section.block { padding-block: 112px 0; }
 }
 @media (max-width: 520px) {
+  .wrap { padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); }
+  .nav .wrap { gap: 18px; }
+  .card, .get-steps li { padding: 24px; border-radius: 22px; }
+  .card { min-height: 0; }
+  .nine { font-size: 132px; }
+  .keystack { flex-wrap: wrap; justify-content: center; gap: 6px; }
+  .keystack .key { min-width: 46px; height: 46px; font-size: 20px; border-radius: 11px; }
+  .download { padding: 28px 24px; border-radius: 22px; }
+  .download .btn { width: 100%; }
+  .hero .ctas .btn { flex: 1 1 auto; }
+  section.block { padding-block: 96px 0; }
+  footer { margin-top: 112px; }
   .shorts { grid-template-columns: minmax(0, 1fr); gap: 36px; }
   .stagger .huge span:nth-child(2) { padding-left: 0.8em; }
+  .stagger p { font-size: 19px; }
   .hero { padding-block: 64px 0; }
   .device { margin-top: 56px; }
+}
+@media (max-width: 360px) {
+  .nav a.l { display: none; }
 }
 </style>
 </head>
@@ -491,24 +522,39 @@ footer .links a:hover { color: var(--ink); }
   <section class="block" id="get">
     <div class="wrap">
       <h2 class="huge"><span style="display:block">Get Snaptic.</span><span class="gray" style="display:block">It's free.</span></h2>
-      <p class="lede" style="margin-top:32px">Build it on your Mac in about a minute. Needs macOS Sonoma or later.</p>
+      <p class="lede" style="margin-top:32px">For any Mac running macOS Sonoma or later.</p>
+
+      <div class="download">
+        <div>
+          <h3>Download Snaptic.</h3>
+          <p>Version 0.1.0 for Apple silicon and Intel. Unzip it and drag Snaptic to Applications.</p>
+          <p>Snaptic isn't notarized by Apple yet, so the first time you open it, go to System Settings, Privacy &amp; Security, and click Open Anyway.</p>
+        </div>
+        <a class="btn big" href="https://github.com/revylfitness/snaptic/releases/latest/download/Snaptic.zip">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10m0 0-4-4m4 4 4-4M4 16h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Download for Mac
+        </a>
+      </div>
+
+      <h3 class="from-source">Or build it yourself.</h3>
+      <p>Takes about a minute, and you can read every line first.</p>
       <ol class="get-steps">
         <li>
           <h3>Install the tools.</h3>
           <p>Apple's free command line tools. Skip this if you have Xcode.</p>
-          <div class="code"><pre><code>xcode-select --install</code></pre><button class="copy" type="button">Copy</button></div>
+          <div class="code"><div class="bar"><span>Terminal</span><button class="copy" type="button">Copy</button></div><pre><code>xcode-select --install</code></pre></div>
         </li>
         <li>
           <h3>Build it.</h3>
           <p>Downloads the source, builds it, and puts Snaptic in Applications.</p>
-          <div class="code"><pre><code>git clone https://github.com/revylfitness/snaptic.git
+          <div class="code"><div class="bar"><span>Terminal</span><button class="copy" type="button">Copy</button></div><pre><code>git clone https://github.com/revylfitness/snaptic.git
 cd snaptic
-INSTALL=1 ./scripts/build-app.sh</code></pre><button class="copy" type="button">Copy</button></div>
+INSTALL=1 ./scripts/build-app.sh</code></pre></div>
         </li>
         <li>
           <h3>Say yes.</h3>
           <p>Turn on Snaptic under Privacy &amp; Security, Accessibility. Add Screen Recording for thumbnails.</p>
-          <div class="code"><pre><code>open /Applications/Snaptic.app</code></pre><button class="copy" type="button">Copy</button></div>
+          <div class="code"><div class="bar"><span>Terminal</span><button class="copy" type="button">Copy</button></div><pre><code>open /Applications/Snaptic.app</code></pre></div>
         </li>
       </ol>
     </div>
@@ -517,6 +563,7 @@ INSTALL=1 ./scripts/build-app.sh</code></pre><button class="copy" type="button">
 
 <footer>
   <div class="wrap">
+    <p class="made">Made with &lt;/3 by revyl fitness technology, Inc.</p>
     <p>Snaptic is free, open-source software under the MIT license. It needs Accessibility access to see its shortcut and switch windows, and optionally Screen Recording access for thumbnails. It makes no network connections.</p>
     <p>Snaptic is an independent project, not affiliated with or endorsed by Apple Inc. Mac and macOS are trademarks of Apple Inc. App names and window contents in the demo are fictional.</p>
     <div class="links">
@@ -760,7 +807,7 @@ INSTALL=1 ./scripts/build-app.sh</code></pre><button class="copy" type="button">
   // ---------- Copy buttons ----------
   document.querySelectorAll(".copy").forEach(function (button) {
     button.addEventListener("click", function () {
-      var code = button.parentNode.querySelector("code");
+      var code = button.closest(".code").querySelector("code");
       function done(label) { button.textContent = label; setTimeout(function () { button.textContent = "Copy"; }, 1600); }
       function selectFallback() {
         var range = document.createRange();

@@ -40,6 +40,12 @@ Snaptic is MIT-licensed and written from scratch in Swift. It isn't affiliated w
 - macOS 14 Sonoma or later (Apple silicon or Intel)
 - Xcode 15 or later, or the Xcode Command Line Tools, to build
 
+## Download
+
+Grab `Snaptic.zip` from the [latest release](https://github.com/revylfitness/snaptic/releases/latest), unzip it, and drag Snaptic to Applications. Releases are built by GitHub Actions from the tagged commit.
+
+Snaptic isn't notarized by Apple yet, so the first time you open it macOS will block it. Go to System Settings → Privacy & Security and click **Open Anyway**.
+
 ## Build and run
 
 ```bash
