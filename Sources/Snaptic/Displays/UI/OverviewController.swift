@@ -5,7 +5,8 @@ import SnapticKit
 /// The always-on overview controller (PLAN §2.1 `overview`, R5.8): registers the
 /// "Show Displays panel", Identify and Redetect actions (menu Tools items, quick-menu
 /// item, shortcuts, CLI verbs) and owns the floating Displays panel and the Identify labels.
-@MainActor final class OverviewController: DisplayFeatureController, DisplayMenuContributor, DiagnosticsContributor {
+@MainActor final class OverviewController: DisplayFeatureController, DisplayMenuContributor, DiagnosticsContributor,
+    SessionParticipant {
     static var id: DisplayControllerID { .overview }
     static var privateSymbols: [PrivateSymbol] { [] }
 
@@ -39,6 +40,7 @@ import SnapticKit
         registerCommands(context, lifetime: lifetime)
         context.menus.register(self, lifetime: lifetime)
         context.diagnostics.register(self, section: L("Displays menu and panel"), lifetime: lifetime)
+        context.registerSession(self, lifetime: lifetime)
         registerHotkeys(context.config.value.menu, announce: false)
         lifetime.onEnd { [weak self] in self?.closeUI() }
     }
@@ -59,6 +61,11 @@ import SnapticKit
         lifetime = nil
         context = nil
     }
+
+    // MARK: SessionParticipant (locked or switched-out sessions get no floating UI)
+
+    func sessionDidPause() { closeUI() }
+    func sessionDidResume() {}
 
     private func closeUI() {
         panel.close()
@@ -369,7 +376,7 @@ private struct DisplaysPanelView: View {
                     .help(L("Show each display's number and name"))
                 Button(L("Redetect")) { actions.redetect() }
                 Spacer()
-                Button(L("Restore All…")) { actions.restoreAll() }
+                Button(L("Restore All")) { actions.restoreAll() }
                     .help(L("Undo Snaptic's display changes (same as ⌃⌥⌘⎋)"))
                 Button { actions.settings() } label: { Image(systemName: "gearshape") }
                     .accessibilityLabel(L("Displays settings"))
