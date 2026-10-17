@@ -26,6 +26,13 @@ where Key.RawValue == String {
         self.unknown = [:]
     }
 
+    /// Drops entries with unknown keys beyond `n` (sanitizers use this to bound growth).
+    package mutating func dropUnknown(keepingAtMost n: Int) {
+        guard unknown.count > n else { return }
+        let keep = unknown.keys.sorted().prefix(max(0, n))
+        unknown = unknown.filter { keep.contains($0.key) }
+    }
+
     package subscript(key: Key) -> Value? {
         get { values[key] }
         set { values[key] = newValue }
@@ -35,7 +42,8 @@ where Key.RawValue == String {
         let container = try decoder.container(keyedBy: AnyCodingKey.self)
         var known: [Key: Value] = [:]
         var other: [String: Value] = [:]
-        for codingKey in container.allKeys.prefix(Self.maxEntries) {
+        let sortedKeys = container.allKeys.sorted { $0.stringValue < $1.stringValue }
+        for codingKey in sortedKeys.prefix(Self.maxEntries) {
             guard let value = try? container.decode(Value.self, forKey: codingKey) else { continue }
             if let key = Key(rawValue: codingKey.stringValue) {
                 known[key] = value
@@ -64,3 +72,5 @@ extension KeyedDecodingContainer {
         ((try? decodeIfPresent(T.self, forKey: key)) ?? nil) ?? fallback()
     }
 }
+
+extension LossyMap: Sendable where Key: Sendable, Value: Sendable {}

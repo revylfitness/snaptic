@@ -8,3 +8,12 @@
 //  - @try/@catch wraps only Objective-C code inside .m files; exceptions never
 //    cross into Swift.
 #import "SNEncoding.h"
+#import "SNSpawn.h"
+#import "SNProcess.h"
+#import "SNMonitorPanel.h"
+#import "SNCGSModes.h"
+#import "SNDDC.h"
+#import "SNColorSync.h"
+#import "SNNightShift.h"
+#import "SNOSD.h"
+#import "SNVirtualDisplay.h"

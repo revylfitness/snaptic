@@ -20,7 +20,7 @@ jobs:
   # Fast feedback (about a minute): lints plus the Foundation-only SnapticKit
   # library and its tests, built with the open-source Swift toolchain.
   kit-linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container: swift:5.10-jammy
     permissions:
       contents: read
@@ -30,7 +30,9 @@ jobs:
           persist-credentials: false
 
       - name: Lint
-        run: ./scripts/lint.sh
+        run: |
+          command -v python3 >/dev/null || { apt-get update -qq && apt-get install -y -qq python3 >/dev/null; }
+          ./scripts/lint.sh
 
       - name: Build SnapticKit and tests
         run: swift build --build-tests

@@ -20,6 +20,7 @@ targets += [
             .linkedFramework("CoreGraphics"),
             .linkedFramework("IOKit"),
             .linkedFramework("ColorSync"),
+            .linkedFramework("Security"),
         ]
     ),
     .executableTarget(

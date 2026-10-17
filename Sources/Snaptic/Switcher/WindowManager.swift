@@ -1,3 +1,4 @@
+import SnapticKit
 import AppKit
 import ApplicationServices
 
