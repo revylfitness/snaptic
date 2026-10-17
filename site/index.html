@@ -8,112 +8,130 @@
 <meta name="description" content="Snaptic is a free, open-source window switcher for Mac. Hold Option, press Tab, and switch to any window.">
 <meta property="og:title" content="Snaptic">
 <meta property="og:description" content="Every window. One keystroke away. A free, open-source window switcher for Mac.">
-<meta name="theme-color" content="#f5f5f7">
+<meta name="theme-color" content="#0d0d0f">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap">
 <style>
-/* Layout: Apple product-page rhythm. Centered statements, a hero device that
-   runs a working miniature of the app, a bento grid of features, one black
-   section for the keyboard, and a quiet legal footer. Light look by choice. */
+/* Layout: a dark, left-aligned page of huge two-tone statements. The hero runs
+   a working Mac desktop; a scroll story drives a big sticky switcher panel;
+   then staggered statements, dark bento cards, keys, and install steps.
+   Single dark look by choice. */
 :root {
-  color-scheme: light;
+  color-scheme: dark;
+  --bg: #0d0d0f;
+  --card: #18181b;
+  --card-2: #222227;
+  --ink: #f4f4f5;
+  --mute: #8e8e96;
+  --mute-2: #5c5c64;
+  --line: #27272c;
   --white: #ffffff;
-  --gray: #f5f5f7;       /* Apple's section gray */
-  --ink: #1d1d1f;        /* primary text */
-  --ink-2: #6e6e73;      /* secondary text */
-  --ink-3: #86868b;      /* tertiary, captions */
-  --hair: #d2d2d7;       /* separators */
-  --blue: #0071e3;       /* buttons */
-  --link: #0066cc;       /* inline links */
-  --night: #000000;      /* the keyboard section */
-  --night-ink: #f5f5f7;
-  --night-2: #a1a1a6;
 
-  --sf: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --sf-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --font: "DM Sans", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --bold-track: -0.1em;   /* every bold text: DM Sans 700 at -10% */
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { scroll-behavior: smooth; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 body {
   margin: 0;
-  background: var(--white);
+  background: var(--bg);
   color: var(--ink);
-  font-family: var(--sf);
-  font-size: 17px;
-  line-height: 1.47;
-  letter-spacing: -0.022em;
+  font-family: var(--font);
+  font-size: 18px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
-a { color: var(--link); text-decoration: none; }
-a:hover { text-decoration: underline; }
-:focus-visible { outline: 3px solid rgba(0, 125, 250, 0.6); outline-offset: 2px; border-radius: 6px; }
+a { color: inherit; }
+b, strong, h1, h2, h3, .bold { font-weight: 700; letter-spacing: var(--bold-track); }
+:focus-visible { outline: 2px solid var(--white); outline-offset: 3px; border-radius: 8px; }
 
 .wrap {
-  max-width: 1024px;
+  max-width: 1120px;
   margin: 0 auto;
-  padding-left: max(22px, env(safe-area-inset-left, 0px));
-  padding-right: max(22px, env(safe-area-inset-right, 0px));
+  padding-left: max(24px, env(safe-area-inset-left, 0px));
+  padding-right: max(24px, env(safe-area-inset-right, 0px));
 }
-.wide { max-width: 1260px; }
 
-/* Navigation */
-body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: rgba(251, 251, 253, 0.8); }
+/* Nav */
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: rgba(13, 13, 15, 0.85); }
 .nav {
   position: sticky; top: env(safe-area-inset-top, 0px); z-index: 9;
-  background: rgba(251, 251, 253, 0.8);
-  backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(13, 13, 15, 0.85); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--line);
 }
-.nav .wrap { height: 52px; display: flex; align-items: center; gap: 24px; }
-.nav .name { font-size: 21px; font-weight: 600; letter-spacing: 0.011em; color: var(--ink); margin-right: auto; }
-.nav .name:hover { text-decoration: none; }
-.nav a.l { font-size: 12px; color: var(--ink); letter-spacing: -0.01em; opacity: 0.85; }
-.nav a.l:hover { opacity: 1; text-decoration: none; }
-.nav .get { font-size: 12px; padding: 4px 11px; border-radius: 980px; background: var(--blue); color: #fff; }
-.nav .get:hover { text-decoration: none; background: #0077ed; }
+.nav .wrap { height: 60px; display: flex; align-items: center; gap: 28px; }
+.logo { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; font-size: 21px; margin-right: auto; }
+.logo svg { width: 24px; height: 24px; }
+.nav a.l { font-size: 15px; color: var(--mute); text-decoration: none; }
+.nav a.l:hover { color: var(--ink); }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 40px; padding: 0 20px; border-radius: 12px; text-decoration: none;
+  font: 500 15px/1 var(--font); background: var(--card-2); color: var(--ink); border: 0;
+}
+.btn:hover { background: #2c2c32; }
+.btn.light { background: var(--white); color: #0d0d0f; }
+.btn.light:hover { background: #e7e7ea; }
+.btn.big { height: 52px; padding: 0 26px; border-radius: 14px; font-size: 17px; }
+
+/* Type */
+.mega { font-size: clamp(56px, 10.4vw, 132px); line-height: 0.95; margin: 0; }
+.huge { font-size: clamp(48px, 8.4vw, 108px); line-height: 0.95; margin: 0; }
+.gray { color: var(--mute-2); }
+.lede { font-size: clamp(19px, 1.8vw, 22px); line-height: 1.45; color: var(--mute); max-width: 32ch; margin: 0; }
 
 /* Hero */
-.hero { text-align: center; padding-block: 56px 0; overflow: hidden; }
-.hero .product { font-size: 28px; font-weight: 600; letter-spacing: 0.007em; margin: 0 0 8px; }
-.hero h1 {
-  font-size: clamp(44px, 7.4vw, 80px); line-height: 1.05; font-weight: 700; letter-spacing: -0.015em;
-  margin: 0 auto 18px; max-width: 12ch; text-wrap: balance;
-}
-.hero .sub { font-size: clamp(19px, 2.1vw, 24px); line-height: 1.33; letter-spacing: 0.009em; color: var(--ink); margin: 0 auto 28px; max-width: 30ch; }
-.ctas { display: flex; justify-content: center; align-items: center; gap: 28px; flex-wrap: wrap; }
-.pill {
-  display: inline-block; padding: 12px 23px; border-radius: 980px;
-  background: var(--blue); color: #fff; font-size: 17px; letter-spacing: -0.022em;
-}
-.pill:hover { background: #0077ed; text-decoration: none; }
-.more { font-size: 17px; }
-.more::after { content: " ›"; }
+.hero { padding-block: 96px 0; }
+.hero .mega span { display: block; }
+.hero .lede { margin-top: 32px; }
+.hero .ctas { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 36px; }
+.word { display: inline-block; animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.1, 1) both; }
+.hero .mega span:nth-child(2) .word { animation-delay: 0.12s; }
+@keyframes rise { from { transform: translateY(0.35em); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .word { animation: none; } }
 
-/* The device */
-.device { margin: 56px auto 0; max-width: 1060px; padding-inline: 12px; }
+/* Device */
+.device { margin: 80px auto 0; max-width: 1080px; padding-inline: 12px; }
 .lid {
-  background: linear-gradient(#2b2b2e, #1a1a1c); border-radius: 22px 22px 6px 6px;
-  padding: 1.6% 1.6% 2%;
-  box-shadow: 0 0 0 1px #3a3a3d inset, 0 40px 80px -40px rgba(0, 0, 0, 0.45);
+  background: linear-gradient(#3a3a3f, #222225); border-radius: 22px 22px 6px 6px; padding: 1.6% 1.6% 2%;
+  box-shadow: 0 0 0 1px #4a4a50 inset, 0 60px 120px -40px rgba(120, 110, 255, 0.25);
 }
 .screen { position: relative; width: 100%; aspect-ratio: 16 / 10; border-radius: 8px; overflow: hidden; background: #000; }
-.base {
-  height: 18px; margin: 0 -4.5%; border-radius: 0 0 22px 22px;
-  background: linear-gradient(#e3e4e6, #b9babd 60%, #9fa0a3);
-  position: relative;
-}
-.base::before { content: ""; position: absolute; left: 50%; top: 0; transform: translateX(-50%); width: 14%; height: 7px; border-radius: 0 0 10px 10px; background: #a9aaad; }
+.base { height: 18px; margin: 0 -4.5%; border-radius: 0 0 22px 22px; background: linear-gradient(#55555b, #2c2c30); position: relative; }
+.base::before { content: ""; position: absolute; left: 50%; top: 0; transform: translateX(-50%); width: 14%; height: 7px; border-radius: 0 0 10px 10px; background: #3b3b40; }
+.try { display: flex; justify-content: center; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 28px; color: var(--mute); font-size: 15px; }
+.status { min-height: 22px; margin: 10px 0 0; text-align: center; color: var(--mute-2); font-size: 15px; }
 
-/* Desktop, drawn at 1280×800 and scaled to fit */
-.desk {
+/* Keycaps on the page */
+.key {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 40px; height: 38px; padding: 0 12px; border-radius: 9px; border: 0;
+  font: 500 16px/1 var(--font); color: var(--ink);
+  background: linear-gradient(#2e2e34, #232328);
+  box-shadow: 0 0 0 1px #3a3a41 inset, 0 3px 0 #08080a;
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+button.key { cursor: pointer; }
+button.key:hover { transform: translateY(1px); box-shadow: 0 0 0 1px #3a3a41 inset, 0 2px 0 #08080a; }
+button.key[aria-pressed="true"] { transform: translateY(3px); box-shadow: 0 0 0 1px #4a4a52 inset, 0 0 0 #08080a; background: linear-gradient(#26262b, #1f1f24); }
+
+/* ========== Miniature macOS (shared by the hero desk and the story stage) ========== */
+.stage {
   position: absolute; left: 0; top: 0; width: 1280px; height: 800px; transform-origin: 0 0;
-  font-family: var(--sf); letter-spacing: -0.01em; color: #1d1d1f; user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  letter-spacing: -0.01em; color: #1d1d1f; user-select: none;
   background:
     radial-gradient(1200px 700px at 15% 110%, #f2a6c8 0%, transparent 55%),
     radial-gradient(900px 600px at 95% 0%, #7fb6ff 0%, transparent 60%),
     radial-gradient(900px 700px at 60% 70%, #9f8cf5 0%, transparent 60%),
     linear-gradient(135deg, #5b7cfa, #a77bf3 55%, #f3a4b5);
 }
+.stage b, .stage strong, .stage h4, .stage h5 { letter-spacing: -0.01em; }
 .menubar {
   position: absolute; inset: 0 0 auto; height: 28px; display: flex; align-items: center; gap: 20px; padding: 0 18px;
   background: rgba(255, 255, 255, 0.32); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px);
@@ -123,20 +141,17 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .menubar .right { margin-left: auto; display: flex; gap: 16px; align-items: center; }
 .menubar svg { width: 17px; height: 13px; }
 .dock {
-  position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%);
-  display: flex; gap: 8px; padding: 7px 9px; border-radius: 20px;
+  position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); display: flex; gap: 8px; padding: 7px 9px; border-radius: 20px;
   background: rgba(255, 255, 255, 0.28); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35) inset;
 }
 .dock .slot { position: relative; }
-.dock .slot.running::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: rgba(0, 0, 0, 0.55); }
-.space-label { position: absolute; top: 40px; right: 18px; font-size: 12px; color: rgba(255, 255, 255, 0.9); font-weight: 600; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); }
-
-.icon { display: block; border-radius: 22.5%; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18); }
+.dock .slot::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: rgba(0, 0, 0, 0.55); }
+.space-label { position: absolute; top: 40px; right: 18px; font-size: 12px; color: rgba(255, 255, 255, 0.92); font-weight: 600; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); }
+.icon { display: block; border-radius: 22.5%; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18); flex: none; }
 
 .win {
-  position: absolute; display: flex; flex-direction: column; overflow: hidden;
-  border-radius: 11px; background: #fff;
+  position: absolute; display: flex; flex-direction: column; overflow: hidden; border-radius: 11px; background: #fff;
   box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.28), 0 22px 60px rgba(0, 0, 0, 0.28), 0 6px 16px rgba(0, 0, 0, 0.12);
 }
 .tbar { height: 30px; flex: none; display: flex; align-items: center; padding: 0 12px; gap: 8px; background: #f6f6f6; border-bottom: 1px solid #e3e3e3; font-size: 13px; font-weight: 600; color: #3a3a3c; }
@@ -148,53 +163,51 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .tbar .t { flex: 1; text-align: center; margin-right: 52px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .dark .tbar { background: #2b2b2d; border-bottom-color: #1a1a1a; color: #c7c7cc; }
 .wbody { flex: 1; position: relative; overflow: hidden; }
-
-/* Window contents */
-.doc { padding: 34px 54px; font-size: 13px; line-height: 1.55; color: #1d1d1f; }
-.doc h4 { font-size: 24px; margin: 0 0 4px; letter-spacing: -0.02em; }
+.doc { padding: 34px 54px; font-size: 13px; line-height: 1.55; }
+.doc h4 { font-size: 24px; margin: 0 0 4px; font-weight: 700; }
 .doc .meta { color: #86868b; font-size: 12px; margin-bottom: 18px; }
 .doc p { margin: 0 0 12px; }
 .doc ul { margin: 0 0 12px; padding-left: 18px; }
-.term { background: #1e1e1e; color: #e5e5e5; padding: 12px 14px; font: 12.5px/1.6 var(--sf-mono); letter-spacing: 0; height: 100%; }
+.term { background: #1e1e1e; color: #e5e5e5; padding: 12px 14px; font: 12.5px/1.6 var(--mono); letter-spacing: 0; height: 100%; }
 .term .p { color: #67d08b; }
-.term .dim { color: #8e8e93; }
+.term .d { color: #8e8e93; }
 .term .cur { display: inline-block; width: 7px; height: 14px; background: #e5e5e5; vertical-align: -2px; }
 .mail { display: grid; grid-template-columns: 250px 1fr; height: 100%; font-size: 12.5px; }
 .mail .list { border-right: 1px solid #e5e5ea; background: #fbfbfd; }
 .mail .row { padding: 10px 14px; border-bottom: 1px solid #ececf0; }
 .mail .row.sel { background: #0a64d6; color: #fff; }
-.mail .row .from { font-weight: 600; display: flex; justify-content: space-between; }
-.mail .row .from span { font-weight: 400; color: #86868b; font-size: 11px; }
+.mail .from { font-weight: 600; display: flex; justify-content: space-between; }
+.mail .from span { font-weight: 400; color: #86868b; font-size: 11px; }
 .mail .row.sel .from span, .mail .row.sel .pre { color: rgba(255, 255, 255, 0.85); }
-.mail .row .pre { color: #6e6e73; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.mail .pre { color: #6e6e73; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .mail .read { padding: 22px 26px; line-height: 1.55; }
-.mail .read h5 { font-size: 17px; margin: 0 0 4px; }
+.mail .read h5 { font-size: 17px; margin: 0 0 4px; font-weight: 700; }
 .mail .read .who { color: #86868b; margin-bottom: 14px; }
 .mail .read p { margin: 0 0 10px; }
-.photos { padding: 14px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; align-content: start; background: #fff; }
+.photos { padding: 14px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; align-content: start; }
 .photos i { display: block; aspect-ratio: 1; border-radius: 2px; }
 .sheet { padding: 18px 22px; font-size: 12.5px; }
-.sheet h4 { margin: 0 0 12px; font-size: 20px; letter-spacing: -0.02em; }
+.sheet h4 { margin: 0 0 12px; font-size: 20px; font-weight: 700; }
 .sheet table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .sheet th { text-align: left; font-weight: 600; color: #6e6e73; border-bottom: 1px solid #d2d2d7; padding: 6px 8px; }
 .sheet td { border-bottom: 1px solid #ececf0; padding: 6px 8px; }
-.sheet td.n, .sheet th.n { text-align: right; }
+.sheet .n { text-align: right; }
 .sheet tr.total td { font-weight: 700; border-bottom: 0; }
 .sheet .bars { display: flex; gap: 10px; align-items: flex-end; height: 92px; margin-top: 16px; padding: 0 8px; border-bottom: 1px solid #d2d2d7; }
 .sheet .bars i { flex: 1; border-radius: 3px 3px 0 0; background: #34c759; }
 
-/* The switcher, as it would look in macOS */
+/* The switcher panel */
 .hud {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-  display: flex; gap: 10px; padding: 16px;
-  border-radius: 22px;
-  background: rgba(246, 246, 248, 0.72);
+  display: flex; flex-direction: column; align-items: stretch; gap: 12px; padding: 16px; border-radius: 22px;
+  background: rgba(246, 246, 248, 0.74);
   backdrop-filter: blur(40px) saturate(180%); -webkit-backdrop-filter: blur(40px) saturate(180%);
   box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.25), 0 0 0 1.5px rgba(255, 255, 255, 0.45) inset, 0 30px 80px rgba(0, 0, 0, 0.35);
-  animation: hud-in 0.16s ease-out;
 }
+.hud.pop { animation: hud-in 0.16s ease-out; }
 @keyframes hud-in { from { opacity: 0; transform: translate(-50%, -50%) scale(0.97); } }
-@media (prefers-reduced-motion: reduce) { .hud { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .hud.pop { animation: none; } }
+.hud .tiles { display: flex; gap: 10px; justify-content: center; }
 .tile {
   width: 206px; padding: 10px 10px 8px; border: 0; border-radius: 14px; background: transparent;
   font: inherit; color: #1d1d1f; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 9px;
@@ -206,120 +219,113 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .thumb .badge { position: absolute; right: 2px; top: 2px; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 980px; background: rgba(0, 0, 0, 0.55); color: #fff; }
 .thumb .icon { position: absolute; left: -6px; bottom: -8px; }
 .tile .label { font-size: 13px; font-weight: 500; max-width: 180px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* Icons style */
+.hud.icons .tile { width: 138px; padding: 16px 8px 10px; }
+.hud.icons .tile .label { max-width: 120px; }
+/* Titles style */
+.hud.titles { width: 560px; }
+.hud.titles .tiles { flex-direction: column; gap: 2px; }
+.hud.titles .tile { width: auto; flex-direction: row; justify-content: flex-start; gap: 12px; padding: 9px 12px; border-radius: 10px; }
+.hud.titles .tile .app { font-weight: 600; font-size: 14px; }
+.hud.titles .tile .label { font-size: 14px; color: #3a3a3c; max-width: none; }
+.hud .search { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 12px; background: rgba(255, 255, 255, 0.8); font-size: 17px; color: #1d1d1f; }
+.hud .search svg { width: 17px; height: 17px; color: #86868b; }
+.hud .search .caret { width: 2px; height: 20px; background: #0071e3; margin-left: -8px; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.hud .actions { display: flex; justify-content: center; gap: 16px; font-size: 13px; color: #3a3a3c; padding-top: 2px; }
+.hud .actions span { display: inline-flex; align-items: center; gap: 6px; }
+.hud .actions kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 22px; padding: 0 6px; border-radius: 5px; background: #fff; box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.2), 0 1px 0 rgba(0, 0, 0, 0.2); font: 600 12px/1 inherit; color: #1d1d1f; }
+.stage-chip { position: absolute; left: 50%; top: 120px; transform: translateX(-50%); display: flex; gap: 10px; align-items: center; padding: 10px 16px; border-radius: 980px; background: rgba(20, 20, 24, 0.72); color: #fff; font-size: 17px; font-weight: 600; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+.stage-chip kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 26px; padding: 0 7px; border-radius: 6px; background: #3a3a40; font: 600 14px/1 inherit; }
 
-.try { margin: 22px auto 0; display: flex; justify-content: center; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--ink-2); font-size: 14px; }
-.key {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  min-width: 34px; height: 32px; padding: 0 10px; border-radius: 7px;
-  font: 500 14px/1 var(--sf); color: var(--ink);
-  background: linear-gradient(#ffffff, #f2f2f4); border: 0;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12), 0 1.5px 0 rgba(0, 0, 0, 0.18);
-}
-button.key { cursor: pointer; }
-button.key[aria-pressed="true"] { background: linear-gradient(#e8e8ed, #dcdce1); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.16), 0 0.5px 0 rgba(0, 0, 0, 0.18); transform: translateY(1px); }
-.status { min-height: 21px; margin: 10px 0 0; font-size: 14px; color: var(--ink-3); text-align: center; }
+/* ========== Sections ========== */
+section.block { padding-block: 160px 0; }
 
 /* Statement */
-.statement { background: var(--gray); padding-block: 120px; text-align: center; margin-top: 90px; }
-.statement h2 { font-size: clamp(36px, 5.2vw, 56px); line-height: 1.07; letter-spacing: -0.005em; font-weight: 600; margin: 0 auto 22px; max-width: 16ch; text-wrap: balance; }
-.statement p { font-size: clamp(19px, 2vw, 21px); line-height: 1.38; color: var(--ink-2); margin: 0 auto; max-width: 36ch; letter-spacing: 0.011em; }
-.statement p b { color: var(--ink); font-weight: 600; }
+.statement .lede { margin-top: 36px; }
+
+/* Scroll story */
+.story { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 56px; margin-top: 120px; }
+.steps-list { display: flex; flex-direction: column; }
+.step { min-height: 72vh; display: flex; flex-direction: column; justify-content: center; gap: 12px; padding-block: 24px; opacity: 0.32; transition: opacity 0.3s ease; }
+.step.on { opacity: 1; }
+.step h3 { font-size: clamp(34px, 3.8vw, 48px); line-height: 1; margin: 0; }
+.step p { margin: 0; color: var(--mute); font-size: 19px; max-width: 30ch; }
+.step .key { align-self: flex-start; }
+.sticky { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 18vh); height: fit-content; }
+.viewer { position: relative; width: 100%; aspect-ratio: 16 / 10; border-radius: 26px; overflow: hidden; box-shadow: 0 0 0 1px var(--line); background: var(--card); }
+.viewer .stage { transition: opacity 0.25s ease; }
+.viewer .stage.fade { opacity: 0.4; }
+.dots { display: flex; gap: 8px; justify-content: center; margin-top: 18px; }
+.dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--mute-2); transition: background 0.2s ease, transform 0.2s ease; }
+.dots i.on { background: var(--ink); transform: scale(1.25); }
+
+/* Staggered statement */
+.stagger .huge span { display: block; }
+.stagger .huge span:nth-child(2) { padding-left: 1.75em; }
+.stagger p { margin: 40px 0 0 auto; max-width: 34ch; color: var(--mute); font-size: 21px; }
 
 /* Bento */
-.features { padding-block: 110px; }
-.features > .wrap > h2 { font-size: clamp(36px, 5.2vw, 56px); line-height: 1.07; letter-spacing: -0.005em; font-weight: 600; margin: 0 0 48px; text-wrap: balance; }
-.bento { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 20px; }
-.card { background: var(--gray); border-radius: 28px; padding: 36px 34px; min-width: 0; display: flex; flex-direction: column; gap: 14px; overflow: hidden; }
-.card h3 { font-size: 28px; line-height: 1.14; letter-spacing: 0.007em; font-weight: 600; margin: 0; text-wrap: balance; }
-.card p { margin: 0; color: var(--ink-2); font-size: 17px; max-width: 40ch; }
-.card p b { color: var(--ink); font-weight: 600; }
-.span-6 { grid-column: span 6; }
-.span-4 { grid-column: span 4; }
-.span-3 { grid-column: span 3; }
+.bento { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; margin-top: 72px; }
+.card { background: var(--card); border-radius: 26px; padding: 32px; min-width: 0; display: flex; flex-direction: column; gap: 10px; min-height: 260px; position: relative; overflow: hidden; }
+.card h3 { font-size: 28px; line-height: 1.05; margin: 0; }
+.card p { margin: 0; color: var(--mute); font-size: 16px; max-width: 34ch; }
+.card .art { flex: 1; display: flex; align-items: center; justify-content: center; padding-bottom: 10px; color: var(--ink); }
 .span-2 { grid-column: span 2; }
-.card .art { margin-top: auto; padding-top: 8px; }
-.card.dark { background: #1d1d1f; color: #f5f5f7; }
-.card.dark p { color: #a1a1a6; }
-.card.wideband { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; }
-.card.wideband .text { display: flex; flex-direction: column; gap: 10px; min-width: 0; flex: 1 1 320px; }
-.big-num { font-size: 120px; line-height: 0.9; font-weight: 700; letter-spacing: -0.04em; background: linear-gradient(135deg, #0071e3, #8a5cf6); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.mini-tiles { display: flex; gap: 10px; }
-.mini-tiles span { flex: 1; aspect-ratio: 16 / 10; border-radius: 8px; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08); position: relative; overflow: hidden; }
-.mini-tiles span.sel { box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.14); }
-.mini-tiles span i { position: absolute; inset: 0 0 auto; height: 14%; background: #f0f0f2; border-bottom: 1px solid #e5e5ea; }
-.mini-tiles span em { position: absolute; right: 6px; bottom: 6px; font-style: normal; font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 980px; background: rgba(0, 0, 0, 0.55); color: #fff; }
-.search { display: flex; align-items: center; gap: 10px; background: #fff; border-radius: 12px; padding: 12px 14px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08); font-size: 17px; }
-.search svg { width: 17px; height: 17px; flex: none; color: var(--ink-3); }
-.search .caret { width: 2px; height: 20px; background: var(--blue); margin-left: -8px; }
-.result { display: flex; align-items: center; gap: 12px; margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(0, 0, 0, 0.07); font-size: 15px; }
-.keyrow { display: flex; gap: 8px; flex-wrap: wrap; }
-.keyrow .key { min-width: 46px; height: 44px; font-size: 17px; }
-.styles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.styles figure { margin: 0; text-align: center; font-size: 13px; color: var(--ink-2); }
-.styles .frame { height: 76px; border-radius: 12px; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08); display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px; margin-bottom: 8px; }
-.styles .frame i { display: block; border-radius: 4px; background: #d2d2d7; }
-.styles .frame.list { flex-direction: column; align-items: stretch; gap: 5px; }
-.lock { width: 56px; height: 56px; }
+.span-3 { grid-column: span 3; }
+.span-4 { grid-column: span 4; }
+.nine { font-size: 168px; line-height: 0.8; font-weight: 700; letter-spacing: var(--bold-track); }
+.card .art svg { width: 96px; height: 96px; }
+.keystack { display: flex; gap: 8px; }
+.keystack .key { min-width: 64px; height: 64px; font-size: 26px; border-radius: 14px; box-shadow: 0 0 0 1px #3a3a41 inset, 0 5px 0 #08080a; }
 
-/* Keyboard */
-.keys { background: var(--night); color: var(--night-ink); padding-block: 120px; }
-.keys h2 { font-size: clamp(36px, 5.2vw, 56px); line-height: 1.07; letter-spacing: -0.005em; font-weight: 600; margin: 0 0 18px; text-align: center; text-wrap: balance; }
-.keys .lead { text-align: center; color: var(--night-2); font-size: 21px; line-height: 1.38; margin: 0 auto 64px; max-width: 34ch; }
-.combo { display: flex; justify-content: center; gap: 14px; margin-bottom: 72px; }
-.bigkey {
-  width: 180px; height: 120px; border-radius: 18px; display: flex; flex-direction: column; justify-content: space-between; padding: 14px 16px;
-  background: linear-gradient(#2c2c2e, #1c1c1e); box-shadow: 0 0 0 1px #3a3a3c inset, 0 4px 0 #0a0a0a, 0 18px 40px rgba(0, 0, 0, 0.6);
-  font-size: 15px; color: #f5f5f7;
-}
-.bigkey .g { font-size: 30px; align-self: flex-end; }
-.plus { align-self: center; font-size: 34px; color: #6e6e73; }
-.keylist { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 56px; max-width: 900px; margin: 0 auto; }
-.keylist div { display: flex; align-items: center; gap: 18px; padding-block: 18px; border-top: 1px solid #2c2c2e; }
-.keylist .k { display: flex; gap: 6px; flex: none; width: 112px; }
-.keylist kbd {
-  display: inline-flex; align-items: center; justify-content: center; min-width: 32px; height: 30px; padding: 0 8px; border-radius: 6px;
-  background: #2c2c2e; box-shadow: 0 0 0 1px #3a3a3c inset, 0 2px 0 #0a0a0a; font: 500 14px/1 var(--sf); color: #f5f5f7;
-}
-.keylist span { color: var(--night-2); font-size: 17px; }
-.keylist span b { color: var(--night-ink); font-weight: 600; }
+/* Short list */
+.shorts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 56px 40px; margin-top: 80px; }
+.shorts div { min-width: 0; }
+.shorts h3 { font-size: 30px; margin: 0 0 6px; line-height: 1; }
+.shorts p { margin: 0; color: var(--mute); font-size: 17px; }
 
-/* Get it */
-.get-it { background: var(--gray); padding-block: 120px; }
-.get-it h2 { font-size: clamp(36px, 5.2vw, 56px); line-height: 1.07; letter-spacing: -0.005em; font-weight: 600; margin: 0 0 14px; text-align: center; }
-.get-it .lead { text-align: center; color: var(--ink-2); font-size: 21px; line-height: 1.38; margin: 0 auto 56px; max-width: 36ch; }
-.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; counter-reset: s; }
-.steps li { counter-increment: s; background: var(--white); border-radius: 22px; padding: 30px 28px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
-.steps li::before { content: counter(s); font-size: 15px; font-weight: 600; color: var(--ink-3); }
-.steps h3 { margin: 0; font-size: 21px; letter-spacing: 0.011em; font-weight: 600; }
-.steps p { margin: 0; color: var(--ink-2); font-size: 15px; }
+/* Keys */
+.keytable { margin-top: 64px; border-top: 1px solid var(--line); }
+.keytable div { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 24px; align-items: center; padding-block: 22px; border-bottom: 1px solid var(--line); }
+.keytable .k { display: flex; gap: 8px; }
+.keytable span { color: var(--mute); font-size: 18px; }
+.keytable span strong { color: var(--ink); }
+
+/* Get */
+.get-steps { list-style: none; padding: 0; margin: 64px 0 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; counter-reset: s; }
+.get-steps li { counter-increment: s; background: var(--card); border-radius: 26px; padding: 30px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.get-steps li::before { content: counter(s); font-size: 56px; line-height: 1; font-weight: 700; letter-spacing: var(--bold-track); color: var(--mute-2); }
+.get-steps h3 { font-size: 26px; margin: 0; line-height: 1.05; }
+.get-steps p { margin: 0; color: var(--mute); font-size: 16px; }
 .code { position: relative; margin-top: auto; }
-.code pre { margin: 0; padding: 14px 16px; padding-right: 64px; border-radius: 12px; background: var(--gray); overflow-x: auto; font: 13px/1.6 var(--sf-mono); letter-spacing: 0; color: var(--ink); }
-.copy { position: absolute; top: 8px; right: 8px; border: 0; border-radius: 980px; padding: 5px 10px; font: 500 12px/1 var(--sf); color: var(--link); background: var(--white); cursor: pointer; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08); }
-.after { text-align: center; margin: 44px 0 0; }
+.code pre { margin: 0; padding: 14px 16px; padding-right: 70px; border-radius: 14px; background: var(--bg); overflow-x: auto; font: 13px/1.6 var(--mono); color: var(--ink); }
+.copy { position: absolute; top: 8px; right: 8px; height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: var(--card-2); color: var(--ink); font: 500 12px/1 var(--font); cursor: pointer; }
+.copy:hover { background: #2c2c32; }
 
-footer { background: var(--gray); border-top: 1px solid var(--hair); padding-block: 22px 40px; font-size: 12px; line-height: 1.34; color: var(--ink-2); letter-spacing: -0.01em; }
-footer p { margin: 0 0 10px; }
-footer .links { display: flex; flex-wrap: wrap; gap: 6px 22px; padding-top: 12px; border-top: 1px solid var(--hair); margin-top: 14px; }
-footer .links a { color: var(--ink); }
+footer { margin-top: 160px; border-top: 1px solid var(--line); padding-block: 40px 64px; color: var(--mute-2); font-size: 14px; }
+footer p { margin: 0 0 12px; max-width: 72ch; }
+footer .links { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 24px; }
+footer .links a { color: var(--mute); text-decoration: none; }
+footer .links a:hover { color: var(--ink); }
 
-@media (max-width: 833px) {
+@media (max-width: 900px) {
   .nav a.l.opt { display: none; }
+  .story { grid-template-columns: minmax(0, 1fr); gap: 0; margin-top: 72px; }
+  .sticky { top: calc(env(safe-area-inset-top, 0px) + 72px); z-index: 2; background: var(--bg); padding-bottom: 12px; order: -1; }
+  .step { min-height: 60vh; }
   .bento { grid-template-columns: minmax(0, 1fr); }
-  .span-6, .span-4, .span-3, .span-2 { grid-column: auto; }
-  .keylist { grid-template-columns: minmax(0, 1fr); }
-  .steps { grid-template-columns: minmax(0, 1fr); }
-  .bigkey { width: 132px; height: 92px; }
-  .big-num { font-size: 96px; }
+  .span-2, .span-3, .span-4 { grid-column: auto; }
+  .shorts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .get-steps { grid-template-columns: minmax(0, 1fr); }
+  .keytable div { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  section.block { padding-block: 112px 0; }
 }
-@media (max-width: 480px) {
-  .nav .wrap { gap: 16px; }
-  .statement, .keys, .get-it { padding-block: 84px; }
-  .features { padding-block: 84px; }
-  .card { padding: 28px 24px; }
-  .combo { gap: 8px; }
-  .bigkey { width: 100px; height: 70px; border-radius: 13px; padding: 9px 10px; font-size: 11px; }
-  .bigkey .g { font-size: 20px; }
-  .plus { font-size: 24px; }
+@media (max-width: 520px) {
+  .shorts { grid-template-columns: minmax(0, 1fr); gap: 36px; }
+  .stagger .huge span:nth-child(2) { padding-left: 0.8em; }
+  .hero { padding-block: 64px 0; }
+  .device { margin-top: 56px; }
 }
 </style>
 </head>
@@ -327,36 +333,41 @@ footer .links a { color: var(--ink); }
 
 <nav class="nav" aria-label="Snaptic">
   <div class="wrap">
-    <a class="name" href="#top">Snaptic</a>
-    <a class="l opt" href="#features">Features</a>
+    <a class="logo bold" href="#top">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1.5" y="5" width="14" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><rect x="8.5" y="9" width="14" height="11" rx="3" fill="currentColor"/></svg>
+      snaptic
+    </a>
+    <a class="l opt" href="#how">How it works</a>
     <a class="l opt" href="#keys">Keys</a>
     <a class="l" href="https://github.com/revylfitness/snaptic">GitHub</a>
-    <a class="get" href="#get">Get</a>
+    <a class="btn" href="#get">Get Snaptic</a>
   </div>
 </nav>
 
 <main id="top">
   <section class="hero">
     <div class="wrap">
-      <p class="product">Snaptic</p>
-      <h1>Every window. One keystroke away.</h1>
-      <p class="sub">The window switcher your Mac always deserved. Free and open source.</p>
+      <h1 class="mega">
+        <span><span class="word">Every window.</span></span>
+        <span class="gray"><span class="word">One keystroke away.</span></span>
+      </h1>
+      <p class="lede">The window switcher your Mac should have shipped with. Free and open source.</p>
       <div class="ctas">
-        <a class="pill" href="#get">Get Snaptic</a>
-        <a class="more" href="https://github.com/revylfitness/snaptic">View the source</a>
+        <a class="btn light big" href="#get">Get Snaptic</a>
+        <a class="btn big" href="https://github.com/revylfitness/snaptic">View on GitHub</a>
       </div>
     </div>
 
     <div class="device" aria-label="Interactive demo: a Mac desktop running Snaptic">
       <div class="lid">
         <div class="screen" id="screen">
-          <div class="desk" id="desk">
+          <div class="stage" id="desk">
             <div class="menubar" aria-hidden="true">
               <b id="menuApp">Writer</b><span>File</span><span>Edit</span><span>Format</span><span>View</span><span>Window</span><span>Help</span>
               <span class="right">
                 <svg viewBox="0 0 17 13" aria-hidden="true"><path d="M8.5 12.2 6.4 10a3 3 0 0 1 4.2 0Zm-3.5-3.6L3.6 7.2a7 7 0 0 1 9.8 0L12 8.6a5 5 0 0 0-7 0ZM2.2 5.8.8 4.4a11 11 0 0 1 15.4 0l-1.4 1.4a9 9 0 0 0-12.6 0Z" fill="#111"/></svg>
                 <svg viewBox="0 0 26 13" style="width:24px" aria-hidden="true"><rect x="0.5" y="0.5" width="22" height="12" rx="3.5" fill="none" stroke="#111" opacity="0.5"/><rect x="2.5" y="2.5" width="15" height="8" rx="2" fill="#111"/><rect x="23.5" y="4.5" width="1.8" height="4" rx="0.9" fill="#111" opacity="0.5"/></svg>
-                <span>Sat Oct 17&nbsp;&nbsp;1:17 PM</span>
+                <span>Sat Oct 17&nbsp;&nbsp;1:27 PM</span>
               </span>
             </div>
             <div class="space-label" id="spaceLabel" aria-hidden="true">Desktop 1</div>
@@ -373,134 +384,141 @@ footer .links a { color: var(--ink); }
       <div class="try">
         <span>Try it. Hold</span>
         <button class="key" id="optKey" type="button" aria-pressed="false" aria-label="Option">⌥</button>
-        <span>and press</span>
+        <span>and tap</span>
         <button class="key" id="tabKey" type="button" aria-label="Tab">⇥</button>
       </div>
       <p class="status" id="status" role="status" aria-live="polite"></p>
     </div>
   </section>
 
-  <section class="statement">
+  <section class="block statement">
     <div class="wrap">
-      <h2>Your Mac switches apps. Snaptic switches windows.</h2>
-      <p>Two documents in the same app are two choices. The window you minimized is still there. So is the one you left on another desktop. <b>Everything you have open, a single keystroke away.</b></p>
+      <h2 class="huge"><span style="display:block">Built for</span><span class="gray" style="display:block">muscle memory.</span></h2>
+      <p class="lede">If you know ⌘⇥, you already know Snaptic. It just shows you every window, not only every app.</p>
+
+      <div class="story" id="how">
+        <div class="steps-list">
+          <div class="step on" data-step="0">
+            <h3>Every window.</h3>
+            <p>Each window gets its own live thumbnail, including minimized ones and windows on other desktops.</p>
+          </div>
+          <div class="step" data-step="1">
+            <h3>Back where you were.</h3>
+            <p>The window you just left is always next. A quick tap flips between your last two.</p>
+            <span class="key" aria-hidden="true">⌥ ⇥</span>
+          </div>
+          <div class="step" data-step="2">
+            <h3>Find it fast.</h3>
+            <p>Press S and type any part of a title or app name. Two letters is usually enough.</p>
+            <span class="key" aria-hidden="true">S</span>
+          </div>
+          <div class="step" data-step="3">
+            <h3>Act on the spot.</h3>
+            <p>Close, minimize, go full screen, hide or quit without leaving the switcher.</p>
+          </div>
+          <div class="step" data-step="4">
+            <h3>Your style.</h3>
+            <p>Thumbnails, big app icons, or a tidy list of titles. Pick one for each shortcut.</p>
+          </div>
+        </div>
+        <div class="sticky">
+          <div class="viewer" id="viewer" aria-hidden="true" inert><div class="stage" id="storyStage"></div></div>
+          <div class="dots" id="dots" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i><i></i></div>
+        </div>
+      </div>
     </div>
   </section>
 
-  <section class="features" id="features">
-    <div class="wrap wide">
-      <h2>Small app. Big difference.</h2>
+  <section class="block stagger">
+    <div class="wrap">
+      <h2 class="huge"><span>Not just</span><span>apps.</span></h2>
+      <p>Your Mac's ⌘⇥ switches between apps. Snaptic switches between windows: every document, every minimized window, every window you left on another desktop.</p>
+
       <div class="bento">
+        <div class="card span-2">
+          <div class="art"><span class="nine" aria-hidden="true">9</span></div>
+          <h3>Shortcuts.</h3>
+          <p>Each with its own keys, style and filters.</p>
+        </div>
         <div class="card span-4">
-          <h3>See every window before you switch.</h3>
-          <p>Live thumbnails of each window, including minimized ones and windows on other desktops. <b>The one you pick is previewed at full size</b> while you decide.</p>
-          <div class="art mini-tiles" aria-hidden="true">
-            <span><i></i></span><span class="sel"><i></i></span><span><i></i><em>Minimized</em></span><span><i></i><em>Desktop 2</em></span>
+          <div class="art">
+            <div class="keystack" aria-hidden="true"><span class="key">W</span><span class="key">M</span><span class="key">F</span><span class="key">H</span><span class="key">Q</span></div>
           </div>
-        </div>
-        <div class="card span-2 dark">
-          <h3>Back to where you were.</h3>
-          <p>The window you just left is always first in line. A quick ⌥⇥ flips between your last two.</p>
-        </div>
-        <div class="card span-3">
-          <h3>Find it. Just type.</h3>
-          <p>Press S while the switcher is open and type any part of a window's title or app name.</p>
-          <div class="art" aria-hidden="true">
-            <div class="search">
-              <svg viewBox="0 0 17 17"><circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m11 11 4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-              <span>budg</span><span class="caret"></span>
-            </div>
-            <div class="result"><span id="resultIcon"></span><span>Budget 2027</span></div>
-          </div>
-        </div>
-        <div class="card span-3">
           <h3>Act without switching.</h3>
-          <p>Close, minimize, go full screen, hide or quit, right from the switcher.</p>
-          <div class="art keyrow" aria-hidden="true">
-            <span class="key">W</span><span class="key">M</span><span class="key">F</span><span class="key">H</span><span class="key">Q</span>
+          <p>Close, minimize, full screen, hide or quit, right from the switcher.</p>
+        </div>
+        <div class="card span-3">
+          <div class="art">
+            <svg viewBox="0 0 96 96" aria-hidden="true"><rect x="22" y="42" width="52" height="40" rx="10" fill="currentColor"/><path d="M32 42V32a16 16 0 0 1 32 0v10" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"/><circle cx="48" cy="60" r="5" fill="#18181b"/><rect x="46" y="61" width="4" height="10" rx="2" fill="#18181b"/></svg>
           </div>
+          <h3>Private.</h3>
+          <p>No network. No tracking. Thumbnails stay in memory and vanish when your Mac locks.</p>
         </div>
-        <div class="card span-2">
-          <h3>Three ways to look.</h3>
-          <div class="art styles" aria-hidden="true">
-            <figure><div class="frame"><i style="width:30px;height:20px"></i><i style="width:30px;height:20px"></i></div>Thumbnails</figure>
-            <figure><div class="frame"><i style="width:22px;height:22px;border-radius:6px"></i><i style="width:22px;height:22px;border-radius:6px"></i></div>Icons</figure>
-            <figure><div class="frame list"><i style="height:6px"></i><i style="height:6px"></i><i style="height:6px"></i></div>Titles</figure>
+        <div class="card span-3">
+          <div class="art">
+            <svg viewBox="0 0 96 96" aria-hidden="true"><path d="M16 66V30a6 6 0 0 1 6-6h52a6 6 0 0 1 6 6v36" fill="none" stroke="currentColor" stroke-width="6"/><path d="M8 66h80l-4 8H12Z" fill="currentColor"/><path d="m36 40-10 8 10 8M60 40l10 8-10 8M52 36l-8 24" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </div>
+          <h3>Free and open.</h3>
+          <p>Every feature included. MIT licensed. Read every line on GitHub.</p>
         </div>
-        <div class="card span-2">
-          <div class="big-num" aria-hidden="true">9</div>
-          <h3>Shortcuts, each your way.</h3>
-          <p>Every shortcut gets its own keys, style and filters: one app, one screen, one desktop, or one entry per app.</p>
-        </div>
-        <div class="card span-2 dark">
-          <svg class="lock" viewBox="0 0 64 64" aria-hidden="true"><rect x="12" y="28" width="40" height="30" rx="7" fill="#f5f5f7"/><path d="M20 28v-7a12 12 0 0 1 24 0v7" fill="none" stroke="#f5f5f7" stroke-width="5"/><circle cx="32" cy="42" r="3.5" fill="#1d1d1f"/><rect x="30.5" y="43" width="3" height="7" rx="1.5" fill="#1d1d1f"/></svg>
-          <h3>Private by design.</h3>
-          <p>No network access. No tracking. Thumbnails stay in memory, skip your password manager, and disappear when your Mac locks.</p>
-        </div>
-        <div class="card span-6 wideband">
-          <div class="text">
-            <h3>Free. Every feature. Open source.</h3>
-            <p>Search, every style, auto-sizing thumbnails and all nine shortcuts are included. Read every line on GitHub, under the MIT license.</p>
-          </div>
-          <a class="pill" href="https://github.com/revylfitness/snaptic">View on GitHub</a>
-        </div>
+      </div>
+
+      <div class="shorts">
+        <div><h3>Preview.</h3><p>The window you pick, full size, before you let go.</p></div>
+        <div><h3>Spaces.</h3><p>Windows on every desktop, one keystroke away.</p></div>
+        <div><h3>Minimized.</h3><p>Still in the list. Restored when you pick it.</p></div>
+        <div><h3>Auto-size.</h3><p>Thumbnails grow or shrink to fit what you have open.</p></div>
+        <div><h3>Exceptions.</h3><p>Hide apps, and let VMs keep the shortcut.</p></div>
+        <div><h3>VoiceOver.</h3><p>Every selection is read aloud.</p></div>
       </div>
     </div>
   </section>
 
-  <section class="keys" id="keys">
+  <section class="block" id="keys">
     <div class="wrap">
-      <h2>Your fingers already know how.</h2>
-      <p class="lead">If you've used ⌘⇥, you already know Snaptic. Everything else is one key away.</p>
-      <div class="combo" aria-hidden="true">
-        <div class="bigkey"><span>option</span><span class="g">⌥</span></div>
-        <span class="plus">+</span>
-        <div class="bigkey"><span>tab</span><span class="g">⇥</span></div>
-      </div>
-      <div class="keylist">
-        <div><span class="k"><kbd>⌥</kbd><kbd>⇥</kbd></span><span><b>Every window.</b> Keep tapping Tab, let go to switch.</span></div>
-        <div><span class="k"><kbd>⌥</kbd><kbd>`</kbd></span><span><b>Windows of this app.</b> Works on every keyboard layout.</span></div>
-        <div><span class="k"><kbd>⇧</kbd></span><span><b>Go back.</b> Arrow keys move around the grid.</span></div>
-        <div><span class="k"><kbd>S</kbd></span><span><b>Search</b> by title or app name.</span></div>
-        <div><span class="k"><kbd>W</kbd><kbd>M</kbd><kbd>F</kbd></span><span><b>Close, minimize or full-screen</b> the selected window.</span></div>
-        <div><span class="k"><kbd>H</kbd><kbd>Q</kbd></span><span><b>Hide or quit</b> its app.</span></div>
+      <h2 class="huge"><span style="display:block">One hand.</span><span class="gray" style="display:block">No mouse.</span></h2>
+      <div class="keytable">
+        <div><span class="k"><span class="key">⌥</span><span class="key">⇥</span></span><span><strong>Every window.</strong> Keep tapping Tab, let go to switch.</span></div>
+        <div><span class="k"><span class="key">⌥</span><span class="key">`</span></span><span><strong>This app's windows.</strong> The key above Tab, on any layout.</span></div>
+        <div><span class="k"><span class="key">⇧</span></span><span><strong>Go back.</strong> Arrow keys move around the grid.</span></div>
+        <div><span class="k"><span class="key">S</span></span><span><strong>Search</strong> by title or app name.</span></div>
+        <div><span class="k"><span class="key">W</span><span class="key">M</span><span class="key">F</span></span><span><strong>Close, minimize or full screen</strong> the selected window.</span></div>
+        <div><span class="k"><span class="key">H</span><span class="key">Q</span></span><span><strong>Hide or quit</strong> its app.</span></div>
       </div>
     </div>
   </section>
 
-  <section class="get-it" id="get">
-    <div class="wrap wide">
-      <h2>Get Snaptic.</h2>
-      <p class="lead">Build it on your Mac in about a minute. Requires macOS Sonoma or later.</p>
-      <ol class="steps">
+  <section class="block" id="get">
+    <div class="wrap">
+      <h2 class="huge"><span style="display:block">Get Snaptic.</span><span class="gray" style="display:block">It's free.</span></h2>
+      <p class="lede" style="margin-top:32px">Build it on your Mac in about a minute. Needs macOS Sonoma or later.</p>
+      <ol class="get-steps">
         <li>
           <h3>Install the tools.</h3>
           <p>Apple's free command line tools. Skip this if you have Xcode.</p>
           <div class="code"><pre><code>xcode-select --install</code></pre><button class="copy" type="button">Copy</button></div>
         </li>
         <li>
-          <h3>Build and install.</h3>
+          <h3>Build it.</h3>
           <p>Downloads the source, builds it, and puts Snaptic in Applications.</p>
           <div class="code"><pre><code>git clone https://github.com/revylfitness/snaptic.git
 cd snaptic
 INSTALL=1 ./scripts/build-app.sh</code></pre><button class="copy" type="button">Copy</button></div>
         </li>
         <li>
-          <h3>Allow access.</h3>
-          <p>In System Settings, open Privacy &amp; Security, then turn on Snaptic under Accessibility. Add Screen Recording for thumbnails.</p>
+          <h3>Say yes.</h3>
+          <p>Turn on Snaptic under Privacy &amp; Security, Accessibility. Add Screen Recording for thumbnails.</p>
           <div class="code"><pre><code>open /Applications/Snaptic.app</code></pre><button class="copy" type="button">Copy</button></div>
         </li>
       </ol>
-      <p class="after"><a class="more" href="https://github.com/revylfitness/snaptic#readme">Read the full guide</a></p>
     </div>
   </section>
 </main>
 
 <footer>
-  <div class="wrap wide">
-    <p>Snaptic is free, open-source software released under the MIT license. It needs Accessibility access to see its keyboard shortcut and switch windows, and optionally Screen Recording access to show thumbnails. It makes no network connections.</p>
-    <p>Snaptic is an independent project and is not affiliated with, endorsed by, or sponsored by Apple Inc. Mac and macOS are trademarks of Apple Inc., registered in the U.S. and other countries and regions. App names and window contents in the demo are fictional.</p>
+  <div class="wrap">
+    <p>Snaptic is free, open-source software under the MIT license. It needs Accessibility access to see its shortcut and switch windows, and optionally Screen Recording access for thumbnails. It makes no network connections.</p>
+    <p>Snaptic is an independent project, not affiliated with or endorsed by Apple Inc. Mac and macOS are trademarks of Apple Inc. App names and window contents in the demo are fictional.</p>
     <div class="links">
       <a href="https://github.com/revylfitness/snaptic">Source code</a>
       <a href="https://github.com/revylfitness/snaptic/issues">Report an issue</a>
@@ -511,7 +529,7 @@ INSTALL=1 ./scripts/build-app.sh</code></pre><button class="copy" type="button">
 
 <script>
 (function () {
-  // App icons, drawn as macOS-style squircles. The apps are fictional.
+  // ---------- Fictional apps and their windows ----------
   var ICONS = {
     writer: '<defs><linearGradient id="gw" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb340"/><stop offset="1" stop-color="#ff7a00"/></linearGradient></defs><rect width="64" height="64" rx="14" fill="url(#gw)"/><path d="M20 46l4-12 18-18 8 8-18 18Z" fill="#fff"/><path d="M20 46l4-12 8 8Z" fill="#ffd9a8"/>',
     terminal: '<defs><linearGradient id="gt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4a4a4f"/><stop offset="1" stop-color="#1c1c1e"/></linearGradient></defs><rect width="64" height="64" rx="14" fill="url(#gt)"/><rect x="8" y="10" width="48" height="44" rx="6" fill="#111"/><path d="m16 24 8 6-8 6" fill="none" stroke="#e5e5e5" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="28" y="35" width="14" height="3.5" rx="1.7" fill="#e5e5e5"/>',
@@ -521,34 +539,25 @@ INSTALL=1 ./scripts/build-app.sh</code></pre><button class="copy" type="button">
   };
   var iconCount = 0;
   function icon(name, size) {
-    // Gradient ids must be unique per copy of an icon on the page.
-    var n = ++iconCount;
+    var n = ++iconCount;   // gradient ids must be unique per copy
     var markup = ICONS[name].replace(/id="(g\w)"/g, 'id="$1-' + n + '"').replace(/url\(#(g\w)\)/g, "url(#$1-" + n + ")");
     return '<svg class="icon" width="' + size + '" height="' + size + '" viewBox="0 0 64 64" aria-hidden="true">' + markup + "</svg>";
   }
 
-  var PHOTO_COLORS = ["#f6c6a8", "#9fc6ee", "#c5dca6", "#f2d08a", "#c0b0ea", "#a7dccf", "#eaaec9", "#cfd6e2", "#f5c79c", "#b6d4f2",
-                      "#d9c4a5", "#aee0c0", "#f0b7a4", "#c6c9f2", "#e7d79a", "#a5cfe0", "#efc1df", "#bfd8b0", "#f3caa9", "#b8c1d8"];
-
+  var PHOTO = ["#f6c6a8", "#9fc6ee", "#c5dca6", "#f2d08a", "#c0b0ea", "#a7dccf", "#eaaec9", "#cfd6e2", "#f5c79c", "#b6d4f2",
+               "#d9c4a5", "#aee0c0", "#f0b7a4", "#c6c9f2", "#e7d79a", "#a5cfe0", "#efc1df", "#bfd8b0", "#f3caa9", "#b8c1d8"];
   var CONTENT = {
-    writer: '<div class="doc"><h4>Q4 plan</h4><div class="meta">Edited today at 12:48 PM</div>' +
-      '<p>Three goals for the quarter, in order of impact.</p>' +
+    writer: '<div class="doc"><h4>Q4 plan</h4><div class="meta">Edited today at 12:48 PM</div><p>Three goals for the quarter, in order of impact.</p>' +
       '<ul><li>Ship the new onboarding flow to every customer by November 14.</li><li>Cut first-week churn from 9% to under 6%.</li><li>Close two enterprise pilots before the holidays.</li></ul>' +
-      '<p>Onboarding is the lever. Most people who leave do it in their first week, so the first ten minutes have to feel effortless.</p>' +
-      '<p>Next step: review the draft flow with the team on Tuesday.</p></div>',
-    terminal: '<div class="term"><div><span class="p">~/snaptic</span> % swift build -c release</div><div class="dim">Building for production...</div><div class="dim">[97/98] Compiling Snaptic WindowManager.swift</div><div class="dim">[98/98] Linking Snaptic</div><div>Build complete! (10.30s)</div><div><span class="p">~/snaptic</span> % ./scripts/build-app.sh</div><div class="dim">==&gt; Signing (identity: -)</div><div>Done. Open build/Snaptic.app</div><div><span class="p">~/snaptic</span> % <span class="cur"></span></div></div>',
-    mail: '<div class="mail"><div class="list">' +
-      '<div class="row sel"><div class="from">Maya Chen <span>12:31 PM</span></div><div class="pre">Re: Thursday check-in</div></div>' +
-      '<div class="row"><div class="from">Jordan Ellis <span>11:02 AM</span></div><div class="pre">Updated pricing deck attached</div></div>' +
-      '<div class="row"><div class="from">Priya Nair <span>9:47 AM</span></div><div class="pre">Coffee next week?</div></div>' +
-      '<div class="row"><div class="from">Sam Okafor <span>Yesterday</span></div><div class="pre">Notes from the pilot call</div></div>' +
-      '</div><div class="read"><h5>Re: Thursday check-in</h5><div class="who">Maya Chen to me</div><p>Works for me. I\'ll bring last month\'s numbers so we can see where people drop off.</p><p>See you Thursday at 10.</p><p>Maya</p></div></div>',
-    photos: (function () { var s = '<div class="photos">'; for (var i = 0; i < 20; i++) s += '<i style="background:linear-gradient(135deg,' + PHOTO_COLORS[i] + "," + PHOTO_COLORS[(i + 7) % 20] + ')"></i>'; return s + "</div>"; })(),
+      '<p>Onboarding is the lever. Most people who leave do it in their first week, so the first ten minutes have to feel effortless.</p><p>Next step: review the draft flow with the team on Tuesday.</p></div>',
+    terminal: '<div class="term"><div><span class="p">~/snaptic</span> % swift build -c release</div><div class="d">Building for production...</div><div class="d">[97/98] Compiling Snaptic WindowManager.swift</div><div class="d">[98/98] Linking Snaptic</div><div>Build complete! (10.30s)</div><div><span class="p">~/snaptic</span> % ./scripts/build-app.sh</div><div class="d">==&gt; Signing (identity: -)</div><div>Done. Open build/Snaptic.app</div><div><span class="p">~/snaptic</span> % <span class="cur"></span></div></div>',
+    mail: '<div class="mail"><div class="list"><div class="row sel"><div class="from">Maya Chen <span>12:31 PM</span></div><div class="pre">Re: Thursday check-in</div></div>' +
+      '<div class="row"><div class="from">Jordan Ellis <span>11:02 AM</span></div><div class="pre">Updated pricing deck attached</div></div><div class="row"><div class="from">Priya Nair <span>9:47 AM</span></div><div class="pre">Coffee next week?</div></div>' +
+      '<div class="row"><div class="from">Sam Okafor <span>Yesterday</span></div><div class="pre">Notes from the pilot call</div></div></div><div class="read"><h5>Re: Thursday check-in</h5><div class="who">Maya Chen to me</div><p>Works for me. I\'ll bring last month\'s numbers so we can see where people drop off.</p><p>See you Thursday at 10.</p><p>Maya</p></div></div>',
+    photos: (function () { var s = '<div class="photos">'; for (var i = 0; i < 20; i++) s += '<i style="background:linear-gradient(135deg,' + PHOTO[i] + "," + PHOTO[(i + 7) % 20] + ')"></i>'; return s + "</div>"; })(),
     sheets: '<div class="sheet"><h4>Budget 2027</h4><table><thead><tr><th>Category</th><th class="n">Q1</th><th class="n">Q2</th><th class="n">Q3</th><th class="n">Q4</th></tr></thead><tbody>' +
-      '<tr><td>Engineering</td><td class="n">$84,000</td><td class="n">$88,000</td><td class="n">$92,000</td><td class="n">$96,000</td></tr>' +
-      '<tr><td>Marketing</td><td class="n">$22,500</td><td class="n">$26,000</td><td class="n">$31,000</td><td class="n">$28,000</td></tr>' +
-      '<tr><td>Infrastructure</td><td class="n">$9,200</td><td class="n">$9,800</td><td class="n">$10,400</td><td class="n">$11,100</td></tr>' +
-      '<tr><td>Operations</td><td class="n">$14,000</td><td class="n">$14,000</td><td class="n">$15,500</td><td class="n">$15,500</td></tr>' +
+      '<tr><td>Engineering</td><td class="n">$84,000</td><td class="n">$88,000</td><td class="n">$92,000</td><td class="n">$96,000</td></tr><tr><td>Marketing</td><td class="n">$22,500</td><td class="n">$26,000</td><td class="n">$31,000</td><td class="n">$28,000</td></tr>' +
+      '<tr><td>Infrastructure</td><td class="n">$9,200</td><td class="n">$9,800</td><td class="n">$10,400</td><td class="n">$11,100</td></tr><tr><td>Operations</td><td class="n">$14,000</td><td class="n">$14,000</td><td class="n">$15,500</td><td class="n">$15,500</td></tr>' +
       '<tr class="total"><td>Total</td><td class="n">$129,700</td><td class="n">$137,800</td><td class="n">$148,900</td><td class="n">$150,600</td></tr></tbody></table>' +
       '<div class="bars"><i style="height:62%"></i><i style="height:68%"></i><i style="height:80%"></i><i style="height:84%"></i><i style="height:73%"></i><i style="height:90%"></i><i style="height:95%"></i><i style="height:100%"></i></div></div>'
   };
@@ -562,17 +571,6 @@ INSTALL=1 ./scripts/build-app.sh</code></pre><button class="copy" type="button">
   ];
   var byId = {};
   windows.forEach(function (w) { byId[w.id] = w; });
-  var order = ["plan", "term", "mail", "photos", "budget"];   // most recently used first
-  var currentSpace = 1, holding = false, touchHold = false, selected = 0;
-
-  var screen = document.getElementById("screen");
-  var desk = document.getElementById("desk");
-  var layer = document.getElementById("windows");
-  var hud = document.getElementById("hud");
-  var dock = document.getElementById("dock");
-  var statusEl = document.getElementById("status");
-  var optKey = document.getElementById("optKey");
-  var tabKey = document.getElementById("tabKey");
 
   function windowHTML(w, style) {
     return '<div class="win' + (w.dark ? " dark" : "") + '" data-id="' + w.id + '" style="width:' + w.w + "px;height:" + w.h + "px;" + (style || "") + '">' +
@@ -580,49 +578,55 @@ INSTALL=1 ./scripts/build-app.sh</code></pre><button class="copy" type="button">
       '<div class="wbody">' + CONTENT[w.icon] + "</div></div>";
   }
 
+  function badgeFor(w, space) {
+    return w.minimized ? "Minimized" : w.space !== space ? "Desktop " + w.space : "";
+  }
+
+  // One switcher tile. style: "thumbnails" | "icons" | "titles".
+  function tileHTML(w, index, selectedIndex, style, space) {
+    var badge = badgeFor(w, space);
+    var aria = ' role="option" data-index="' + index + '" aria-selected="' + (index === selectedIndex) + '" aria-label="' + w.app + ", " + w.title + (badge ? ", " + badge : "") + '"';
+    if (style === "icons") {
+      return '<button type="button" class="tile"' + aria + ">" + icon(w.icon, 92) + '<span class="label">' + w.title + "</span></button>";
+    }
+    if (style === "titles") {
+      return '<button type="button" class="tile"' + aria + ">" + icon(w.icon, 30) + '<span class="app">' + w.app + '</span><span class="label">' + w.title + "</span></button>";
+    }
+    var scale = Math.min(186 / w.w, 120 / w.h);
+    var t = "translate(" + (-w.w * scale / 2) + "px," + (-w.h * scale / 2) + "px) scale(" + scale + ")";
+    return '<button type="button" class="tile"' + aria + '><span class="thumb"><span class="mini">' + windowHTML(w, "transform:" + t + ";") + "</span>" +
+      (badge ? '<span class="badge">' + badge + "</span>" : "") + icon(w.icon, 40) + '</span><span class="label">' + w.title + "</span></button>";
+  }
+
+  function fitStage(container, stage) {
+    stage.style.transform = "scale(" + (container.clientWidth / 1280) + ")";
+  }
+
+  // ---------- Hero: the working desktop ----------
+  var order = ["plan", "term", "mail", "photos", "budget"];   // most recently used first
+  var currentSpace = 1, holding = false, touchHold = false, selected = 0;
+  var screen = document.getElementById("screen");
+  var desk = document.getElementById("desk");
+  var layer = document.getElementById("windows");
+  var hud = document.getElementById("hud");
+  var statusEl = document.getElementById("status");
+  var optKey = document.getElementById("optKey");
+  var tabKey = document.getElementById("tabKey");
+
   function isVisible(w) { return !w.minimized && w.space === currentSpace; }
 
   function renderDesk() {
     var ids = order.filter(function (id) { return isVisible(byId[id]); });
-    // While choosing, the selected window is previewed on top, as in the app.
-    var preview = holding ? order[selected] : null;
-    if (preview && isVisible(byId[preview])) {
-      ids = [preview].concat(ids.filter(function (id) { return id !== preview; }));
-    }
-    var html = "";
-    ids.slice().reverse().forEach(function (id) {
-      var w = byId[id];
-      html += windowHTML(w, "left:" + w.x + "px;top:" + w.y + "px;");
-    });
-    layer.innerHTML = html;
-    var front = ids[0] ? byId[ids[0]] : null;
-    document.getElementById("menuApp").textContent = front ? front.app : "Finder";
+    var preview = holding ? order[selected] : null;   // previewed on top while choosing
+    if (preview && isVisible(byId[preview])) ids = [preview].concat(ids.filter(function (id) { return id !== preview; }));
+    layer.innerHTML = ids.slice().reverse().map(function (id) { var w = byId[id]; return windowHTML(w, "left:" + w.x + "px;top:" + w.y + "px;"); }).join("");
+    document.getElementById("menuApp").textContent = ids[0] ? byId[ids[0]].app : "Finder";
     document.getElementById("spaceLabel").textContent = "Desktop " + currentSpace;
   }
 
-  function renderDock() {
-    dock.innerHTML = windows.map(function (w) {
-      return '<span class="slot running">' + icon(w.icon, 50) + "</span>";
-    }).join("");
-  }
-
-  function renderHud() {
-    var html = "";
-    order.forEach(function (id, i) {
-      var w = byId[id];
-      var badge = w.minimized ? "Minimized" : w.space !== currentSpace ? "Desktop " + w.space : "";
-      var scale = Math.min(186 / w.w, 120 / w.h);
-      var offset = "translate(" + (-w.w * scale / 2) + "px," + (-w.h * scale / 2) + "px) scale(" + scale + ")";
-      html += '<button type="button" class="tile" role="option" data-index="' + i + '" aria-selected="' + (i === selected) + '" aria-label="' + w.app + ", " + w.title + (badge ? ", " + badge : "") + '">' +
-        '<span class="thumb"><span class="mini">' + windowHTML(w, "transform:" + offset + ";") + "</span>" +
-        (badge ? '<span class="badge">' + badge + "</span>" : "") + icon(w.icon, 40) + "</span>" +
-        '<span class="label">' + w.title + "</span></button>";
-    });
-    hud.innerHTML = html;
-  }
-
-  function fit() {
-    desk.style.transform = "scale(" + (screen.clientWidth / 1280) + ")";
+  function renderHud(animate) {
+    hud.innerHTML = '<div class="tiles">' + order.map(function (id, i) { return tileHTML(byId[id], i, selected, "thumbnails", currentSpace); }).join("") + "</div>";
+    hud.classList.toggle("pop", !!animate);
   }
 
   function announce() {
@@ -633,7 +637,7 @@ INSTALL=1 ./scripts/build-app.sh</code></pre><button class="copy" type="button">
   function open(reverse) {
     holding = true;
     selected = reverse ? order.length - 1 : 1;
-    renderHud();
+    renderHud(true);
     hud.hidden = false;
     renderDesk();
     announce();
@@ -641,15 +645,14 @@ INSTALL=1 ./scripts/build-app.sh</code></pre><button class="copy" type="button">
 
   function step(delta) {
     selected = (selected + delta + order.length) % order.length;
-    renderHud();
+    renderHud(false);
     renderDesk();
     announce();
   }
 
   function commit() {
     if (!holding) return;
-    var id = order[selected], w = byId[id];
-    var note = "";
+    var id = order[selected], w = byId[id], note = "";
     if (w.minimized) { w.minimized = false; note = " Restored from the Dock."; }
     if (w.space !== currentSpace) { currentSpace = w.space; note += " Moved to Desktop " + currentSpace + "."; }
     order.splice(selected, 1);
@@ -686,20 +689,15 @@ INSTALL=1 ./scripts/build-app.sh</code></pre><button class="copy" type="button">
     else if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
     else if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
   });
-  document.addEventListener("keyup", function (e) {
-    if (e.key === "Alt" && holding && !touchHold) commit();
-  });
+  document.addEventListener("keyup", function (e) { if (e.key === "Alt" && holding && !touchHold) commit(); });
   window.addEventListener("blur", function () { if (holding && !touchHold) cancel(); });
 
-  // On-screen keys: tap ⌥ to hold it, ⇥ to move, ⌥ again (or a window) to switch.
   optKey.addEventListener("click", function () {
     if (holding) { commit(); return; }
     setTouch(true);
     open(false);
   });
-  tabKey.addEventListener("click", function () {
-    if (!holding) { setTouch(true); open(false); } else step(1);
-  });
+  tabKey.addEventListener("click", function () { if (!holding) { setTouch(true); open(false); } else step(1); });
   hud.addEventListener("click", function (e) {
     var tile = e.target.closest(".tile");
     if (!tile) return;
@@ -707,8 +705,59 @@ INSTALL=1 ./scripts/build-app.sh</code></pre><button class="copy" type="button">
     commit();
   });
 
-  document.getElementById("resultIcon").innerHTML = icon("sheets", 28);
+  document.getElementById("dock").innerHTML = windows.map(function (w) { return '<span class="slot">' + icon(w.icon, 50) + "</span>"; }).join("");
 
+  // ---------- Scroll story: one stage, five states ----------
+  var storyStage = document.getElementById("storyStage");
+  var viewer = document.getElementById("viewer");
+  var dots = document.querySelectorAll("#dots i");
+  var storyOrder = ["plan", "term", "mail", "photos", "budget"];
+  var searchIcon = '<svg viewBox="0 0 17 17"><circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m11 11 4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+
+  function storyHTML(stepIndex) {
+    var list = storyOrder.map(function (id) { return byId[id]; });
+    var tiles = function (items, sel, style) {
+      return '<div class="tiles">' + items.map(function (w, i) { return tileHTML(w, i, sel, style, 1); }).join("") + "</div>";
+    };
+    var original = { minimized: byId.photos.minimized, space: byId.budget.space };
+    // The story always shows the starting state, whatever the hero demo did.
+    byId.photos.minimized = true; byId.budget.space = 2;
+    var html;
+    if (stepIndex === 0) {
+      html = '<div class="hud">' + tiles(list, 0, "thumbnails") + "</div>";
+    } else if (stepIndex === 1) {
+      html = '<div class="stage-chip"><kbd>⌥</kbd><kbd>⇥</kbd><span>Back to Terminal</span></div><div class="hud">' + tiles(list, 1, "thumbnails") + "</div>";
+    } else if (stepIndex === 2) {
+      html = '<div class="hud"><div class="search">' + searchIcon + '<span>budg</span><span class="caret"></span></div>' + tiles([byId.budget], 0, "thumbnails") + "</div>";
+    } else if (stepIndex === 3) {
+      html = '<div class="hud">' + tiles(list, 2, "thumbnails") +
+        '<div class="actions"><span><kbd>W</kbd>Close</span><span><kbd>M</kbd>Minimize</span><span><kbd>F</kbd>Full screen</span><span><kbd>H</kbd>Hide</span><span><kbd>Q</kbd>Quit</span></div></div>';
+    } else {
+      html = '<div class="hud icons" style="top:30%">' + tiles(list, 1, "icons") + '</div><div class="hud titles" style="top:72%">' + tiles(list.slice(0, 3), 1, "titles") + "</div>";
+    }
+    byId.photos.minimized = original.minimized; byId.budget.space = original.space;
+    return html;
+  }
+
+  var currentStep = -1;
+  function showStep(n) {
+    if (n === currentStep) return;
+    currentStep = n;
+    storyStage.innerHTML = storyHTML(n);
+    document.querySelectorAll(".step").forEach(function (el) { el.classList.toggle("on", Number(el.getAttribute("data-step")) === n); });
+    dots.forEach(function (d, i) { d.classList.toggle("on", i === n); });
+  }
+
+  if ("IntersectionObserver" in window) {
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) showStep(Number(entry.target.getAttribute("data-step")));
+      });
+    }, { rootMargin: "-45% 0px -45% 0px" });
+    document.querySelectorAll(".step").forEach(function (el) { observer.observe(el); });
+  }
+
+  // ---------- Copy buttons ----------
   document.querySelectorAll(".copy").forEach(function (button) {
     button.addEventListener("click", function () {
       var code = button.parentNode.querySelector("code");
@@ -721,19 +770,25 @@ INSTALL=1 ./scripts/build-app.sh</code></pre><button class="copy" type="button">
         sel.addRange(range);
         done("Selected");
       }
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(code.textContent).then(function () { done("Copied"); }, selectFallback);
-      } else {
-        selectFallback();
-      }
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(code.textContent).then(function () { done("Copied"); }, selectFallback);
+      else selectFallback();
     });
   });
 
-  renderDock();
+  function fitAll() {
+    fitStage(screen, desk);
+    fitStage(viewer, storyStage);
+  }
   renderDesk();
-  fit();
-  if (window.ResizeObserver) new ResizeObserver(fit).observe(screen);
-  else window.addEventListener("resize", fit);
+  showStep(0);
+  fitAll();
+  if (window.ResizeObserver) {
+    var ro = new ResizeObserver(fitAll);
+    ro.observe(screen);
+    ro.observe(viewer);
+  } else {
+    window.addEventListener("resize", fitAll);
+  }
 })();
 </script>
 </body>
