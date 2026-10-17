@@ -10,7 +10,8 @@ final class SelfTestProbeTests: XCTestCase {
             .deletingLastPathComponent()
         let binary = root.appendingPathComponent(".build/debug/Snaptic").path
         guard FileManager.default.isExecutableFile(atPath: binary) else {
-            throw XCTSkip("no debug Snaptic binary at \(binary)")
+            XCTFail("no debug Snaptic binary at \(binary)")
+            return
         }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")

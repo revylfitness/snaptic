@@ -2,10 +2,12 @@
 # Helper fd-inheritance self-test (PLAN §14.1, R4C §4.3).
 #
 #   scripts/selftest-helpers.sh <path to the Snaptic executable>
+#   SELFTEST_ARCH=x86_64 scripts/selftest-helpers.sh <universal executable>   # under Rosetta
 #
 # Runs `Snaptic --selftest-helpers <token-file>` with a fresh token. The app spawns two
 # helper children through HelperSpawner, prints "child <pid> <startTime>" for each and
-# SIGKILLs itself (exit 137 is expected). Both children must then exit within 3 s: they
+# SIGKILLs itself (exit 137 is expected) once both children reported that they passed
+# HelperPrologue (fd closing, parent identity check). Both children must then exit within 3 s: they
 # only see EOF on stdin if no pipe end leaked into a sibling or stayed open in the parent.
 # Command substitution also waits for EOF on our pipe, so a child that inherited stdout
 # makes the `timeout` fire, which fails the test too.
@@ -13,6 +15,11 @@ set -uo pipefail
 
 BIN=${1:?usage: selftest-helpers.sh <Snaptic executable>}
 [ -x "$BIN" ] || { echo "selftest: $BIN is not executable" >&2; exit 1; }
+run=("$BIN")
+if [ -n "${SELFTEST_ARCH:-}" ]; then
+  # arch execs the binary in place, so the pid that SIGKILLs itself is still ours.
+  run=(/usr/bin/arch "-$SELFTEST_ARCH" "$BIN")
+fi
 
 dir=$(mktemp -d)
 trap 'rm -rf "$dir"' EXIT
@@ -30,7 +37,7 @@ with_timeout() {
 }
 
 start=$(date +%s)
-out=$(SNAPTIC_SELFTEST_TOKEN="$token" with_timeout 10 "$BIN" --selftest-helpers "$dir/token")
+out=$(SNAPTIC_SELFTEST_TOKEN="$token" with_timeout 15 "${run[@]}" --selftest-helpers "$dir/token")
 status=$?
 elapsed=$(( $(date +%s) - start ))
 echo "selftest: exit $status after ${elapsed}s"
