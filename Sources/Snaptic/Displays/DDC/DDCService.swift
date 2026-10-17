@@ -69,7 +69,6 @@ final class DDCService: @unchecked Sendable {
 
     // Main thread only.
     private var sinks: [AnyCancellable] = []
-    private var observers: [NSObjectProtocol] = []
     private var lifetime: Lifetime?
     private var probing: Set<DisplayKey> = []
 
@@ -509,27 +508,29 @@ extension DDCService: DisplayServiceLifecycle {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.updateTargets() } }
             .store(in: &sinks)
-        let ws = NSWorkspace.shared.notificationCenter
-        for name in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification] {
-            observers.append(ws.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.setAsleep(true) }
-            })
+        // Sleep and wake from B's session gate (one source of truth for session rules, PLAN §4.9).
+        context.sessionGate.observeEvents(lifetime: lifetime) { [weak self] event in
+            switch event {
+            case .willSleep, .screensDidSleep:
+                self?.setAsleep(true)
+            case .didWake, .screensDidWake:
+                self?.setAsleep(false)
+                self?.holdWrites(for: DDCService.wakeHold, wake: true)
+            default:
+                break
+            }
         }
-        for name in [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification] {
-            observers.append(ws.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.setAsleep(false)
-                    self?.holdWrites(for: DDCService.wakeHold, wake: true)
-                }
-            })
+        if context.sessionGate.isAsleep || context.sessionGate.screensAsleep { setAsleep(true) }
+        if let wake = context.sessionGate.lastWakeUptime {
+            // Started shortly after a wake: keep the wake hold and backoff window.
+            let elapsed = UInt64(max(0, SessionGate.uptime() - wake) * 1e9)
+            if elapsed < DDCService.wakeHold { holdWrites(for: DDCService.wakeHold - elapsed, wake: false) }
         }
         updateTargets()
     }
 
     @MainActor func deactivate() {
         sinks.removeAll()
-        observers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
-        observers.removeAll()
         lifetime = nil
         probing.removeAll()
         locked {

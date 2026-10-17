@@ -183,6 +183,7 @@ enum PerDisplayEdit {
     private var menuItems: BrightnessMenuItems?
     private var sinks: [AnyCancellable] = []
     private var askedDarker: Set<DisplayKey> = []
+    private var screensaverObservers: [NSObjectProtocol] = []
 
     init() {}
 
@@ -217,11 +218,13 @@ enum PerDisplayEdit {
         context.brightness.changeEvents
             .sink { [weak self] change in self?.brightnessChanged(change) }
             .store(in: &sinks)
+        observeScreensaver()
         context.brightness.reevaluate()
     }
 
     func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) {
         self.effective = effective
+        if !effective.contains(.dimOnLock) { context?.brightness.setLockDim(nil) }
         context?.brightness.reevaluate()
         context?.requestMenuRebuild()
     }
@@ -240,6 +243,10 @@ enum PerDisplayEdit {
 
     func stop() {
         sinks.removeAll()
+        let dnc = DistributedNotificationCenter.default()
+        screensaverObservers.forEach { dnc.removeObserver($0) }
+        screensaverObservers.removeAll()
+        context?.brightness.setLockDim(nil)
         menuItems = nil
         lifetime = nil
         context = nil
@@ -258,6 +265,26 @@ enum PerDisplayEdit {
     func sessionDidResume() {
         // The session gate already re-checked the session dictionary (on console, unlocked).
         context?.brightness.setLockDim(nil)
+    }
+
+    /// Dim on lock also covers the screensaver. Start only dims; stop un-dims only after a
+    /// fresh session check (PLAN §4.9: notifications never resume on their own).
+    private func observeScreensaver() {
+        let dnc = DistributedNotificationCenter.default()
+        let start = Notification.Name("com.apple.screensaver.didstart")
+        let stop = Notification.Name("com.apple.screensaver.didstop")
+        screensaverObservers.append(dnc.addObserver(forName: start, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let ctx = self.context, self.effective.contains(.dimOnLock) else { return }
+                ctx.brightness.setLockDim(ctx.config.value.brightness.dimOnLockLevel)
+            }
+        })
+        screensaverObservers.append(dnc.addObserver(forName: stop, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let ctx = self.context, ctx.sessionGate.isOpen, ctx.sessionGate.sessionAllowsResume() else { return }
+                ctx.brightness.setLockDim(nil)
+            }
+        })
     }
 
     // MARK: Changes
