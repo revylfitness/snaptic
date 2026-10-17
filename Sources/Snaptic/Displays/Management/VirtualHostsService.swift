@@ -229,6 +229,13 @@ import SnapticShims
         EventLog.shared.record(.virtualDisplay, "Virtual display removed")
     }
 
+    /// Synchronous variant for stop paths: shutdown now, SIGKILL after 1 s if still running.
+    func destroyNow(specID: StableID) {
+        guard let host = hosts[specID] else { return }
+        hosts[specID] = nil
+        shutdownNow(host)
+    }
+
     /// Waits until a newly created display is online and the registry lists it.
     func waitUntilOnline(_ displayID: UInt32, timeout: Double = 3) async -> Bool {
         var waited = 0.0
