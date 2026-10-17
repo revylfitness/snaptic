@@ -20,8 +20,6 @@ import SnapticKit
     private var states: [DisplayKey: SyncTargetState] = [:]
     private var lastSource: Double?
     private var trailing: [DisplayKey: DispatchWorkItem] = [:]
-    /// Set by KeysController for one change (⇧ held).
-    private var skipUntil: TimeInterval = 0
 
     init() {}
 
@@ -68,9 +66,6 @@ import SnapticKit
         context = nil
     }
 
-    /// The next brightness change on the source doesn't sync (⇧ held on a key press).
-    func skipNextChange() { skipUntil = ProcessInfo.processInfo.systemUptime + 0.5 }
-
     var isPaused: Bool { context?.config.value.brightness.syncPaused ?? false }
 
     @discardableResult
@@ -106,7 +101,7 @@ import SnapticKit
             lastSource = change.value
             return
         }
-        if change.source == .restore || now < skipUntil {
+        if change.source == .restore || now < context.brightness.suppressSyncUntil {
             lastSource = change.value
             return
         }

@@ -76,6 +76,9 @@ enum HostInfo {
     /// Displays held at the dim-on-lock level (key → level).
     private var lockDim: [DisplayKey: Double] = [:]
 
+    /// Brightness changes before this uptime don't drive sync (⇧ held on a key press).
+    var suppressSyncUntil: TimeInterval = 0
+
     init() {}
 
     var changes: AnyPublisher<DisplayKey, Never> { subject.map(\.key).eraseToAnyPublisher() }
