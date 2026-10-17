@@ -13,14 +13,14 @@ NS_ASSUME_NONNULL_BEGIN
 + (BOOL)isAvailable;
 
 /// Whether Night Shift is on now; nil if it can't be read.
-+ (nullable NSNumber *)isEnabled;
++ (nullable NSNumber *)isEnabled NS_SWIFT_NAME(enabledState());
 
-+ (BOOL)setEnabled:(BOOL)enabled;
++ (BOOL)setEnabled:(BOOL)enabled NS_SWIFT_NAME(setEnabled(_:));
 
 /// Strength 0…1; nil if it can't be read.
-+ (nullable NSNumber *)strength;
++ (nullable NSNumber *)strength NS_SWIFT_NAME(currentStrength());
 
-+ (BOOL)setStrength:(float)strength;
++ (BOOL)setStrength:(float)strength NS_SWIFT_NAME(setStrength(_:));
 
 @end
 

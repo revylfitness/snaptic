@@ -21,7 +21,8 @@ typedef NS_ENUM(int64_t, SNOSDImage) {
         onDisplay:(uint32_t)displayID
            filled:(uint32_t)filled
             total:(uint32_t)total
-           locked:(BOOL)locked;
+           locked:(BOOL)locked
+    NS_SWIFT_NAME(show(image:display:filled:total:locked:));
 
 @end
 

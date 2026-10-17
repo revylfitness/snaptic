@@ -45,7 +45,8 @@ typedef NS_ENUM(NSInteger, SNDDCTransportKind) {
 
 /// The DDC endpoint of an online display (CGDirectDisplayID), or nil (built-in panels,
 /// docks without DDC, AirPlay, virtual displays).
-+ (nullable SNDDCEndpoint *)endpointForDisplay:(uint32_t)displayID error:(NSError **)error;
++ (nullable SNDDCEndpoint *)endpointForDisplay:(uint32_t)displayID error:(NSError **)error
+    NS_SWIFT_NAME(endpoint(forDisplay:));
 
 /// Sends `request` and, when `replyLength` > 0, reads that many reply bytes after waiting
 /// `replyDelayMicroseconds`. `dataAddress` is 0x51 (or 0x50 for LG alternate input).
@@ -55,7 +56,8 @@ typedef NS_ENUM(NSInteger, SNDDCTransportKind) {
                   dataAddress:(uint8_t)dataAddress
                   replyLength:(NSUInteger)replyLength
        replyDelayMicroseconds:(uint32_t)replyDelayMicroseconds
-                        error:(NSError **)error;
+                        error:(NSError **)error
+    NS_SWIFT_NAME(transact(_:endpoint:dataAddress:replyLength:replyDelayMicroseconds:));
 
 @end
 
