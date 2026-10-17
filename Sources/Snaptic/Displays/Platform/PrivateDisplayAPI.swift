@@ -144,7 +144,7 @@ enum PrivateSymbolResolver {
     }
 }
 
-@MainActor final class PrivateDisplayAPI {
+@MainActor final class PrivateDisplayAPI: DiagnosticsContributor {
     enum State: Equatable {
         case available
         case missing
@@ -247,6 +247,8 @@ enum PrivateSymbolResolver {
         }
         return result
     }
+
+    func diagnostics() -> [(String, String)] { diagnosticsRows() }
 
     /// Diagnostics rows: symbol name and state (no addresses).
     func diagnosticsRows() -> [(String, String)] {

@@ -71,6 +71,7 @@ fileprivate extension DisplayMenuItemID {
         }
         context.menus.register(self, lifetime: lifetime)
         context.diagnostics.register(self, section: L("Restore All Displays"), lifetime: lifetime)
+        context.diagnostics.register(context.privateAPI, section: L("Private interfaces"), lifetime: lifetime)
 
         context.runtime.$effectiveFeatures
             .receive(on: DispatchQueue.main)

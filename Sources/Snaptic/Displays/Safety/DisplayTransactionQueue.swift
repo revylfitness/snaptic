@@ -179,7 +179,7 @@ import SnapticShims
         guard let before = ctx.registry.snapshot() else { return .failed(L("Displays are turned off.")) }
 
         // Captured displays (games, presentations) are never reconfigured (PLAN §4.4).
-        for id in Set(req.changes.map(\.displayID)) where CGDisplayIsCaptured(id) != 0 {
+        for id in Set(req.changes.map(\.displayID)) where Self.isCaptured(id) {
             return .failed(L("Another app has taken over this display."))
         }
         let changes = req.changes.filter { !Self.isAlreadyApplied($0, in: before) }
@@ -529,6 +529,24 @@ import SnapticShims
     private static func isPhysicalMode(_ c: DisplayChange, ctx: DisplaysContext) -> Bool {
         guard case .mode(let id, _) = c else { return false }
         return ctx.registry.cachedSnapshot()?.entry(id)?.isPhysical ?? true
+    }
+
+    /// A display is captured when another process covers it with a window at or above the
+    /// shielding level (CGDisplayIsCaptured is unavailable in the SDK).
+    static func isCaptured(_ id: UInt32) -> Bool {
+        let bounds = CGDisplayBounds(id)
+        guard bounds.width > 0, let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
+                as? [[String: Any]] else { return false }
+        let shield = Int(CGShieldingWindowLevel())
+        let me = getpid()
+        for w in list.prefix(1000) {
+            guard let layer = (w[kCGWindowLayer as String] as? NSNumber)?.intValue, layer >= shield,
+                  let pid = (w[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value, pid != me,
+                  let b = w[kCGWindowBounds as String] as? [String: Any],
+                  let rect = CGRect(dictionaryRepresentation: b as CFDictionary) else { continue }
+            if rect.contains(bounds) { return true }
+        }
+        return false
     }
 
     private static func monitorPanelGroup(_ c: DisplayChange) -> String {
