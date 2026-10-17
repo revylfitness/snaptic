@@ -75,7 +75,7 @@ final class KitBackupTests: XCTestCase {
     }
 
     func testSensitiveNames() {
-        for name in ["salt", "displaySalt", "trustStamp", "ddcUnlocks", "allowWithoutAsking", "apiToken"] {
+        for name in ["salt", "displaySalt", "trustStamp", "ddcUnlocks", "allowWithoutAsking", "apiToken", "preConfirmAllowed"] {
             XCTAssertTrue(KitBackup.isSensitive(name), name)
         }
         for name in ["brightness", "step", "features", "names"] { XCTAssertFalse(KitBackup.isSensitive(name), name) }

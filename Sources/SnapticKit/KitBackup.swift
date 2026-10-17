@@ -49,7 +49,9 @@ package enum KitBackup {
     /// Keys removed at any depth (case-insensitive substrings): the DisplayKey salt, DDC
     /// unlocks, "Allow without asking" flags, preset trust and anything secret. Teams name
     /// such fields with one of these words.
-    package static let sensitiveKeyFragments = ["salt", "trust", "unlock", "allowwithoutasking", "secret", "token"]
+    package static let sensitiveKeyFragments = [
+        "salt", "trust", "unlock", "allowwithoutasking", "preconfirmallow", "secret", "token",
+    ]
 
     package static func isSensitive(_ key: String) -> Bool {
         let lowered = key.lowercased()
