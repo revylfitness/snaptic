@@ -75,8 +75,22 @@ final class DDCService: @unchecked Sendable {
 
     /// Called on main when a display's working framing was learned (to persist it).
     var onFramingLearned: (@MainActor (DisplayKey, DDCFraming) -> Void)?
-    /// Called on main when a display's link status or values changed.
-    var onChange: (@MainActor (DisplayKey) -> Void)?
+    /// Observers of link status and value changes (main thread).
+    @MainActor private var changeObservers: [(UInt64, @MainActor (DisplayKey) -> Void)] = []
+    @MainActor private var observerSerial: UInt64 = 0
+
+    /// Calls `handler` on main whenever a display's link status or values changed, until `lifetime` ends.
+    @MainActor func observeChanges(lifetime: Lifetime, _ handler: @escaping @MainActor (DisplayKey) -> Void) {
+        guard !lifetime.isEnded else { return }
+        observerSerial &+= 1
+        let mine = observerSerial
+        changeObservers.append((mine, handler))
+        lifetime.onEnd { [weak self] in self?.changeObservers.removeAll { $0.0 == mine } }
+    }
+
+    @MainActor private func notifyChange(_ key: DisplayKey) {
+        for (_, handler) in changeObservers { handler(key) }
+    }
 
     static let interactiveInterval: UInt64 = 200_000_000          // ≤ 5 writes/s per display
     static let wakeHold: UInt64 = 3_000_000_000
@@ -140,7 +154,7 @@ final class DDCService: @unchecked Sendable {
             }
         }
         if result != nil || linkStatus(key) != .unknown {
-            await MainActor.run { [weak self] in self?.onChange?(key) }
+            await MainActor.run { [weak self] in self?.notifyChange(key) }
         }
         return result
     }
@@ -205,7 +219,7 @@ final class DDCService: @unchecked Sendable {
                 continuation.resume(returning: parsed)
             }
         }
-        await MainActor.run { [weak self] in self?.onChange?(key) }
+        await MainActor.run { [weak self] in self?.notifyChange(key) }
         return result
     }
 
@@ -232,7 +246,7 @@ final class DDCService: @unchecked Sendable {
                 self.enqueue(Slot(key: key, code: vcp, dataAddress: dataAddress), value: value, continuation: continuation)
             }
         }
-        await MainActor.run { [weak self] in self?.onChange?(key) }
+        await MainActor.run { [weak self] in self?.notifyChange(key) }
         return ok
     }
 

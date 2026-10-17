@@ -96,7 +96,7 @@ enum HostInfo {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.reevaluate() } }
             .store(in: &sinks)
-        context.ddc.onChange = { [weak self] key in self?.hardwareInfoChanged(key) }
+        context.ddc.observeChanges(lifetime: lifetime) { [weak self] key in self?.hardwareInfoChanged(key) }
         context.appleBrightness.onChange = { [weak self] key in self?.hardwareInfoChanged(key) }
         context.gamma.onGiveUp = { [weak self] key in
             guard let self, let context = self.context else { return }
@@ -133,7 +133,6 @@ enum HostInfo {
         panelRaise = false
         if let context {
             for state in states.values { if let token = state.overlay { context.overlays.remove(token) } }
-            if context.ddc.onChange != nil { context.ddc.onChange = nil }
             context.appleBrightness.onChange = nil
             context.gamma.onGiveUp = nil
             context.gamma.onAllowedChange = nil
