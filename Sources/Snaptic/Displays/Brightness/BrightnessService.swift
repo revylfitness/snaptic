@@ -96,6 +96,7 @@ enum HostInfo {
                                 lifetime: self.lifetime)
             self.reevaluate(key)
         }
+        context.gamma.onAllowedChange = { [weak self] in self?.reevaluate() }
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.didWake() }
@@ -123,6 +124,7 @@ enum HostInfo {
             if context.ddc.onChange != nil { context.ddc.onChange = nil }
             context.appleBrightness.onChange = nil
             context.gamma.onGiveUp = nil
+            context.gamma.onAllowedChange = nil
             for key in states.keys { context.gamma.setSoftwareBrightness(1, for: key) }
         }
         states.removeAll()

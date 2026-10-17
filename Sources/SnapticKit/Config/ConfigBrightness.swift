@@ -68,6 +68,8 @@ package struct BrightnessConfig: ConfigModel {
     package var syncMode: SyncMode
     /// Follow changes made outside Snaptic (for DDC sources this needs readback).
     package var syncExternalChanges: Bool
+    /// Sync switched off from the menu or a shortcut (the feature stays on).
+    package var syncPaused: Bool
     /// XDR user maximum (1.01…4.0, default 1.6).
     package var xdrMaxScale: Double
     package var xdrMethod: XDRMethod
@@ -95,6 +97,7 @@ package struct BrightnessConfig: ConfigModel {
         syncSource = nil
         syncMode = .absolute
         syncExternalChanges = true
+        syncPaused = false
         xdrMaxScale = 1.6
         xdrMethod = .automatic
         xdrBatteryFloor = 0.2
@@ -104,7 +107,7 @@ package struct BrightnessConfig: ConfigModel {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case restoreMode, smoothTransitions, dimOnLockLevel, syncSource, syncMode, syncExternalChanges, xdrMaxScale,
+        case restoreMode, smoothTransitions, dimOnLockLevel, syncSource, syncMode, syncExternalChanges, syncPaused, xdrMaxScale,
              xdrMethod, xdrBatteryFloor, xdrPauseOnLowPower, xdrDetent, showNits
     }
 
@@ -117,6 +120,7 @@ package struct BrightnessConfig: ConfigModel {
         syncSource = c.lossy(.syncSource, nil as DisplayKey?)
         syncMode = c.lossy(.syncMode, d.syncMode)
         syncExternalChanges = c.lossy(.syncExternalChanges, d.syncExternalChanges)
+        syncPaused = c.lossy(.syncPaused, false)
         xdrMaxScale = c.lossy(.xdrMaxScale, d.xdrMaxScale)
         xdrMethod = c.lossy(.xdrMethod, d.xdrMethod)
         xdrBatteryFloor = c.lossy(.xdrBatteryFloor, d.xdrBatteryFloor)

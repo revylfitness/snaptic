@@ -11,7 +11,7 @@ import SnapticKit
 /// verdict; key-ups always pass and orphan repeats are ignored (macOS 27 Control Center
 /// fights otherwise). The decision reads only the lock-protected policy closure.
 final class MediaKeyTap: @unchecked Sendable {
-    typealias Policy = @Sendable (MediaKeyService.Key, UInt64) -> Bool
+    typealias Policy = @Sendable (MediaKeyService.Key, UInt64, CGPoint) -> MediaKeyService.Verdict
     typealias Delivery = @Sendable (MediaKeyService.Key, UInt64, Bool) -> Void
 
     /// One tap thread's state; retained by the thread for its whole life.
@@ -21,7 +21,7 @@ final class MediaKeyTap: @unchecked Sendable {
         /// Tap thread only.
         var port: CFMachPort?
         /// Tap thread only: verdict for the press in progress, per key.
-        var verdicts: [MediaKeyService.Key: Bool] = [:]
+        var verdicts: [MediaKeyService.Key: MediaKeyService.Verdict] = [:]
         /// Tap thread only: re-enable times for the circuit breaker.
         var reenables: [TimeInterval] = []
 
@@ -163,13 +163,13 @@ final class MediaKeyTap: @unchecked Sendable {
         let flags = event.flags.rawValue
         if isRepeat {
             guard let verdict = session.verdicts[key] else { return false }   // orphan repeat: ignore
-            if verdict { delivery(key, flags, true) }
-            return verdict
+            if verdict != .pass { delivery(key, flags, true) }
+            return verdict == .handle
         }
-        let verdict = policy(key, flags)
+        let verdict = policy(key, flags, event.location)
         session.verdicts[key] = verdict
-        if verdict { delivery(key, flags, false) }
-        return verdict
+        if verdict != .pass { delivery(key, flags, false) }
+        return verdict == .handle
     }
 
     fileprivate func handleDisabled(session: Session) {

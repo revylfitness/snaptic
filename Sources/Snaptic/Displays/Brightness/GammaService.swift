@@ -44,8 +44,25 @@ import SnapticShims
     private var reapplyWork: DispatchWorkItem?
 
     /// Gamma writes are refused while false (custom-profile safeguard, kill switch).
-    var isAllowed = true {
-        didSet { if !isAllowed && oldValue { releaseAll() } }
+    private(set) var isAllowed = true {
+        didSet {
+            guard isAllowed != oldValue else { return }
+            if !isAllowed { releaseAll() }
+            onAllowedChange?()
+        }
+    }
+    /// True while a custom ColorSync profile blocks gamma (and the user didn't override).
+    private(set) var blockedByCustomProfile = false
+    /// Called when `isAllowed` changes (BrightnessService re-chooses methods).
+    var onAllowedChange: (@MainActor () -> Void)?
+
+    /// The custom-profile safeguard (PLAN §6.1, parity §5.8): while any display uses a
+    /// custom profile, gamma is off on all displays unless the user overrides it.
+    func refreshSafeguard() {
+        guard let context else { return }
+        let custom = context.registry.displays.contains { $0.isOnline && SNColorSync.hasCustomProfile(forDisplay: $0.hardwareID) }
+        blockedByCustomProfile = custom && !context.config.value.color.allowGammaWithCustomProfile
+        isAllowed = !blockedByCustomProfile
     }
     /// Called when gamma gave up on a display (3 fights in 60 s): suggest the overlay method.
     var onGiveUp: (@MainActor (DisplayKey) -> Void)?
@@ -83,8 +100,19 @@ import SnapticShims
         let dnc = DistributedNotificationCenter.default()
         let profileChanged = Notification.Name(SNColorSync.displayProfilesNotificationName())
         observers.append((dnc, dnc.addObserver(forName: profileChanged, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.scheduleReapply(recapture: true, delay: 0.3) }
+            MainActor.assumeIsolated {
+                self?.refreshSafeguard()
+                self?.scheduleReapply(recapture: true, delay: 0.3)
+            }
         }))
+        context.config.$value
+            .map(\.color.allowGammaWithCustomProfile)
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.refreshSafeguard() } }
+            .store(in: &sinks)
+        refreshSafeguard()
     }
 
     func deactivate() {
@@ -96,6 +124,9 @@ import SnapticShims
         restoreAll()
         nudgeWindows.values.forEach { $0.orderOut(nil) }
         nudgeWindows.removeAll()
+        onAllowedChange = nil
+        onGiveUp = nil
+        isAllowed = true
         context = nil
     }
 

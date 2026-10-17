@@ -13,9 +13,20 @@ import SnapticKit
 
     enum Key: Sendable, Hashable { case brightnessUp, brightnessDown, volumeUp, volumeDown, mute }
 
-    /// Decides on the tap thread whether to swallow a key; must read only lock-protected
-    /// snapshot state (never hop to main). Set by KeysController.
-    var swallowPolicy: (@Sendable (Key, UInt64) -> Bool)?
+    /// What the tap does with a press (decided once, on the initial key-down).
+    enum Verdict: Sendable, Equatable {
+        /// macOS handles it; Snaptic doesn't act.
+        case pass
+        /// Snaptic acts and swallows it.
+        case handle
+        /// Snaptic acts and macOS also handles it ("also let macOS handle it").
+        case handleAndPass
+    }
+
+    /// Decides on the tap thread (key, modifier flags, pointer location in CG global
+    /// coordinates); must read only lock-protected snapshot state (never hop to main).
+    /// Set by KeysController.
+    var swallowPolicy: (@Sendable (Key, UInt64, CGPoint) -> Verdict)?
     /// Swallowed keys are delivered here, on main (modifier flags raw value).
     var onKey: (@MainActor (Key, UInt64) -> Void)?
     /// Swallowed key repeats (same verdict as their press).
