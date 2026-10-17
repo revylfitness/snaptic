@@ -1,0 +1,65 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+# Least privilege by default.
+permissions:
+  contents: read
+
+jobs:
+  # Runs the repository's own code, so it only ever gets read access.
+  build:
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      # Actions are pinned to full commit SHAs so a moved tag can't change what runs.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Toolchain
+        run: swift --version
+
+      - name: Build universal app
+        run: ARCHS="arm64 x86_64" ./scripts/build-app.sh
+
+      - name: Package
+        run: ditto -c -k --keepParent build/Snaptic.app build/Snaptic.zip
+
+      # Only pushes publish a downloadable app; pull requests (including from
+      # forks) and manual runs only prove the code compiles.
+      - name: Upload app
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Snaptic
+          path: build/Snaptic.zip
+
+  # Signs provenance for builds of main and release tags only. It never runs
+  # repository code, so only this job holds the signing permissions.
+  attest:
+    needs: build
+    # Attestations are only available for public repositories on standard plans.
+    if: >-
+      github.event_name == 'push' &&
+      github.event.repository.visibility == 'public' &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: Snaptic
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: Snaptic.zip
