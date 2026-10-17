@@ -188,8 +188,8 @@ enum HostInfo {
     var isDimToBlackActive: Bool {
         guard let context else { return false }
         return states.contains { key, s in
-            guard allowsBlack(key), let sc = scale(for: key, state: s, context: context) else { return false }
-            return sc.split(s.position).software < BrightnessConfig.dimFloor
+            guard allowsBlack(key) else { return false }
+            return scale(for: key, state: s, context: context).split(s.position).software < BrightnessConfig.dimFloor
         }
     }
 
