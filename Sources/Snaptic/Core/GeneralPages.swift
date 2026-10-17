@@ -159,12 +159,17 @@ private struct MenuPage: View {
                         Label(symbol, systemImage: symbol).tag(symbol)
                     }
                 }
-                Toggle(L("Scroll on a slider to adjust"), isOn: Binding(get: { store.value.scrollSlidersToAdjust },
-                                                                       set: { store.value.scrollSlidersToAdjust = $0 }))
+                Toggle(L("Scroll on a slider to adjust"), isOn: Binding(
+                    get: { env.config.value.menu.scrollAdjustsSliders },
+                    set: { env.config.value.menu.scrollAdjustsSliders = $0 }))
             }
-            MenuCustomizationPage(env: env, modules: store)
+            MenuCustomizationPage(env: env)
             Section {
-                Button(L("Reset Menu Settings")) { store.value.resetMenu() }
+                Button(L("Reset Menu Settings")) {
+                    store.value.resetMenu()
+                    env.config.value.menu.resetLayout()
+                    env.config.value.menu.scrollAdjustsSliders = true
+                }
             }
         }
         .formStyle(.grouped)

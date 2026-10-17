@@ -1,12 +1,12 @@
 import SwiftUI
 import SnapticKit
 
-/// General → Menu, Displays part (PLAN §3.5): every registered menu item descriptor with
-/// Visible / In submenu / Hidden. Choices are stored in ModulesConfig.menuItems (host
-/// settings); choosing an item's default removes the entry.
+/// General → Menu, Displays part (PLAN §3.5): every registered menu item descriptor, by
+/// slot, with Visible / In submenu / Hidden. Choices are stored in the Displays
+/// settings' MenuConfig (the one source of truth the menu builder reads); choosing an
+/// item's default removes the override.
 struct MenuCustomizationPage: View {
     @ObservedObject var env: DisplaysPageEnvironment
-    @ObservedObject var modules: ConfigStore<ModulesConfig>
 
     var body: some View {
         if let registry = env.context?.menus {
@@ -42,8 +42,8 @@ struct MenuCustomizationPage: View {
 
     private func binding(_ descriptor: DisplayMenuItemDescriptor) -> Binding<MenuItemVisibility> {
         Binding(
-            get: { modules.value.visibility(of: descriptor.id, default: descriptor.defaultVisibility) },
-            set: { modules.value.setVisibility($0, of: descriptor.id, default: descriptor.defaultVisibility) }
+            get: { env.config.value.menu.visibility(of: descriptor.id, default: descriptor.defaultVisibility) },
+            set: { env.config.value.menu.setVisibility($0, for: descriptor.id, default: descriptor.defaultVisibility) }
         )
     }
 

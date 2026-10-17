@@ -87,8 +87,16 @@ import SnapticKit
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.scheduleApply() } }
             .store(in: &sinks)
+        // "Scroll on a slider to adjust" lives in the Displays menu settings (MenuConfig).
+        MenuSliderItem.scrollToAdjust = displaysStore.value.menu.scrollAdjustsSliders
+        displaysStore.$value
+            .map(\.menu.scrollAdjustsSliders)
+            .removeDuplicates()
+            .sink { on in MainActor.assumeIsolated { MenuSliderItem.scrollToAdjust = on } }
+            .store(in: &sinks)
         applyNow()
         statusMenu.install()
+        _ = settingsWindow   // listens for "open this Settings page" from Displays UI
         requestLaunchPermissions()
     }
 
@@ -150,7 +158,6 @@ import SnapticKit
         defer { applying = false }
         applyWork = nil
         let config = modulesStore.value
-        MenuSliderItem.scrollToAdjust = config.scrollSlidersToAdjust
         let transitions = ModuleTransitions.plan(order: ModuleID.allCases, running: runningModules,
                                                  desired: Set(config.enabledModules))
         for id in transitions.stop { stopModule(id) }
@@ -169,9 +176,6 @@ import SnapticKit
             spawner: spawner, relauncher: relauncher, otherApps: otherApps, lifetime: life,
             requestMenuRebuild: { [weak self] in self?.statusMenu.requestRebuild() },
             requestSettingsRefresh: { [weak self] in self?.revision &+= 1 },
-            menuVisibility: { [weak self] id, fallback in
-                self?.modulesStore.value.visibility(of: id, default: fallback) ?? fallback
-            },
             openSettings: { [weak self] page in self?.openSettings(page: page) })
         module(id).start(context)
         EventLog.shared.record(.modules, "Module \(id.rawValue) started")

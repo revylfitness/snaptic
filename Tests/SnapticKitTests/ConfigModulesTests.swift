@@ -16,7 +16,8 @@ final class ConfigModulesTests: XCTestCase {
         for id in ModuleID.allCases { XCTAssertEqual(c.placement(id), .shared) }
         XCTAssertFalse(c.showNewDisplaysCard)
         XCTAssertFalse(c.commandLine.enabled)
-        XCTAssertTrue(c.scrollSlidersToAdjust)
+        XCTAssertEqual(c.otherApps, .pauseOverlapping)
+        XCTAssertTrue(c.needsOnboarding)
     }
 
     func testUpgradeKeepsSwitcherAndOffersDisplays() {
@@ -37,31 +38,33 @@ final class ConfigModulesTests: XCTestCase {
         var c = ModulesConfig.upgradeDefaults()
         c.setPlacement(.ownIcon, for: .displays)
         c.setSymbol("sun.max", for: .displays)
-        c.setVisibility(.hidden, of: DisplayMenuItemID(rawValue: "c.brightness"), default: .visible)
+        c.otherApps = .runBoth
+        c.onboarding = .permissions
+        c.onboardingPermissions = [.accessibility]
         c.commandLine = CommandLineSettings(enabled: true, maySkipConfirmation: false)
         c.sharedSymbol = "display"
         XCTAssertEqual(try roundTrip(c), c)
     }
 
     func testEmptyAndGarbageFieldsFallBack() throws {
-        XCTAssertEqual(try decode("{}"), ModulesConfig())
-        let c = try decode(#"{"modules":7,"menuItems":"x","sharedSymbol":3,"scrollSlidersToAdjust":"yes","commandLine":[]}"#)
-        XCTAssertEqual(c, ModulesConfig())
+        var empty = ModulesConfig()
+        empty.onboarding = .done   // an older Snaptic wrote this: nothing to resume
+        XCTAssertEqual(try decode("{}"), empty)
+        let c = try decode(#"{"modules":7,"sharedSymbol":3,"commandLine":[],"otherApps":"x","onboarding":"nowhere"}"#)
+        var expected = ModulesConfig()
+        expected.onboarding = .done
+        XCTAssertEqual(c, expected)
     }
 
     func testBadEntriesAreDroppedIndividually() throws {
         let json = #"""
         {"modules":{"windowSwitcher":{"enabled":false},"displays":{"enabled":"maybe","placement":"sideways"},
-                    "futureModule":{"enabled":true}},
-         "menuItems":{"c.brightness":"hidden","d.mode":"nonsense","x":"inSubmenu"}}
+                    "futureModule":{"enabled":true}}}
         """#
         let c = try decode(json).sanitized()
         XCTAssertFalse(c.isEnabled(.windowSwitcher))
         XCTAssertTrue(c.isEnabled(.displays))                 // bad field → default
         XCTAssertEqual(c.placement(.displays), .shared)
-        XCTAssertEqual(c.visibility(of: DisplayMenuItemID(rawValue: "c.brightness"), default: .visible), .hidden)
-        XCTAssertEqual(c.visibility(of: DisplayMenuItemID(rawValue: "d.mode"), default: .inSubmenu), .inSubmenu)
-        XCTAssertEqual(c.visibility(of: DisplayMenuItemID(rawValue: "x"), default: .visible), .inSubmenu)
     }
 
     func testUnknownModulesSurviveARoundTrip() throws {
@@ -72,46 +75,62 @@ final class ConfigModulesTests: XCTestCase {
         XCTAssertTrue(text.contains("futureModule"))
     }
 
-    func testSanitizeRejectsUncuratedSymbolsAndBadItemIDs() throws {
-        var c = ModulesConfig()
-        c.modules[.displays] = ModulePreferences(enabled: true, placement: .ownIcon, symbol: "../../etc")
-        c.sharedSymbol = "not.a.curated.symbol"
-        c.menuItems[DisplayMenuItemID(rawValue: "")] = .hidden
-        c.menuItems[DisplayMenuItemID(rawValue: "has space")] = .hidden
-        c.menuItems[DisplayMenuItemID(rawValue: String(repeating: "a", count: 65))] = .hidden
-        c.menuItems[DisplayMenuItemID(rawValue: "ok.item-1_x")] = .hidden
-        let s = c.sanitized()
-        XCTAssertEqual(s.preferences(.displays).symbol, "")
-        XCTAssertEqual(s.sharedSymbol, "")
-        XCTAssertEqual(Array(s.menuItems.values.keys), [DisplayMenuItemID(rawValue: "ok.item-1_x")])
-        XCTAssertEqual(s.sanitized(), s)
-    }
-
-    func testMenuItemsAreCapped() {
-        var c = ModulesConfig()
-        for i in 0..<400 { c.menuItems[DisplayMenuItemID(rawValue: "item.\(i)")] = .hidden }
-        XCTAssertEqual(c.sanitized().menuItems.values.count, ModulesConfig.maxMenuItems)
-    }
-
-    func testChoosingTheDefaultVisibilityRemovesTheEntry() {
-        var c = ModulesConfig()
-        let id = DisplayMenuItemID(rawValue: "c.volume")
-        c.setVisibility(.hidden, of: id, default: .inSubmenu)
-        XCTAssertNotNil(c.menuItems[id])
-        c.setVisibility(.inSubmenu, of: id, default: .inSubmenu)
-        XCTAssertNil(c.menuItems[id])
-        c.setVisibility(.hidden, of: DisplayMenuItemID(rawValue: "bad id"), default: .visible)
-        XCTAssertTrue(c.menuItems.values.isEmpty)
-    }
-
     func testResetMenuKeepsEnableFlags() {
         var c = ModulesConfig.upgradeDefaults()
         c.setPlacement(.hidden, for: .windowSwitcher)
-        c.setVisibility(.hidden, of: DisplayMenuItemID(rawValue: "a"), default: .visible)
+        c.sharedSymbol = "display"
         c.resetMenu()
         XCTAssertEqual(c.placement(.windowSwitcher), .shared)
-        XCTAssertTrue(c.menuItems.values.isEmpty)
+        XCTAssertEqual(c.sharedSymbol, "")
         XCTAssertFalse(c.isEnabled(.displays))
+    }
+
+    func testSanitizeRejectsUncuratedSymbols() {
+        var c = ModulesConfig()
+        c.modules[.displays] = ModulePreferences(enabled: true, placement: .ownIcon, symbol: "../../etc")
+        c.sharedSymbol = "not.a.curated.symbol"
+        let s = c.sanitized()
+        XCTAssertEqual(s.preferences(.displays).symbol, "")
+        XCTAssertEqual(s.sharedSymbol, "")
+        XCTAssertEqual(s.sanitized(), s)
+    }
+
+    // MARK: Onboarding
+
+    func testUpgradedUsersSkipOnboarding() {
+        XCTAssertFalse(ModulesConfig.upgradeDefaults().needsOnboarding)
+    }
+
+    func testOnboardingStepsFollowDisplaysToggle() {
+        var c = ModulesConfig()
+        XCTAssertEqual(c.onboardingSteps(), [.welcome, .modules, .displays, .permissions, .done])
+        XCTAssertEqual(c.step(after: .modules), .displays)
+        c.setEnabled(false, for: .displays)
+        XCTAssertEqual(c.onboardingSteps(), [.welcome, .modules, .permissions, .done])
+        XCTAssertEqual(c.step(after: .modules), .permissions)
+        XCTAssertEqual(c.step(after: .permissions), .done)
+        XCTAssertEqual(c.step(after: .done), .done)
+    }
+
+    func testResumeSkipsAStepThatNoLongerApplies() {
+        var c = ModulesConfig()
+        c.onboarding = .displays
+        XCTAssertEqual(c.resumeStep, .displays)
+        c.setEnabled(false, for: .displays)
+        XCTAssertEqual(c.resumeStep, .permissions)
+    }
+
+    func testOnboardingPermissionsAreDedupedAndClearedWhenDone() throws {
+        var c = ModulesConfig()
+        c.onboarding = .permissions
+        c.onboardingPermissions = [.screenRecording, .screenRecording, .accessibility]
+        XCTAssertEqual(c.sanitized().onboardingPermissions, [.screenRecording, .accessibility])
+        c.onboarding = .done
+        XCTAssertEqual(c.sanitized().onboardingPermissions, [])
+        let json = #"{"onboarding":"permissions","onboardingPermissions":["accessibility","teleport",3]}"#
+        let decoded = try decode(json)
+        XCTAssertEqual(decoded.onboarding, .permissions)
+        XCTAssertEqual(decoded.onboardingPermissions, [])   // one bad element fails the list
     }
 
     // MARK: Status items
