@@ -49,12 +49,6 @@ jobs:
           set -o pipefail
           swift test --skip-build 2>&1 | tee test.log
 
-      # Helpers must not inherit pipe ends (PLAN §14.1): both children exit once we die.
-      - name: Helper self-test (debug)
-        run: |
-          set -o pipefail
-          ./scripts/selftest-helpers.sh .build/debug/Snaptic 2>&1 | tee selftest.log
-
       # Job logs may be unreachable from where results are read; annotations are not.
       - name: Report errors as annotations
         if: failure()
@@ -98,6 +92,12 @@ jobs:
         run: |
           set -o pipefail
           swift test --skip-build 2>&1 | tee test.log
+
+      # Helpers must not inherit pipe ends (PLAN §14.1): both children exit once we die.
+      - name: Helper self-test (debug)
+        run: |
+          set -o pipefail
+          ./scripts/selftest-helpers.sh .build/debug/Snaptic 2>&1 | tee selftest.log
 
       - name: Warnings summary
         if: always()
