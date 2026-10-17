@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import SnapticKit
 
 struct SwitcherActions {
     var select: (Int) -> Void
@@ -18,6 +19,7 @@ struct SwitcherView: View {
         VStack(alignment: .leading, spacing: Metrics.headerSpacing) {
             SearchHeader(
                 query: model.query,
+                hint: model.hint,
                 searching: model.searching,
                 shown: model.filtered.count,
                 total: model.allItems.count
@@ -70,6 +72,8 @@ struct SwitcherView: View {
                     item: item,
                     index: index,
                     selected: index == model.selectedIndex,
+                    hoverButtons: model.showHoverButtons,
+                    actionsOn: model.enabledActions,
                     actions: actions
                 )
                 .frame(width: model.layout.rowWidths.first ?? Metrics.titleRowWidth, height: Metrics.titleRowHeight)
@@ -99,6 +103,8 @@ struct SwitcherView: View {
                 size: tile.size,
                 visualHeight: model.layout.thumbHeight,
                 style: model.style,
+                hoverButtons: model.showHoverButtons,
+                actionsOn: model.enabledActions,
                 image: model.thumbnails[item.id],
                 selected: tile.index == model.selectedIndex,
                 actions: actions
@@ -109,6 +115,7 @@ struct SwitcherView: View {
 
 struct SearchHeader: View {
     let query: String
+    let hint: String
     let searching: Bool
     let shown: Int
     let total: Int
@@ -118,7 +125,7 @@ struct SearchHeader: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
             if !searching {
-                Text("S search · W close · M minimize · F full screen · Q quit · H hide")
+                Text(hint)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             } else if query.isEmpty {
@@ -150,6 +157,8 @@ struct TileView: View {
     let size: CGSize
     let visualHeight: CGFloat
     let style: SwitcherStyle
+    let hoverButtons: Bool
+    let actionsOn: Set<SwitcherFeature>
     let image: NSImage?
     let selected: Bool
     let actions: SwitcherActions
@@ -163,8 +172,8 @@ struct TileView: View {
             ZStack(alignment: .topLeading) {
                 visual
                     .frame(width: innerWidth, height: visualHeight)
-                if hovering && item.axElement != nil {
-                    WindowControls(item: item, actions: actions)
+                if hoverButtons && hovering && item.axElement != nil {
+                    WindowControls(item: item, actions: actions, enabled: actionsOn)
                         .padding(6)
                 }
             }
@@ -245,6 +254,8 @@ struct TitleRow: View {
     let item: WindowItem
     let index: Int
     let selected: Bool
+    let hoverButtons: Bool
+    let actionsOn: Set<SwitcherFeature>
     let actions: SwitcherActions
 
     @State private var hovering = false
@@ -269,8 +280,8 @@ struct TitleRow: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
-            if hovering && item.axElement != nil {
-                WindowControls(item: item, actions: actions)
+            if hoverButtons && hovering && item.axElement != nil {
+                WindowControls(item: item, actions: actions, enabled: actionsOn)
             }
         }
         .padding(.horizontal, 10)
@@ -293,13 +304,21 @@ struct TitleRow: View {
 struct WindowControls: View {
     let item: WindowItem
     let actions: SwitcherActions
+    /// Window actions that are turned on; the others' buttons are omitted.
+    let enabled: Set<SwitcherFeature>
 
     var body: some View {
         HStack(spacing: 6) {
-            control("xmark", Color(red: 1.0, green: 0.37, blue: 0.34), "Close window") { actions.close(item.id) }
-            control("minus", Color(red: 1.0, green: 0.74, blue: 0.18), "Minimize window") { actions.minimize(item.id) }
-            control("arrow.up.left.and.arrow.down.right", Color(red: 0.16, green: 0.79, blue: 0.25), "Toggle full screen") {
-                actions.fullscreen(item.id)
+            if enabled.contains(.actionClose) {
+                control("xmark", Color(red: 1.0, green: 0.37, blue: 0.34), "Close window") { actions.close(item.id) }
+            }
+            if enabled.contains(.actionMinimize) {
+                control("minus", Color(red: 1.0, green: 0.74, blue: 0.18), "Minimize window") { actions.minimize(item.id) }
+            }
+            if enabled.contains(.actionFullscreen) {
+                control("arrow.up.left.and.arrow.down.right", Color(red: 0.16, green: 0.79, blue: 0.25), "Toggle full screen") {
+                    actions.fullscreen(item.id)
+                }
             }
         }
     }

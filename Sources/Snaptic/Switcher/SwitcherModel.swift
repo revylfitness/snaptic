@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import SnapticKit
 
 enum Metrics {
     static let panelPadding: CGFloat = 16
@@ -193,14 +194,22 @@ final class SwitcherModel: ObservableObject {
     /// Changes on every open, so SwiftUI rebuilds views and forgets stale hover
     /// and scroll state from the previous session.
     @Published private(set) var session = 0
+    /// Keys that work while open, for the header (turned-off features are left out).
+    @Published private(set) var hint = ""
+    /// Hover buttons, and which window actions they may offer.
+    @Published private(set) var showHoverButtons = true
+    @Published private(set) var enabledActions: Set<SwitcherFeature> = Set(SwitcherFeaturesConfig.actions)
 
     var selected: WindowItem? {
         filtered.indices.contains(selectedIndex) ? filtered[selectedIndex] : nil
     }
 
-    func begin(style: SwitcherStyle) {
+    func begin(style: SwitcherStyle, hint: String, hoverButtons: Bool, actions: Set<SwitcherFeature>) {
         session += 1
         self.style = style
+        self.hint = hint
+        showHoverButtons = hoverButtons
+        enabledActions = actions
         allItems = []
         filtered = []
         query = ""

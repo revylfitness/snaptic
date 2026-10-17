@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import CoreGraphics
+import SnapticKit
 
 enum KeyCode {
     static let tab = 48
@@ -310,6 +311,10 @@ struct Config: Codable, Equatable {
     /// Windows of these apps (and private-browsing windows) are never captured.
     var privateBundleIDs: [String] = Config.defaultPrivateApps
     var protectPrivateWindows = true
+    /// Features turned off on the Features page (PLAN §2.2).
+    var disabledFeatures = SwitcherFeaturesConfig()
+    /// Optional global shortcut for "Gather windows here" (Carbon).
+    var gatherShortcut: HotkeyCombo?
 
     static let defaultShortcuts: [Shortcut] = [
         Shortcut(modifier: .option, keyCode: KeyCode.tab, scope: .allWindows, style: .thumbnails),
@@ -335,6 +340,8 @@ struct Config: Codable, Equatable {
         passthroughBundleIDs = (try? c.decode([String].self, forKey: .passthroughBundleIDs)) ?? d.passthroughBundleIDs
         privateBundleIDs = (try? c.decode([String].self, forKey: .privateBundleIDs)) ?? d.privateBundleIDs
         protectPrivateWindows = (try? c.decode(Bool.self, forKey: .protectPrivateWindows)) ?? d.protectPrivateWindows
+        disabledFeatures = c.lossy(.disabledFeatures, d.disabledFeatures)
+        gatherShortcut = c.lossy(.gatherShortcut, nil)
     }
 
     /// Settings can be edited outside the app (`defaults write`), so clamp
@@ -351,11 +358,39 @@ struct Config: Codable, Equatable {
         c.excludedBundleIDs = Array(c.excludedBundleIDs.filter(Config.isValidBundleIDEntry).prefix(200))
         c.passthroughBundleIDs = Array(c.passthroughBundleIDs.filter(Config.isValidBundleIDEntry).prefix(200))
         c.privateBundleIDs = Array(c.privateBundleIDs.filter(Config.isValidBundleIDEntry).prefix(200))
+        c.disabledFeatures = c.disabledFeatures.sanitized()
+        if let combo = c.gatherShortcut {
+            let normalized = HotkeyRules.normalized(combo)
+            c.gatherShortcut = HotkeyRules.problem(normalized) == nil ? normalized : nil
+        }
         return c
     }
 
+    /// Whether a switcher feature is in effect: not turned off on the Features page and,
+    /// for the aliased ones, its existing setting is on (PLAN §2.2).
+    func isOn(_ feature: SwitcherFeature) -> Bool {
+        guard disabledFeatures.isEnabled(feature) else { return false }
+        switch feature {
+        case .preview: return previewSelected && isOn(.thumbnails)
+        case .otherSpaces: return showOtherSpaces
+        case .hoverSelect: return selectOnHover
+        default: return true
+        }
+    }
+
+    /// The style a shortcut actually renders: with thumbnails off, icons.
+    func effectiveStyle(_ shortcut: Shortcut) -> SwitcherStyle {
+        shortcut.style == .thumbnails && !isOn(.thumbnails) ? .icons : shortcut.style
+    }
+
+    /// Shortcuts that may act: ⌘ shortcuts only while ⌘⇥ takeover is on.
+    var activeShortcuts: [Shortcut] {
+        isOn(.commandTabTakeover) ? shortcuts : shortcuts.filter { $0.modifier != .command }
+    }
+
     var needsScreenCapture: Bool {
-        previewSelected || shortcuts.contains { $0.style == .thumbnails }
+        guard isOn(.thumbnails) else { return false }
+        return isOn(.preview) || shortcuts.contains { $0.style == .thumbnails }
     }
 }
 
@@ -372,16 +407,24 @@ final class AppSettings: ObservableObject {
         }
     }
 
-    var onChange: ((Config) -> Void)?
+    var onChange: (@MainActor (Config) -> Void)?
 
+    /// Reads only the persistent domain: launch arguments (`-SnapticConfig.v1 …`), the
+    /// volatile domain and managed preferences are ignored (PLAN §3.4).
     private init() {
-        if let data = UserDefaults.standard.data(forKey: Self.defaultsKey),
+        if let data = ConfigStore<ModulesConfig>.persistentData(forKey: Self.defaultsKey),
            let saved = try? JSONDecoder().decode(Config.self, from: data) {
             config = saved.sanitized()
         } else {
             config = Config()
         }
     }
+
+    /// Saves are immediate; kept for the host's quit path.
+    func flush() { save() }
+
+    /// Back to defaults (General → Backup & Reset).
+    func reset() { config = Config() }
 
     private func save() {
         if let data = try? JSONEncoder().encode(config) {

@@ -1,116 +1,179 @@
 import AppKit
 import ApplicationServices
+import SnapticKit
+import SnapticShims
 
+/// App startup and shutdown (PLAN §3.2 startup order; step 13 moved into DisplaysModule).
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    private var statusItem: NSStatusItem?
-    private let controller = SwitcherController()
-    private let tap = HotkeyTap()
-    private let settingsWindow = SettingsWindowController()
-    private var retryTimer: Timer?
-    private var secureInputTimer: Timer?
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let launch: AppLaunchOptions
+    // Toasts exist before startup step 7 (journal-recovery notice).
+    private let toasts = ToastPresenter()
+    private let relauncher = Relauncher()
+    private lazy var permissions = PermissionFlow(relauncher: relauncher)
+    private let spawner = HelperSpawner()
+    private var host: ModuleHost?
+    private var safeMode = SafeModeState.off
     private var signalSources: [DispatchSourceSignal] = []
-    private var notificationTokens: [NSObjectProtocol] = []
+    private var lock = InstanceLock()
+    private var lockRetry: Timer?
+    private var didFinishStartup = false
 
-    private var instanceLock: Int32 = -1
-
-    override init() {
+    init(launch: AppLaunchOptions) {
+        self.launch = launch
         super.init()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Two copies would install two taps and fight over ⌘⇥. An exclusive
-        // file lock (released automatically when the process exits) is
-        // race-free, unlike checking the list of running apps.
-        guard acquireInstanceLock() else {
-            explainInstanceLockFailure()
-            exit(0)
+        installMainMenu()
+        // Startup step 3: the instance lock, fail-closed. A relaunch waits for the old copy.
+        switch lock.acquire() {
+        case .acquired:
+            continueStartup()
+        case .busy(let holder):
+            if launch.relaunchFrom != nil {
+                // The old instance is quitting: retry every 100 ms for up to 10 s (R3C §5.5).
+                waitForLock(seconds: 10) { [weak self] in
+                    guard let self else { return }
+                    self.lockHolderDialog(holder: self.lock.holderPID())
+                }
+            } else {
+                lockHolderDialog(holder: holder)
+            }
+        case .failed(let reason):
+            failClosed(reason)
         }
+    }
 
-        // A slow or frozen app must never stall Snaptic for long.
-        AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), WindowManager.axTimeout)
+    /// Steps 4–12, once the lock is ours.
+    private func continueStartup() {
+        guard !didFinishStartup else { return }
+        didFinishStartup = true
+        lockRetry?.invalidate()
+        lockRetry = nil
 
+        // 4. Give back ⌘⇥ if a previous run died holding it.
         SystemHotkeys.recoverFromPreviousRun()
+        // 5. Launch stability; 6. Safe Mode.
+        let unstable = LaunchStability.evaluate()
+        safeMode = SafeMode.detect(argument: launch.safeMode, unstableLaunches: unstable)
+        if safeMode.isActive { EventLog.shared.record(.safety, "Started in Safe Mode") }
+        // 7. Undo unfinished display changes from a previous run (runs in Safe Mode too).
+        let recovery = RevertJournal.recoverAtLaunch(safeMode: safeMode)
+        if let message = recovery.message { toasts.show(message) }
+        // 8. Signals: give ⌘⇥ back and run emergency actions even if main is hung.
         handleTerminationSignals()
-        setUpStatusItem()
-        WindowManager.shared.start()
-        observePrivacyEvents()
-
-        AppSettings.shared.onChange = { [weak self] _ in
-            self?.applySystemHotkeys()
+        // 9. Heartbeat (also the hang guard's beat) and helper preparation.
+        HotkeyGuard.shared.start()
+        HostHeartbeat.shared.start {
+            if HotkeyGuard.shared.beat() { SystemHotkeys.reassert() }
         }
+        spawner.prepare()
+        // 10. The control server arrives with step 2 (ModulesConfig.commandLine).
+        // 11. Modules; 12. status items.
+        let host = ModuleHost(safeMode: safeMode, toasts: toasts, permissions: permissions, spawner: spawner,
+                              relauncher: relauncher)
+        self.host = host
+        host.bootstrap()
 
-        tap.handler = { [weak self] type, event in
-            self?.controller.handle(type: type, event: event) ?? false
+        if safeMode.isActive {
+            toasts.show(L("Snaptic started in Safe Mode. Display automation is paused."),
+                        action: ToastAction(title: L("Leave")) { [weak self] in
+                            self?.relauncher.relaunch(reason: "leave safe mode")
+                        })
         }
-
-        let firstLaunch = !UserDefaults.standard.bool(forKey: "SnapticDidLaunchBefore")
-        UserDefaults.standard.set(true, forKey: "SnapticDidLaunchBefore")
-
-        if !Permissions.accessibility { Permissions.promptAccessibility() }
-        if !Permissions.screenRecording && AppSettings.shared.config.needsScreenCapture {
-            Permissions.requestScreenRecording()
+        // Nothing in the menu bar (everything hidden), or the very first launch: show Settings.
+        if host.isFirstLaunch || !host.statusMenu.hasVisibleItem {
+            host.openSettings()
         }
-        startTap()
-        watchSecureInput()
-
-        if firstLaunch || !Permissions.accessibility {
-            settingsWindow.show()
-        }
-    }
-
-    private func acquireInstanceLock() -> Bool {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        let folder = support.appendingPathComponent("Snaptic", isDirectory: true)
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let path = folder.appendingPathComponent("instance.lock").path
-        // Never follow a symlink planted at this path, and only lock a regular
-        // file this user owns.
-        let fd = Darwin.open(path, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW | O_NOCTTY, 0o600)
-        guard fd >= 0 else { return true }   // can't lock; better to run than not
-        var info = stat()
-        guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, info.st_uid == getuid() else {
-            Darwin.close(fd)
-            return true
-        }
-        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
-            Darwin.close(fd)
-            return false
-        }
-        instanceLock = fd
-        return true
-    }
-
-    /// Quietly step aside for a running copy; otherwise say why we can't start.
-    private func explainInstanceLockFailure() {
-        let ownPID = ProcessInfo.processInfo.processIdentifier
-        let anotherCopy = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
-            .contains { $0.processIdentifier != ownPID }
-        guard !anotherCopy else { return }
-        NSApp.activate()
-        let alert = NSAlert()
-        alert.messageText = "Snaptic couldn't start"
-        alert.informativeText = "Another process is holding Snaptic's lock file (~/Library/Application Support/Snaptic/instance.lock). Quit any other copy of Snaptic and try again."
-        alert.runModal()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        host?.shutdown()
         SystemHotkeys.restore()
+        HotkeyGuard.shared.releaseAll()
+        toasts.dismissAll()
+        if didFinishStartup { LaunchStability.markCleanQuit() }
+        lock.release()
     }
 
+    /// Relaunching Snaptic (or clicking it in Finder while it runs) opens Settings, so
+    /// every function stays reachable when menu bar icons are hidden (PLAN §1.1 item 4).
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        settingsWindow.show()
+        host?.openSettings()
         return false
     }
 
-    /// Only take over ⌘⇥ once Snaptic can actually see key presses.
-    private func applySystemHotkeys() {
-        SystemHotkeys.apply(tap.isRunning ? AppSettings.shared.config.shortcuts : [])
+    // MARK: Instance lock
+
+    private func waitForLock(seconds: TimeInterval, then onTimeout: @escaping @MainActor () -> Void) {
+        let deadline = Date().addingTimeInterval(seconds)
+        lockRetry?.invalidate()
+        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self else { timer.invalidate(); return }
+                switch self.lock.acquire() {
+                case .acquired:
+                    timer.invalidate()
+                    self.continueStartup()
+                case .busy:
+                    if Date() > deadline {
+                        timer.invalidate()
+                        self.lockRetry = nil
+                        onTimeout()
+                    }
+                case .failed(let reason):
+                    timer.invalidate()
+                    self.failClosed(reason)
+                }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        lockRetry = timer
     }
 
-    /// `kill` / `pkill` / logout skip the normal quit path unless we catch the
-    /// signal; quitting normally gives ⌘⇥ back to macOS.
+    /// Who holds the lock, and "Quit the other copy" only when that process passes our
+    /// designated requirement (R5.7).
+    private func lockHolderDialog(holder: pid_t?) {
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = L("Snaptic is already running")
+        var detail = L("Another copy of Snaptic holds its lock, so this one won't start.")
+        var canQuitOther = false
+        if let pid = holder, pid > 0, kill(pid, 0) == 0 {
+            let path = SNProcess.path(for: pid).map { TextSanitizer.clean($0, maxScalars: 300) } ?? L("unknown path")
+            detail += "\n\n" + L("Process ") + String(pid) + "\n" + path
+            if let requirement = try? SNProcess.designatedRequirementOfSelf() {
+                canQuitOther = SNProcess.process(pid, satisfies: requirement)
+            }
+        }
+        alert.informativeText = detail
+        if canQuitOther { alert.addButton(withTitle: L("Quit the other copy")) }
+        alert.addButton(withTitle: canQuitOther ? L("Cancel") : L("OK"))
+        let response = alert.runModal()
+        if canQuitOther, response == .alertFirstButtonReturn, let pid = holder {
+            NSRunningApplication(processIdentifier: pid)?.terminate()
+            waitForLock(seconds: 10) { [weak self] in
+                self?.failClosed(L("The other copy didn't quit."))
+            }
+        } else {
+            exit(0)
+        }
+    }
+
+    private func failClosed(_ reason: String) {
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = L("Snaptic couldn't start")
+        alert.informativeText = reason
+        alert.runModal()
+        exit(1)
+    }
+
+    // MARK: Signals
+
+    /// `kill` / `pkill` / logout skip the normal quit path unless we catch the signal;
+    /// quitting normally gives ⌘⇥ back to macOS and reverts display changes.
     private func handleTerminationSignals() {
         for sig in [SIGTERM, SIGINT, SIGHUP] {
             signal(sig, SIG_IGN)
@@ -118,125 +181,121 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let source = DispatchSource.makeSignalSource(signal: sig, queue: .global(qos: .userInitiated))
             source.setEventHandler {
                 HotkeyGuard.shared.releaseAll()
+                EmergencyActions.shared.runAll()
                 DispatchQueue.main.async { NSApp.terminate(nil) }
                 DispatchQueue.global().asyncAfter(deadline: .now() + 3) { exit(0) }
             }
             source.resume()
             signalSources.append(source)
         }
-        HotkeyGuard.shared.start()
     }
 
-    /// While an app holds Secure Event Input (password fields, Terminal's
-    /// Secure Keyboard Entry) Snaptic can't see keys, so hand ⌘⇥ back to macOS.
-    private func watchSecureInput() {
-        secureInputTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                // Heartbeat for the hang guard; take ⌘⇥ back if it stepped in.
-                if HotkeyGuard.shared.beat() { SystemHotkeys.reassert() }
-                let secure = PrivateAPIs.isSecureInputEnabled
-                // Whenever Snaptic can't see key presses, ⌘⇥ goes back to macOS.
-                let blind = secure || !self.tap.isEnabled || !Permissions.accessibility
-                SystemHotkeys.setSuspended(blind)
-                if blind { self.controller.cancel() }
-            }
-        }
-        // Keep beating during menus and modal panels too, so the hang guard
-        // doesn't mistake a settings dialog for a frozen app.
-        if let secureInputTimer { RunLoop.main.add(secureInputTimer, forMode: .common) }
-    }
+    // MARK: Main menu (shown while Settings makes the app regular)
 
-    /// Forget every captured thumbnail when the Mac locks, sleeps or switches user.
-    private func observePrivacyEvents() {
-        let workspace = NSWorkspace.shared.notificationCenter
-        for name in [NSWorkspace.screensDidSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
-            notificationTokens.append(workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.controller.cancel()
-                    ThumbnailStore.shared.purge()
-                }
-            })
-        }
-        notificationTokens.append(DistributedNotificationCenter.default().addObserver(
-            forName: NSNotification.Name("com.apple.screenIsLocked"), object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.controller.cancel()
-                ThumbnailStore.shared.purge()
-            }
+    private func installMainMenu() {
+        let main = NSMenu()
+
+        let appItem = NSMenuItem()
+        let appMenu = NSMenu(title: "Snaptic")
+        appMenu.addItem(ClosureMenuItem(title: L("About Snaptic")) { [weak self] in
+            self?.host?.openSettings(page: GeneralPages.aboutID)
         })
+        appMenu.addItem(.separator())
+        appMenu.addItem(ClosureMenuItem(title: L("Settings…"), keyEquivalent: ",") { [weak self] in
+            self?.host?.openSettings()
+        })
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: L("Hide Snaptic"), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: L("Quit Snaptic"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appItem.submenu = appMenu
+        main.addItem(appItem)
+
+        let editItem = NSMenuItem()
+        let editMenu = NSMenu(title: L("Edit"))
+        editMenu.addItem(withTitle: L("Undo"), action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = editMenu.addItem(withTitle: L("Redo"), action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: L("Cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: L("Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: L("Paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: L("Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editItem.submenu = editMenu
+        main.addItem(editItem)
+
+        let windowItem = NSMenuItem()
+        let windowMenu = NSMenu(title: L("Window"))
+        windowMenu.addItem(withTitle: L("Close"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        windowMenu.addItem(withTitle: L("Minimize"), action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowItem.submenu = windowMenu
+        main.addItem(windowItem)
+
+        NSApp.mainMenu = main
+        NSApp.windowsMenu = windowMenu
+    }
+}
+
+/// The single-instance lock (PLAN §3.2 step 3): an exclusive flock on a regular file we
+/// own under the account's Application Support folder. It records the holder's pid for
+/// the lock-holder dialog. Fail-closed: if the lock can't be checked, Snaptic doesn't run.
+struct InstanceLock {
+    enum Outcome {
+        case acquired
+        case busy(holder: pid_t?)
+        case failed(String)
     }
 
-    /// The event tap can only be created once Accessibility access is granted,
-    /// so keep retrying quietly until it is.
-    private func startTap() {
-        if tap.start() {
-            applySystemHotkeys()
-            WindowManager.shared.refreshFocusTracking()
-            return
+    private var fd: Int32 = -1
+
+    mutating func acquire() -> Outcome {
+        if fd >= 0 { return .acquired }
+        guard let folder = AccountPaths.supportDirectory() else {
+            return .failed(L("Snaptic can't use its folder in ~/Library/Application Support."))
         }
-        retryTimer?.invalidate()
-        retryTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] timer in
-            MainActor.assumeIsolated {
-                guard let self else {
-                    timer.invalidate()
-                    return
-                }
-                if Permissions.accessibility, self.tap.start() {
-                    timer.invalidate()
-                    self.retryTimer = nil
-                    self.applySystemHotkeys()
-                    WindowManager.shared.refreshFocusTracking()
-                }
-            }
+        let path = folder + "/instance.lock"
+        // Never follow a symlink planted at this path; only lock a regular file we own.
+        let fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW | O_NOCTTY, 0o600)
+        guard fd >= 0 else { return .failed(L("Snaptic can't open its lock file at ") + path) }
+        var info = stat()
+        guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, info.st_uid == getuid() else {
+            close(fd)
+            return .failed(L("Snaptic's lock file isn't a regular file you own: ") + path)
         }
+        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
+            let error = errno
+            let holder = Self.readPID(fd)
+            close(fd)
+            guard error == EWOULDBLOCK else { return .failed(L("Snaptic can't lock ") + path) }
+            return .busy(holder: holder)
+        }
+        _ = ftruncate(fd, 0)
+        let text = String(getpid()) + "\n"
+        text.withCString { pointer in _ = pwrite(fd, pointer, strlen(pointer), 0) }
+        self.fd = fd
+        return .acquired
     }
 
-    // MARK: Menu bar
-
-    private func setUpStatusItem() {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        if let button = item.button {
-            button.image = NSImage(systemSymbolName: "rectangle.on.rectangle", accessibilityDescription: "Snaptic")
-            button.image?.isTemplate = true
-        }
-        let menu = NSMenu()
-        menu.delegate = self
-        item.menu = menu
-        statusItem = item
+    /// The pid recorded by the current holder, if the file names a live process.
+    func holderPID() -> pid_t? {
+        guard let folder = AccountPaths.supportDirectory() else { return nil }
+        let fd = open(folder + "/instance.lock", O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+        guard fd >= 0 else { return nil }
+        defer { close(fd) }
+        return Self.readPID(fd)
     }
 
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        menu.removeAllItems()
-
-        if !Permissions.accessibility {
-            menu.addItem(withTitle: "Grant Accessibility Access…", action: #selector(openAccessibility), keyEquivalent: "")
-                .target = self
-        }
-        if !Permissions.screenRecording {
-            menu.addItem(withTitle: "Enable Thumbnails (Screen Recording)…", action: #selector(openScreenRecording), keyEquivalent: "")
-                .target = self
-        }
-        if !menu.items.isEmpty { menu.addItem(.separator()) }
-
-        let hintTitle: String
-        if let first = AppSettings.shared.config.shortcuts.first {
-            hintTitle = tap.isRunning ? "Press \(first.displayName) to switch windows" : "Waiting for Accessibility access"
-        } else {
-            hintTitle = "No shortcuts set"
-        }
-        let hint = NSMenuItem(title: hintTitle, action: nil, keyEquivalent: "")
-        hint.isEnabled = false
-        menu.addItem(hint)
-
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",").target = self
-        menu.addItem(withTitle: "Quit Snaptic", action: #selector(quit), keyEquivalent: "q").target = self
+    mutating func release() {
+        guard fd >= 0 else { return }
+        _ = flock(fd, LOCK_UN)
+        close(fd)
+        fd = -1
     }
 
-    @objc private func openSettings() { settingsWindow.show() }
-    @objc private func openAccessibility() { Permissions.openAccessibilitySettings() }
-    @objc private func openScreenRecording() { Permissions.openScreenRecordingSettings() }
-    @objc private func quit() { NSApp.terminate(nil) }
+    private static func readPID(_ fd: Int32) -> pid_t? {
+        var buffer = [UInt8](repeating: 0, count: 32)
+        let n = buffer.withUnsafeMutableBytes { raw in pread(fd, raw.baseAddress, raw.count, 0) }
+        guard n > 0 else { return nil }
+        let text = String(decoding: buffer[0..<n], as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return KitArgs.parsePID(text)
+    }
 }

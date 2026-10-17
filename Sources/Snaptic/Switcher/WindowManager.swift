@@ -69,8 +69,12 @@ enum Screens {
         for info in list {
             guard (info[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
                   (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid,
+                  // Hidden or zero-alpha windows don't count (macOS 27 keeps such
+                  // windows around off screen).
+                  ((info[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1) > 0,
                   let boundsInfo = info[kCGWindowBounds as String] as? NSDictionary,
-                  let bounds = CGRect(dictionaryRepresentation: boundsInfo as CFDictionary) else { continue }
+                  let bounds = CGRect(dictionaryRepresentation: boundsInfo as CFDictionary),
+                  bounds.width > 1, bounds.height > 1 else { continue }
             return bounds
         }
         return nil
@@ -178,7 +182,12 @@ final class WindowManager {
 
     // MARK: Most-recently-used tracking
 
+    private(set) var isStarted = false
+
+    /// Idempotent. Seeds the most-recently-used order and starts focus tracking.
     func start() {
+        guard !isStarted else { return }
+        isStarted = true
         // Seed with the current stacking order, front first.
         mru = serverSnapshot().zOrder.sorted { $0.value < $1.value }.map { $0.key }
         focusTracker.onFocus = { pid, id in
@@ -197,8 +206,19 @@ final class WindowManager {
         focusTracker.start()
     }
 
+    /// Idempotent. Stops focus tracking (every AX observer is removed) and forgets the
+    /// window order.
+    func stop() {
+        guard isStarted else { return }
+        isStarted = false
+        focusTracker.stop()
+        mru = []
+        lastFocused = nil
+    }
+
     /// Re-registers focus tracking for every app (after Accessibility is granted).
     func refreshFocusTracking() {
+        guard isStarted else { return }
         focusTracker.observeAll()
     }
 
@@ -569,30 +589,39 @@ private let focusChangedCallback: AXObserverCallback = { _, element, _, refcon i
     guard let refcon, let id = PrivateAPIs.windowID(of: element) else { return }
     var pid: pid_t = 0
     guard AXUIElementGetPid(element, &pid) == .success else { return }
-    Unmanaged<FocusTracker>.fromOpaque(refcon).takeUnretainedValue().deliver(pid: pid, windowID: id)
+    // Runs on the observer thread. The box is retained until the session has removed
+    // every observer, and its target is weak (a weak load is atomic).
+    Unmanaged<CallbackTarget<FocusSession>>.fromOpaque(refcon).takeUnretainedValue().target?
+        .deliver(pid: pid, windowID: id)
 }
 
 /// A dedicated thread whose run loop hosts the AX observers, so a slow or
 /// hostile app can never stall the main thread (and with it the keyboard).
+/// One thread per focus-tracking session; never restarted.
 private final class ObserverThread: Thread {
     private let ready = DispatchSemaphore(value: 0)
-    private(set) var runLoop: CFRunLoop?
+    private let lock = NSLock()
+    private var loop: CFRunLoop?
 
     override func main() {
-        runLoop = CFRunLoopGetCurrent()
+        lock.lock(); loop = CFRunLoopGetCurrent(); lock.unlock()
         RunLoop.current.add(NSMachPort(), forMode: .default)   // keeps the run loop alive
         ready.signal()
         while !isCancelled {
             _ = RunLoop.current.run(mode: .default, before: .distantFuture)
         }
+        lock.lock(); loop = nil; lock.unlock()
     }
 
     func waitUntilReady() {
         ready.wait()
     }
 
-    /// Runs `block` on this thread.
+    /// Runs `block` on this thread (dropped once the thread has exited).
     func perform(_ block: @escaping () -> Void) {
+        lock.lock()
+        let runLoop = loop
+        lock.unlock()
         guard let runLoop else { return }
         CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue, block)
         CFRunLoopWakeUp(runLoop)
@@ -601,18 +630,57 @@ private final class ObserverThread: Thread {
 
 /// Watches every app for "focused window changed", so the switcher's order
 /// reflects the windows you actually used, not just which app was in front.
-final class FocusTracker: @unchecked Sendable {
-    /// Delivered on the main thread. Set once, before `start()`.
+/// Restartable: each start() builds a new session (thread, observers, refcon box);
+/// stop() removes every observer and ends the thread.
+@MainActor final class FocusTracker {
+    /// Delivered on the main thread. Set before `start()`.
     var onFocus: (@MainActor (pid_t, CGWindowID) -> Void)?
 
+    private var session: FocusSession?
+
+    var isRunning: Bool { session != nil }
+
+    func start() {
+        guard session == nil else { return }
+        let session = FocusSession(onFocus: onFocus)
+        session.start()
+        self.session = session
+    }
+
+    func stop() {
+        session?.stop()
+        session = nil
+    }
+
+    /// (Re)registers every running app. Harmless for apps already observed.
+    func observeAll() {
+        session?.observeAll()
+    }
+}
+
+private final class FocusSession: @unchecked Sendable {
+    private let onFocus: (@MainActor (pid_t, CGWindowID) -> Void)?
     private let thread = ObserverThread()
-    private var observers: [pid_t: AXObserver] = [:]   // only touched on `thread`
-    private var notificationTokens: [NSObjectProtocol] = []
+    private var observers: [pid_t: (observer: AXObserver, app: AXUIElement)] = [:]   // only touched on `thread`
+    private var notificationTokens: [NSObjectProtocol] = []                         // main only
+    private var box: Unmanaged<CallbackTarget<FocusSession>>?                        // set on main, released on `thread`
     private let ownPID = ProcessInfo.processInfo.processIdentifier
 
-    // Deliberately not main-actor isolated: the closures created here run on
-    // the observer thread.
-    func start() {
+    private let stateLock = NSLock()
+    private var stopped = false
+    private var pending: (pid: pid_t, windowID: CGWindowID)?
+
+    init(onFocus: (@MainActor (pid_t, CGWindowID) -> Void)?) {
+        self.onFocus = onFocus
+    }
+
+    private var isStopped: Bool {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return stopped
+    }
+
+    @MainActor func start() {
+        box = Unmanaged.passRetained(CallbackTarget(self))
         thread.name = "Snaptic focus tracking"
         thread.qualityOfService = .userInitiated
         thread.start()
@@ -623,7 +691,7 @@ final class FocusTracker: @unchecked Sendable {
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
         ) { [weak self] note in
             guard let self, let pid = Self.pid(from: note) else { return }
-            self.thread.perform {
+            self.onThread {
                 self.observe(pid, attempt: 0)
                 self.reportFocusedWindow(of: pid)
             }
@@ -632,25 +700,62 @@ final class FocusTracker: @unchecked Sendable {
             forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main
         ) { [weak self] note in
             guard let self, let pid = Self.pid(from: note) else { return }
-            self.thread.perform { self.observe(pid, attempt: 0) }
+            self.onThread { self.observe(pid, attempt: 0) }
         })
         notificationTokens.append(center.addObserver(
             forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main
         ) { [weak self] note in
             guard let self, let pid = Self.pid(from: note) else { return }
-            self.thread.perform { self.stopObserving(pid) }
+            self.onThread { self.stopObserving(pid) }
         })
 
         observeAll()
     }
 
-    /// (Re)registers every running app. Harmless for apps already observed.
-    func observeAll() {
+    /// Removes every observer, releases the refcon box and ends the thread.
+    @MainActor func stop() {
+        stateLock.lock()
+        let already = stopped
+        stopped = true
+        pending = nil
+        stateLock.unlock()
+        guard !already else { return }
+
+        let center = NSWorkspace.shared.notificationCenter
+        for token in notificationTokens { center.removeObserver(token) }
+        notificationTokens = []
+
+        // The box stays set: blocks still queued check `stopped` before using it, and the
+        // block below (queued last) releases it.
+        let box = self.box
+        thread.cancel()
+        thread.perform {
+            for pid in Array(self.observers.keys) { self.stopObserving(pid) }
+            self.observers = [:]
+            box?.release()
+            CFRunLoopStop(CFRunLoopGetCurrent())
+        }
+    }
+
+    @MainActor func observeAll() {
         let pids = NSWorkspace.shared.runningApplications
             .filter { $0.activationPolicy == .regular }
             .map { $0.processIdentifier }
-        thread.perform {
+        onThread {
+            // Drop observers of processes that are gone (NSRunningApplication.isTerminated
+            // can lag by seconds on macOS 27, leaking observers under churn).
+            for pid in Array(self.observers.keys) where kill(pid, 0) != 0 && errno == ESRCH {
+                self.stopObserving(pid)
+            }
             for pid in pids { self.observe(pid, attempt: 0) }
+        }
+    }
+
+    private func onThread(_ block: @escaping () -> Void) {
+        guard !isStopped else { return }
+        thread.perform { [weak self] in
+            guard let self, !self.isStopped else { return }
+            block()
         }
     }
 
@@ -658,16 +763,14 @@ final class FocusTracker: @unchecked Sendable {
         (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier
     }
 
-    private let pendingLock = NSLock()
-    private var pending: (pid: pid_t, windowID: CGWindowID)?
-
     /// Coalesced: a flood of focus notifications (e.g. from a hostile app)
     /// costs the main thread at most one hop at a time, with the latest value.
     fileprivate func deliver(pid: pid_t, windowID: CGWindowID) {
-        pendingLock.lock()
+        stateLock.lock()
+        guard !stopped else { stateLock.unlock(); return }
         let alreadyScheduled = pending != nil
         pending = (pid, windowID)
-        pendingLock.unlock()
+        stateLock.unlock()
         guard !alreadyScheduled else { return }
 
         let handler = onFocus
@@ -679,8 +782,9 @@ final class FocusTracker: @unchecked Sendable {
 
     /// Synchronous on purpose: locks are never held across an `await`.
     private func takePending() -> (pid: pid_t, windowID: CGWindowID)? {
-        pendingLock.lock()
-        defer { pendingLock.unlock() }
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard !stopped else { return nil }
         let latest = pending
         pending = nil
         return latest
@@ -688,29 +792,30 @@ final class FocusTracker: @unchecked Sendable {
 
     // Runs on `thread`.
     private func observe(_ pid: pid_t, attempt: Int) {
-        guard observers[pid] == nil, pid != ownPID else { return }
+        guard observers[pid] == nil, pid != ownPID, let box else { return }
         var created: AXObserver?
         guard AXObserverCreate(pid, focusChangedCallback, &created) == .success, let observer = created else { return }
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, WindowManager.axTimeout)
-        let refcon = Unmanaged.passUnretained(self).toOpaque()
-        guard AXObserverAddNotification(observer, app, kAXFocusedWindowChangedNotification as CFString, refcon) == .success else {
+        guard AXObserverAddNotification(observer, app, kAXFocusedWindowChangedNotification as CFString,
+                                        box.toOpaque()) == .success else {
             // Apps that just launched often aren't ready yet; try again shortly.
             let delays: [Double] = [0.3, 1.0, 3.0]
             guard attempt < delays.count else { return }
             DispatchQueue.global().asyncAfter(deadline: .now() + delays[attempt]) { [weak self] in
-                self?.thread.perform { self?.observe(pid, attempt: attempt + 1) }
+                self?.onThread { self?.observe(pid, attempt: attempt + 1) }
             }
             return
         }
         CFRunLoopAddSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(observer), .defaultMode)
-        observers[pid] = observer
+        observers[pid] = (observer, app)
     }
 
     // Runs on `thread`.
     private func stopObserving(_ pid: pid_t) {
-        guard let observer = observers.removeValue(forKey: pid) else { return }
-        CFRunLoopRemoveSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(observer), .defaultMode)
+        guard let entry = observers.removeValue(forKey: pid) else { return }
+        AXObserverRemoveNotification(entry.observer, entry.app, kAXFocusedWindowChangedNotification as CFString)
+        CFRunLoopRemoveSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(entry.observer), .defaultMode)
     }
 
     // Runs on `thread`.

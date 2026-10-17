@@ -208,7 +208,9 @@ enum SystemHotkeys {
         HotkeyGuard.shared.setDisabled(value ? [] : disabledBySnaptic)
     }
 
+    /// Gives every shortcut back (quit, or the switcher module stopping). Idempotent.
     static func restore() {
+        suspended = false
         guard !disabledBySnaptic.isEmpty else { return }
         for id in disabledBySnaptic {
             PrivateAPIs.setSymbolicHotKey(id, enabled: true)

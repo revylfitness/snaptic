@@ -55,6 +55,20 @@ enum AX {
         AXUIElementSetAttributeValue(element, attribute as CFString, value)
     }
 
+    @discardableResult
+    static func setPosition(_ element: AXUIElement, _ point: CGPoint) -> Bool {
+        var value = point
+        guard let axValue = AXValueCreate(.cgPoint, &value) else { return false }
+        return AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, axValue) == .success
+    }
+
+    @discardableResult
+    static func setSize(_ element: AXUIElement, _ size: CGSize) -> Bool {
+        var value = size
+        guard let axValue = AXValueCreate(.cgSize, &value) else { return false }
+        return AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, axValue) == .success
+    }
+
     static func perform(_ element: AXUIElement, _ action: String) {
         AXUIElementPerformAction(element, action as CFString)
     }

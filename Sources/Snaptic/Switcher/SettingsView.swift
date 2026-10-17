@@ -3,111 +3,26 @@ import Combine
 import ServiceManagement
 import SwiftUI
 import UniformTypeIdentifiers
-
-@MainActor
-final class SettingsWindowController {
-    private var window: NSWindow?
-
-    func show() {
-        if window == nil {
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 640, height: 720),
-                styleMask: [.titled, .closable, .miniaturizable],
-                backing: .buffered,
-                defer: false
-            )
-            window.title = "Snaptic Settings"
-            window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: SettingsView(settings: AppSettings.shared))
-            window.center()
-            self.window = window
-        }
-        NSApp.activate()
-        window?.makeKeyAndOrderFront(nil)
-    }
-}
+import SnapticKit
 
 struct AppChoice: Hashable {
     let bundleID: String
     let name: String
 }
 
+/// The switcher's settings sections, shown as pages by SwitcherPages (PLAN §3.7).
 @MainActor
-struct SettingsView: View {
+struct SwitcherShortcutsSection: View {
     @ObservedObject var settings: AppSettings
 
-    @State private var accessibilityGranted = Permissions.accessibility
-    @State private var screenRecordingGranted = Permissions.screenRecording
-    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
-    @State private var launchNote: String?
-
-    private let poll = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
-
     var body: some View {
-        Form {
-            permissionsSection
-            shortcutsSection
-            behaviorSection
-            thumbnailsSection
-            AppListSection(
-                title: "Hidden from the switcher",
-                footer: "These apps never appear in the switcher.",
-                bundleIDs: $settings.config.excludedBundleIDs
-            )
-            AppListSection(
-                title: "Apps that keep the shortcut",
-                footer: "While one of these is in front, Snaptic's shortcuts go to it instead. Useful for virtual machines and remote desktops. An entry like com.parallels also covers every app whose identifier starts with it.",
-                bundleIDs: $settings.config.passthroughBundleIDs
-            ) {
-                Toggle("Only while the app is full screen", isOn: $settings.config.passthroughOnlyWhenFullscreen)
-            }
-            privacySection
-            generalSection
-        }
-        .formStyle(.grouped)
-        .frame(width: 640, height: 720)
-        .onReceive(poll) { _ in
-            accessibilityGranted = Permissions.accessibility
-            screenRecordingGranted = Permissions.screenRecording
-            let enabled = SMAppService.mainApp.status == .enabled
-            if enabled != launchAtLogin { launchAtLogin = enabled }
-        }
-    }
-
-    // MARK: Sections
-
-    @ViewBuilder
-    private var permissionsSection: some View {
-        if !accessibilityGranted || !screenRecordingGranted {
-            Section {
-                PermissionRow(
-                    title: "Accessibility",
-                    detail: "Required. Lets Snaptic see your shortcut and switch windows.",
-                    granted: accessibilityGranted,
-                    open: Permissions.openAccessibilitySettings
-                )
-                PermissionRow(
-                    title: "Screen Recording",
-                    detail: "Optional. Enables thumbnails, previews and windows on other Spaces.",
-                    granted: screenRecordingGranted,
-                    open: Permissions.openScreenRecordingSettings
-                )
-            } header: {
-                Text("Permissions")
-            } footer: {
-                Text("After granting Screen Recording, macOS may ask you to quit and reopen Snaptic.")
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private var shortcutsSection: some View {
         Section {
             ForEach(settings.config.shortcuts) { shortcut in
                 ShortcutEditor(
                     shortcut: shortcut,
                     canDelete: settings.config.shortcuts.count > 1,
                     isDuplicate: settings.config.shortcuts.contains { $0.id != shortcut.id && $0.sameKeys(as: shortcut) },
+                    commandShortcutsOff: !settings.config.isOn(.commandTabTakeover),
                     onUpdate: { updated in replace(updated) },
                     onDelete: { remove(shortcut.id) }
                 )
@@ -121,71 +36,16 @@ struct SettingsView: View {
         } header: {
             Text("Shortcuts")
         } footer: {
-            Text("Hold the modifier and press the key to open; keep pressing to cycle, add ⇧ to go back, release to switch. While open: S to search, W close, M minimize, F full screen, Q quit app, H hide app, Esc to cancel.")
+            Text(footer)
                 .foregroundStyle(.secondary)
         }
     }
 
-    private var behaviorSection: some View {
-        Section("Behavior") {
-            Toggle("Switch when the modifier key is released", isOn: $settings.config.releaseToSwitch)
-            Toggle("Preview the selected window full size", isOn: $settings.config.previewSelected)
-            Toggle("Include windows on other Spaces", isOn: $settings.config.showOtherSpaces)
-            Toggle("Hovering with the mouse changes the selection", isOn: $settings.config.selectOnHover)
-            Picker("Show the switcher on", selection: $settings.config.showOnScreen) {
-                ForEach(ScreenChoice.allCases) { choice in
-                    Text(choice.label).tag(choice)
-                }
-            }
-        }
+    private var footer: String {
+        let keys = settings.config.disabledFeatures.hintLine()
+        let base = "Hold the modifier and press the key to open; keep pressing to cycle, add ⇧ to go back, release to switch."
+        return keys.isEmpty ? base + " Esc cancels." : base + " While open: " + keys + ", Esc to cancel."
     }
-
-    private var thumbnailsSection: some View {
-        Section("Thumbnails") {
-            Toggle("Auto-size to fit the number of windows", isOn: $settings.config.autoSize)
-            LabeledContent("Size") {
-                Slider(value: $settings.config.thumbnailSize, in: 100...300, step: 10)
-                    .frame(width: 220)
-            }
-            .disabled(settings.config.autoSize)
-        }
-    }
-
-    private var privacySection: some View {
-        Group {
-            Section {
-                Toggle("Never capture password managers or private browsing windows", isOn: $settings.config.protectPrivateWindows)
-            } header: {
-                Text("Privacy")
-            } footer: {
-                Text("Thumbnails stay in memory only, are never saved to disk, and are cleared when your Mac locks or sleeps. Snaptic asks macOS to keep its panels out of screen sharing, but some capture methods may ignore that. Private windows are only recognised when the browser puts it in the title (Firefox does; Safari and Chrome don't), so add a browser below if you want none of its windows captured.")
-                    .foregroundStyle(.secondary)
-            }
-            if settings.config.protectPrivateWindows {
-                AppListSection(
-                    title: "Never capture these apps",
-                    footer: "Shown with their app icon instead of a thumbnail.",
-                    bundleIDs: $settings.config.privateBundleIDs
-                )
-            }
-        }
-    }
-
-    private var generalSection: some View {
-        Section("General") {
-            Toggle("Launch Snaptic at login", isOn: $launchAtLogin)
-                .onChange(of: launchAtLogin) {
-                    setLaunchAtLogin(launchAtLogin)
-                }
-            if let launchNote {
-                Text(launchNote)
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
-            }
-        }
-    }
-
-    // MARK: Helpers
 
     private func replace(_ updated: Shortcut) {
         guard let index = settings.config.shortcuts.firstIndex(where: { $0.id == updated.id }) else { return }
@@ -215,6 +75,122 @@ struct SettingsView: View {
                 settings.config.shortcuts.append(shortcut)
                 return
             }
+        }
+    }
+}
+
+@MainActor
+struct SwitcherBehaviorSection: View {
+    @ObservedObject var settings: AppSettings
+
+    var body: some View {
+        Section {
+            Toggle("Switch when the modifier key is released", isOn: $settings.config.releaseToSwitch)
+            Picker("Show the switcher on", selection: $settings.config.showOnScreen) {
+                ForEach(ScreenChoice.allCases) { choice in
+                    Text(choice.label).tag(choice)
+                }
+            }
+        } header: {
+            Text("Behavior")
+        } footer: {
+            Text("Previews, other Spaces and hover selection are on the Features page.")
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+@MainActor
+struct SwitcherThumbnailsSection: View {
+    @ObservedObject var settings: AppSettings
+
+    var body: some View {
+        Section {
+            Toggle("Auto-size to fit the number of windows", isOn: $settings.config.autoSize)
+            LabeledContent("Size") {
+                Slider(value: $settings.config.thumbnailSize, in: 100...300, step: 10)
+                    .frame(width: 220)
+                    .accessibilityLabel("Thumbnail size")
+            }
+            .disabled(settings.config.autoSize)
+        } header: {
+            Text("Thumbnails")
+        } footer: {
+            if !settings.config.isOn(.thumbnails) {
+                Text("Window thumbnails are turned off on the Features page, so every shortcut shows app icons.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+@MainActor
+struct SwitcherAppListsSections: View {
+    @ObservedObject var settings: AppSettings
+
+    var body: some View {
+        AppListSection(
+            title: "Hidden from the switcher",
+            footer: "These apps never appear in the switcher.",
+            bundleIDs: $settings.config.excludedBundleIDs
+        )
+        AppListSection(
+            title: "Apps that keep the shortcut",
+            footer: settings.config.isOn(.passthrough)
+                ? "While one of these is in front, Snaptic's shortcuts go to it instead. Useful for virtual machines and remote desktops. An entry like com.parallels also covers every app whose identifier starts with it."
+                : "Turned off on the Features page: this list is ignored.",
+            bundleIDs: $settings.config.passthroughBundleIDs
+        ) {
+            Toggle("Only while the app is full screen", isOn: $settings.config.passthroughOnlyWhenFullscreen)
+        }
+    }
+}
+
+@MainActor
+struct SwitcherPrivacySections: View {
+    @ObservedObject var settings: AppSettings
+
+    var body: some View {
+        Section {
+            Toggle("Never capture password managers or private browsing windows", isOn: $settings.config.protectPrivateWindows)
+        } header: {
+            Text("Privacy")
+        } footer: {
+            Text("Thumbnails stay in memory only, are never saved to disk, and are cleared when your Mac locks or sleeps. Snaptic asks macOS to keep its panels out of screen sharing, but some capture methods may ignore that. Private windows are only recognised when the browser puts it in the title (Firefox does; Safari and Chrome don't), so add a browser below if you want none of its windows captured.")
+                .foregroundStyle(.secondary)
+        }
+        if settings.config.protectPrivateWindows {
+            AppListSection(
+                title: "Never capture these apps",
+                footer: "Shown with their app icon instead of a thumbnail.",
+                bundleIDs: $settings.config.privateBundleIDs
+            )
+        }
+    }
+}
+
+/// "Launch Snaptic at login" (General → Startup).
+@MainActor
+struct LaunchAtLoginSection: View {
+    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var launchNote: String?
+    private let poll = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        Section("Startup") {
+            Toggle("Launch Snaptic at login", isOn: $launchAtLogin)
+                .onChange(of: launchAtLogin) {
+                    setLaunchAtLogin(launchAtLogin)
+                }
+            if let launchNote {
+                Text(launchNote)
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
+        }
+        .onReceive(poll) { _ in
+            let enabled = SMAppService.mainApp.status == .enabled
+            if enabled != launchAtLogin { launchAtLogin = enabled }
         }
     }
 
@@ -370,6 +346,7 @@ struct ShortcutEditor: View {
     @State private var local: Shortcut
     let canDelete: Bool
     let isDuplicate: Bool
+    let commandShortcutsOff: Bool
     let onUpdate: (Shortcut) -> Void
     let onDelete: () -> Void
 
@@ -377,12 +354,14 @@ struct ShortcutEditor: View {
         shortcut: Shortcut,
         canDelete: Bool,
         isDuplicate: Bool,
+        commandShortcutsOff: Bool,
         onUpdate: @escaping (Shortcut) -> Void,
         onDelete: @escaping () -> Void
     ) {
         _local = State(initialValue: shortcut)
         self.canDelete = canDelete
         self.isDuplicate = isDuplicate
+        self.commandShortcutsOff = commandShortcutsOff
         self.onUpdate = onUpdate
         self.onDelete = onDelete
     }
@@ -445,6 +424,10 @@ struct ShortcutEditor: View {
                 Label("Another shortcut uses the same keys; only the first one works.", systemImage: "exclamationmark.triangle")
                     .font(.caption)
                     .foregroundStyle(.orange)
+            } else if local.modifier == .command && commandShortcutsOff {
+                Label("⌘ shortcuts are turned off on the Features page; this one does nothing.", systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             } else if local.modifier == .command {
                 Text("Replaces the built-in macOS shortcut while Snaptic is running.")
                     .font(.caption)

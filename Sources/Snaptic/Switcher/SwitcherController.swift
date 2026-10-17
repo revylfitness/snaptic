@@ -1,8 +1,20 @@
 import AppKit
 import SwiftUI
+import SnapticKit
 
 enum WindowAction {
     case close, minimize, fullscreen, quitApp, hideApp
+
+    /// The switcher feature that turns this action on or off (PLAN §2.2).
+    var feature: SwitcherFeature {
+        switch self {
+        case .close: return .actionClose
+        case .minimize: return .actionMinimize
+        case .fullscreen: return .actionFullscreen
+        case .quitApp: return .actionQuit
+        case .hideApp: return .actionHide
+        }
+    }
 }
 
 /// The switcher's state machine: open on a shortcut, cycle while the modifier
@@ -12,7 +24,8 @@ final class SwitcherController {
     let model = SwitcherModel()
 
     private lazy var window = SwitcherWindow(rootView: AnyView(SwitcherView(model: model, actions: makeActions())))
-    private let preview = PreviewOverlay()
+    /// Created on first use, so a switcher with previews off never builds the panel.
+    private var preview: PreviewOverlay?
 
     private var active: Shortcut?
     /// Sticky = stay open after the modifier is released (search mode or
@@ -92,13 +105,13 @@ final class SwitcherController {
     private func matchingShortcut(code: Int, flags: CGEventFlags) -> Shortcut? {
         let primary: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl]
         let held = flags.intersection(primary)
-        return config.shortcuts.first { KeyCode.matches(code, shortcutKey: $0.keyCode) && held == $0.modifier.flag }
+        return config.activeShortcuts.first { KeyCode.matches(code, shortcutKey: $0.keyCode) && held == $0.modifier.flag }
     }
 
     /// Virtual machines and remote desktops get the keys instead of Snaptic
     /// (by default only while they're full screen).
     private func frontmostAppKeepsShortcuts() -> Bool {
-        guard let app = NSWorkspace.shared.frontmostApplication,
+        guard config.isOn(.passthrough), let app = NSWorkspace.shared.frontmostApplication,
               Config.bundleID(app.bundleIdentifier, matchesAny: config.passthroughBundleIDs) else { return false }
         return !config.passthroughOnlyWhenFullscreen || Screens.isFullscreen(pid: app.processIdentifier)
     }
@@ -148,9 +161,10 @@ final class SwitcherController {
                 if let character = printableCharacter(event) { setQuery(model.query + String(character)) }
                 return
             }
-            // Physical keys, so these work on every keyboard layout.
+            // Physical keys, so these work on every keyboard layout. A turned-off feature's
+            // key does nothing (it is still swallowed, like every key while open).
             switch code {
-            case KeyCode.keyS, KeyCode.slash: startSearch()
+            case KeyCode.keyS, KeyCode.slash: if config.isOn(.search) { startSearch() }
             case KeyCode.keyW: performOnSelection(.close)
             case KeyCode.keyM: performOnSelection(.minimize)
             case KeyCode.keyF: performOnSelection(.fullscreen)
@@ -186,18 +200,21 @@ final class SwitcherController {
 
         let frontPID = WindowManager.shared.effectiveFrontPID
         screen = config.showOnScreen == .mouse ? Screens.mouseScreen : Screens.activeWindowScreen(frontPID: frontPID)
-        model.begin(style: shortcut.style)
+        let settingsNow = config
+        model.begin(style: settingsNow.effectiveStyle(shortcut),
+                    hint: settingsNow.disabledFeatures.hintLine(),
+                    hoverButtons: settingsNow.isOn(.hoverButtons),
+                    actions: Set(SwitcherFeaturesConfig.actions.filter { settingsNow.isOn($0) }))
         installDismissMonitors()
         startWatchdog()
 
         let settings = config
         loadTask = Task { @MainActor [weak self] in
-            // A shortcut set to "Other Spaces only" always needs them; "All Spaces"
-            // follows the global setting.
-            let otherSpaces = shortcut.spaces == .others || (shortcut.spaces == .all && settings.showOtherSpaces)
+            // With "Windows on other Spaces" off, every shortcut lists the current Space only.
+            let otherSpaces = settings.isOn(.otherSpaces) && shortcut.spaces != .current
             let list = await WindowManager.shared.loadWindows(
                 includeOtherSpaces: otherSpaces,
-                includeWindowless: shortcut.includeWindowlessApps,
+                includeWindowless: shortcut.includeWindowlessApps && settings.isOn(.windowlessApps),
                 excluded: settings.excludedBundleIDs
             )
             guard let self, token == self.openToken, self.active != nil else { return }
@@ -216,8 +233,13 @@ final class SwitcherController {
     private func finishLoading(_ list: WindowList, shortcut: Shortcut, reverse: Bool, keepSelection: Int? = nil) {
         var items = list.items.map { markPrivacy($0) }
 
-        // Drop cached images of windows that closed or may no longer be captured.
-        ThumbnailStore.shared.prune(keeping: Set(items.filter { capturePermitted($0) }.map { $0.id }))
+        if config.isOn(.thumbnails) {
+            // Drop cached images of windows that closed or may no longer be captured.
+            ThumbnailStore.shared.prune(keeping: Set(items.filter { capturePermitted($0) }.map { $0.id }))
+        }
+        if !config.isOn(.otherSpaces) {
+            items = items.filter { !$0.isOnOtherSpace }
+        }
 
         switch shortcut.scope {
         case .allWindows:
@@ -362,6 +384,15 @@ final class SwitcherController {
         dismiss()
     }
 
+    /// Module stop: closes the switcher and forgets per-session key state.
+    func reset() {
+        dismiss()
+        swallowedKeys = []
+        ignoreDismissSignalsUntil = .distantPast
+        preview?.hide()
+        preview = nil
+    }
+
     private func dismiss() {
         guard active != nil || visible else { return }
         active = nil
@@ -383,7 +414,7 @@ final class SwitcherController {
         removeDismissMonitors()
         ThumbnailStore.shared.invalidate()
         window.hide()
-        preview.hide()
+        preview?.hide()
         model.reset()
     }
 
@@ -493,10 +524,12 @@ final class SwitcherController {
 
     private func updatePreview() {
         previewTask?.cancel()
-        guard visible, config.previewSelected, let item = model.selected, capturePermitted(item) else {
-            preview.hide()
+        guard visible, config.isOn(.preview), let item = model.selected, capturePermitted(item) else {
+            preview?.hide()
             return
         }
+        let preview = self.preview ?? PreviewOverlay()
+        self.preview = preview
         let frame = Screens.cocoaRect(fromGlobal: item.frame)
         if let hiResPreview, hiResPreview.id == item.id {
             preview.show(image: hiResPreview.image, frame: frame, below: window.level)
@@ -519,14 +552,15 @@ final class SwitcherController {
                   let self, self.visible,
                   let current = self.model.selected, current.id == target.id else { return }
             self.hiResPreview = (target.id, image)
-            self.preview.show(image: image, frame: Screens.cocoaRect(fromGlobal: current.frame), below: self.window.level)
+            self.preview?.show(image: image, frame: Screens.cocoaRect(fromGlobal: current.frame), below: self.window.level)
         }
     }
 
     private func loadThumbnails() {
+        guard config.isOn(.thumbnails) else { return }
         let eligible = model.allItems.filter { capturePermitted($0) }
         model.thumbnails = ThumbnailStore.shared.cached(eligible.map { $0.id })
-        guard active?.style == .thumbnails else { return }
+        guard let shortcut = active, config.effectiveStyle(shortcut) == .thumbnails else { return }
         ThumbnailStore.shared.refresh(
             eligible.map { CaptureTarget(id: $0.id, pid: $0.pid) },
             blockedBundleIDs: blockedBundleIDs,
@@ -558,7 +592,7 @@ final class SwitcherController {
     private func mouseSelect(_ index: Int) {
         guard active != nil else { return }
         lastInteraction = Date()   // mouse use keeps a sticky switcher open
-        guard config.selectOnHover, index != model.selectedIndex, model.filtered.indices.contains(index) else { return }
+        guard config.isOn(.hoverSelect), index != model.selectedIndex, model.filtered.indices.contains(index) else { return }
         model.selectedIndex = index
         selectionChanged()
     }
@@ -569,7 +603,8 @@ final class SwitcherController {
     }
 
     private func perform(_ action: WindowAction, on id: CGWindowID) {
-        guard active != nil, let item = model.allItems.first(where: { $0.id == id }) else { return }
+        guard active != nil, config.isOn(action.feature),
+              let item = model.allItems.first(where: { $0.id == id }) else { return }
         lastInteraction = Date()
         ignoreDismissSignalsUntil = Date().addingTimeInterval(action == .quitApp ? 5 : 1.5)
 
@@ -627,10 +662,10 @@ final class SwitcherController {
         let settings = config
         loadTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(300))
-            let otherSpaces = shortcut.spaces == .others || (shortcut.spaces == .all && settings.showOtherSpaces)
+            let otherSpaces = settings.isOn(.otherSpaces) && shortcut.spaces != .current
             let list = await WindowManager.shared.loadWindows(
                 includeOtherSpaces: otherSpaces,
-                includeWindowless: shortcut.includeWindowlessApps,
+                includeWindowless: shortcut.includeWindowlessApps && settings.isOn(.windowlessApps),
                 excluded: settings.excludedBundleIDs
             )
             guard let self, token == self.openToken, self.active != nil else { return }
