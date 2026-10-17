@@ -43,6 +43,17 @@ typedef NS_ENUM(NSInteger, SNSpawnErrorCode) {
                    pid:(pid_t *)outPID
                  error:(NSError **)error NS_SWIFT_NAME(spawnSuspended(path:arguments:stdinFD:stdoutFD:options:pid:));
 
+/// As above, with `environment` ("NAME=value" strings) as the child's whole environment.
++ (BOOL)spawnSuspended:(NSString *)path
+             arguments:(NSArray<NSString *> *)arguments
+           environment:(NSArray<NSString *> *)environment
+               stdinFD:(int)stdinFD
+              stdoutFD:(int)stdoutFD
+               options:(SNSpawnOptions)options
+                   pid:(pid_t *)outPID
+                 error:(NSError **)error
+    NS_SWIFT_NAME(spawnSuspended(path:arguments:environment:stdinFD:stdoutFD:options:pid:));
+
 /// True when `pid` exists and is stopped (PROC_PIDTBSDINFO status SSTOP).
 + (BOOL)isStopped:(pid_t)pid NS_SWIFT_NAME(isStopped(_:));
 

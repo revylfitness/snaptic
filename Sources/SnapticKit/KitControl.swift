@@ -31,7 +31,8 @@ package struct ControlRequest: Codable, Equatable, Sendable {
     }
 }
 
-package struct ControlResponse: Codable, Equatable, Sendable {
+/// Also an Error, so request validation can return the reply to send as a failure.
+package struct ControlResponse: Codable, Equatable, Sendable, Error {
     /// Process exit code for the CLI (`ControlExit`; the README lists them).
     package var exitCode: Int32
     package var output: String
@@ -160,7 +161,12 @@ package enum KitControl {
     }
 
     /// `snaptic [--json] [--yes] <verb words> [arguments]`. `--` ends option parsing.
-    package static func parseCommandLine(_ arguments: [String]) -> Result<ParsedCommand, String> {
+    package struct UsageError: Error, Equatable, Sendable {
+        package let message: String
+        package init(_ message: String) { self.message = message }
+    }
+
+    package static func parseCommandLine(_ arguments: [String]) -> Result<ParsedCommand, UsageError> {
         var command = ParsedCommand(words: [], json: false, yes: false, help: false)
         var optionsDone = false
         for argument in arguments {
@@ -173,14 +179,14 @@ package enum KitControl {
                 default:
                     // "-10" is a value; only "--something" is an (unknown) option.
                     if argument.hasPrefix("--") {
-                        return .failure(L("Unknown option: ") + TextSanitizer.clean(argument, maxScalars: 40))
+                        return .failure(UsageError(L("Unknown option: ") + TextSanitizer.clean(argument, maxScalars: 40)))
                     }
                 }
             }
             command.words.append(argument)
         }
         if command.words.isEmpty { command.help = true }
-        guard command.words.count <= maxArguments + maxVerbWords else { return .failure(L("Too many arguments.")) }
+        guard command.words.count <= maxArguments + maxVerbWords else { return .failure(UsageError(L("Too many arguments."))) }
         return .success(command)
     }
 

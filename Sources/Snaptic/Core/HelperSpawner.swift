@@ -27,6 +27,8 @@ enum HelperSpawnError: Error, Equatable {
     case spawnFailed(String)
     /// The child failed a post-spawn check and was killed.
     case verificationFailed(String)
+    /// A hook or action executable failed the path or identity rules.
+    case refused(HookRefusal)
 }
 
 /// A running helper. The read source owns its descriptor (R5.5); the exit source keeps
@@ -74,7 +76,7 @@ final class HelperHandle: @unchecked Sendable {
         }
     }
 
-    fileprivate func attach(read: DispatchSourceRead, exit: DispatchSourceProcess) {
+    fileprivate func attach(read: DispatchSourceRead?, exit: DispatchSourceProcess) {
         lock.lock()
         readSource = read
         exitSource = exit
@@ -98,6 +100,16 @@ final class HelperHandle: @unchecked Sendable {
         }
         lock.unlock()
         return nil
+    }
+
+    /// Hooks lead their own process group: signal the whole group, only while unreaped
+    /// (a reaped leader's group id can be reused).
+    func signalGroup(_ sig: Int32) {
+        lock.lock()
+        let alive = !reaped
+        lock.unlock()
+        guard alive, pid > 0, startTime == 0 || SNProcess.startTime(for: pid) == startTime else { return }
+        _ = killpg(pid, sig)
     }
 
     fileprivate func cancelReader() {
@@ -254,6 +266,78 @@ final class HelperHandle: @unchecked Sendable {
         }
         EventLog.shared.record(.modules, "Helper \(kind.rawValue) started")
         return handle
+    }
+
+    // MARK: Hooks and actions
+
+    /// Runs a user-chosen executable for a hook or custom action (PLAN §4.10(1), R3C §5.3):
+    /// path rules, never Snaptic's own code, a disclaimed suspended spawn in its own process
+    /// group with a minimal environment, checked before SIGCONT, reaped exactly once, and
+    /// SIGTERM then SIGKILL to the group after 30 s.
+    func spawnHook(executable: String, arguments: [String], environment: [String: String],
+                   onExit: @escaping @MainActor (Int32) -> Void) throws -> HelperHandle {
+        if let reason = unavailableReason { throw HelperSpawnError.unavailable(reason) }
+        if identity == nil { finishPreparing(Self.computeIdentity()) }
+        guard identity != nil else { throw HelperSpawnError.unavailable(unavailableReason ?? L("Helpers are unavailable")) }
+        if let refusal = Self.checkExecutable(executable) { throw HelperSpawnError.refused(refusal) }
+        if let refusal = KitHookPolicy.checkArguments(arguments) { throw HelperSpawnError.refused(refusal) }
+
+        var pid: pid_t = 0
+        do {
+            try SNSpawn.spawnSuspended(path: executable, arguments: arguments,
+                                       environment: KitHookPolicy.environmentList(environment),
+                                       stdinFD: -1, stdoutFD: -1, options: [.disclaim, .ownProcessGroup], pid: &pid)
+        } catch {
+            throw HelperSpawnError.spawnFailed((error as NSError).localizedDescription)
+        }
+        guard SNSpawn.isStopped(pid), SNSpawn.responsiblePID(for: pid) == pid else {
+            Self.killAndReap(pid)
+            throw HelperSpawnError.verificationFailed("responsibility")
+        }
+        let handle = HelperHandle(kind: .hook, pid: pid, startTime: SNProcess.startTime(for: pid), writer: nil)
+        let exitSource = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
+        exitSource.setEventHandler {
+            MainActor.assumeIsolated {
+                if let status = handle.reapIfExited() { onExit(status) }
+            }
+        }
+        handle.attach(read: nil, exit: exitSource)
+        exitSource.resume()
+        _ = kill(pid, SIGCONT)
+        if let status = handle.reapIfExited() {
+            DispatchQueue.main.async { MainActor.assumeIsolated { onExit(status) } }
+        }
+        // The timeout: TERM to the group, then KILL; both only while unreaped.
+        DispatchQueue.main.asyncAfter(deadline: .now() + KitHookPolicy.timeoutSeconds) { [weak handle] in
+            MainActor.assumeIsolated {
+                guard let handle, !handle.isReaped else { return }
+                handle.signalGroup(SIGTERM)
+                DispatchQueue.main.asyncAfter(deadline: .now() + KitHookPolicy.killGraceSeconds) { [weak handle] in
+                    MainActor.assumeIsolated { handle?.signalGroup(SIGKILL) }
+                }
+            }
+        }
+        EventLog.shared.record(.automation, "Hook process started")
+        return handle
+    }
+
+    /// Path rules (lstat of every component) and "never Snaptic's own code".
+    static func checkExecutable(_ path: String) -> HookRefusal? {
+        if let refusal = KitHookPolicy.checkSyntax(path) { return refusal }
+        let infos = KitHookPolicy.components(of: path).map { component -> PathComponentInfo in
+            var info = stat()
+            guard lstat(component, &info) == 0 else { return PathComponentInfo(path: component, exists: false) }
+            let type = info.st_mode & S_IFMT
+            return PathComponentInfo(path: component, exists: true, isDirectory: type == S_IFDIR,
+                                     isRegularFile: type == S_IFREG, isSymlink: type == S_IFLNK,
+                                     owner: info.st_uid, mode: UInt32(info.st_mode) & 0o7777)
+        }
+        if let refusal = KitHookPolicy.check(infos, userID: getuid()) { return refusal }
+        if KitHookPolicy.isInside(path, bundle: Bundle.main.bundlePath) { return .insideSnaptic }
+        if let own = SNProcess.signingIdentifierOfSelf(), SNProcess.signingIdentifier(path: path) == own {
+            return .snapticIdentity
+        }
+        return nil
     }
 
     // MARK: Preparation

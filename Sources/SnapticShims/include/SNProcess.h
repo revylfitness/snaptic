@@ -33,6 +33,12 @@ NS_ASSUME_NONNULL_BEGIN
 /// "Developer ID Application: Name (TEAM)", "ad-hoc", or "unsigned".
 + (NSString *)signerDescriptionOfSelf;
 
+/// The code-signing identifier of the file at `path` (nil when unsigned or unreadable).
++ (nullable NSString *)signingIdentifierForPath:(NSString *)path NS_SWIFT_NAME(signingIdentifier(path:));
+
+/// This process's code-signing identifier, or nil.
++ (nullable NSString *)signingIdentifierOfSelf;
+
 /// The LC_UUID of the main executable's running slice, or nil.
 + (nullable NSString *)executableUUID;
 

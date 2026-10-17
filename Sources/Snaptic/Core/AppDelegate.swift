@@ -82,8 +82,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             self?.relauncher.relaunch(reason: "leave safe mode")
                         })
         }
-        // Nothing in the menu bar (everything hidden), or the very first launch: show Settings.
-        if host.isFirstLaunch || !host.statusMenu.hasVisibleItem {
+        // Nothing in the menu bar (everything hidden): show Settings. A first launch gets
+        // onboarding instead (shown by the host).
+        if !host.modulesStore.value.needsOnboarding && !host.statusMenu.hasVisibleItem {
             host.openSettings()
         }
     }
