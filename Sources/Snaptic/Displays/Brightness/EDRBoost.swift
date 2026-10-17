@@ -38,6 +38,65 @@ import SnapticKit
     private var sessionPaused = false
     private var observers: [NSObjectProtocol] = []
 
+    /// A calibration in progress ("Is it brighter?").
+    private(set) var calibrating: (key: DisplayKey, method: Method)?
+    /// Called after a calibration answer (XDRController re-applies the display).
+    var onCalibrated: (@MainActor (DisplayKey) -> Void)?
+
+    // MARK: Method choice and calibration (XDRController, Brightness page)
+
+    /// The method for a display, or nil with the reason it's unavailable.
+    func xdrMethod(for key: DisplayKey) -> (Method?, String) {
+        guard let context, let display = context.registry.info(for: key) else { return (nil, L("Not connected")) }
+        guard display.edrPotential > 1.01 || potential(for: key) > 1.01 else {
+            return (nil, L("This display has no extra (EDR) brightness"))
+        }
+        let per = context.config.value.perDisplay[key]?.brightness ?? PerDisplayBrightness()
+        let eff = context.runtime.effectiveFeatures
+        let gammaOK = eff.contains(.brightnessGamma) && HostInfo.current.isAppleSilicon
+            && !AffectedModels.gammaIsUnreliable(HostInfo.current) && per.xdrGammaWorks != false
+            && context.gamma.isAllowed && display.mirrorOf == nil
+        let overlayOK = eff.contains(.brightnessOverlay) && per.xdrOverlayWorks != false
+        switch context.config.value.brightness.xdrMethod {
+        case .gamma:
+            return gammaOK ? (.gamma, L("Color table (B)")) : (nil, L("Method B needs the color-table method on Apple silicon"))
+        case .overlay:
+            return overlayOK ? (.overlay, L("Overlay (A)")) : (nil, L("Method A needs the overlay method"))
+        case .automatic:
+            if gammaOK { return (.gamma, L("Color table (B)")) }
+            if overlayOK { return (.overlay, L("Overlay (A)")) }
+            if per.xdrGammaWorks == false && per.xdrOverlayWorks == false {
+                return (nil, L("Neither method made this display brighter"))
+            }
+            return (nil, L("Needs the color-table or overlay brightness method"))
+        }
+    }
+
+
+    /// Boosts the display with `method` so the user can judge; answer with `finishCalibration`.
+    func beginCalibration(_ key: DisplayKey, method: Method) {
+        guard let context else { return }
+        calibrating = (key, method)
+        let boost = min(1.5, max(1.2, potential(for: key)))
+        context.brightness.setXDR(enabled: true, max: boost, method: method, for: key)
+        context.brightness.set(boost, for: key, source: .user)
+    }
+
+    func finishCalibration(brighter: Bool) {
+        guard let context, let pending = calibrating else { return }
+        let key = pending.key, method = pending.method
+        calibrating = nil
+        context.brightness.set(1, for: key, source: .user)
+        PerDisplayEdit.update(context, key) { per in
+            switch method {
+            case .overlay: per.brightness.xdrOverlayWorks = brighter
+            case .gamma: per.brightness.xdrGammaWorks = brighter
+            }
+        }
+        EventLog.shared.record(.edr, "XDR calibration: method \(method.rawValue) \(brighter ? "works" : "had no effect")")
+        onCalibrated?(key)
+    }
+
     /// Called when XDR pauses or resumes (reason, or nil on resume).
     var onPauseChange: (@MainActor (String?) -> Void)?
 
@@ -74,6 +133,8 @@ import SnapticKit
         observers.removeAll()
         pauseReason = nil
         okSince = nil
+        calibrating = nil
+        onCalibrated = nil
         context = nil
     }
 

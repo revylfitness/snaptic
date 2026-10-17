@@ -20,8 +20,6 @@ import SnapticKit
     weak var context: DisplaysContext?
     private var lifetime: Lifetime?
     private var sinks: [AnyCancellable] = []
-    /// Calibration in progress: (display, method, previous boost).
-    private(set) var calibrating: (key: DisplayKey, method: EDRBoost.Method)?
 
     init() {}
 
@@ -47,6 +45,7 @@ import SnapticKit
             }
             ctx.requestMenuRebuild()
         }
+        context.edr.onCalibrated = { [weak self] key in self?.apply(key) }
         registerActions(context, lifetime: lifetime)
         context.commands.register("toggle xdr", policy: .low, offOnly: false, cliAllowed: true,
                                   summary: L("Toggle extra brightness: toggle xdr [display]"),
@@ -85,7 +84,7 @@ import SnapticKit
                 context.brightness.setXDR(enabled: false, max: 1, method: .overlay, for: d.key)
             }
         }
-        calibrating = nil
+        context?.edr.onCalibrated = nil
         lifetime = nil
         context = nil
     }
@@ -96,33 +95,10 @@ import SnapticKit
         for d in context.registry.displays { context.brightness.setXDR(enabled: false, max: 1, method: .overlay, for: d.key) }
     }
 
-    // MARK: Method choice
+    // MARK: Method choice (in EDRBoost, so pages can reach it)
 
-    /// The method for a display, or nil with the reason it's unavailable.
     func method(for key: DisplayKey) -> (EDRBoost.Method?, String) {
-        guard let context, let display = context.registry.info(for: key) else { return (nil, L("Not connected")) }
-        guard display.edrPotential > 1.01 || context.edr.potential(for: key) > 1.01 else {
-            return (nil, L("This display has no extra (EDR) brightness"))
-        }
-        let per = context.config.value.perDisplay[key]?.brightness ?? PerDisplayBrightness()
-        let eff = context.runtime.effectiveFeatures
-        let gammaOK = eff.contains(.brightnessGamma) && HostInfo.current.isAppleSilicon
-            && !AffectedModels.gammaIsUnreliable(HostInfo.current) && per.xdrGammaWorks != false
-            && context.gamma.isAllowed && display.mirrorOf == nil
-        let overlayOK = eff.contains(.brightnessOverlay) && per.xdrOverlayWorks != false
-        switch context.config.value.brightness.xdrMethod {
-        case .gamma:
-            return gammaOK ? (.gamma, L("Color table (B)")) : (nil, L("Method B needs the color-table method on Apple silicon"))
-        case .overlay:
-            return overlayOK ? (.overlay, L("Overlay (A)")) : (nil, L("Method A needs the overlay method"))
-        case .automatic:
-            if gammaOK { return (.gamma, L("Color table (B)")) }
-            if overlayOK { return (.overlay, L("Overlay (A)")) }
-            if per.xdrGammaWorks == false && per.xdrOverlayWorks == false {
-                return (nil, L("Neither method made this display brighter"))
-            }
-            return (nil, L("Needs the color-table or overlay brightness method"))
-        }
+        context?.edr.xdrMethod(for: key) ?? (nil, L("Not running"))
     }
 
     func isEnabled(_ key: DisplayKey) -> Bool { context?.config.value.perDisplay[key]?.brightness.xdrEnabled ?? false }
@@ -136,9 +112,9 @@ import SnapticKit
     private func apply(_ key: DisplayKey) {
         guard let context else { return }
         let (method, _) = method(for: key)
-        if let method, isEnabled(key), calibrating == nil {
+        if let method, isEnabled(key), context.edr.calibrating == nil {
             context.brightness.setXDR(enabled: true, max: context.edr.maxBoost(for: key), method: method, for: key)
-        } else if calibrating?.key != key {
+        } else if context.edr.calibrating?.key != key {
             context.brightness.setXDR(enabled: false, max: 1, method: method ?? .overlay, for: key)
         }
     }
@@ -180,32 +156,6 @@ import SnapticKit
                                     cliAllowed: true) { [weak self] target in self?.step(target, up: true) }, lifetime: lifetime)
         ctx.actions.register(Action(id: Self.downAction, title: L("Extra Brightness Down"), feature: .xdr,
                                     cliAllowed: true) { [weak self] target in self?.step(target, up: false) }, lifetime: lifetime)
-    }
-
-    // MARK: Calibration ("Is it brighter?")
-
-    /// Boosts the display with `method` so the user can judge; answer with `finishCalibration`.
-    func beginCalibration(_ key: DisplayKey, method: EDRBoost.Method) {
-        guard let context else { return }
-        calibrating = (key, method)
-        let boost = min(1.5, max(1.2, context.edr.potential(for: key)))
-        context.brightness.setXDR(enabled: true, max: boost, method: method, for: key)
-        context.brightness.set(boost, for: key, source: .user)
-    }
-
-    func finishCalibration(brighter: Bool) {
-        guard let context, let pending = calibrating else { return }
-        let key = pending.key, method = pending.method
-        calibrating = nil
-        context.brightness.set(1, for: key, source: .user)
-        PerDisplayEdit.update(context, key) { per in
-            switch method {
-            case .overlay: per.brightness.xdrOverlayWorks = brighter
-            case .gamma: per.brightness.xdrGammaWorks = brighter
-            }
-        }
-        EventLog.shared.record(.edr, "XDR calibration: method \(method.rawValue) \(brighter ? "works" : "had no effect")")
-        apply(key)
     }
 
     // MARK: Menu
