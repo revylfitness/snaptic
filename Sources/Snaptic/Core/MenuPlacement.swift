@@ -24,7 +24,7 @@ enum MenuPlacement {
     }
 
     /// The SF Symbol of a module's own icon.
-    static func symbol(for module: any SnapticModule, in config: ModulesConfig) -> String {
+    @MainActor static func symbol(for module: any SnapticModule, in config: ModulesConfig) -> String {
         let chosen = config.preferences(module.id).symbol
         return chosen.isEmpty ? module.symbolName : chosen
     }
