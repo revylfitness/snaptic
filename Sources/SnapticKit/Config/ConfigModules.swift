@@ -48,21 +48,37 @@ package struct CommandLineSettings: Codable, Equatable, Sendable {
     }
 }
 
-/// Host settings under `SnapticModulesV1`: which modules run, where their menus go, the
-/// per-item menu choices of the Menu page, and the other General settings (R5.1).
+/// What to do while another display app (BetterDisplay, MonitorControl, Lunar) runs
+/// (PLAN §3.8).
+package enum OtherAppsPolicy: String, Codable, CaseIterable, Sendable {
+    /// "Pause overlapping Snaptic features" (default).
+    case pauseOverlapping
+    /// "Run both anyway".
+    case runBoth
+}
+
+/// First-run onboarding progress (PLAN §3.7). Saved after every step, so onboarding
+/// resumes after a relaunch (permission grants on macOS 27 often need one).
+package enum OnboardingStep: String, Codable, CaseIterable, Sendable {
+    case welcome, modules, displays, permissions, done
+}
+
+/// Host settings under `SnapticModulesV1`: which modules run, where their menus go, and
+/// the other General settings (R5.1). Per-item Displays menu choices live in
+/// `DisplaysConfig.menu` (MenuConfig), the single source of truth.
 package struct ModulesConfig: ConfigModel {
     package var modules: LossyMap<ModuleID, ModulePreferences>
-    /// Menu customization (General → Menu): Visible / In submenu / Hidden per item.
-    package var menuItems: LossyMap<DisplayMenuItemID, MenuItemVisibility>
     /// Icon of the shared status item; empty = Snaptic's icon.
     package var sharedSymbol: String
-    /// "Scroll on a slider to adjust" for menu sliders.
-    package var scrollSlidersToAdjust: Bool
     /// The "New: Displays" card and "More display features…" item for upgraded users.
     package var showNewDisplaysCard: Bool
     package var commandLine: CommandLineSettings
+    package var otherApps: OtherAppsPolicy
+    /// Where onboarding stopped; `.done` once finished (or for upgraded users).
+    package var onboarding: OnboardingStep
+    /// Permissions chosen during onboarding that still have to be requested.
+    package var onboardingPermissions: [Permission]
 
-    package static let maxMenuItems = 256
     package static let maxSymbolLength = 64
 
     /// SF Symbols offered for status icons (General → Menu).
@@ -74,25 +90,29 @@ package struct ModulesConfig: ConfigModel {
 
     package init() {
         modules = LossyMap()
-        menuItems = LossyMap()
         sharedSymbol = ""
-        scrollSlidersToAdjust = true
         showNewDisplaysCard = false
         commandLine = CommandLineSettings()
+        otherApps = .pauseOverlapping
+        onboarding = .welcome
+        onboardingPermissions = []
     }
 
     private enum CodingKeys: String, CodingKey {
-        case modules, menuItems, sharedSymbol, scrollSlidersToAdjust, showNewDisplaysCard, commandLine
+        case modules, sharedSymbol, showNewDisplaysCard, commandLine, otherApps, onboarding, onboardingPermissions
     }
 
     package init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         modules = c.lossy(.modules, LossyMap())
-        menuItems = c.lossy(.menuItems, LossyMap())
         sharedSymbol = c.lossy(.sharedSymbol, "")
-        scrollSlidersToAdjust = c.lossy(.scrollSlidersToAdjust, true)
         showNewDisplaysCard = c.lossy(.showNewDisplaysCard, false)
         commandLine = c.lossy(.commandLine, CommandLineSettings())
+        otherApps = c.lossy(.otherApps, .pauseOverlapping)
+        // A missing or unreadable step means an older Snaptic: nothing to resume.
+        onboarding = c.lossy(.onboarding, .done)
+        let names: [String] = c.lossy(.onboardingPermissions, [])
+        onboardingPermissions = names.compactMap { Permission(rawValue: $0) }
     }
 
     package func sanitized() -> ModulesConfig {
@@ -104,12 +124,9 @@ package struct ModulesConfig: ConfigModel {
             c.modules[id] = p
         }
         if !Self.isCuratedSymbol(c.sharedSymbol) { c.sharedSymbol = "" }
-        var items: [DisplayMenuItemID: MenuItemVisibility] = [:]
-        for key in c.menuItems.values.keys.sorted(by: { $0.rawValue < $1.rawValue })
-        where Self.isValidMenuItemID(key) && items.count < Self.maxMenuItems {
-            items[key] = c.menuItems.values[key]
-        }
-        c.menuItems = LossyMap(items)
+        var seen = Set<Permission>()
+        c.onboardingPermissions = onboardingPermissions.filter { seen.insert($0).inserted }
+        if c.onboarding == .done { c.onboardingPermissions = [] }
         return c
     }
 
@@ -127,6 +144,7 @@ package struct ModulesConfig: ConfigModel {
         c.modules[.windowSwitcher] = ModulePreferences(enabled: true)
         c.modules[.displays] = ModulePreferences(enabled: false)
         c.showNewDisplaysCard = true
+        c.onboarding = .done
         return c
     }
 
@@ -162,22 +180,10 @@ package struct ModulesConfig: ConfigModel {
         modules[id] = p
     }
 
-    /// The user's choice for a menu item, or the contributor's default.
-    package func visibility(of item: DisplayMenuItemID, default fallback: MenuItemVisibility) -> MenuItemVisibility {
-        menuItems[item] ?? fallback
-    }
-
-    /// Stores a choice; choosing the default removes the entry so defaults can change later.
-    package mutating func setVisibility(_ visibility: MenuItemVisibility, of item: DisplayMenuItemID,
-                                        default fallback: MenuItemVisibility) {
-        guard Self.isValidMenuItemID(item) else { return }
-        menuItems[item] = visibility == fallback ? nil : visibility
-    }
-
+    /// Placements and icons back to defaults (the Displays item choices reset separately,
+    /// in MenuConfig).
     package mutating func resetMenu() {
-        menuItems = LossyMap()
         sharedSymbol = ""
-        scrollSlidersToAdjust = true
         for id in ModuleID.allCases {
             var p = preferences(id)
             p.placement = .shared
@@ -193,14 +199,25 @@ package struct ModulesConfig: ConfigModel {
         symbol.isEmpty || curatedSymbols.contains(symbol)
     }
 
-    /// 1–64 characters from [A-Za-z0-9._-], like "c.brightness" or "d.resolution.slider".
-    package static func isValidMenuItemID(_ id: DisplayMenuItemID) -> Bool {
-        let utf8 = id.rawValue.utf8
-        guard !utf8.isEmpty, utf8.count <= 64 else { return false }
-        return utf8.allSatisfy { byte in
-            (0x30...0x39).contains(byte) || (0x41...0x5A).contains(byte) || (0x61...0x7A).contains(byte)
-                || byte == 0x2E || byte == 0x5F || byte == 0x2D
-        }
+    // MARK: Onboarding
+
+    package var needsOnboarding: Bool { onboarding != .done }
+
+    /// The steps shown, in order: the Displays step only while Displays is on.
+    package func onboardingSteps() -> [OnboardingStep] {
+        OnboardingStep.allCases.filter { $0 != .displays || isEnabled(.displays) }
+    }
+
+    /// The step after `step` (`.done` after the last one).
+    package func step(after step: OnboardingStep) -> OnboardingStep {
+        let steps = onboardingSteps()
+        guard let i = steps.firstIndex(of: step), i + 1 < steps.count else { return .done }
+        return steps[i + 1]
+    }
+
+    /// A saved step that no longer applies (Displays turned off meanwhile) moves on.
+    package var resumeStep: OnboardingStep {
+        onboardingSteps().contains(onboarding) ? onboarding : step(after: .modules)
     }
 }
 

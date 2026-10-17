@@ -47,6 +47,8 @@ import SnapticKit
 
     private(set) lazy var statusMenu = StatusMenu(host: self)
     private(set) lazy var settingsWindow = SettingsWindowHost(host: self)
+    private(set) lazy var onboarding = Onboarding(host: self)
+    private(set) lazy var controlServer = ControlServer(registry: commands)
 
     init(safeMode: SafeModeState, toasts: ToastPresenter, permissions: PermissionFlow, spawner: HelperSpawner,
          relauncher: Relauncher) {
@@ -81,15 +83,32 @@ import SnapticKit
     /// Startup step 11–12: modules per settings, then the status items.
     func bootstrap() {
         permissions.relauncher = relauncher
+        // Onboarding asks for permissions itself, afterwards (PLAN §3.7).
+        permissions.holdAutomaticGuides = modulesStore.value.needsOnboarding
+        setUpOtherApps()
+        setUpControl()
+        watchOutsideChanges()
         toasts.onRecentChange = { [weak self] in self?.statusMenu.requestRebuild() }
         modulesStore.$value
             .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.scheduleApply() } }
             .store(in: &sinks)
+        // "Scroll on a slider to adjust" lives in the Displays menu settings (MenuConfig).
+        MenuSliderItem.scrollToAdjust = displaysStore.value.menu.scrollAdjustsSliders
+        displaysStore.$value
+            .map(\.menu.scrollAdjustsSliders)
+            .removeDuplicates()
+            .sink { on in MainActor.assumeIsolated { MenuSliderItem.scrollToAdjust = on } }
+            .store(in: &sinks)
         applyNow()
         statusMenu.install()
-        requestLaunchPermissions()
+        _ = settingsWindow   // listens for "open this Settings page" from Displays UI
+        if modulesStore.value.needsOnboarding {
+            onboarding.showIfNeeded()
+        } else {
+            requestLaunchPermissions()
+        }
     }
 
     /// Quit path: stops modules in reverse order and flushes every store.
@@ -99,6 +118,8 @@ import SnapticKit
         applyWork?.cancel()
         applyWork = nil
         sinks.removeAll()
+        controlServer.stop()
+        otherApps.stop()
         for id in ModuleID.allCases.reversed() where running[id] != nil { stopModule(id) }
         modulesStore.flush()
         displaysStore.flush()
@@ -150,7 +171,8 @@ import SnapticKit
         defer { applying = false }
         applyWork = nil
         let config = modulesStore.value
-        MenuSliderItem.scrollToAdjust = config.scrollSlidersToAdjust
+        otherApps.policy = config.otherApps
+        if config.commandLine.enabled { controlServer.start() } else { controlServer.stop() }
         let transitions = ModuleTransitions.plan(order: ModuleID.allCases, running: runningModules,
                                                  desired: Set(config.enabledModules))
         for id in transitions.stop { stopModule(id) }
@@ -169,9 +191,6 @@ import SnapticKit
             spawner: spawner, relauncher: relauncher, otherApps: otherApps, lifetime: life,
             requestMenuRebuild: { [weak self] in self?.statusMenu.requestRebuild() },
             requestSettingsRefresh: { [weak self] in self?.revision &+= 1 },
-            menuVisibility: { [weak self] id, fallback in
-                self?.modulesStore.value.visibility(of: id, default: fallback) ?? fallback
-            },
             openSettings: { [weak self] page in self?.openSettings(page: page) })
         module(id).start(context)
         EventLog.shared.record(.modules, "Module \(id.rawValue) started")
@@ -183,6 +202,178 @@ import SnapticKit
         life.end()
         running[id] = nil
         EventLog.shared.record(.modules, "Module \(id.rawValue) stopped")
+    }
+
+    // MARK: Other display apps (PLAN §3.8)
+
+    private func setUpOtherApps() {
+        otherApps.policy = modulesStore.value.otherApps
+        otherApps.onAppsAppeared = { [weak self] apps in
+            guard let self, self.isRunning(.displays), self.modulesStore.value.otherApps == .pauseOverlapping,
+                  let first = apps.first else { return }
+            self.toasts.show(first.name + L(" is running, so Snaptic paused the Displays features it also controls."),
+                             action: ToastAction(title: L("Run Both")) { [weak self] in
+                                 self?.modulesStore.value.otherApps = .runBoth
+                             }, lifetime: self.lifetime)
+        }
+        otherApps.onRunningChange = { [weak self] in
+            self?.revision &+= 1
+            self?.statusMenu.requestRebuild()
+        }
+        otherApps.start()
+    }
+
+    // MARK: Command line (PLAN §11)
+
+    private func setUpControl() {
+        controlServer.skipConfirmationAllowed = { [weak self] in
+            self?.modulesStore.value.commandLine.maySkipConfirmation ?? false
+        }
+        controlServer.onStatusChange = { [weak self] in self?.revision &+= 1 }
+        commands.onChange = { [weak self] in self?.revision &+= 1 }
+        registerHostCommands()
+    }
+
+    private func registerHostCommands() {
+        commands.register("version", policy: .read, offOnly: false, cliAllowed: true,
+                          summary: L("Show Snaptic's version"), lifetime: lifetime) { _ in
+            let info = Bundle.main.infoDictionary
+            let version = (info?["CFBundleShortVersionString"] as? String ?? "?") + " (" + (info?["CFBundleVersion"] as? String ?? "?") + ")"
+            return .ok("Snaptic " + version)
+        }
+        commands.register("modules", policy: .read, offOnly: false, cliAllowed: true,
+                          summary: L("List the modules and whether they run"), lifetime: lifetime) { [weak self] request in
+            guard let self else { return .failure(ControlExit.unavailable, "") }
+            let rows: [(String, String)] = self.modules.map { module in
+                let state: String
+                switch module.state {
+                case .running: state = "running"
+                case .stopped: state = "off"
+                case .degraded: state = "degraded"
+                }
+                return (module.id.rawValue, state)
+            }
+            if request.json {
+                let object = Dictionary(uniqueKeysWithValues: rows)
+                let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data()
+                return .ok(String(decoding: data, as: UTF8.self))
+            }
+            return .ok(rows.map { $0.0 + "\t" + $0.1 }.joined(separator: "\n"))
+        }
+        commands.register("module disable", policy: .low, offOnly: true, cliAllowed: true,
+                          summary: L("Turn a module off: module disable <windowSwitcher|displays>"),
+                          lifetime: lifetime) { [weak self] request in
+            guard let self else { return .failure(ControlExit.unavailable, "") }
+            guard let name = request.arguments.first?.lowercased(),
+                  let id = ModuleID.allCases.first(where: { $0.rawValue.lowercased() == name || (name == "switcher" && $0 == .windowSwitcher) })
+            else { return .failure(ControlExit.notFound, L("No such module.")) }
+            self.setEnabled(false, id)
+            return .ok()
+        }
+        commands.register("open-settings", policy: .low, offOnly: false, cliAllowed: true,
+                          summary: L("Open Snaptic's Settings, optionally at a page"), lifetime: lifetime) { [weak self] request in
+            let page = request.arguments.first.flatMap(SettingsWindowHost.validPageID)
+            self?.openSettings(page: page)
+            return .ok()
+        }
+        commands.register("safe-mode", policy: .read, offOnly: false, cliAllowed: true,
+                          summary: L("Show whether Snaptic runs in Safe Mode"), lifetime: lifetime) { [weak self] _ in
+            .ok(self?.safeMode.isActive == true ? "on" : "off")
+        }
+        commands.register("list", policy: .read, offOnly: false, cliAllowed: true,
+                          summary: L("List the displays (key, name, state)"), lifetime: lifetime) { [weak self] request in
+            self?.listDisplays(json: request.json) ?? .failure(ControlExit.unavailable, "")
+        }
+        commands.register("features", policy: .read, offOnly: false, cliAllowed: true,
+                          summary: L("List the Displays features and whether they are on"), lifetime: lifetime) { [weak self] request in
+            self?.listFeatures(json: request.json) ?? .failure(ControlExit.unavailable, "")
+        }
+        commands.register("feature disable", policy: .low, offOnly: true, cliAllowed: true,
+                          summary: L("Turn a Displays feature off: feature disable <feature>"),
+                          lifetime: lifetime) { [weak self] request in
+            self?.disableFeature(request.arguments) ?? .failure(ControlExit.unavailable, "")
+        }
+    }
+
+    /// `snaptic list`: names, keys and states only (no serials, EDID or window data).
+    private func listDisplays(json: Bool) -> ControlResponse {
+        guard isRunning(.displays) else {
+            return .failure(ControlExit.unavailable, L("The Displays module is off."))
+        }
+        let list = self.displays.runtime.displays.sorted { ($0.isMain ? 0 : 1, $0.name) < ($1.isMain ? 0 : 1, $1.name) }
+        if json {
+            let rows: [[String: Any]] = list.map { d in
+                ["key": d.key.rawValue, "name": d.name, "main": d.isMain, "builtin": d.isBuiltin, "online": d.isOnline,
+                 "active": d.isActive, "width": Int(d.bounds.width), "height": Int(d.bounds.height)]
+            }
+            let data = (try? JSONSerialization.data(withJSONObject: rows, options: [.sortedKeys])) ?? Data("[]".utf8)
+            return .ok(String(decoding: data, as: UTF8.self))
+        }
+        guard !list.isEmpty else { return .ok(L("No displays.")) }
+        return .ok(list.map { d -> String in
+            var flags: [String] = []
+            if d.isMain { flags.append("main") }
+            if d.isBuiltin { flags.append("built-in") }
+            if !d.isActive { flags.append("off") }
+            if d.mirrorOf != nil { flags.append("mirroring") }
+            let size = String(Int(d.bounds.width)) + "x" + String(Int(d.bounds.height))
+            return [d.key.rawValue, d.name, size, flags.joined(separator: ",")].joined(separator: "\t")
+        }.joined(separator: "\n"))
+    }
+
+    /// `snaptic features`: the saved choice, whether it is in effect, and why not.
+    private func listFeatures(json: Bool) -> ControlResponse {
+        let raw = displaysStore.value.rawFeatures
+        let runtime = displays.runtime
+        let running = isRunning(.displays)
+        let rows = DisplayFeature.allCases.map { feature -> (name: String, on: Bool, effective: Bool, note: String) in
+            let note: String
+            if case .unavailable(let reason)? = runtime.availability[feature] { note = reason }
+            else if let reason = otherApps.pauseReason(for: feature) { note = reason }
+            else { note = "" }
+            return (feature.rawValue, FeatureGraph.rawState(feature, in: raw),
+                    running && runtime.isEffective(feature), note)
+        }
+        if json {
+            let objects: [[String: Any]] = rows.map { ["feature": $0.name, "on": $0.on, "effective": $0.effective, "note": $0.note] }
+            let data = (try? JSONSerialization.data(withJSONObject: objects, options: [.sortedKeys])) ?? Data("[]".utf8)
+            return .ok(String(decoding: data, as: UTF8.self))
+        }
+        return .ok(rows.map { row in
+            let state = row.effective ? "active" : (row.on ? "on" : "off")
+            return [row.name, state, row.note].filter { !$0.isEmpty }.joined(separator: "\t")
+        }.joined(separator: "\n"))
+    }
+
+    /// `snaptic feature disable <feature>`: off only; protected features were refused by
+    /// the registry before this runs.
+    private func disableFeature(_ arguments: [String]) -> ControlResponse {
+        guard arguments.count == 1, let feature = KitControl.feature(named: arguments[0]) else {
+            return .failure(ControlExit.notFound, L("No such feature. Run “snaptic features” for the list."))
+        }
+        guard !FeatureGraph.alwaysOn.contains(feature) else {
+            return .failure(ControlExit.refused, L("This feature is always on."))
+        }
+        displaysStore.value.features[feature] = false
+        return .ok()
+    }
+
+    // MARK: Outside changes (PLAN §3.4)
+
+    /// Hooks, actions and CLI settings changed by another process: say so (informational).
+    private func watchOutsideChanges() {
+        displaysStore.onExternalChange = { [weak self] old, new in
+            guard let self else { return }
+            if old.automation != new.automation {
+                self.toasts.show(L("Hooks or custom actions were changed outside Snaptic."), lifetime: self.lifetime)
+            }
+        }
+        modulesStore.onExternalChange = { [weak self] old, new in
+            guard let self else { return }
+            if old.commandLine != new.commandLine {
+                self.toasts.show(L("Command-line settings were changed outside Snaptic."), lifetime: self.lifetime)
+            }
+        }
     }
 
     // MARK: Permissions

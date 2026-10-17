@@ -15,8 +15,6 @@ import SnapticKit
     let requestMenuRebuild: @MainActor () -> Void
     /// The module's settingsPages() changed (e.g. a feature turned on or off).
     let requestSettingsRefresh: @MainActor () -> Void
-    /// The user's choice for a menu item (General → Menu), given the item's default.
-    let menuVisibility: @MainActor (DisplayMenuItemID, MenuItemVisibility) -> MenuItemVisibility
     /// Opens Settings, optionally at a page id.
     let openSettings: @MainActor (String?) -> Void
 
@@ -25,7 +23,6 @@ import SnapticKit
          lifetime: Lifetime,
          requestMenuRebuild: @escaping @MainActor () -> Void,
          requestSettingsRefresh: @escaping @MainActor () -> Void = {},
-         menuVisibility: @escaping @MainActor (DisplayMenuItemID, MenuItemVisibility) -> MenuItemVisibility = { $1 },
          openSettings: @escaping @MainActor (String?) -> Void = { _ in }) {
         self.safeMode = safeMode
         self.hotkeys = hotkeys
@@ -38,7 +35,6 @@ import SnapticKit
         self.lifetime = lifetime
         self.requestMenuRebuild = requestMenuRebuild
         self.requestSettingsRefresh = requestSettingsRefresh
-        self.menuVisibility = menuVisibility
         self.openSettings = openSettings
     }
 }

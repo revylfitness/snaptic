@@ -63,7 +63,23 @@ static NSError *SNSpawnMakeError(SNSpawnErrorCode code, int posixError, NSString
                options:(SNSpawnOptions)options
                    pid:(pid_t *)outPID
                  error:(NSError **)error {
+    return [self spawnSuspended:path arguments:arguments environment:@[] stdinFD:stdinFD stdoutFD:stdoutFD
+                        options:options pid:outPID error:error];
+}
+
++ (BOOL)spawnSuspended:(NSString *)path
+             arguments:(NSArray<NSString *> *)arguments
+           environment:(NSArray<NSString *> *)environment
+               stdinFD:(int)stdinFD
+              stdoutFD:(int)stdoutFD
+               options:(SNSpawnOptions)options
+                   pid:(pid_t *)outPID
+                 error:(NSError **)error {
     if (outPID != NULL) { *outPID = 0; }
+    if (environment.count > 32) {
+        if (error) { *error = SNSpawnMakeError(SNSpawnErrorBadArguments, 0, @"Environment too large"); }
+        return NO;
+    }
     const char *exe = path.length > 0 ? path.fileSystemRepresentation : NULL;
     if (exe == NULL || exe[0] != '/' || arguments.count > 64 || outPID == NULL) {
         if (error) { *error = SNSpawnMakeError(SNSpawnErrorBadArguments, 0, @"Bad spawn arguments"); }
@@ -91,12 +107,31 @@ static NSError *SNSpawnMakeError(SNSpawnErrorCode code, int posixError, NSString
         argv[i] = (char *)copy.bytes;
     }
     argv[all.count] = NULL;
-    char *envp[] = { NULL };
+    char **envp = calloc(environment.count + 1, sizeof(char *));
+    if (envp == NULL) {
+        free(argv);
+        if (error) { *error = SNSpawnMakeError(SNSpawnErrorBadArguments, ENOMEM, @"Out of memory"); }
+        return NO;
+    }
+    for (NSUInteger i = 0; i < environment.count; i++) {
+        const char *s = environment[i].UTF8String;
+        if (s == NULL || strchr(s, '=') == NULL) {
+            free(argv);
+            free(envp);
+            if (error) { *error = SNSpawnMakeError(SNSpawnErrorBadArguments, 0, @"Bad environment entry"); }
+            return NO;
+        }
+        NSData *copy = [NSData dataWithBytes:s length:strlen(s) + 1];
+        [storage addObject:copy];
+        envp[i] = (char *)copy.bytes;
+    }
+    envp[environment.count] = NULL;
 
     posix_spawnattr_t attr;
     int rc = posix_spawnattr_init(&attr);
     if (rc != 0) {
         free(argv);
+        free(envp);
         if (error) { *error = SNSpawnMakeError(SNSpawnErrorAttributes, rc, @"posix_spawnattr_init failed"); }
         return NO;
     }
@@ -105,6 +140,7 @@ static NSError *SNSpawnMakeError(SNSpawnErrorCode code, int posixError, NSString
     if (rc != 0) {
         posix_spawnattr_destroy(&attr);
         free(argv);
+        free(envp);
         if (error) { *error = SNSpawnMakeError(SNSpawnErrorFileActions, rc, @"file actions init failed"); }
         return NO;
     }
@@ -177,6 +213,7 @@ static NSError *SNSpawnMakeError(SNSpawnErrorCode code, int posixError, NSString
     posix_spawn_file_actions_destroy(&actions);
     posix_spawnattr_destroy(&attr);
     free(argv);
+    free(envp);
     (void)storage;
 
     if (!ok) {

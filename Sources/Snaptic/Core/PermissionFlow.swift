@@ -20,6 +20,9 @@ enum PermissionStatus: Equatable { case granted, denied, unknown }
 
     /// Set by the host; used by "Relaunch Snaptic".
     var relauncher: Relauncher?
+    /// While onboarding runs, automatic requests poll quietly instead of opening a guide:
+    /// permissions are asked for afterwards, only for what was chosen (PLAN §3.7).
+    var holdAutomaticGuides = false
 
     private var flows: [Permission: Flow] = [:]
     private var shownThisLaunch: Set<Permission> = []
@@ -53,7 +56,7 @@ enum PermissionStatus: Equatable { case granted, denied, unknown }
         let flow = flow(for: permission)
         flow.add(reason: reason)
         flow.addRequester(lifetime) { [weak self] in self?.requesterEnded(permission) }
-        if !shownThisLaunch.contains(permission) {
+        if !shownThisLaunch.contains(permission) && !holdAutomaticGuides {
             shownThisLaunch.insert(permission)
             begin(flow, showGuide: true)
         } else {

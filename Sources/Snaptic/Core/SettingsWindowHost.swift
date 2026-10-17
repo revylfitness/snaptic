@@ -8,13 +8,30 @@ import SnapticKit
 @MainActor final class SettingsWindowHost: NSObject, NSWindowDelegate {
     static let minimumSize = NSSize(width: 820, height: 600)
 
+    /// Posted by Displays UI with userInfo["page"] = a page id ("displays.features").
+    static let openPageNotification = Notification.Name("SnapticOpenSettingsPage")
+
     private weak var host: ModuleHost?
     private var window: NSWindow?
+    private var pageToken: NSObjectProtocol?
     let navigation = SettingsNavigation()
 
     init(host: ModuleHost) {
         self.host = host
         super.init()
+        pageToken = NotificationCenter.default.addObserver(forName: Self.openPageNotification, object: nil,
+                                                           queue: .main) { [weak self] note in
+            let page = note.userInfo?["page"] as? String
+            MainActor.assumeIsolated { self?.show(page: page.flatMap(Self.validPageID)) }
+        }
+    }
+
+    /// Page ids are short and printable; anything else selects nothing.
+    nonisolated static func validPageID(_ id: String) -> String? {
+        guard !id.isEmpty, id.utf8.count <= 64,
+              id.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.contains($0) || $0 == "." || $0 == "-" || $0 == "_" })
+        else { return nil }
+        return id
     }
 
     var isOpen: Bool { window?.isVisible ?? false }

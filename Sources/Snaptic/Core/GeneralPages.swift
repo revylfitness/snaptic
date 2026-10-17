@@ -20,7 +20,7 @@ enum GeneralPages {
                 AnyView(MenuPage(host: host, store: host.modulesStore, env: host.displays.pageEnvironment))
             },
             SettingsPage(id: "general.cli", title: L("Command-Line Control"), symbol: "terminal") {
-                AnyView(CommandLinePage(store: host.modulesStore))
+                AnyView(CommandLinePage(host: host, store: host.modulesStore))
             },
             SettingsPage(id: "general.startup", title: L("Startup"), symbol: "power") {
                 AnyView(Form { LaunchAtLoginSection() }.formStyle(.grouped))
@@ -35,7 +35,7 @@ enum GeneralPages {
                 AnyView(SafeModePage(host: host))
             },
             SettingsPage(id: "general.otherapps", title: L("Other Display Apps"), symbol: "app.badge") {
-                AnyView(OtherAppsPage())
+                AnyView(OtherAppsPage(host: host, store: host.modulesStore))
             },
             SettingsPage(id: aboutID, title: L("About & Licenses"), symbol: "info.circle") {
                 AnyView(AboutPage())
@@ -159,12 +159,17 @@ private struct MenuPage: View {
                         Label(symbol, systemImage: symbol).tag(symbol)
                     }
                 }
-                Toggle(L("Scroll on a slider to adjust"), isOn: Binding(get: { store.value.scrollSlidersToAdjust },
-                                                                       set: { store.value.scrollSlidersToAdjust = $0 }))
+                Toggle(L("Scroll on a slider to adjust"), isOn: Binding(
+                    get: { env.config.value.menu.scrollAdjustsSliders },
+                    set: { env.config.value.menu.scrollAdjustsSliders = $0 }))
             }
-            MenuCustomizationPage(env: env, modules: store)
+            MenuCustomizationPage(env: env)
             Section {
-                Button(L("Reset Menu Settings")) { store.value.resetMenu() }
+                Button(L("Reset Menu Settings")) {
+                    store.value.resetMenu()
+                    env.config.value.menu.resetLayout()
+                    env.config.value.menu.scrollAdjustsSliders = true
+                }
             }
         }
         .formStyle(.grouped)
@@ -210,27 +215,88 @@ private struct MenuPage: View {
 // MARK: - Command line
 
 private struct CommandLinePage: View {
+    @ObservedObject var host: ModuleHost
     @ObservedObject var store: ConfigStore<ModulesConfig>
+    @State private var copied = false
+
+    private var linkCommand: String {
+        let executable = Bundle.main.executablePath ?? (Bundle.main.bundlePath + "/Contents/MacOS/Snaptic")
+        return KitControl.installCommand(executable: executable)
+    }
 
     var body: some View {
         Form {
             Section {
-                Text(L("Control Snaptic from Terminal, Shortcuts, Stream Deck or Raycast with the snaptic command. The command-line server arrives in the next update; these settings are kept until then."))
-                    .foregroundStyle(.secondary)
                 Toggle(L("Allow command-line control"), isOn: Binding(get: { store.value.commandLine.enabled },
                                                                      set: { store.value.commandLine.enabled = $0 }))
                 Toggle(L("Let commands skip the confirmation panel"), isOn: Binding(
                     get: { store.value.commandLine.maySkipConfirmation },
                     set: { store.value.commandLine.maySkipConfirmation = $0 }))
                     .disabled(!store.value.commandLine.enabled)
+                statusRow
             } header: {
                 Text(L("Command-Line Control"))
             } footer: {
-                Text(L("Commands can only turn protected features off, never on. Snaptic never listens on the network."))
+                Text(L("Only your user account can connect, through a private socket; Snaptic never listens on the network. Commands can turn protected features off but never on, and can't touch hooks, actions or these settings. Display changes still ask for confirmation unless you allow skipping it and the command passes --yes."))
+                    .foregroundStyle(.secondary)
+            }
+            Section {
+                Text(L("Install the snaptic command (asks for your password):"))
+                HStack(alignment: .top) {
+                    Text(linkCommand)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .lineLimit(3)
+                    Spacer()
+                    Button(copied ? L("Copied") : L("Copy")) {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(linkCommand, forType: .string)
+                        copied = true
+                    }
+                }
+                Text(L("Or run it without installing: ") + KitControl.shellQuoted(Bundle.main.executablePath ?? "Snaptic") + " cli help")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            } header: {
+                Text(L("The snaptic command"))
+            }
+            Section {
+                let verbs = host.commands.all.filter(\.cliAllowed)
+                if verbs.isEmpty {
+                    Text(L("No commands are available with the modules and features that are on."))
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(verbs, id: \.verb) { entry in
+                        LabeledContent {
+                            Text(entry.summary + (entry.offOnly ? L(" (off only)") : ""))
+                                .foregroundStyle(.secondary)
+                        } label: {
+                            Text("snaptic " + entry.verb).font(.system(.body, design: .monospaced))
+                        }
+                    }
+                }
+            } header: {
+                Text(L("Commands"))
+            } footer: {
+                Text(L("Exit codes: 0 ok, 2 usage error, 3 nothing matched, 4 refused, 5 unavailable, 6 cancelled or timed out. Add --json for machine-readable output."))
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
+    }
+
+    @ViewBuilder
+    private var statusRow: some View {
+        let _ = host.revision
+        switch host.controlServer.status {
+        case .off:
+            Label(L("Off"), systemImage: "circle").foregroundStyle(.secondary)
+        case .listening:
+            Label(L("Listening for commands"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+        case .failed(let reason):
+            Label(reason, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+        }
     }
 }
 
@@ -299,10 +365,15 @@ private struct BackupResetPage: View {
     var body: some View {
         Form {
             Section {
-                Text(L("Exporting and importing settings arrive in the next update. Exports will never include hooks, actions, command-line settings or anything marked sensitive."))
-                    .foregroundStyle(.secondary)
+                HStack {
+                    Button(L("Export Settings…")) { Backup.export(host: host) }
+                    Button(L("Import Settings…")) { Backup.`import`(host: host) }
+                }
             } header: {
                 Text(L("Backup"))
+            } footer: {
+                Text(L("Exports never include hooks, custom actions, command-line settings, display identity secrets, DDC unlocks, \u{201C}Allow without asking\u{201D} flags, layout trust, or the disconnect, auto-disconnect, dim-to-black and sleep-prevention switches. Imports ignore those even if a file has them, and show what changes before applying."))
+                    .foregroundStyle(.secondary)
             }
             Section {
                 Button(L("Reset All Settings…"), role: .destructive) { host.resetAllSettings() }
@@ -351,13 +422,41 @@ private struct SafeModePage: View {
 // MARK: - Other display apps
 
 private struct OtherAppsPage: View {
+    @ObservedObject var host: ModuleHost
+    @ObservedObject var store: ConfigStore<ModulesConfig>
+
     var body: some View {
         Form {
             Section {
-                Text(L("When BetterDisplay, MonitorControl or Lunar runs, Snaptic will offer to pause the Displays features that overlap with it. Detection arrives in the next update."))
-                    .foregroundStyle(.secondary)
+                Picker(L("While one of them runs"), selection: Binding(get: { store.value.otherApps },
+                                                                       set: { store.value.otherApps = $0 })) {
+                    Text(L("Pause overlapping Snaptic features")).tag(OtherAppsPolicy.pauseOverlapping)
+                    Text(L("Run both anyway")).tag(OtherAppsPolicy.runBoth)
+                }
+                .pickerStyle(.radioGroup)
             } header: {
                 Text(L("Other Display Apps"))
+            } footer: {
+                Text(L("BetterDisplay, MonitorControl and Lunar also drive brightness, DDC and media keys. Running both makes them fight over the same monitor."))
+                    .foregroundStyle(.secondary)
+            }
+            Section(L("Running now")) {
+                let _ = host.revision
+                let running = host.otherApps.running
+                if running.isEmpty {
+                    Text(L("None of them is running.")).foregroundStyle(.secondary)
+                } else {
+                    ForEach(running) { app in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(app.name).fontWeight(.medium)
+                            let paused = host.otherApps.pausedDisplayFeatures.filter { app.overlapping.contains($0) }
+                            Text(paused.isEmpty ? L("Nothing paused.")
+                                 : L("Paused: ") + String(paused.count) + L(" Displays features"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
         }
         .formStyle(.grouped)

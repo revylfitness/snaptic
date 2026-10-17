@@ -222,9 +222,9 @@ import SnapticKit
         menu.addItem(ClosureMenuItem(title: L("Settings…"), keyEquivalent: ",") { [weak host] in host?.openSettings() })
         if let registry = host.displays.pageEnvironment.context?.menus {
             let defaults = Dictionary(registry.descriptors.map { ($0.id, $0.defaultVisibility) }, uniquingKeysWith: { a, _ in a })
-            let config = host.modulesStore.value
+            let menuConfig = host.displaysStore.value.menu
             let items = registry.globalItems(slot: .quick) { id in
-                config.visibility(of: id, default: defaults[id] ?? .visible)
+                menuConfig.visibility(of: id, default: defaults[id] ?? .visible)
             }
             let all = items.visible + items.more
             if !all.isEmpty {

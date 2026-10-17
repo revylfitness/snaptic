@@ -135,6 +135,41 @@ static NSError *SNProcessError(OSStatus status, NSString *what) {
     return @"unsigned";
 }
 
+static NSString *SNIdentifierOfStaticCode(SecStaticCodeRef staticCode) {
+    CFDictionaryRef infoRef = NULL;
+    if (SecCodeCopySigningInformation(staticCode, kSecCSSigningInformation, &infoRef) != errSecSuccess || infoRef == NULL) {
+        return nil;
+    }
+    NSDictionary *info = (NSDictionary *)CFBridgingRelease(infoRef);
+    id identifier = info[(__bridge NSString *)kSecCodeInfoIdentifier];
+    return [identifier isKindOfClass:[NSString class]] ? identifier : nil;
+}
+
++ (nullable NSString *)signingIdentifierForPath:(NSString *)path {
+    if (path.length == 0) { return nil; }
+    NSURL *url = [NSURL fileURLWithPath:path];
+    SecStaticCodeRef staticCode = NULL;
+    if (SecStaticCodeCreateWithPath((__bridge CFURLRef)url, kSecCSDefaultFlags, &staticCode) != errSecSuccess
+        || staticCode == NULL) {
+        return nil;
+    }
+    NSString *identifier = SNIdentifierOfStaticCode(staticCode);
+    CFRelease(staticCode);
+    return identifier;
+}
+
++ (nullable NSString *)signingIdentifierOfSelf {
+    SecCodeRef me = NULL;
+    if (SecCodeCopySelf(kSecCSDefaultFlags, &me) != errSecSuccess || me == NULL) { return nil; }
+    SecStaticCodeRef staticCode = NULL;
+    OSStatus status = SecCodeCopyStaticCode(me, kSecCSDefaultFlags, &staticCode);
+    CFRelease(me);
+    if (status != errSecSuccess || staticCode == NULL) { return nil; }
+    NSString *identifier = SNIdentifierOfStaticCode(staticCode);
+    CFRelease(staticCode);
+    return identifier;
+}
+
 + (nullable NSString *)executableUUID {
     const struct mach_header *header = _dyld_get_image_header(0);
     if (header == NULL || header->magic != MH_MAGIC_64) { return nil; }
