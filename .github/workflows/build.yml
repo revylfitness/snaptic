@@ -82,8 +82,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
+        # Works whether the tag was pushed from git (no release yet) or the
+        # release was published on GitHub first (attach the app to it).
         run: |
-          gh release create "$TAG" Snaptic.zip \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Snaptic ${TAG#v}" \
-            --generate-notes
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" Snaptic.zip --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" Snaptic.zip \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Snaptic ${TAG#v}" \
+              --generate-notes
+          fi
