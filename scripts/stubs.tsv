@@ -62,6 +62,7 @@ Sources/SnapticKit/CubeLUT.swift	E	K1	CubeLUT	-
 Sources/SnapticKit/FilterSpec.swift	E	K1	FilterSpec	-
 Sources/SnapticKit/Config/ConfigPIP.swift	E	K2	ConfigPIP	PIPConfig,PerDisplayPIP
 Sources/SnapticKit/Config/ConfigMenu.swift	F	K2	ConfigMenu	MenuConfig
+Sources/SnapticKit/DisplaysUIModel.swift	F	L	-	-
 Tests/SnapticKitTests/KitProbeTests.swift	lead	L	-	-
 Tests/SnapticKitTests/FeatureGraphTests.swift	lead	L	-	-
 Sources/SnapticShims/include/SnapticShims.h	lead	L	-	-
@@ -281,3 +282,4 @@ Tests/SnapticKitTests/CubeLUTTests.swift	E	K3	CubeLUTTests	-
 Tests/SnapticKitTests/FilterSpecTests.swift	E	K3	FilterSpecTests	-
 Tests/SnapticKitTests/ConfigPIPTests.swift	E	K3	ConfigPIPTests	-
 Tests/SnapticKitTests/ConfigMenuTests.swift	F	K3	ConfigMenuTests	-
+Tests/SnapticKitTests/DisplaysUIModelTests.swift	F	L	-	-
