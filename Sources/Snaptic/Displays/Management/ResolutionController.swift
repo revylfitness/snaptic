@@ -1,7 +1,6 @@
 import AppKit
 import Combine
 import SnapticKit
-import SnapticShims
 
 /// Resolution, "Show all modes" and "Match UI size" (PLAN §9.1, R5.3, R5.4).
 @MainActor final class ResolutionController: DisplayFeatureController, PanicParticipant, SessionParticipant,
@@ -35,12 +34,9 @@ import SnapticShims
     init() {}
 
     func availability(of feature: DisplayFeature, context: DisplaysContext) -> FeatureAvailability {
-        switch feature {
-        case .hiddenModes:
-            return SNCGSModes.isAvailable() ? .available : .unavailable(L("Hidden modes aren't available on this Mac"))
-        default:
-            return .available
-        }
+        // Hidden modes depend on private CGS symbols; PrivateDisplayAPI's probe makes the
+        // feature unavailable when they're missing (B registers them).
+        .available
     }
 
     func start(_ context: DisplaysContext, lifetime: Lifetime, effective: Set<DisplayFeature>) {

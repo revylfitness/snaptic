@@ -1,6 +1,5 @@
 import AppKit
 import SnapticKit
-import SnapticShims
 
 /// Rotation, underscan and HDR (PLAN §9.6, R5.2): always trials, journaled by the queue as
 /// MonitorPanel steps; refused when the safety helper can't revert them, and HDR/underscan
@@ -18,7 +17,8 @@ import SnapticShims
     init() {}
 
     func availability(of feature: DisplayFeature, context: DisplaysContext) -> FeatureAvailability {
-        SNMonitorPanel.isAvailable() ? .available : .unavailable(L("Needs MonitorPanel, which isn't available on this Mac"))
+        // MonitorPanel groups are probed by PrivateDisplayAPI, which marks these unavailable.
+        .available
     }
 
     func start(_ context: DisplaysContext, lifetime: Lifetime, effective: Set<DisplayFeature>) {
@@ -58,6 +58,8 @@ import SnapticShims
         guard let ctx = context else { return L("Displays is off") }
         guard effective.contains(feature) else { return L("This feature is off") }
         guard ctx.guardClient.canMonitorPanel else { return L("Safety helper can't revert this") }
+        let group = feature == .rotation ? "rotation" : feature == .hdrToggle ? "hdr" : "underscan"
+        guard ctx.privateAPI.monitorPanelSupports(group) else { return L("Not supported on this Mac") }
         switch feature {
         case .rotation:
             if d.isBuiltin { return L("The built-in display can't be rotated") }
