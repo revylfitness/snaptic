@@ -121,7 +121,7 @@ package enum Invariants {
             // the member shows, so its own dimming counts too.
             return root.effectiveDim >= dimFloor ? .strong : .none
         }
-        return own[rootID] == .strong ? .strong : .none
+        return own[rootID] == .strong ? .strong : Visibility.none
     }
 
     package static func stronglyVisible(_ s: LayoutSnapshot) -> Set<UInt32> {
@@ -133,7 +133,7 @@ package enum Invariants {
     }
 
     package static func visible(_ s: LayoutSnapshot) -> Set<UInt32> {
-        Set(visibility(s).filter { $0.value != .none }.map(\.key))
+        Set(visibility(s).filter { $0.value != Visibility.none }.map(\.key))
     }
 
     /// Where the confirm panel must appear (invariant 2): every visible display that shows
@@ -141,7 +141,7 @@ package enum Invariants {
     package static func panelHosts(_ s: LayoutSnapshot) -> Set<UInt32> {
         let vis = visibility(s)
         var hosts: Set<UInt32> = []
-        for e in s.entries where vis[e.id, default: .none] != .none {
+        for e in s.entries where vis[e.id, default: Visibility.none] != Visibility.none {
             if e.mirrorOf == nil {
                 hosts.insert(e.id)
             } else if let root = mirrorRoot(of: e.id, in: s) {
@@ -257,7 +257,7 @@ package enum Invariants {
         let mainVis = mainVisibility(after, vis: vis)
         if !strongAfter.isEmpty {
             if mainVis != .strong { result.append(.mainNotVisible(after.mainID)) }
-        } else if !visibleAfter.isEmpty, mainVis == .none {
+        } else if !visibleAfter.isEmpty, mainVis == Visibility.none {
             result.append(.mainNotVisible(after.mainID))
         }
         // R5.2: unattended changes never modeset the only strongly visible display.
@@ -275,11 +275,11 @@ package enum Invariants {
 
     /// The main display's visibility; a mirror member that is "main" counts via its set.
     private static func mainVisibility(_ s: LayoutSnapshot, vis: [UInt32: Visibility]) -> Visibility {
-        let own = vis[s.mainID, default: .none]
-        if own != .none { return own }
+        let own = vis[s.mainID, default: Visibility.none]
+        if own != Visibility.none { return own }
         // Main may be a mirror source whose members carry the visibility (e.g. Smart HiDPI).
         let members = s.entries.filter { $0.mirrorOf != nil && mirrorRoot(of: $0.id, in: s) == s.mainID }
-        return members.map { vis[$0.id, default: .none] }.max() ?? .none
+        return members.map { vis[$0.id, default: Visibility.none] }.max() ?? Visibility.none
     }
 
     /// The physical display a mode-like change ends up modesetting (a Snaptic virtual's

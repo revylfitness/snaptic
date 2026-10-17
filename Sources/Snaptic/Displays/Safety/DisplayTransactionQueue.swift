@@ -15,5 +15,6 @@ import SnapticKit
     func deactivate() { context = nil }
 
     var isBusy: Bool { false }
+    func layoutFactsChanged() {}
     func submit(_ request: TransactionRequest) async -> TransactionOutcome { .failed(L("Not built yet")) }
 }
