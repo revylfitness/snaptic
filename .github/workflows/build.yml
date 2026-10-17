@@ -49,6 +49,12 @@ jobs:
           set -o pipefail
           swift test --skip-build 2>&1 | tee test.log
 
+      # Helpers must not inherit pipe ends (PLAN §14.1): both children exit once we die.
+      - name: Helper self-test (debug)
+        run: |
+          set -o pipefail
+          ./scripts/selftest-helpers.sh .build/debug/Snaptic 2>&1 | tee selftest.log
+
       # Job logs may be unreachable from where results are read; annotations are not.
       - name: Report errors as annotations
         if: failure()
@@ -118,9 +124,18 @@ jobs:
             exit 1
           fi
 
+      - name: Helper self-test (universal, and under Rosetta when available)
+        if: github.event_name == 'push'
+        run: |
+          set -o pipefail
+          ./scripts/selftest-helpers.sh build/Snaptic.app/Contents/MacOS/Snaptic 2>&1 | tee -a selftest.log
+          if /usr/bin/arch -x86_64 /usr/bin/true 2>/dev/null; then
+            SELFTEST_ARCH=x86_64 ./scripts/selftest-helpers.sh build/Snaptic.app/Contents/MacOS/Snaptic 2>&1 | tee -a selftest.log
+          fi
+
       - name: Report errors as annotations
         if: failure()
-        run: ./scripts/ci-annotate.sh macos lint.log build.log test.log universal.log
+        run: ./scripts/ci-annotate.sh macos lint.log build.log test.log universal.log selftest.log
 
       - name: Package
         if: github.event_name == 'push'
