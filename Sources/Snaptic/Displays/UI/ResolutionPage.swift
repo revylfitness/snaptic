@@ -15,10 +15,10 @@ struct ResolutionPage: View {
             DisplaysStatusSection(env: env)
             Section {
                 ManagementFeatureNotice(env: env, feature: .resolution, title: L("Resolution"))
-                Picker(L("Confirm resolution changes"), selection: ManagementBindings.config(env, \.resolution.confirm)) {
-                    Text(L("New modes only")).tag(ResolutionConfirmPolicy.newModesOnly)
-                    Text(L("Always")).tag(ResolutionConfirmPolicy.always)
-                    Text(L("Never for public modes")).tag(ResolutionConfirmPolicy.neverForPublicModes)
+                Picker(L("Confirm resolution changes"), selection: ManagementBindings.config(env, \.safety.confirmResolution)) {
+                    Text(L("New modes only")).tag(ConfirmResolutionChanges.newModesOnly)
+                    Text(L("Always")).tag(ConfirmResolutionChanges.always)
+                    Text(L("Never for public modes")).tag(ConfirmResolutionChanges.neverForPublic)
                 }
                 Toggle(L("Offer modes below 720p"), isOn: ManagementBindings.config(env, \.resolution.allowBelow720p))
                 Toggle(L("Remember my choice and restore it when macOS doesn't"),
@@ -100,7 +100,7 @@ private struct ResolutionDisplaySection: View {
         return Picker(L("Mode"), selection: Binding<ModeRef?>(get: { current }, set: { m in if let m { controller.apply(m, to: key) } })) {
             if current == nil { Text(L("Unknown")).tag(ModeRef?.none) }
             ForEach(modes, id: \.ref) { m in
-                Text(controller.label(m.ref, key: key)).tag(Optional(m.ref))
+                Text(controller.label(m)).tag(Optional(m.ref))
             }
         }
         .accessibilityLabel(L("Resolution of \(display.name)"))
@@ -132,7 +132,7 @@ private struct ResolutionDisplaySection: View {
             Text(L("HiDPI only")).tag(ModeDPIFilter.hiDPIOnly)
             Text(L("Standard only")).tag(ModeDPIFilter.loDPIOnly)
         }
-        let rates = Array(Set(ManagedModes.modes(for: display.desktopID).map { $0.ref.refreshMilliHz / 1000 * 1000 })).sorted()
+        let rates = Array(Set(controller.allModes(display).map { $0.ref.refreshMilliHz / 1000 * 1000 })).sorted()
         if rates.count > 1 {
             Picker(L("Refresh rate"), selection: ManagementBindings.perDisplay(env, key, \.resolution.refreshFilter)) {
                 Text(L("All")).tag(Int?.none)
@@ -179,7 +179,7 @@ private struct HiddenModesSection: View {
                     ForEach(displays, id: \.key) { d in Text(d.name).tag(Optional(d.key)) }
                 }
                 if let key = shownFor, let d = displays.first(where: { $0.key == key }) {
-                    let publicModes = Set(ManagedModes.modes(for: d.desktopID).map(\.ref))
+                    let publicModes = Set(controller.allModes(d).map(\.ref))
                     let hidden = (DisplayModes.hiddenList(d.desktopID, api: ctx.privateAPI) ?? []).filter { !publicModes.contains($0.ref) }
                     if hidden.isEmpty {
                         ManagementNote(L("No extra modes."))
@@ -188,11 +188,7 @@ private struct HiddenModesSection: View {
                         HStack {
                             Text(ManagementText.mode(m.ref))
                             Spacer()
-                            Button(L("Try")) {
-                                ManagedTransactions.submit(ctx, TransactionRequest(label: L("Try hidden mode"), risk: .trial,
-                                                                                   changes: [.mode(d.desktopID, m.ref)]),
-                                                           lifetime: ctx.lifetime)
-                            }
+                            Button(L("Try")) { controller.tryHiddenMode(m.ref, on: key) }
                         }
                     }
                 }

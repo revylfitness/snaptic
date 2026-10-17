@@ -79,6 +79,7 @@ import SnapticShims
         self.context = context
         self.lifetime = lifetime
         context.registry.virtualFacts = { [weak self] in self?.facts() ?? VirtualFacts() }
+        context.diagnostics.register(self, section: L("Virtual display hosts"), lifetime: lifetime)
     }
 
     /// What the registry needs to present pairs and classify headless screens.
@@ -123,6 +124,20 @@ import SnapticShims
     }
 
     var hostCount: Int { hosts.values.filter { !$0.exited }.count }
+
+    /// Physical footprint of each live host process (bytes), for the memory rows (§9.3).
+    var hostFootprints: [(specID: StableID, bytes: UInt64)] {
+        hosts.values.filter { !$0.exited }.compactMap { h -> (StableID, UInt64)? in
+            guard let pid = h.handle?.pid, pid > 0 else { return nil }
+            var info = rusage_info_v2()
+            let r = withUnsafeMutablePointer(to: &info) { ptr in
+                ptr.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(pid, RUSAGE_INFO_V2, $0) }
+            }
+            return r == 0 ? (h.specID, info.ri_phys_footprint) : nil
+        }.sorted { $0.0.rawValue < $1.0.rawValue }
+    }
+
+    var totalHostFootprint: UInt64 { hostFootprints.reduce(0) { $0 &+ $1.bytes } }
 
     /// Estimated WindowServer memory of all live hosts' displays.
     var totalBackingBytes: UInt64 { hosts.values.filter { !$0.exited }.reduce(0) { $0 &+ $1.bytes } }
@@ -360,9 +375,16 @@ import SnapticShims
 
 extension VirtualHostsService: DiagnosticsContributor {
     func diagnostics() -> [(String, String)] {
-        [(L("Virtual hosts"), String(hostCount)),
-         (L("Estimated virtual display memory"), ByteCountFormatter.string(fromByteCount: Int64(clamping: totalBackingBytes), countStyle: .memory)),
-         (L("Virtual displays available"), Self.isAvailable ? L("Yes") : L("No")),
-         (L("Recent host failures"), String(recentFailures))]
+        var rows: [(String, String)] = [
+            (L("Virtual hosts"), String(hostCount)),
+            (L("Estimated virtual display memory"), ByteCountFormatter.string(fromByteCount: Int64(clamping: totalBackingBytes), countStyle: .memory)),
+            (L("Virtual displays available"), Self.isAvailable ? L("Yes") : L("No")),
+            (L("Recent host failures"), String(recentFailures)),
+        ]
+        for (i, f) in hostFootprints.enumerated() {
+            let pid = hosts[f.specID]?.handle?.pid ?? 0
+            rows.append((L("Host \(i + 1) (pid \(pid))"), ByteCountFormatter.string(fromByteCount: Int64(clamping: f.bytes), countStyle: .memory)))
+        }
+        return rows
     }
 }

@@ -32,7 +32,7 @@ import SnapticKit
             let slider = MenuSliderItem(title: L("Resolution"), symbol: "rectangle.arrowtriangle.2.outward", value: value) { [weak self] v in
                 self?.sliderMoved(key, value: v)
             }
-            slider.toolTip = c.label(current, markers: false)
+            slider.toolTip = c.sliderValueText(current, key: key)
             items.append((.dResolutionSlider, slider))
         }
         items.append((.dResolutionMenu, ManagedMenuItem.submenu(L("Resolution"), items: modeMenu(c, key: key, current: current))))
@@ -76,7 +76,8 @@ import SnapticKit
         items.append(.separator())
         let modes = c.modes(for: key)
         for m in modes.prefix(60) {
-            items.append(ManagedMenuItem(c.label(m.ref, key: key), on: m.ref == current) { [weak c] in c?.apply(m.ref, to: key) })
+            let ref = m.ref
+            items.append(ManagedMenuItem(c.label(m), on: ref == current) { [weak c] in c?.apply(ref, to: key) })
         }
         if modes.count > 60 {
             items.append(ManagedMenuItem(L("All Modes in Settings…")) { [weak self] in self?.context?.openSettings("displays.resolution") })
@@ -84,15 +85,18 @@ import SnapticKit
         return items
     }
 
-    /// The slider snaps to stops and applies 0.4 s after it stops moving (mode changes are slow).
+    /// The slider snaps to stops (and to favorite/current/default/native unless ⌥ is held) and
+    /// applies 0.4 s after it stops moving (mode changes are slow).
     private func sliderMoved(_ key: DisplayKey, value: Double) {
         sliderApply?.cancel()
+        let bypass = NSEvent.modifierFlags.contains(.option)
         let work = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
                 guard let c = self?.controller else { return }
                 let stops = c.sliderModes(for: key)
                 guard stops.count >= 2 else { return }
-                let i = Int((min(1, max(0, value)) * Double(stops.count - 1)).rounded())
+                let raw = Int((min(1, max(0, value)) * Double(stops.count - 1)).rounded())
+                let i = c.snappedStop(raw, in: stops, key: key, bypass: bypass)
                 c.apply(stops[i], to: key)
             }
         }

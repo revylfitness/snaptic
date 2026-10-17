@@ -9,7 +9,6 @@ final class ConfigResolutionTests: XCTestCase {
 
     func testDefaultsRoundTrip() throws {
         let c = ResolutionConfig()
-        XCTAssertEqual(c.confirm, .newModesOnly)
         XCTAssertFalse(c.allowBelow720p)
         XCTAssertTrue(c.persistedChoice)
         XCTAssertEqual(try JSONDecoder().decode(ResolutionConfig.self, from: JSONEncoder().encode(c)), c)
@@ -21,7 +20,6 @@ final class ConfigResolutionTests: XCTestCase {
     func testLossyFields() throws {
         let json = #"{"confirm":"sometimes","allowBelow720p":true,"scaleMatchTolerance":"x","sliderLabel":"percent"}"#
         let c = try JSONDecoder().decode(ResolutionConfig.self, from: Data(json.utf8))
-        XCTAssertEqual(c.confirm, .newModesOnly)
         XCTAssertTrue(c.allowBelow720p)
         XCTAssertEqual(c.scaleMatchTolerance, 0.10)
         XCTAssertEqual(c.sliderLabel, .percent)

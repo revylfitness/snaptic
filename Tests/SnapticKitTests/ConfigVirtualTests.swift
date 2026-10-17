@@ -32,6 +32,22 @@ final class ConfigVirtualTests: XCTestCase {
         XCTAssertEqual(s.connected.values, [spec.id: true])
     }
 
+    func testLastOriginsPrunedAndClamped() throws {
+        var c = VirtualConfig()
+        let spec = Recipes.spec(for: .portrait)
+        c.screens = [spec]
+        c.lastOrigins = LossyMap([spec.id: VirtualOrigin(x: 99_999, y: -99_999), StableID(): VirtualOrigin(x: 1, y: 2)])
+        let s = c.sanitized()
+        XCTAssertEqual(s.lastOrigins.values, [spec.id: VirtualOrigin(x: VirtualOrigin.limit, y: -VirtualOrigin.limit)])
+        XCTAssertEqual(s.sanitized(), s)
+        // Round trip, and a bad entry doesn't take the rest down.
+        XCTAssertEqual(try JSONDecoder().decode(VirtualConfig.self, from: JSONEncoder().encode(s)), s)
+        let json = #"{"lastOrigins":{"\#(spec.id.rawValue)":{"x":10,"y":"oops"}},"disconnectOnLock":true}"#
+        let decoded = try JSONDecoder().decode(VirtualConfig.self, from: Data(json.utf8))
+        XCTAssertTrue(decoded.lastOrigins.values.isEmpty)
+        XCTAssertTrue(decoded.disconnectOnLock)
+    }
+
     func testSmartHiDPIPairsSanitized() {
         var c = VirtualConfig()
         c.smartHiDPI = LossyMap([

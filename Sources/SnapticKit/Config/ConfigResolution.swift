@@ -2,21 +2,14 @@ import Foundation
 
 // Resolution settings (owner: D). PLAN §9.1, §4.3, R5.3.
 
-/// "Confirm resolution changes" (§4.3).
-package enum ResolutionConfirmPolicy: String, Codable, CaseIterable, Sendable {
-    /// Only modes outside the known-good set get the confirm panel.
-    case newModesOnly
-    case always
-    /// Public modes apply without a panel (hidden/CGS modes always confirm).
-    case neverForPublicModes
-}
+// "Confirm resolution changes" (§4.3) is B's `SafetyConfig.confirmResolution`: the queue's
+// RiskClassifier reads it, so there is exactly one setting.
 
 package enum SliderLabelStyle: String, Codable, CaseIterable, Sendable { case percent, size }
 
 package enum ModeDPIFilter: String, Codable, CaseIterable, Sendable { case all, hiDPIOnly, loDPIOnly }
 
 package struct ResolutionConfig: ConfigModel {
-    package var confirm: ResolutionConfirmPolicy
     /// Offer modes under 720p lines.
     package var allowBelow720p: Bool
     package var sliderLabel: SliderLabelStyle
@@ -34,7 +27,6 @@ package struct ResolutionConfig: ConfigModel {
     package static let maxUndo = 10
 
     package init() {
-        confirm = .newModesOnly
         allowBelow720p = false
         sliderLabel = .size
         sliderSnapping = true
@@ -45,14 +37,13 @@ package struct ResolutionConfig: ConfigModel {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case confirm, allowBelow720p, sliderLabel, sliderSnapping, sliderNativeAspectOnly, persistedChoice,
+        case allowBelow720p, sliderLabel, sliderSnapping, sliderNativeAspectOnly, persistedChoice,
              scaleMatchTolerance, scaleMatchReference
     }
 
     package init(from decoder: Decoder) throws {
         let d = ResolutionConfig()
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        confirm = c.lossy(.confirm, d.confirm)
         allowBelow720p = c.lossy(.allowBelow720p, d.allowBelow720p)
         sliderLabel = c.lossy(.sliderLabel, d.sliderLabel)
         sliderSnapping = c.lossy(.sliderSnapping, d.sliderSnapping)

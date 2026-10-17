@@ -39,6 +39,10 @@ import SnapticShims
             guard let self, unexpected, self.owns(id) else { return }
             self.context?.connectPlanner.trigger(.reconfigure)
         }
+        // Only a session resign (fast user switching) shuts pairs down; lock and sleep keep them.
+        context.sessionGate.observeEvents(lifetime: lifetime) { [weak self] event in
+            if event == .resignedActive { self?.shutdownForSession() }
+        }
         context.actions.register(Action(id: .dSmartHiDPIToggle, title: L("Toggle Smart HiDPI"), feature: .smartHiDPI,
                                         cliAllowed: true) { [weak self] t in
             guard let self, let ctx = self.context else { return }
@@ -355,12 +359,30 @@ import SnapticShims
 
     // MARK: Session / panic
 
-    func sessionDidPause() {
+    /// The gate also closes for lock and sleep, where pairs stay; see `shutdownForSession`.
+    func sessionDidPause() {}
+
+    /// Session resign: un-mirror, then shut every pair's host down (§4.9). Kept pairs are
+    /// re-established through the planner when the session resumes.
+    private func shutdownForSession() {
+        guard let ctx = context, !sessionPaused else { return }
         sessionPaused = true
-        guard let ctx = context else { return }
         for p in pairs.values where ctx.virtualHosts.isLive(p.specID) {
             let id = p.specID
-            lifetime?.spawn { await ctx.virtualHosts.destroy(specID: id) }
+            lifetime?.spawn { [weak self] in
+                guard let self, let ctx = self.context else { return }
+                ctx.virtualHosts.setPairPhysical(id, nil)
+                if let vid = ctx.virtualHosts.liveDisplays[id] {
+                    let mirrors = ctx.registry.displays.filter { $0.hardwareID != vid && $0.hardwareID.mirrorSource == vid }
+                    if !mirrors.isEmpty {
+                        _ = await ManagedTransactions.run(ctx, TransactionRequest(
+                            label: L("Turn off Smart HiDPI"), risk: .low, changes: mirrors.map { DisplayChange.mirror($0.hardwareID, of: nil) },
+                            finalScope: .forSession, automatic: true))
+                    }
+                }
+                await ctx.virtualHosts.destroy(specID: id)
+                EventLog.shared.record(.virtualDisplay, "Smart HiDPI pair paused for a user switch")
+            }
         }
     }
 

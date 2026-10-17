@@ -48,6 +48,10 @@ import SnapticShims
         context.virtualHosts.addExitListener(lifetime: lifetime) { [weak self] id, unexpected in
             self?.hostExited(id, unexpected: unexpected)
         }
+        // Lock (opt-in) and session resign shut screens down; sleep alone keeps them (§4.9, §9.4).
+        context.sessionGate.observeEvents(lifetime: lifetime) { [weak self] event in
+            self?.sessionEvent(event)
+        }
         registerActions(context, lifetime: lifetime)
         registerCommands(context, lifetime: lifetime)
     }
@@ -133,8 +137,11 @@ import SnapticShims
     func remove(_ id: StableID) {
         guard let ctx = context else { return }
         ctx.virtualHosts.destroyNow(specID: id)
-        ctx.config.value.virtualScreens.screens.removeAll { $0.id == id }
-        ctx.config.value.virtualScreens.connected[id] = nil
+        var value = ctx.config.value
+        value.virtualScreens.screens.removeAll { $0.id == id }
+        value.virtualScreens.connected[id] = nil
+        value.virtualScreens.lastOrigins[id] = nil
+        ctx.config.value = value
     }
 
     // MARK: Connect / disconnect
@@ -187,19 +194,39 @@ import SnapticShims
         }
     }
 
+    /// Where a newly connected screen goes: its last position ("Restore the arrangement after a
+    /// virtual screen connects"), else the recipe's placement, else wherever macOS put it.
     private func place(_ spec: VirtualScreenSpec, displayID: UInt32, ctx: DisplaysContext) async {
-        guard spec.placement == .belowRightOfMain,
-              let main = ctx.registry.displays.first(where: \.isMain), main.desktopID != displayID else { return }
+        guard let main = ctx.registry.displays.first(where: \.isMain), main.desktopID != displayID else { return }
         let b = CGDisplayBounds(displayID)
-        let o = ArrangementMath.belowRightOfMain(width: Int(b.width), height: Int(b.height), main: ManagedDisplays.rect(main))
+        let target: (x: Int32, y: Int32)
+        if ctx.config.value.virtualScreens.restoreLayoutAfterConnect, let last = ctx.config.value.virtualScreens.lastOrigins[spec.id] {
+            target = (last.x, last.y)
+        } else if spec.placement == .belowRightOfMain {
+            let o = ArrangementMath.belowRightOfMain(width: Int(b.width), height: Int(b.height), main: ManagedDisplays.rect(main))
+            target = (o.x, o.y)
+        } else {
+            return
+        }
+        guard Int32(b.origin.x.rounded()) != target.x || Int32(b.origin.y.rounded()) != target.y else { return }
         _ = await ManagedTransactions.run(ctx, TransactionRequest(label: L("Place virtual screen"), risk: .low,
-                                                                  changes: [.origin(displayID, x: o.x, y: o.y)], finalScope: .forSession,
-                                                                  automatic: true))
+                                                                  changes: [.origin(displayID, x: target.x, y: target.y)],
+                                                                  finalScope: .forSession, automatic: true))
+    }
+
+    /// Remembers a live screen's position so the next connect can restore it.
+    private func rememberOrigin(_ id: StableID) {
+        guard let ctx = context, let vid = displayID(id), let main = ctx.registry.displays.first(where: \.isMain),
+              main.desktopID != vid else { return }
+        let b = CGDisplayBounds(vid)
+        let origin = VirtualOrigin(x: Int32(clamping: Int(b.origin.x.rounded())), y: Int32(clamping: Int(b.origin.y.rounded()))).clamped
+        if ctx.config.value.virtualScreens.lastOrigins[id] != origin { ctx.config.value.virtualScreens.lastOrigins[id] = origin }
     }
 
     func disconnect(_ id: StableID) async {
         guard let ctx = context else { return }
         ctx.config.value.virtualScreens.connected[id] = false
+        rememberOrigin(id)
         // Un-mirror first if a physical display mirrors it.
         if let vid = displayID(id) {
             let mirrors = ctx.registry.displays.filter { $0.hardwareID.mirrorSource == vid || $0.mirrorOf == vid }
@@ -273,7 +300,10 @@ import SnapticShims
         for s in config.screens {
             var wants = config.connected[s.id] ?? false
             if inputs.trigger == .launch && !s.recreateOnLaunch { wants = false }
-            if pausedScreens.contains(s.id) { wants = true }
+            // A screen that didn't survive sleep comes back only with "Reconnect after wake".
+            if inputs.trigger == .wake && !config.reconnectAfterWake && !isLive(s.id) { wants = false }
+            // Shut down for a lock or user switch: not before the session resumes.
+            if pausedScreens.contains(s.id) { wants = false }
             inputs.virtualScreens.append(PlanVirtualScreen(specID: s.id, associations: s.associations, wantsConnected: wants))
             guard let vid = displayID(s.id) else { continue }
             let presented = ctx.registry.displays.first { $0.desktopID == vid }
@@ -285,10 +315,21 @@ import SnapticShims
 
     // MARK: Session / panic / host exits
 
-    /// Non-headless hosts shut down when the session resigns (un-mirror first; §4.9).
-    func sessionDidPause() {
-        for s in screens where isLive(s.id) && !s.headlessPrimary {
+    /// The gate also closes for sleep; the screens' fate is decided per event (`sessionEvent`).
+    func sessionDidPause() {}
+
+    /// Session resign (fast user switching): non-headless screens shut down (§4.9). Lock: the
+    /// same, only with "Disconnect on lock" (§9.4). Both come back through the planner on resume.
+    private func sessionEvent(_ event: SessionEvent) {
+        guard let ctx = context else { return }
+        switch event {
+        case .resignedActive: break
+        case .locked: guard ctx.config.value.virtualScreens.disconnectOnLock else { return }
+        default: return
+        }
+        for s in screens where isLive(s.id) && !s.headlessPrimary && !pausedScreens.contains(s.id) {
             pausedScreens.insert(s.id)
+            rememberOrigin(s.id)
             let id = s.id
             lifetime?.spawn { [weak self] in await self?.shutdownForSession(id) }
         }

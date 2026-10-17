@@ -30,6 +30,9 @@ import SnapticKit
     private var sinks: [AnyCancellable] = []
     private var learnedCount = 0
     private var paused = false
+    /// Public mode lists per display id; CGDisplayCopyAllDisplayModes is too slow to call per
+    /// menu item. Cleared on every registry change (reconfiguration, hot-plug).
+    private var modeCache: [UInt32: [DisplayModeDescriptor]] = [:]
 
     init() {}
 
@@ -86,6 +89,7 @@ import SnapticKit
         learning.values.forEach { $0.cancel() }
         learning = [:]
         expected = [:]
+        modeCache = [:]
         menu = nil
         lifetime = nil
         context = nil
@@ -123,6 +127,16 @@ import SnapticKit
 
     func currentMode(_ d: DisplayInfo) -> ModeRef? { d.currentMode?.ref ?? ManagedModes.current(for: d.desktopID)?.ref }
 
+    /// Every desktop-usable public mode of a display, largest first (cached).
+    func allModes(_ d: DisplayInfo) -> [DisplayModeDescriptor] { allModes(displayID: d.desktopID) }
+
+    func allModes(displayID: UInt32) -> [DisplayModeDescriptor] {
+        if let cached = modeCache[displayID] { return cached }
+        let list = ManagedModes.modes(for: displayID)
+        if displayID != 0 && !list.isEmpty { modeCache[displayID] = list }
+        return list
+    }
+
     private func perDisplay(_ key: DisplayKey) -> PerDisplayResolution {
         context?.config.value.perDisplay[key]?.resolution ?? PerDisplayResolution()
     }
@@ -141,7 +155,7 @@ import SnapticKit
     /// filters and range limit and the 720p rule. The current mode is always included.
     func modes(for key: DisplayKey) -> [DisplayModeDescriptor] {
         guard let ctx = context, let d = info(key) else { return [] }
-        let all = ManagedModes.modes(for: d.desktopID)
+        let all = allModes(d)
         let settings = ctx.config.value.resolution
         let pd = perDisplay(key)
         let current = currentMode(d)
@@ -176,16 +190,47 @@ import SnapticKit
     }
 
     func label(_ m: ModeRef, markers: Bool = true, key: DisplayKey? = nil) -> String {
+        if markers, let key, let d = info(key), let descriptor = allModes(d).first(where: { $0.ref == m }) {
+            return label(descriptor)
+        }
+        return Self.plainLabel(m)
+    }
+
+    /// Size, HiDPI, refresh, bit depth (when not 8) and the native/default markers.
+    func label(_ d: DisplayModeDescriptor) -> String {
+        var text = Self.plainLabel(d.ref)
+        if d.bitDepth > 8 { text += " · " + L("\(d.bitDepth)-bit") }
+        if d.isNative { text += " · " + L("Native") }
+        if d.isDefault { text += " · " + L("Default") }
+        return text
+    }
+
+    static func plainLabel(_ m: ModeRef) -> String {
         var text = "\(m.pointWidth) × \(m.pointHeight)"
         if m.isHiDPI { text += " HiDPI" }
         if m.refreshMilliHz > 0 { text += String(format: " · %.0f Hz", Double(m.refreshMilliHz) / 1000) }
-        if markers, let key, let all = info(key).map({ ManagedModes.modes(for: $0.desktopID) }) {
-            if let d = all.first(where: { $0.ref == m }) {
-                if d.isNative { text += " · " + L("Native") }
-                if d.isDefault { text += " · " + L("Default") }
-            }
-        }
         return text
+    }
+
+    /// The slider's value text: the size, or the percent of the default mode's width.
+    func sliderValueText(_ m: ModeRef, key: DisplayKey) -> String {
+        guard context?.config.value.resolution.sliderLabel == .percent, let def = defaultMode(key), def.pointWidth > 0 else {
+            return Self.plainLabel(m)
+        }
+        return String(format: "%.0f%%", Double(m.pointWidth) / Double(def.pointWidth) * 100)
+    }
+
+    /// Slider snapping (parity §2.2): a stop next to a favorite, the current, default or native
+    /// mode lands on it. ⌥ (or the setting) bypasses.
+    func snappedStop(_ index: Int, in stops: [ModeRef], key: DisplayKey, bypass: Bool) -> Int {
+        guard !bypass, context?.config.value.resolution.sliderSnapping == true, stops.indices.contains(index),
+              let d = info(key) else { return index }
+        let all = allModes(d).map(\.ref)
+        var targets = Set(favorites(key).compactMap { $0.resolve(in: all) })
+        [currentMode(d), defaultMode(key), native(key)].compactMap { $0 }.forEach { targets.insert($0) }
+        if targets.contains(stops[index]) { return index }
+        for j in [index - 1, index + 1] where stops.indices.contains(j) && targets.contains(stops[j]) { return j }
+        return index
     }
 
     // MARK: Changes
@@ -199,9 +244,8 @@ import SnapticKit
         guard let ctx = context, let lifetime, effective.contains(.resolution), let d = info(key) else { return }
         let before = currentMode(d)
         guard mode != before else { return }
-        let settings = ctx.config.value.resolution
-        let risk: TransactionRisk = settings.confirm == .always ? .trial : .low
-        let request = TransactionRequest(label: text ?? L("Change resolution"), risk: risk,
+        // The queue's classifier raises this to a trial per "Confirm resolution changes" (B).
+        let request = TransactionRequest(label: text ?? L("Change resolution"), risk: .low,
                                          changes: [.mode(d.desktopID, mode)], finalScope: .permanently)
         ctx.connectPlanner.beginUserChange()
         expected[key] = (mode, managementUptime())
@@ -242,6 +286,17 @@ import SnapticKit
         ctx.requestMenuRebuild()
     }
 
+    /// "Show all modes": a hidden (CGS) mode, always a trial, never persisted or learned.
+    func tryHiddenMode(_ mode: ModeRef, on key: DisplayKey) {
+        guard let ctx = context, let lifetime, effective.contains(.hiddenModes), let d = info(key) else { return }
+        ctx.connectPlanner.beginUserChange()
+        expected[key] = (mode, managementUptime())
+        ManagedTransactions.submit(ctx, TransactionRequest(label: L("Try hidden mode"), risk: .trial, changes: [.mode(d.desktopID, mode)]),
+                                   lifetime: lifetime) { [weak self] outcome in
+            self?.context?.connectPlanner.endUserChange(changed: outcome == .applied || outcome == .kept)
+        }
+    }
+
     func canUndo(_ key: DisplayKey) -> Bool { !(history[key]?.undo.isEmpty ?? true) }
     func canRedo(_ key: DisplayKey) -> Bool { !(history[key]?.redo.isEmpty ?? true) }
 
@@ -267,7 +322,7 @@ import SnapticKit
 
     func native(_ key: DisplayKey) -> ModeRef? {
         guard let d = info(key) else { return nil }
-        let all = ManagedModes.modes(for: d.desktopID)
+        let all = allModes(d)
         guard let n = ManagedModes.native(in: all) else { return nil }
         // The 1:1 mode: points == pixels at the native pixel size, else the native-flagged one.
         return all.first { $0.ref.pointWidth == n.ref.pixelWidth && $0.ref.pixelWidth == n.ref.pixelWidth && !$0.isHiDPI }?.ref ?? n.ref
@@ -275,20 +330,20 @@ import SnapticKit
 
     func defaultMode(_ key: DisplayKey) -> ModeRef? {
         guard let d = info(key) else { return nil }
-        return ManagedModes.modes(for: d.desktopID).first(where: \.isDefault)?.ref
+        return allModes(d).first(where: \.isDefault)?.ref
     }
 
     /// Native pixels at 2× (the "native-halved HiDPI" mode).
     func nativeHalved(_ key: DisplayKey) -> ModeRef? {
         guard let d = info(key), let n = native(key) else { return nil }
-        return ManagedModes.modes(for: d.desktopID).first {
+        return allModes(d).first {
             $0.isHiDPI && $0.ref.pixelWidth == n.pixelWidth && $0.ref.pointWidth * 2 == n.pixelWidth
         }?.ref
     }
 
     func hiDPIToggleTarget(_ key: DisplayKey) -> ModeRef? {
         guard let d = info(key), let current = currentMode(d) else { return nil }
-        let other = ManagedModes.modes(for: d.desktopID).map(\.ref).filter { $0.isHiDPI != current.isHiDPI }
+        let other = allModes(d).map(\.ref).filter { $0.isHiDPI != current.isHiDPI }
         let same = other.filter { $0.pointWidth == current.pointWidth && $0.pointHeight == current.pointHeight }
         let pool = same.isEmpty ? other : same
         return pool.min { a, b in
@@ -301,7 +356,7 @@ import SnapticKit
     func notchToggleTarget(_ key: DisplayKey) -> ModeRef? {
         guard let d = info(key), d.notchInset > 0, let current = currentMode(d) else { return nil }
         let inset = Int(d.notchInset.rounded())
-        return ManagedModes.modes(for: d.desktopID).map(\.ref).first { m in
+        return allModes(d).map(\.ref).first { m in
             m.pointWidth == current.pointWidth && m.isHiDPI == current.isHiDPI && m.refreshMilliHz == current.refreshMilliHz
                 && m.pointHeight != current.pointHeight && abs(abs(m.pointHeight - current.pointHeight) - inset) <= 6
         }
@@ -312,7 +367,7 @@ import SnapticKit
     func applyFavorite(_ index: Int, on key: DisplayKey) {
         let favs = favorites(key)
         guard favs.indices.contains(index), let d = info(key) else { return }
-        guard let ref = favs[index].resolve(in: ManagedModes.modes(for: d.desktopID).map(\.ref)) else {
+        guard let ref = favs[index].resolve(in: allModes(d).map(\.ref)) else {
             context?.toasts.show(L("Favorite \(index + 1) isn't available on this display"), lifetime: lifetime)
             return
         }
@@ -412,6 +467,7 @@ import SnapticKit
 
     private func observe(_ displays: [DisplayInfo]) {
         guard let ctx = context else { return }
+        modeCache = [:]
         let now = managementUptime()
         for d in displays where d.isActive {
             guard let m = currentMode(d) else { continue }
@@ -511,7 +567,7 @@ import SnapticKit
             }
             var results: [String] = []
             for d in targets {
-                let all = ManagedModes.modes(for: d.desktopID).map(\.ref)
+                let all = allModes(d).map(\.ref)
                 let matches = all.filter { m in
                     m.pointWidth == spec.width && m.pointHeight == spec.height && (spec.hiDPI.map { $0 == m.isHiDPI } ?? true)
                         && (spec.hz.map { abs(m.refreshMilliHz - $0) < 500 } ?? true)
@@ -555,10 +611,9 @@ import SnapticKit
         guard let ctx = context, let d = info(key) else { return .failed(L("Display not found")) }
         let before = currentMode(d)
         if mode == before { return .applied }
-        let risk: TransactionRisk = ctx.config.value.resolution.confirm == .always ? .trial : .low
         ctx.connectPlanner.beginUserChange()
         expected[key] = (mode, managementUptime())
-        let outcome = await ManagedTransactions.run(ctx, TransactionRequest(label: L("Change resolution"), risk: risk,
+        let outcome = await ManagedTransactions.run(ctx, TransactionRequest(label: L("Change resolution"), risk: .low,
                                                                            changes: [.mode(d.desktopID, mode)]))
         let ok = outcome == .applied || outcome == .kept
         ctx.connectPlanner.endUserChange(changed: ok)

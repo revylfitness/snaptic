@@ -55,7 +55,9 @@ struct VirtualScreensPage: View {
             if let ctx = env.context {
                 let used = ctx.virtualHosts.totalBackingBytes
                 let budget = SoCCaps.maxBackingBytes(ram: ManagedHardware.ram)
-                ManagementNote(L("Graphics memory for virtual screens: \(ManagementText.bytes(used)) of \(ManagementText.bytes(budget)). Each screen runs a small helper process."))
+                let helpers = ctx.virtualHosts.hostCount
+                ManagementNote(L("Graphics memory for virtual screens: \(ManagementText.bytes(used)) of \(ManagementText.bytes(budget)). Each screen runs a small helper process")
+                               + (helpers > 0 ? L(" (\(helpers) running, \(ManagementText.bytes(ctx.virtualHosts.totalHostFootprint)))") : "") + ".")
             }
         } header: {
             Text(L("Virtual screens"))

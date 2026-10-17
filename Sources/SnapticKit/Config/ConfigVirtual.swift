@@ -35,6 +35,23 @@ package struct SmartHiDPIPair: Codable, Equatable, Sendable {
     }
 }
 
+/// Where a virtual screen sat (global points, main display at 0,0) when it was last connected.
+package struct VirtualOrigin: Codable, Equatable, Sendable {
+    package var x: Int32
+    package var y: Int32
+
+    package static let limit: Int32 = 32_768
+
+    package init(x: Int32, y: Int32) {
+        self.x = x
+        self.y = y
+    }
+
+    package var clamped: VirtualOrigin {
+        VirtualOrigin(x: min(Self.limit, max(-Self.limit, x)), y: min(Self.limit, max(-Self.limit, y)))
+    }
+}
+
 package struct VirtualConfig: ConfigModel {
     package var screens: [VirtualScreenSpec]
     /// Manual connection state per screen (used at launch only with `recreateOnLaunch`).
@@ -46,6 +63,8 @@ package struct VirtualConfig: ConfigModel {
     package var reconnectAfterWake: Bool
     /// Disconnect on lock or screen saver and reconnect on return (session dictionary checked).
     package var disconnectOnLock: Bool
+    /// Last arrangement position per screen, restored after it connects (`restoreLayoutAfterConnect`).
+    package var lastOrigins: LossyMap<StableID, VirtualOrigin>
 
     package static let maxScreens = 8
     package static let maxPairs = 16
@@ -57,10 +76,11 @@ package struct VirtualConfig: ConfigModel {
         restoreLayoutAfterConnect = true
         reconnectAfterWake = true
         disconnectOnLock = false
+        lastOrigins = LossyMap()
     }
 
     private enum CodingKeys: String, CodingKey {
-        case screens, connected, smartHiDPI, restoreLayoutAfterConnect, reconnectAfterWake, disconnectOnLock
+        case screens, connected, smartHiDPI, restoreLayoutAfterConnect, reconnectAfterWake, disconnectOnLock, lastOrigins
     }
 
     package init(from decoder: Decoder) throws {
@@ -71,6 +91,7 @@ package struct VirtualConfig: ConfigModel {
         restoreLayoutAfterConnect = c.lossy(.restoreLayoutAfterConnect, true)
         reconnectAfterWake = c.lossy(.reconnectAfterWake, true)
         disconnectOnLock = c.lossy(.disconnectOnLock, false)
+        lastOrigins = c.lossy(.lastOrigins, LossyMap())
     }
 
     package func sanitized() -> VirtualConfig { sanitized(soc: .appleEntry) }
@@ -82,6 +103,8 @@ package struct VirtualConfig: ConfigModel {
         let live = Set(c.screens.map(\.id))
         c.connected.dropUnknown(keepingAtMost: 0)
         c.connected = LossyMap(c.connected.values.filter { live.contains($0.key) })
+        c.lastOrigins.dropUnknown(keepingAtMost: 0)
+        c.lastOrigins = LossyMap(c.lastOrigins.values.filter { live.contains($0.key) }.mapValues(\.clamped))
         c.smartHiDPI.dropUnknown(keepingAtMost: 0)
         var pairs = c.smartHiDPI.values
         let limit = SoCCaps.maxHiDPIPointDimension(soc)
