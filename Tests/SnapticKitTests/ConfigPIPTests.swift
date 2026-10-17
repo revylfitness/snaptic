@@ -289,16 +289,16 @@ final class ConfigPIPTests: XCTestCase {
     // MARK: Geometry
 
     func testVisibleSize() {
-        let s = CGSize(width: 1920, height: 1080)
+        let s = PIPSize(width: 1920, height: 1080)
         XCTAssertEqual(PIPGeometry.visibleSize(source: s, crop: nil, rotation: 0), s)
-        XCTAssertEqual(PIPGeometry.visibleSize(source: s, crop: nil, rotation: 90), CGSize(width: 1080, height: 1920))
+        XCTAssertEqual(PIPGeometry.visibleSize(source: s, crop: nil, rotation: 90), PIPSize(width: 1080, height: 1920))
         let crop = PIPRect(x: 0.5, y: 0, width: 0.5, height: 0.5)
-        XCTAssertEqual(PIPGeometry.visibleSize(source: s, crop: crop, rotation: 270), CGSize(width: 540, height: 960))
+        XCTAssertEqual(PIPGeometry.visibleSize(source: s, crop: crop, rotation: 270), PIPSize(width: 540, height: 960))
     }
 
     func testContentRectModes() {
-        let content = CGSize(width: 1920, height: 1080)
-        let bounds = CGSize(width: 1000, height: 1000)
+        let content = PIPSize(width: 1920, height: 1080)
+        let bounds = PIPSize(width: 1000, height: 1000)
         let fit = PIPGeometry.contentRect(contentPixels: content, in: bounds, scaling: .fit, underscanPercent: 100, backingScale: 2)
         XCTAssertEqual(Double(fit.width), 1000, accuracy: 1e-9)
         XCTAssertEqual(Double(fit.height), 562.5, accuracy: 1e-9)
@@ -308,10 +308,10 @@ final class ConfigPIPTests: XCTestCase {
         XCTAssertEqual(Double(fill.midX), 500, accuracy: 1e-9)
         let one = PIPGeometry.contentRect(contentPixels: content, in: bounds, scaling: .oneToOne, underscanPercent: 100, backingScale: 2)
         XCTAssertEqual(Double(one.width), 960, accuracy: 1e-9)
-        let small = CGSize(width: 400, height: 300)
+        let small = PIPSize(width: 400, height: 300)
         let integer = PIPGeometry.contentRect(contentPixels: small, in: bounds, scaling: .integer, underscanPercent: 100, backingScale: 2)
         XCTAssertEqual(Double(integer.width), 1000, accuracy: 1e-9, "5× 400 px = 2000 px = 1000 pt")
-        let tooBig = PIPGeometry.contentRect(contentPixels: CGSize(width: 4000, height: 4000), in: bounds, scaling: .integer,
+        let tooBig = PIPGeometry.contentRect(contentPixels: PIPSize(width: 4000, height: 4000), in: bounds, scaling: .integer,
                                              underscanPercent: 100, backingScale: 1)
         XCTAssertEqual(Double(tooBig.width), 1000, accuracy: 1e-9, "below 1× falls back to fit")
         let under = PIPGeometry.contentRect(contentPixels: content, in: bounds, scaling: .fit, underscanPercent: 50, backingScale: 2)
@@ -322,28 +322,28 @@ final class ConfigPIPTests: XCTestCase {
     }
 
     func testSnapAndCaptureSize() {
-        let visible = CGSize(width: 1600, height: 900)
-        XCTAssertEqual(PIPGeometry.snapped(CGSize(width: 430, height: 100), visible: visible), CGSize(width: 400, height: 225))
-        XCTAssertEqual(PIPGeometry.snapped(CGSize(width: 10, height: 10), visible: visible), CGSize(width: 400, height: 225))
+        let visible = PIPSize(width: 1600, height: 900)
+        XCTAssertEqual(PIPGeometry.snapped(PIPSize(width: 430, height: 100), visible: visible), PIPSize(width: 400, height: 225))
+        XCTAssertEqual(PIPGeometry.snapped(PIPSize(width: 10, height: 10), visible: visible), PIPSize(width: 400, height: 225))
 
-        let c = PIPGeometry.captureSize(sourcePixels: CGSize(width: 3840, height: 2160), viewPixels: CGSize(width: 960, height: 540),
+        let c = PIPGeometry.captureSize(sourcePixels: PIPSize(width: 3840, height: 2160), viewPixels: PIPSize(width: 960, height: 540),
                                         fullResolution: false)
-        XCTAssertEqual(c, CGSize(width: 960, height: 540))
-        let up = PIPGeometry.captureSize(sourcePixels: CGSize(width: 800, height: 600), viewPixels: CGSize(width: 4000, height: 3000),
+        XCTAssertEqual(c, PIPSize(width: 960, height: 540))
+        let up = PIPGeometry.captureSize(sourcePixels: PIPSize(width: 800, height: 600), viewPixels: PIPSize(width: 4000, height: 3000),
                                          fullResolution: false)
-        XCTAssertEqual(up, CGSize(width: 800, height: 600), "never upscaled")
-        let full = PIPGeometry.captureSize(sourcePixels: CGSize(width: 3840, height: 2160), viewPixels: CGSize(width: 100, height: 100),
+        XCTAssertEqual(up, PIPSize(width: 800, height: 600), "never upscaled")
+        let full = PIPGeometry.captureSize(sourcePixels: PIPSize(width: 3840, height: 2160), viewPixels: PIPSize(width: 100, height: 100),
                                            fullResolution: true)
-        XCTAssertEqual(full, CGSize(width: 3840, height: 2160))
-        let huge = PIPGeometry.captureSize(sourcePixels: CGSize(width: 20000, height: 1000), viewPixels: .zero, fullResolution: true)
+        XCTAssertEqual(full, PIPSize(width: 3840, height: 2160))
+        let huge = PIPGeometry.captureSize(sourcePixels: PIPSize(width: 20000, height: 1000), viewPixels: .zero, fullResolution: true)
         XCTAssertLessThanOrEqual(Double(huge.width), PIPGeometry.maxCaptureSide)
-        let odd = PIPGeometry.captureSize(sourcePixels: CGSize(width: 1001, height: 3), viewPixels: .zero, fullResolution: true)
+        let odd = PIPGeometry.captureSize(sourcePixels: PIPSize(width: 1001, height: 3), viewPixels: .zero, fullResolution: true)
         XCTAssertEqual(Int(odd.width) % 2, 0)
         XCTAssertGreaterThanOrEqual(Double(odd.height), 16)
     }
 
     func testSourcePointMapping() {
-        func p(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: x, y: y) }
+        func p(_ x: Double, _ y: Double) -> PIPPoint { PIPPoint(x: x, y: y) }
         // Clockwise quarter turn: the source's top-left corner is shown top-right.
         XCTAssertEqual(PIPGeometry.sourcePoint(view: p(1, 0), crop: nil, rotation: 90, flipHorizontal: false, flipVertical: false), p(0, 0))
         XCTAssertEqual(PIPGeometry.sourcePoint(view: p(1, 1), crop: nil, rotation: 90, flipHorizontal: false, flipVertical: false), p(1, 0))
@@ -363,7 +363,7 @@ final class ConfigPIPTests: XCTestCase {
             let crop: PIPRect? = rng.next() % 2 == 0 ? nil
                 : PIPRect(x: Double(rng.next() % 50) / 100, y: Double(rng.next() % 50) / 100,
                           width: 0.1 + Double(rng.next() % 40) / 100, height: 0.1 + Double(rng.next() % 40) / 100)
-            let v = CGPoint(x: Double(rng.next() % 1000) / 999, y: Double(rng.next() % 1000) / 999)
+            let v = PIPPoint(x: Double(rng.next() % 1000) / 999, y: Double(rng.next() % 1000) / 999)
             let s = PIPGeometry.sourcePoint(view: v, crop: crop, rotation: rotation, flipHorizontal: fh, flipVertical: fv)
             let back = PIPGeometry.viewPoint(source: s, crop: crop, rotation: rotation, flipHorizontal: fh, flipVertical: fv)
             XCTAssertEqual(Double(back.x), Double(v.x), accuracy: 1e-9)
@@ -372,13 +372,13 @@ final class ConfigPIPTests: XCTestCase {
     }
 
     func testCropFromDragComposesWithCurrentCrop() throws {
-        let first = try XCTUnwrap(PIPGeometry.cropFromDrag(start: CGPoint(x: 0.5, y: 0.5), end: CGPoint(x: 1, y: 1), current: nil,
+        let first = try XCTUnwrap(PIPGeometry.cropFromDrag(start: PIPPoint(x: 0.5, y: 0.5), end: PIPPoint(x: 1, y: 1), current: nil,
                                                            rotation: 0, flipHorizontal: false, flipVertical: false))
         XCTAssertEqual(first, PIPRect(x: 0.5, y: 0.5, width: 0.5, height: 0.5))
-        let second = try XCTUnwrap(PIPGeometry.cropFromDrag(start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0.5, y: 0.5), current: first,
+        let second = try XCTUnwrap(PIPGeometry.cropFromDrag(start: PIPPoint(x: 0, y: 0), end: PIPPoint(x: 0.5, y: 0.5), current: first,
                                                             rotation: 0, flipHorizontal: false, flipVertical: false))
         XCTAssertEqual(second, PIPRect(x: 0.5, y: 0.5, width: 0.25, height: 0.25))
-        XCTAssertNil(PIPGeometry.cropFromDrag(start: CGPoint(x: 0.5, y: 0.5), end: CGPoint(x: 0.505, y: 0.9), current: nil,
+        XCTAssertNil(PIPGeometry.cropFromDrag(start: PIPPoint(x: 0.5, y: 0.5), end: PIPPoint(x: 0.505, y: 0.9), current: nil,
                                               rotation: 0, flipHorizontal: false, flipVertical: false))
     }
 

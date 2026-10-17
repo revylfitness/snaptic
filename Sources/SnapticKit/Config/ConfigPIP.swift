@@ -572,27 +572,52 @@ package enum PIPLookup {
     }
 }
 
-// MARK: - Geometry
+// MARK: - Geometry (plain numbers: Kit can't use the CoreGraphics overlay)
+
+package struct PIPSize: Equatable, Sendable {
+    package var width: Double
+    package var height: Double
+    package init(width: Double, height: Double) {
+        self.width = width
+        self.height = height
+    }
+    package static let zero = PIPSize(width: 0, height: 0)
+}
+
+package struct PIPPoint: Equatable, Sendable {
+    package var x: Double
+    package var y: Double
+    package init(x: Double, y: Double) {
+        self.x = x
+        self.y = y
+    }
+}
+
+extension PIPRect {
+    package var midX: Double { x + width / 2 }
+    package var midY: Double { y + height / 2 }
+    package var size: PIPSize { PIPSize(width: width, height: height) }
+}
 
 package enum PIPGeometry {
     package static let maxCaptureSide = 8192.0
 
     /// What the viewer sees of the source: after the crop, then the rotation.
-    package static func visibleSize(source: CGSize, crop: PIPRect?, rotation: Int) -> CGSize {
+    package static func visibleSize(source: PIPSize, crop: PIPRect?, rotation: Int) -> PIPSize {
         let c = crop?.normalizedCrop()
         let w = Double(source.width) * (c?.width ?? 1)
         let h = Double(source.height) * (c?.height ?? 1)
         let r = PIPConfiguration.normalizedRotation(rotation)
-        return (r == 90 || r == 270) ? CGSize(width: h, height: w) : CGSize(width: w, height: h)
+        return (r == 90 || r == 270) ? PIPSize(width: h, height: w) : PIPSize(width: w, height: h)
     }
 
     /// Where the (rotated) content sits inside `bounds` (points, origin bottom-left or
     /// top-left: the rect is centered either way). `contentPixels` is the visible size in
     /// source pixels; `backingScale` is the target's pixels per point.
-    package static func contentRect(contentPixels: CGSize, in bounds: CGSize, scaling: PIPScaling,
-                                    underscanPercent: Int, backingScale: Double) -> CGRect {
+    package static func contentRect(contentPixels: PIPSize, in bounds: PIPSize, scaling: PIPScaling,
+                                    underscanPercent: Int, backingScale: Double) -> PIPRect {
         guard contentPixels.width > 0, contentPixels.height > 0, bounds.width > 0, bounds.height > 0 else {
-            return CGRect(origin: .zero, size: bounds)
+            return PIPRect(x: 0, y: 0, width: bounds.width, height: bounds.height)
         }
         let scale = backingScale.isFinite && backingScale > 0 ? backingScale : 1
         let cw = Double(contentPixels.width), ch = Double(contentPixels.height)
@@ -626,23 +651,23 @@ package enum PIPGeometry {
                                  PIPConfiguration.underscanRange.upperBound)) / 100
         w *= u
         h *= u
-        return CGRect(x: (bw - w) / 2, y: (bh - h) / 2, width: w, height: h)
+        return PIPRect(x: (bw - w) / 2, y: (bh - h) / 2, width: w, height: h)
     }
 
     /// Snaps a window content size to 25% steps of the visible source size, keeping
     /// the source aspect. Never below one step.
-    package static func snapped(_ size: CGSize, visible: CGSize) -> CGSize {
+    package static func snapped(_ size: PIPSize, visible: PIPSize) -> PIPSize {
         guard visible.width > 0, visible.height > 0, size.width > 0 else { return size }
         let ratio = Double(size.width) / Double(visible.width)
         let steps = Swift.max(1, (ratio / 0.25).rounded())
         let k = steps * 0.25
-        return CGSize(width: Double(visible.width) * k, height: Double(visible.height) * k)
+        return PIPSize(width: Double(visible.width) * k, height: Double(visible.height) * k)
     }
 
     /// Pixel size to ask the capture for: the cropped source fitted into the view's
     /// pixels (never upscaled), or the full source size for integer scaling. Even,
     /// at least 16 and at most `maxCaptureSide` per side. Both sizes unrotated.
-    package static func captureSize(sourcePixels: CGSize, viewPixels: CGSize, fullResolution: Bool) -> CGSize {
+    package static func captureSize(sourcePixels: PIPSize, viewPixels: PIPSize, fullResolution: Bool) -> PIPSize {
         let sw = Swift.max(1, Double(sourcePixels.width).isFinite ? Double(sourcePixels.width) : 1)
         let sh = Swift.max(1, Double(sourcePixels.height).isFinite ? Double(sourcePixels.height) : 1)
         var k = 1.0
@@ -651,13 +676,13 @@ package enum PIPGeometry {
         }
         k = Swift.min(k, maxCaptureSide / sw, maxCaptureSide / sh)
         func even(_ v: Double) -> Double { Swift.max(16, (v / 2).rounded() * 2) }
-        return CGSize(width: Swift.min(even(sw * k), maxCaptureSide), height: Swift.min(even(sh * k), maxCaptureSide))
+        return PIPSize(width: Swift.min(even(sw * k), maxCaptureSide), height: Swift.min(even(sh * k), maxCaptureSide))
     }
 
     /// Maps a point in the content (normalized, top-left origin) back to the full
     /// source (normalized, top-left origin), undoing rotation, flips and crop.
-    package static func sourcePoint(view p: CGPoint, crop: PIPRect?, rotation: Int, flipHorizontal: Bool,
-                                    flipVertical: Bool) -> CGPoint {
+    package static func sourcePoint(view p: PIPPoint, crop: PIPRect?, rotation: Int, flipHorizontal: Bool,
+                                    flipVertical: Bool) -> PIPPoint {
         var x = Swift.min(Swift.max(Double(p.x), 0), 1)
         var y = Swift.min(Swift.max(Double(p.y), 0), 1)
         // Displayed = rotate(flip(source)); undo the rotation first.
@@ -673,12 +698,12 @@ package enum PIPGeometry {
             x = c.x + x * c.width
             y = c.y + y * c.height
         }
-        return CGPoint(x: x, y: y)
+        return PIPPoint(x: x, y: y)
     }
 
     /// The inverse of `sourcePoint`, for drawing source-space rectangles on the view.
-    package static func viewPoint(source p: CGPoint, crop: PIPRect?, rotation: Int, flipHorizontal: Bool,
-                                  flipVertical: Bool) -> CGPoint {
+    package static func viewPoint(source p: PIPPoint, crop: PIPRect?, rotation: Int, flipHorizontal: Bool,
+                                  flipVertical: Bool) -> PIPPoint {
         var x = Double(p.x)
         var y = Double(p.y)
         if let c = crop?.normalizedCrop() {
@@ -693,7 +718,7 @@ package enum PIPGeometry {
         case 270: (x, y) = (y, 1 - x)
         default: break
         }
-        return CGPoint(x: x, y: y)
+        return PIPPoint(x: x, y: y)
     }
 
     /// Seconds between frames: `fps` 0 follows the display (60 if unknown, at most 120).
@@ -707,7 +732,7 @@ package enum PIPGeometry {
 
     /// A crop rectangle (normalized source space) from two corners dragged on the
     /// view, composed with the crop already in effect.
-    package static func cropFromDrag(start: CGPoint, end: CGPoint, current: PIPRect?, rotation: Int,
+    package static func cropFromDrag(start: PIPPoint, end: PIPPoint, current: PIPRect?, rotation: Int,
                                      flipHorizontal: Bool, flipVertical: Bool) -> PIPRect? {
         let a = sourcePoint(view: start, crop: current, rotation: rotation, flipHorizontal: flipHorizontal,
                             flipVertical: flipVertical)
