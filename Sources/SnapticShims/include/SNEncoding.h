@@ -13,6 +13,12 @@ NS_ASSUME_NONNULL_BEGIN
 /// arm64 and `c` on x86_64; when `boolAware` is YES those are treated as equal.
 + (BOOL)encoding:(NSString *)actual matches:(NSString *)expected boolAware:(BOOL)boolAware;
 
+/// The raw `method_getTypeEncoding` string, or nil when the class or method is
+/// missing. Swift compares it with Kit `KitEncoding` (PLAN §3.1). Never raises.
++ (nullable NSString *)rawEncodingForClass:(NSString *)className
+                                  selector:(NSString *)selectorName
+                               classMethod:(BOOL)classMethod;
+
 /// True when `className` exists and responds to `selectorName` with the
 /// expected type encoding. Never raises.
 + (BOOL)verifyClass:(NSString *)className

@@ -29,6 +29,23 @@
     return [a isEqualToString:e];
 }
 
++ (nullable NSString *)rawEncodingForClass:(NSString *)className
+                                  selector:(NSString *)selectorName
+                               classMethod:(BOOL)classMethod {
+    @try {
+        Class cls = NSClassFromString(className);
+        if (cls == Nil) { return nil; }
+        SEL sel = NSSelectorFromString(selectorName);
+        Method method = classMethod ? class_getClassMethod(cls, sel) : class_getInstanceMethod(cls, sel);
+        if (method == NULL) { return nil; }
+        const char *types = method_getTypeEncoding(method);
+        if (types == NULL) { return nil; }
+        return [NSString stringWithUTF8String:types];
+    } @catch (NSException *exception) {
+        return nil;
+    }
+}
+
 + (BOOL)verifyClass:(NSString *)className
            selector:(NSString *)selectorName
            expected:(NSString *)expectedEncoding
