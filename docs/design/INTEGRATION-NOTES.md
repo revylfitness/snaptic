@@ -14,3 +14,8 @@ Collected from team reports for the README, docs and the final review.
 ## Known limitations to document
 - B: "captured" = shielding-level window; EDID names on Intel only; panic HUD is a toast.
 - E: Safari private windows aren't marked (add Safari to protected apps); window sources can't auto-start or start from CLI; imported LUTs aren't in Backup; cursor exclusion and self-stream filters deferred.
+
+## Integration fixes queued
+- F: floating panel and Overview resolution controls should use `ctx.connectPlanner.resolution` (`modes(for:)`, `label(_:)`, `sliderModes`, `sliderValueText`, `snappedStop`, `currentMode`, `apply(_:to:)`, `step(_:by:)`) instead of raw CGDisplayCopyAllDisplayModes + `.mode` transactions (keeps undo, persisted choice, planner coordination, OSD).
+- D hardware checks: single-mode HiDPI creation + 2× fallback; applySettings on a live virtual; virtuals after lock/sleep/FUS; EDID chromaticity on Apple silicon; AppleClamshellState; base-M3/iMac hazard list; host footprint.
+- D limitations: lid state read at plan time; no ICC fallback for primaries; "Disconnect on lock" ignores the screen saver; "Stream onto" associations only prompt.
