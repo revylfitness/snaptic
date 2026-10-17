@@ -27,6 +27,23 @@ import SnapticKit
 
     var descriptors: [DisplayMenuItemDescriptor] { contributors.flatMap(\.descriptors) }
 
+    /// Items for a global slot, honoring visibility.
+    func globalItems(slot: MenuSlot, visibility: (DisplayMenuItemID) -> MenuItemVisibility)
+        -> (visible: [NSMenuItem], more: [NSMenuItem]) {
+        var visible: [NSMenuItem] = []
+        var more: [NSMenuItem] = []
+        for contributor in contributors {
+            for (id, item) in contributor.globalItems(slot: slot) {
+                switch visibility(id) {
+                case .visible: visible.append(item)
+                case .inSubmenu: more.append(item)
+                case .hidden: break
+                }
+            }
+        }
+        return (visible, more)
+    }
+
     /// Items for one display, in registration order, honoring the user's visibility choices.
     func items(for display: DisplayInfo, visibility: (DisplayMenuItemID) -> MenuItemVisibility)
         -> (visible: [NSMenuItem], more: [NSMenuItem]) {

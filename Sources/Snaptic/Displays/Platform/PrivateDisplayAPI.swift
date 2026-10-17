@@ -28,6 +28,8 @@ struct PrivateSymbol: Hashable, Sendable {
 
 @MainActor final class PrivateDisplayAPI {
     init() {}
+    /// Called once by DisplaysModule.init with every controller's and service's symbols.
+    func register(_ symbols: [PrivateSymbol]) {}
     func availability(of symbol: PrivateSymbol) -> FeatureAvailability { .unavailable(L("Not built yet")) }
     /// Resolves a C function; nil if missing or kill-switched.
     func function<T>(_ symbol: PrivateSymbol, as type: T.Type) -> T? { nil }

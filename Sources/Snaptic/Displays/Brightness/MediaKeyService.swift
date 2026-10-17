@@ -6,14 +6,18 @@ import SnapticKit
 
 @MainActor final class MediaKeyService: DisplayServiceLifecycle {
     static var serviceID: DisplayServiceID { .mediaKeys }
+    static var privateSymbols: [PrivateSymbol] { [] }
     weak var context: DisplaysContext?
 
     init() {}
 
-    func activate(_ context: DisplaysContext) { self.context = context }
+    func activate(_ context: DisplaysContext, lifetime: Lifetime) { self.context = context }
     func deactivate() { context = nil }
 
     enum Key: Sendable { case brightnessUp, brightnessDown, volumeUp, volumeDown, mute }
-    /// Return true to swallow the key. Set by KeysController.
-    var handler: (@MainActor (Key, NSEvent.ModifierFlags) -> Bool)?
+    /// Decides on the tap thread whether to swallow a key; must read only lock-protected
+    /// snapshot state (never hop to main). Set by KeysController.
+    var swallowPolicy: (@Sendable (Key, UInt64) -> Bool)?
+    /// Swallowed keys are delivered here, on main (modifier flags raw value).
+    var onKey: (@MainActor (Key, UInt64) -> Void)?
 }

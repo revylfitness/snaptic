@@ -6,11 +6,12 @@ import SnapticKit
 
 @MainActor final class GammaService: DisplayServiceLifecycle {
     static var serviceID: DisplayServiceID { .gamma }
+    static var privateSymbols: [PrivateSymbol] { [] }
     weak var context: DisplaysContext?
 
     init() {}
 
-    func activate(_ context: DisplaysContext) { self.context = context }
+    func activate(_ context: DisplaysContext, lifetime: Lifetime) { self.context = context }
     func deactivate() { context = nil }
 
     func setAdjustments(_ adjustments: ColorAdjustments, for key: DisplayKey) {}

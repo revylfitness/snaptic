@@ -13,8 +13,10 @@ import SnapticKit
     let summary = L("Brightness, resolution, DDC, virtual screens and more, for every display.")
     private(set) var state: ModuleState = .stopped
 
+    /// Before start(), what the saved settings would turn on (for the host's launch request).
     var requiredPermissions: Set<Permission> {
-        effective.reduce(into: Set<Permission>()) { $0.formUnion(FeatureGraph.permissions($1)) }
+        let set = context == nil ? resolveEffective(config.value) : effective
+        return set.reduce(into: Set<Permission>()) { $0.formUnion(FeatureGraph.permissions($1)) }
     }
 
     let config: ConfigStore<DisplaysConfig>
@@ -57,6 +59,10 @@ import SnapticKit
     ]
 
     private let controllers: [DisplayControllerID: any DisplayFeatureController]
+    /// Owned here so private symbols are registered once, before any availability check.
+    private let privateAPI = PrivateDisplayAPI()
+    private var serviceLifetimes: [DisplayServiceID: Lifetime] = [:]
+    private var paused: Set<DisplayFeature> = []
     private var context: DisplaysContext?
     private var moduleContext: ModuleContext?
     private var controllerLifetimes: [DisplayControllerID: Lifetime] = [:]
@@ -80,7 +86,17 @@ import SnapticKit
         }
         precondition(map.count == DisplayControllerID.allCases.count, "Every DisplayControllerID needs a controller")
         controllers = map
+        var symbols = Self.controllerTypes.flatMap { $0.privateSymbols }
+        symbols += Self.serviceTypes.flatMap { $0.privateSymbols }
+        privateAPI.register(symbols)
     }
+
+    private static let serviceTypes: [any DisplayServiceLifecycle.Type] = [
+        DisplayRegistry.self, SessionGate.self, DisplayGuardClient.self, DisplayTransactionQueue.self,
+        AppleBrightnessIO.self, DDCService.self, GammaService.self, OverlayService.self, EDRBoost.self,
+        BrightnessService.self, OSDPresenter.self, ColorSyncService.self, MonitorPanelService.self,
+        MediaKeyService.self, VirtualHostsService.self, CaptureService.self, SpawnerService.self,
+    ]
 
     // MARK: SnapticModule
 
@@ -89,15 +105,25 @@ import SnapticKit
         self.moduleContext = moduleContext
         killSwitches = Self.readKillSwitches()
         let lifetime = moduleContext.lifetime.child()
-        let ctx = DisplaysContext(module: moduleContext, config: config, runtime: runtime, lifetime: lifetime)
+        let ctx = DisplaysContext(module: moduleContext, privateAPI: privateAPI, config: config, runtime: runtime,
+                                  lifetime: lifetime)
         context = ctx
         state = .running
         runtime.moduleState = .running
         computeAvailability(ctx)
 
         ctx.panic.onLatchChanged = { [weak self] in
-            guard let self else { return }
-            self.runtime.isPanicLatched = self.context?.panic.isLatched ?? false
+            guard let self, let ctx = self.context else { return }
+            self.runtime.isPanicLatched = ctx.panic.isLatched
+            self.reresolve()
+            // Internally gated work (layouts, virtual recreation…) catches up on Resume.
+            if !ctx.panic.isLatched { ctx.connectPlanner.trigger(.reconfigure) }
+        }
+        ctx.menus.onChange = { [weak self] in self?.moduleContext?.requestMenuRebuild() }
+        paused = ctx.otherApps.pausedDisplayFeatures
+        ctx.otherApps.onChange = { [weak self] in
+            guard let self, let ctx = self.context else { return }
+            self.paused = ctx.otherApps.pausedDisplayFeatures
             self.reresolve()
         }
         ctx.panic.start(ctx, lifetime: lifetime)
@@ -127,6 +153,7 @@ import SnapticKit
         observers.removeAll()
         pageEnvironment.setContext(nil)
 
+        ctx.connectPlanner.stop()
         for type in Self.controllerTypes.reversed() {
             guard let life = controllerLifetimes[type.id] else { continue }
             controllers[type.id]?.stop()
@@ -134,14 +161,17 @@ import SnapticKit
         }
         controllerLifetimes = [:]
         controllerFeatures = [:]
-        ctx.connectPlanner.stop()
         ctx.panic.stop()
         ctx.sessionGate.onStateChange = nil
         ctx.panic.onLatchChanged = nil
+        ctx.otherApps.onChange = nil
+        ctx.menus.onChange = nil
         for service in FeatureGraph.activationOrder.reversed() where activeServices.contains(service) {
             ctx.service(service).deactivate()
+            serviceLifetimes[service]?.end()
         }
         activeServices = []
+        serviceLifetimes = [:]
         ctx.lifetime.end()
         config.flush()
 
@@ -169,6 +199,12 @@ import SnapticKit
             }
     }
 
+    /// Runs a registered action (quick menu, floating panel, CLI). False if unknown.
+    @discardableResult
+    func perform(_ id: DisplayActionID, on target: DisplayTarget = .pointer) -> Bool {
+        context?.actions.perform(id, on: target) ?? false
+    }
+
     // MARK: Features
 
     /// Turns a feature on together with everything it requires.
@@ -189,7 +225,8 @@ import SnapticKit
     private func resolveEffective(_ value: DisplaysConfig) -> Set<DisplayFeature> {
         FeatureGraph.resolve(raw: value.rawFeatures, killSwitches: killSwitches,
                              safeMode: context?.safeMode.isActive ?? false,
-                             unavailable: unavailable, panicLatch: context?.panic.isLatched ?? false)
+                             unavailable: unavailable, panicLatch: context?.panic.isLatched ?? false,
+                             paused: paused)
     }
 
     private func computeAvailability(_ ctx: DisplaysContext) {
@@ -214,7 +251,7 @@ import SnapticKit
     }
 
     private func configChanged() {
-        guard let ctx = context else { return }
+        guard context != nil else { return }
         let new = config.value
         let old = lastConfig
         guard new != old else { return }
@@ -226,7 +263,6 @@ import SnapticKit
         for type in Self.controllerTypes where before[type.id] != nil && controllerLifetimes[type.id] != nil {
             controllers[type.id]?.configDidChange(from: old, to: new)
         }
-        _ = ctx
     }
 
     /// PLAN §3.6 module apply order.
@@ -239,6 +275,14 @@ import SnapticKit
         var sets: [DisplayControllerID: Set<DisplayFeature>] = [:]
         for feature in newEffective { sets[FeatureGraph.controller(of: feature), default: []].insert(feature) }
 
+        // 0. Controllers that lose some (not all) features let go of them before any
+        //    service they used is deactivated.
+        for type in Self.controllerTypes.reversed() {
+            guard let new = sets[type.id], let current = controllerFeatures[type.id], !new.isSuperset(of: current) else { continue }
+            let kept = new.intersection(current)
+            controllerFeatures[type.id] = kept
+            controllers[type.id]?.effectiveFeaturesDidChange(kept)
+        }
         // 1. Stop controllers whose effective set became empty.
         for type in Self.controllerTypes.reversed() where sets[type.id] == nil {
             guard let life = controllerLifetimes[type.id] else { continue }
@@ -252,11 +296,15 @@ import SnapticKit
         for service in FeatureGraph.activationOrder.reversed()
         where activeServices.contains(service) && !required.contains(service) {
             ctx.service(service).deactivate()
+            serviceLifetimes[service]?.end()
+            serviceLifetimes[service] = nil
             activeServices.remove(service)
         }
         // 3. Activate newly required services, in order.
         for service in FeatureGraph.activationOrder where required.contains(service) && !activeServices.contains(service) {
-            ctx.service(service).activate(ctx)
+            let life = ctx.lifetime.child()
+            serviceLifetimes[service] = life
+            ctx.service(service).activate(ctx, lifetime: life)
             activeServices.insert(service)
         }
         // 4. Start new controllers; 5. notify the rest.
@@ -275,6 +323,9 @@ import SnapticKit
         if old != newEffective {
             EventLog.shared.record(.modules, "Displays features: \(newEffective.count) effective")
             moduleContext?.requestMenuRebuild()
+            if Set(old.map { FeatureGraph.spec($0).page }) != Set(newEffective.map { FeatureGraph.spec($0).page }) {
+                moduleContext?.requestSettingsRefresh()
+            }
         }
     }
 
@@ -285,7 +336,9 @@ import SnapticKit
         observers.append(ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.context?.connectPlanner.trigger(.wake) }
         })
+        runtime.displays = ctx.registry.displays
         ctx.registry.changes
+            .removeDuplicates()
             .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] displays in
@@ -310,8 +363,8 @@ import SnapticKit
 
     /// Persistent-domain Bool keys `Displays.disable.<feature>`, read once per start.
     private static func readKillSwitches() -> Set<DisplayFeature> {
-        guard let domain = Bundle.main.bundleIdentifier,
-              let values = UserDefaults.standard.persistentDomain(forName: domain) else { return [] }
+        guard let values = UserDefaults.standard.persistentDomain(
+            forName: ConfigStore<DisplaysConfig>.persistentDomainName) else { return [] }
         return Set(DisplayFeature.allCases.filter { (values["Displays.disable.\($0.rawValue)"] as? Bool) == true })
     }
 }

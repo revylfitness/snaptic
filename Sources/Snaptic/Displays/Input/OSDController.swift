@@ -5,6 +5,9 @@ import SnapticKit
 
 @MainActor final class OSDController: DisplayFeatureController {
     static var id: DisplayControllerID { .osd }
+    static var privateSymbols: [PrivateSymbol] { [] }
+    /// Weak: controllers outlive module restarts; never keep the context strongly.
+    weak var context: DisplaysContext?
 
     init() {}
 

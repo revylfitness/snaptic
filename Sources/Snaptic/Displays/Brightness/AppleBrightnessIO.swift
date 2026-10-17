@@ -9,13 +9,15 @@ final class AppleBrightnessIO: @unchecked Sendable {
 
     init() {}
 
-    func isSupported(_ hardwareID: UInt32) -> Bool { false }
-    func brightness(of hardwareID: UInt32) -> Double? { nil }
-    func setBrightness(_ value: Double, of hardwareID: UInt32) -> Bool { false }
+    /// DisplayKey → hardware display (the physical of a Smart HiDPI pair).
+    func isSupported(_ key: DisplayKey) -> Bool { false }
+    func brightness(of key: DisplayKey) -> Double? { nil }
+    func setBrightness(_ value: Double, of key: DisplayKey) -> Bool { false }
 }
 
 extension AppleBrightnessIO: DisplayServiceLifecycle {
     static var serviceID: DisplayServiceID { .appleBrightness }
-    @MainActor func activate(_ context: DisplaysContext) { self.context = context }
+    static var privateSymbols: [PrivateSymbol] { [] }
+    @MainActor func activate(_ context: DisplaysContext, lifetime: Lifetime) { self.context = context }
     @MainActor func deactivate() { context = nil }
 }

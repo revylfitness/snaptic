@@ -6,11 +6,12 @@ import SnapticKit
 
 @MainActor final class DisplayRegistry: DisplayServiceLifecycle {
     static var serviceID: DisplayServiceID { .registry }
+    static var privateSymbols: [PrivateSymbol] { [] }
     weak var context: DisplaysContext?
 
     init() {}
 
-    func activate(_ context: DisplaysContext) { self.context = context }
+    func activate(_ context: DisplaysContext, lifetime: Lifetime) { self.context = context }
     func deactivate() { context = nil }
 
     private let subject = CurrentValueSubject<[DisplayInfo], Never>([])

@@ -6,11 +6,12 @@ import SnapticKit
 
 @MainActor final class SessionGate: DisplayServiceLifecycle {
     static var serviceID: DisplayServiceID { .sessionGate }
+    static var privateSymbols: [PrivateSymbol] { [] }
     weak var context: DisplaysContext?
 
     init() {}
 
-    func activate(_ context: DisplaysContext) { self.context = context }
+    func activate(_ context: DisplaysContext, lifetime: Lifetime) { self.context = context }
     func deactivate() { context = nil }
 
     /// False while the session is locked, switched out or asleep.

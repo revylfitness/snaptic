@@ -17,10 +17,17 @@ import SnapticKit
     init(key: String) {
         precondition(!key.contains("."), "KVO treats '.' as a key path separator")
         self.key = key
-        if let data = Self.persistentData(forKey: key),
-           let decoded = try? JSONDecoder().decode(T.self, from: data) {
-            value = decoded.sanitized()
-            lastWritten = data
+        if let data = Self.persistentData(forKey: key) {
+            if let decoded = try? JSONDecoder().decode(T.self, from: data) {
+                value = decoded.sanitized()
+                lastWritten = data
+            } else {
+                // Unreadable (e.g. written by a newer version): keep a copy before the
+                // first save replaces it, and say so in the log.
+                UserDefaults.standard.set(data, forKey: key + "Unreadable")
+                EventLog.shared.record(.modules, "Settings \(key) could not be read; saved a copy and started from defaults")
+                value = T()
+            }
         } else {
             value = T()
         }
@@ -52,9 +59,12 @@ import SnapticKit
         UserDefaults.standard.set(data, forKey: key)
     }
 
+    /// UserDefaults.standard writes to the bundle's domain; unbundled debug runs use the
+    /// process name, which is what `standard` uses then too.
+    static var persistentDomainName: String { Bundle.main.bundleIdentifier ?? ProcessInfo.processInfo.processName }
+
     static func persistentData(forKey key: String) -> Data? {
-        guard let domain = Bundle.main.bundleIdentifier,
-              let values = UserDefaults.standard.persistentDomain(forName: domain) else { return nil }
+        guard let values = UserDefaults.standard.persistentDomain(forName: persistentDomainName) else { return nil }
         return values[key] as? Data
     }
 }

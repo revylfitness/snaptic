@@ -15,6 +15,8 @@ enum FeatureAvailability: Equatable {
 @MainActor protocol DisplayFeatureController: AnyObject {
     init()
     static var id: DisplayControllerID { get }
+    /// Private symbols this controller needs; registered once when the module is built.
+    static var privateSymbols: [PrivateSymbol] { get }
     /// Static facts only: services may not be active yet.
     func availability(of feature: DisplayFeature, context: DisplaysContext) -> FeatureAvailability
     /// `lifetime` ends right after stop().
@@ -30,7 +32,9 @@ enum FeatureAvailability: Equatable {
 /// an extension with @MainActor witnesses (rule 14).
 @MainActor protocol DisplayServiceLifecycle: AnyObject {
     static var serviceID: DisplayServiceID { get }
-    func activate(_ context: DisplaysContext)
+    static var privateSymbols: [PrivateSymbol] { get }
+    /// `lifetime` ends right after deactivate(); register hooks on it, not on context.lifetime.
+    func activate(_ context: DisplaysContext, lifetime: Lifetime)
     /// Synchronous, idempotent; reverts this service's system state.
     func deactivate()
 }
@@ -48,20 +52,37 @@ enum FeatureAvailability: Equatable {
     func diagnostics() -> [(String, String)]
 }
 
+/// Where a menu item lives (PLAN §3.5).
+enum MenuSlot: String, CaseIterable, Sendable {
+    /// Inside each display's block.
+    case display
+    /// Switches in a display block's header row (DDC standby, disconnect).
+    case header
+    /// The Tools section (layouts, virtual screens, Match UI size, Connect All, Restore All…).
+    case tools
+    /// The right-click quick menu.
+    case quick
+}
+
 struct DisplayMenuItemDescriptor {
     let id: DisplayMenuItemID
     let title: String
+    let slot: MenuSlot
     let defaultVisibility: MenuItemVisibility
 }
 
 @MainActor protocol DisplayMenuContributor: AnyObject {
     var descriptors: [DisplayMenuItemDescriptor] { get }
+    /// Items for the `.display` and `.header` slots of one display.
     func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)]
+    /// Items for the global `.tools` and `.quick` slots.
+    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)]
 }
 
 /// A display as the rest of the app sees it. A Smart HiDPI pair is one entry:
-/// `desktopID` is the virtual (desktop, overlays, OSD, PIP, gamma), `hardwareID`
-/// the physical (DDC, DisplayServices, identity).
+/// `desktopID` is the virtual (desktop, overlays, OSD, PIP), `hardwareID` the
+/// physical. Services that act on the panel (DDC, gamma, DisplayServices) take the
+/// `DisplayKey` and resolve the hardware display themselves (PLAN A.2).
 struct DisplayInfo: Identifiable, Equatable {
     var id: DisplayKey { key }
     let key: DisplayKey

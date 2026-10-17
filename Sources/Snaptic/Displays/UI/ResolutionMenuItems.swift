@@ -12,4 +12,6 @@ import SnapticKit
     var descriptors: [DisplayMenuItemDescriptor] { [] }
 
     func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
+
+    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
 }

@@ -55,9 +55,10 @@ def k6(t, owner, extra, members=""):
     return header(owner, ["AppKit", "Combine", "SnapticKit"]) + (
         f"@MainActor final class {t}: DisplayServiceLifecycle {{\n"
         f"    static var serviceID: DisplayServiceID {{ .{extra} }}\n"
+        f"    static var privateSymbols: [PrivateSymbol] {{ [] }}\n"
         f"    weak var context: DisplaysContext?\n\n"
         f"    init() {{}}\n\n"
-        f"    func activate(_ context: DisplaysContext) {{ self.context = context }}\n"
+        f"    func activate(_ context: DisplaysContext, lifetime: Lifetime) {{ self.context = context }}\n"
         f"    func deactivate() {{ context = nil }}\n{members}}}\n")
 
 
@@ -69,14 +70,18 @@ def k7(t, owner, extra, members=""):
         f"    init() {{}}\n{members}}}\n\n"
         f"extension {t}: DisplayServiceLifecycle {{\n"
         f"    static var serviceID: DisplayServiceID {{ .{extra} }}\n"
-        f"    @MainActor func activate(_ context: DisplaysContext) {{ self.context = context }}\n"
+        f"    static var privateSymbols: [PrivateSymbol] {{ [] }}\n"
+        f"    @MainActor func activate(_ context: DisplaysContext, lifetime: Lifetime) {{ self.context = context }}\n"
         f"    @MainActor func deactivate() {{ context = nil }}\n}}\n")
 
 
 def k8(t, owner, extra):
     return header(owner, ["AppKit", "SnapticKit"]) + (
         f"@MainActor final class {t}: DisplayFeatureController {{\n"
-        f"    static var id: DisplayControllerID {{ .{extra} }}\n\n"
+        f"    static var id: DisplayControllerID {{ .{extra} }}\n"
+        f"    static var privateSymbols: [PrivateSymbol] {{ [] }}\n"
+        f"    /// Weak: controllers outlive module restarts; never keep the context strongly.\n"
+        f"    weak var context: DisplaysContext?\n\n"
         f"    init() {{}}\n\n"
         f"    func availability(of feature: DisplayFeature, context: DisplaysContext) -> FeatureAvailability {{\n"
         f"        .unavailable({NB})\n    }}\n\n"
@@ -93,7 +98,8 @@ def k9(t, owner, extra):
         f"    weak var context: DisplaysContext?\n\n"
         f"    init(context: DisplaysContext) {{ self.context = context }}\n\n"
         f"    var descriptors: [DisplayMenuItemDescriptor] {{ [] }}\n\n"
-        f"    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] {{ [] }}\n}}\n")
+        f"    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] {{ [] }}\n\n"
+        f"    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] {{ [] }}\n}}\n")
 
 
 def k10(t, owner, extra):
@@ -360,6 +366,8 @@ struct PrivateSymbol: Hashable, Sendable {
 
 @MainActor final class PrivateDisplayAPI {
     init() {}
+    /// Called once by DisplaysModule.init with every controller's and service's symbols.
+    func register(_ symbols: [PrivateSymbol]) {}
     func availability(of symbol: PrivateSymbol) -> FeatureAvailability { .unavailable(L("Not built yet")) }
     /// Resolves a C function; nil if missing or kill-switched.
     func function<T>(_ symbol: PrivateSymbol, as type: T.Type) -> T? { nil }
@@ -514,9 +522,10 @@ SPECIAL["BrightnessService"] = lambda o: k6("BrightnessService", o, "brightness"
 ''')
 
 SPECIAL["AppleBrightnessIO"] = lambda o: k7("AppleBrightnessIO", o, "appleBrightness", '''
-    func isSupported(_ hardwareID: UInt32) -> Bool { false }
-    func brightness(of hardwareID: UInt32) -> Double? { nil }
-    func setBrightness(_ value: Double, of hardwareID: UInt32) -> Bool { false }
+    /// DisplayKey → hardware display (the physical of a Smart HiDPI pair).
+    func isSupported(_ key: DisplayKey) -> Bool { false }
+    func brightness(of key: DisplayKey) -> Double? { nil }
+    func setBrightness(_ value: Double, of key: DisplayKey) -> Bool { false }
 ''')
 
 SPECIAL["GammaService"] = lambda o: k6("GammaService", o, "gamma", '''
@@ -561,8 +570,11 @@ SPECIAL["MonitorPanelService"] = lambda o: k6("MonitorPanelService", o, "monitor
 
 SPECIAL["MediaKeyService"] = lambda o: k6("MediaKeyService", o, "mediaKeys", '''
     enum Key: Sendable { case brightnessUp, brightnessDown, volumeUp, volumeDown, mute }
-    /// Return true to swallow the key. Set by KeysController.
-    var handler: (@MainActor (Key, NSEvent.ModifierFlags) -> Bool)?
+    /// Decides on the tap thread whether to swallow a key; must read only lock-protected
+    /// snapshot state (never hop to main). Set by KeysController.
+    var swallowPolicy: (@Sendable (Key, UInt64) -> Bool)?
+    /// Swallowed keys are delivered here, on main (modifier flags raw value).
+    var onKey: (@MainActor (Key, UInt64) -> Void)?
 ''')
 
 SPECIAL["DDCService"] = lambda o: k7("DDCService", o, "ddc", '''
@@ -589,6 +601,8 @@ SPECIAL["VirtualHostsService"] = lambda o: k6("VirtualHostsService", o, "virtual
     func create(spec: VirtualScreenSpec, initialMode: VirtualMode) async throws -> UInt32 { throw StubError.notBuilt }
     func setModes(_ modes: [VirtualMode], for specID: StableID) async throws { throw StubError.notBuilt }
     func destroy(specID: StableID) async {}
+    /// Host process of a live virtual display (for GuardDisplayClass).
+    func host(for displayID: UInt32) -> (pid: pid_t, startTime: UInt64)? { nil }
 ''')
 
 SPECIAL["ConnectPlanner"] = lambda o: header(o, ["Foundation", "SnapticKit"]) + '''@MainActor final class ConnectPlanner {

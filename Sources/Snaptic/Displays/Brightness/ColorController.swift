@@ -5,6 +5,9 @@ import SnapticKit
 
 @MainActor final class ColorController: DisplayFeatureController {
     static var id: DisplayControllerID { .color }
+    static var privateSymbols: [PrivateSymbol] { [] }
+    /// Weak: controllers outlive module restarts; never keep the context strongly.
+    weak var context: DisplaysContext?
 
     init() {}
 

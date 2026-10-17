@@ -18,7 +18,8 @@ final class DDCService: @unchecked Sendable {
 
 extension DDCService: DisplayServiceLifecycle {
     static var serviceID: DisplayServiceID { .ddc }
-    @MainActor func activate(_ context: DisplaysContext) { self.context = context }
+    static var privateSymbols: [PrivateSymbol] { [] }
+    @MainActor func activate(_ context: DisplaysContext, lifetime: Lifetime) { self.context = context }
     @MainActor func deactivate() { context = nil }
 }
 

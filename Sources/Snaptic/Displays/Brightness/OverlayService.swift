@@ -6,11 +6,12 @@ import SnapticKit
 
 @MainActor final class OverlayService: DisplayServiceLifecycle {
     static var serviceID: DisplayServiceID { .overlays }
+    static var privateSymbols: [PrivateSymbol] { [] }
     weak var context: DisplaysContext?
 
     init() {}
 
-    func activate(_ context: DisplaysContext) { self.context = context }
+    func activate(_ context: DisplaysContext, lifetime: Lifetime) { self.context = context }
     func deactivate() { context = nil }
 
     func add(_ kind: OverlayKind, on desktopID: UInt32) -> OverlayToken? { nil }

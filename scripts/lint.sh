@@ -99,7 +99,7 @@ done
 python3 - <<'PY' || status=1
 import os, re, sys
 decl = re.compile(r'^\s*(?:@\w+(?:\([^)]*\))?\s+)*(?:public |package |internal |fileprivate |private )?(?:final )?(?:class|struct|enum|protocol|actor)\s+(\w+)')
-ext = re.compile(r'^(?:@\w+\s+)*(fileprivate |private )?extension\s+([\w.]+)')
+ext = re.compile(r'^\s*(?:@\w+\s+)*(?:(fileprivate|private)\s+|(?:public|package|internal)\s+)?extension\s+([\w.]+)')
 exempt = {"PrivateSymbol"}
 bad = 0
 for dirpath, _, files in os.walk("Sources/Snaptic"):
@@ -120,5 +120,23 @@ for dirpath, _, files in os.walk("Sources/Snaptic"):
             bad = 1
 sys.exit(bad)
 PY
+
+# 11. Private symbol lookups only in PrivateDisplayAPI, the switcher's PrivateAPIs and
+#     the shims (so kill switches and availability can't be bypassed).
+if grep -rnE '\bdlsym\(|\bdlopen\(|NSClassFromString|NSSelectorFromString' Sources/Snaptic --include='*.swift' \
+    | grep -vE '^Sources/Snaptic/(Displays/Platform/PrivateDisplayAPI|Switcher/PrivateAPIs)\.swift:'; then
+    fail "private symbol lookup outside PrivateDisplayAPI.swift (see above)"
+fi
+
+# 12. Processes are spawned only by HelperSpawner (Swift) and SNSpawn (shim).
+if grep -rnE '\bProcess\(|NSTask|posix_spawn|\bpopen\(|[^.]\bsystem\(|\bfork\(|execv' Sources --include='*.swift' --include='*.m' \
+    | grep -vE '^Sources/(Snaptic/Core/HelperSpawner\.swift|SnapticShims/SNSpawn\.m):'; then
+    fail "process spawning outside HelperSpawner/SNSpawn (see above)"
+fi
+
+# 13. No traps or ad-hoc logging (rule 8, R5.7).
+if grep -rnE '\bfatalError\(|\bdebugPrint\(|\bdump\(|os_log|\bLogger\(' Sources --include='*.swift'; then
+    fail "fatalError/debugPrint/dump/os_log/Logger are banned (use safe returns and EventLog)"
+fi
 
 exit $status

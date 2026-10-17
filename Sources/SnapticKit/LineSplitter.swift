@@ -13,6 +13,7 @@ package struct LineSplitter: Sendable {
         buffer.append(chunk)
         var lines: [Data] = []
         while let newline = buffer.firstIndex(of: 0x0A) {
+            if newline - buffer.startIndex > Self.maxLine { return nil }
             lines.append(Data(buffer[buffer.startIndex..<newline]))
             buffer.removeSubrange(buffer.startIndex...newline)
         }

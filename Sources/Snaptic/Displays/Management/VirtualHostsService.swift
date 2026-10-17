@@ -6,11 +6,12 @@ import SnapticKit
 
 @MainActor final class VirtualHostsService: DisplayServiceLifecycle {
     static var serviceID: DisplayServiceID { .virtualHosts }
+    static var privateSymbols: [PrivateSymbol] { [] }
     weak var context: DisplaysContext?
 
     init() {}
 
-    func activate(_ context: DisplaysContext) { self.context = context }
+    func activate(_ context: DisplaysContext, lifetime: Lifetime) { self.context = context }
     func deactivate() { context = nil }
 
     /// Live Snaptic virtual displays by spec id.
@@ -18,4 +19,6 @@ import SnapticKit
     func create(spec: VirtualScreenSpec, initialMode: VirtualMode) async throws -> UInt32 { throw StubError.notBuilt }
     func setModes(_ modes: [VirtualMode], for specID: StableID) async throws { throw StubError.notBuilt }
     func destroy(specID: StableID) async {}
+    /// Host process of a live virtual display (for GuardDisplayClass).
+    func host(for displayID: UInt32) -> (pid: pid_t, startTime: UInt64)? { nil }
 }

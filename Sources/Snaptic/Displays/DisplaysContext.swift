@@ -24,6 +24,7 @@ import SnapticKit
     let spawner: SpawnerService
 
     // Platform and safety objects that are not refcounted services.
+    /// Owned by DisplaysModule (symbols are registered once, at module construction).
     let privateAPI: PrivateDisplayAPI
     let preConfirm: PreConfirmPresenter
     let panic: PanicCoordinator
@@ -43,6 +44,8 @@ import SnapticKit
     let toasts: ToastPresenter
     let permissions: PermissionFlow
     let helpers: HelperSpawner
+    let relauncher: Relauncher
+    let otherApps: OtherAppsMonitor
     let requestMenuRebuild: @MainActor () -> Void
     /// Ends when the Displays module stops.
     let lifetime: Lifetime
@@ -52,7 +55,8 @@ import SnapticKit
     private var panicList: [WeakPanic] = []
     private var sessionList: [WeakSession] = []
 
-    init(module: ModuleContext, config: ConfigStore<DisplaysConfig>, runtime: DisplaysRuntimeState, lifetime: Lifetime) {
+    init(module: ModuleContext, privateAPI: PrivateDisplayAPI, config: ConfigStore<DisplaysConfig>,
+         runtime: DisplaysRuntimeState, lifetime: Lifetime) {
         registry = DisplayRegistry()
         sessionGate = SessionGate()
         guardClient = DisplayGuardClient()
@@ -71,7 +75,7 @@ import SnapticKit
         capture = CaptureService()
         spawner = SpawnerService()
 
-        privateAPI = PrivateDisplayAPI()
+        self.privateAPI = privateAPI
         preConfirm = PreConfirmPresenter()
         panic = PanicCoordinator()
         connectPlanner = ConnectPlanner()
@@ -88,6 +92,8 @@ import SnapticKit
         toasts = module.toasts
         permissions = module.permissions
         helpers = module.spawner
+        relauncher = module.relauncher
+        otherApps = module.otherApps
         requestMenuRebuild = module.requestMenuRebuild
         self.lifetime = lifetime
     }

@@ -6,11 +6,12 @@ import SnapticKit
 
 @MainActor final class ColorSyncService: DisplayServiceLifecycle {
     static var serviceID: DisplayServiceID { .colorSync }
+    static var privateSymbols: [PrivateSymbol] { [] }
     weak var context: DisplaysContext?
 
     init() {}
 
-    func activate(_ context: DisplaysContext) { self.context = context }
+    func activate(_ context: DisplaysContext, lifetime: Lifetime) { self.context = context }
     func deactivate() { context = nil }
 
     func profiles(for key: DisplayKey) -> [String] { [] }

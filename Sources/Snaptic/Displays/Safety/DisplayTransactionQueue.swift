@@ -6,11 +6,12 @@ import SnapticKit
 
 @MainActor final class DisplayTransactionQueue: DisplayServiceLifecycle {
     static var serviceID: DisplayServiceID { .transactions }
+    static var privateSymbols: [PrivateSymbol] { [] }
     weak var context: DisplaysContext?
 
     init() {}
 
-    func activate(_ context: DisplaysContext) { self.context = context }
+    func activate(_ context: DisplaysContext, lifetime: Lifetime) { self.context = context }
     func deactivate() { context = nil }
 
     var isBusy: Bool { false }

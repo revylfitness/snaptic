@@ -5,6 +5,9 @@ import SnapticKit
 
 @MainActor final class SyncController: DisplayFeatureController {
     static var id: DisplayControllerID { .sync }
+    static var privateSymbols: [PrivateSymbol] { [] }
+    /// Weak: controllers outlive module restarts; never keep the context strongly.
+    weak var context: DisplaysContext?
 
     init() {}
 

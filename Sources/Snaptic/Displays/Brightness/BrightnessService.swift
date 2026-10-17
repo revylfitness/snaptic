@@ -6,11 +6,12 @@ import SnapticKit
 
 @MainActor final class BrightnessService: DisplayServiceLifecycle {
     static var serviceID: DisplayServiceID { .brightness }
+    static var privateSymbols: [PrivateSymbol] { [] }
     weak var context: DisplaysContext?
 
     init() {}
 
-    func activate(_ context: DisplaysContext) { self.context = context }
+    func activate(_ context: DisplaysContext, lifetime: Lifetime) { self.context = context }
     func deactivate() { context = nil }
 
     enum Source: Sendable { case user, keys, sync, restore, automation, cli }

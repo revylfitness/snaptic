@@ -92,7 +92,7 @@ package enum FeatureGraph {
         .underscan: FeatureSpec(.experimental, uses: [.monitorPanel, .transactions], controller: .panelProps, page: "arrangement"),
         .hdrToggle: FeatureSpec(.experimental, uses: [.monitorPanel, .transactions], controller: .panelProps, page: "arrangement"),
         .disconnect: FeatureSpec(.optIn, beta: true, uses: [.transactions, .guardProcess], controller: .power, page: "arrangement"),
-        .autoDisconnectBuiltin: FeatureSpec(.optIn, all: [.disconnect], uses: [.guardProcess], controller: .power, page: "arrangement"),
+        .autoDisconnectBuiltin: FeatureSpec(.optIn, all: [.disconnect], uses: [.guardProcess, .ddc], controller: .power, page: "arrangement"),
         .sleepPrevention: FeatureSpec(.optIn, controller: .power, page: "arrangement"),
 
         .protection: FeatureSpec(.optIn, uses: [.transactions], controller: .protection, page: "protection"),
@@ -133,6 +133,9 @@ package enum FeatureGraph {
     ]
 
     /// Features removed while panic is latched (R5.4).
+    /// Features that are never removed by pausing.
+    package static var alwaysOn: Set<DisplayFeature> { Set(DisplayFeature.allCases.filter { spec($0).defaultState == .always }) }
+
     package static let panicLatchRemoves: Set<DisplayFeature> = [.protection, .autoDisconnectBuiltin, .hooks]
 
     /// Whether a feature is on before the user touches it.
@@ -152,11 +155,14 @@ package enum FeatureGraph {
     /// The effective feature set: raw choices, minus kill switches, unavailable features,
     /// Safe Mode and panic removals, then repeatedly minus anything whose requirements
     /// are no longer met.
+    /// `paused`: features paused while another display app runs (PLAN §3.8).
     package static func resolve(raw: [DisplayFeature: Bool], killSwitches: Set<DisplayFeature>, safeMode: Bool,
-                                unavailable: Set<DisplayFeature>, panicLatch: Bool) -> Set<DisplayFeature> {
+                                unavailable: Set<DisplayFeature>, panicLatch: Bool,
+                                paused: Set<DisplayFeature> = []) -> Set<DisplayFeature> {
         var set = Set(DisplayFeature.allCases.filter { rawState($0, in: raw) })
         set.subtract(killSwitches)
         set.subtract(unavailable)
+        set.subtract(paused.subtracting(alwaysOn))
         if safeMode { set.subtract(safeModeRemoves) }
         if panicLatch { set.subtract(panicLatchRemoves) }
         var changed = true
@@ -187,7 +193,7 @@ package enum FeatureGraph {
             result[f] = true
             let s = spec(f)
             stack.append(contentsOf: s.requiresAll)
-            if !s.requiresAny.isEmpty, !s.requiresAny.contains(where: { rawState($0, in: result) }) {
+            if !s.requiresAny.isEmpty, !s.requiresAny.contains(where: { rawState($0, in: result) && available.contains($0) }) {
                 let pick = s.requiresAny.first { available.contains($0) } ?? s.requiresAny[0]
                 stack.append(pick)
             }
@@ -211,13 +217,13 @@ package enum FeatureGraph {
     package static func dependencies(_ service: DisplayServiceID) -> Set<DisplayServiceID> {
         switch service {
         case .registry, .sessionGate, .spawner: return []
-        case .guardProcess: return [.registry, .spawner]
+        case .guardProcess: return [.registry]
         case .transactions: return [.registry, .sessionGate, .guardProcess]
         case .appleBrightness, .overlays, .osd, .colorSync, .monitorPanel, .mediaKeys: return [.registry]
         case .ddc, .gamma, .capture: return [.registry, .sessionGate]
         case .edr: return [.registry, .overlays, .gamma]
         case .brightness: return [.registry, .sessionGate]
-        case .virtualHosts: return [.registry, .guardProcess, .spawner]
+        case .virtualHosts: return [.registry, .guardProcess]
         }
     }
 

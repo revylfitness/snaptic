@@ -5,4 +5,10 @@ import SnapticKit
 
 @MainActor final class OtherAppsMonitor {
     init() {}
+    /// Displays features paused because an overlapping display app runs (PLAN §3.8).
+    var pausedDisplayFeatures: Set<DisplayFeature> { [] }
+    /// User-facing reason for a paused feature, e.g. "Paused while MonitorControl runs".
+    func pauseReason(for feature: DisplayFeature) -> String? { nil }
+    /// Set by DisplaysModule; called when the paused set changes.
+    var onChange: (@MainActor () -> Void)?
 }

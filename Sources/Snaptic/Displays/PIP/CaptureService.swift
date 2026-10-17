@@ -6,10 +6,11 @@ import SnapticKit
 
 @MainActor final class CaptureService: DisplayServiceLifecycle {
     static var serviceID: DisplayServiceID { .capture }
+    static var privateSymbols: [PrivateSymbol] { [] }
     weak var context: DisplaysContext?
 
     init() {}
 
-    func activate(_ context: DisplaysContext) { self.context = context }
+    func activate(_ context: DisplaysContext, lifetime: Lifetime) { self.context = context }
     func deactivate() { context = nil }
 }

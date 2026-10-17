@@ -7,6 +7,8 @@ final class HelperPipeWriter: @unchecked Sendable {
     private let fd: Int32
     private let queue = DispatchQueue(label: "app.snaptic.helper-writer")
     private let lock = NSLock()
+    /// False once close() is called: new sends are refused, queued ones still go out.
+    private var accepting = true
     private var closed = false
     private var broken = false
     private var heartbeatQueued = false
@@ -23,7 +25,7 @@ final class HelperPipeWriter: @unchecked Sendable {
 
     func send(_ line: Data, isHeartbeat: Bool = false) {
         lock.lock()
-        if closed || broken || (isHeartbeat && heartbeatQueued) {
+        if !accepting || broken || (isHeartbeat && heartbeatQueued) {
             lock.unlock()
             return
         }
@@ -35,7 +37,7 @@ final class HelperPipeWriter: @unchecked Sendable {
                 lock.lock(); heartbeatQueued = false; lock.unlock()
             }
             lock.lock()
-            let skip = closed || broken
+            let skip = broken
             lock.unlock()
             if skip { return }
             var payload = line
@@ -68,10 +70,15 @@ final class HelperPipeWriter: @unchecked Sendable {
     /// Idempotent. Pending writes drain first (serial queue), then the descriptor closes.
     func close() {
         lock.lock()
-        let first = !closed
-        closed = true
+        let first = accepting
+        accepting = false
         lock.unlock()
-        if first { queue.async { [fd] in _ = Darwin.close(fd) } }
+        if first {
+            queue.async { [self] in
+                lock.lock(); closed = true; lock.unlock()
+                _ = Darwin.close(fd)
+            }
+        }
     }
 
     /// Waits for queued writes (quit path).
@@ -82,5 +89,6 @@ final class HelperPipeWriter: @unchecked Sendable {
         return done.wait(timeout: .now() + timeout) == .success
     }
 
+    // A queued block retains self, so deinit runs only after every queued write.
     deinit { if !closed { _ = Darwin.close(fd) } }
 }
