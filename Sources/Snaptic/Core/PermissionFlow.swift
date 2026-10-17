@@ -23,6 +23,8 @@ enum PermissionStatus: Equatable { case granted, denied, unknown }
 
     private var flows: [Permission: Flow] = [:]
     private var shownThisLaunch: Set<Permission> = []
+    /// Guides waiting for the open one to close: one guide window at a time.
+    private var guideQueue: [Permission] = []
     private var observers: [(id: UInt64, handler: @MainActor (Permission, Bool) -> Void)] = []
     private var observerSerial: UInt64 = 0
     private var activationToken: NSObjectProtocol?
@@ -112,6 +114,9 @@ enum PermissionStatus: Equatable { case granted, denied, unknown }
             guard let self, let flow else { return }
             flow.window = nil
             if !flow.hasLiveRequesters { self.finish(flow, granted: false) }
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated { self?.showNextGuide() }
+            }
         }
         flows[permission] = flow
         return flow
@@ -128,10 +133,26 @@ enum PermissionStatus: Equatable { case granted, denied, unknown }
             }
         }
         if showGuide {
-            showWindow(flow)
-            if flow.model.paneOpenedAt == nil { openPane(flow) }
+            if flows.values.contains(where: { $0.window != nil && $0 !== flow }) {
+                if !guideQueue.contains(flow.permission) { guideQueue.append(flow.permission) }
+            } else {
+                showWindow(flow)
+                if flow.model.paneOpenedAt == nil { openPane(flow) }
+            }
         }
         startPolling(flow)
+    }
+
+    /// Shows the next queued guide whose permission is still missing.
+    private func showNextGuide() {
+        guard !flows.values.contains(where: { $0.window != nil }) else { return }
+        while !guideQueue.isEmpty {
+            let permission = guideQueue.removeFirst()
+            guard !granted.contains(permission), let flow = flows[permission] else { continue }
+            showWindow(flow)
+            if flow.model.paneOpenedAt == nil { openPane(flow) }
+            return
+        }
     }
 
     private func openPane(_ flow: Flow) {
@@ -182,9 +203,16 @@ enum PermissionStatus: Equatable { case granted, denied, unknown }
             flow.model.granted = true
             return
         }
+        let hadWindow = flow.window != nil
         flow.window?.close()
         flow.window = nil
         flows[flow.permission] = nil
+        guideQueue.removeAll { $0 == flow.permission }
+        if hadWindow {
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated { self?.showNextGuide() }
+            }
+        }
     }
 
     private func applicationBecameActive() {

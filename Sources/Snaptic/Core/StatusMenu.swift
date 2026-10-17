@@ -24,7 +24,7 @@ import SnapticKit
 /// `menuNeedsUpdate`, never mutated in `menuDidClose` (R3C §5.6, R4C §4.6). A right-click
 /// on the shared item opens the quick menu.
 @MainActor final class StatusMenu: NSObject, NSMenuDelegate {
-    private final class Slot {
+    @MainActor private final class Slot {
         let item: NSStatusItem
         let menu = NSMenu()
         let module: ModuleID?
