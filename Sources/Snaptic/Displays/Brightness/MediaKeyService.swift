@@ -10,6 +10,8 @@ import SnapticKit
     static var serviceID: DisplayServiceID { .mediaKeys }
     static var privateSymbols: [PrivateSymbol] { [] }
     weak var context: DisplaysContext?
+    /// The running keys controller, for the Keys page.
+    weak var keysController: KeysController?
 
     enum Key: Sendable, Hashable { case brightnessUp, brightnessDown, volumeUp, volumeDown, mute }
 

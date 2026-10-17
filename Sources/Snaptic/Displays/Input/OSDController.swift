@@ -25,6 +25,7 @@ import SnapticShims
         self.lifetime = lifetime
         context.diagnostics.register(self, section: L("On-screen display"), lifetime: lifetime)
         context.registerSession(self, lifetime: lifetime)
+        context.osd.controller = self
         apply(effective)
     }
 
@@ -36,6 +37,7 @@ import SnapticShims
 
     func stop() {
         if let context {
+            if context.osd.controller === self { context.osd.controller = nil }
             context.osd.isEnabled = true
             context.osd.broadcastEnabled = false
             context.osd.hideAll()

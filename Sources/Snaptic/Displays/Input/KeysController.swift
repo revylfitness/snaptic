@@ -176,6 +176,7 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
         self.lifetime = lifetime
         self.effective = effective
         context.diagnostics.register(self, section: L("Keys and shortcuts"), lifetime: lifetime)
+        context.mediaKeys.keysController = self
         context.registry.changes
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.refreshSnapshot() } }
@@ -218,6 +219,7 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
         hotkeyLifetime = nil
         hotkeyProblems = [:]
         if let context {
+            if context.mediaKeys.keysController === self { context.mediaKeys.keysController = nil }
             context.mediaKeys.stop()
             context.mediaKeys.swallowPolicy = nil
             context.mediaKeys.onKey = nil

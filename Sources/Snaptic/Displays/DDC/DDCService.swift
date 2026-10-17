@@ -75,6 +75,8 @@ final class DDCService: @unchecked Sendable {
 
     /// Called on main when a display's working framing was learned (to persist it).
     var onFramingLearned: (@MainActor (DisplayKey, DDCFraming) -> Void)?
+    /// The running DDC controller, for C's settings pages (set in start, cleared in stop).
+    @MainActor weak var controller: DDCController?
     /// Observers of link status and value changes (main thread).
     @MainActor private var changeObservers: [(UInt64, @MainActor (DisplayKey) -> Void)] = []
     @MainActor private var observerSerial: UInt64 = 0

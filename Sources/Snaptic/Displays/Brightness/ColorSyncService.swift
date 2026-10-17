@@ -16,6 +16,8 @@ struct ColorProfileInfo: Hashable, Identifiable, Sendable {
     static var serviceID: DisplayServiceID { .colorSync }
     static var privateSymbols: [PrivateSymbol] { [] }
     weak var context: DisplaysContext?
+    /// The running system-colors controller, for the Color page.
+    weak var systemColors: SystemColorsController?
 
     private var installed: [ColorProfileInfo] = []
     private var observer: NSObjectProtocol?

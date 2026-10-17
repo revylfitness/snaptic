@@ -26,6 +26,8 @@ enum VoiceOverAnnouncer {
     static var serviceID: DisplayServiceID { .osd }
     static var privateSymbols: [PrivateSymbol] { [] }
     weak var context: DisplaysContext?
+    /// The running OSD controller, for the OSD page.
+    weak var controller: OSDController?
 
     /// Distributed notification name of the OSD broadcast (documented in the README).
     static let broadcastName = Notification.Name("app.snaptic.osd")

@@ -48,6 +48,7 @@ import SnapticKit
         self.context = context
         self.lifetime = lifetime
         context.registerPanic(self, lifetime: lifetime)
+        context.gamma.colorController = self
         context.diagnostics.register(self, section: L("Color adjustments"), lifetime: lifetime)
         context.menus.register(self, lifetime: lifetime)
         registerActions(context, lifetime: lifetime)
@@ -88,6 +89,7 @@ import SnapticKit
 
     func stop() {
         sinks.removeAll()
+        if context?.gamma.colorController === self { context?.gamma.colorController = nil }
         if let context {
             for d in context.registry.displays { context.gamma.setAdjustments(ColorAdjustments(), for: d.key) }
         }

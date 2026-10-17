@@ -10,6 +10,8 @@ import SnapticShims
     static var serviceID: DisplayServiceID { .gamma }
     static var privateSymbols: [PrivateSymbol] { [] }
     weak var context: DisplaysContext?
+    /// The running color controller, for the Color page (set in start, cleared in stop).
+    weak var colorController: ColorController?
 
     private struct State {
         var adjustments = ColorAdjustments()

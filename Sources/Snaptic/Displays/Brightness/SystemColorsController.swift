@@ -32,7 +32,8 @@ import SnapticShims
         case .nightShift:
             return SNNightShift.isAvailable() ? .available : .unavailable(L("Night Shift isn't available on this Mac"))
         case .applePresets:
-            return SNMonitorPanel.isAvailable() ? .available : .unavailable(L("Apple display presets aren't available"))
+            return SNMonitorPanel.isAvailable() && context.privateAPI.monitorPanelSupports("presets") ? .available
+                : .unavailable(L("Apple display presets aren't available"))
         case .autoBrightness:
             return context.privateAPI.availability(of: .dsHasAmbientLight)
         default:
@@ -47,6 +48,7 @@ import SnapticShims
         self.lifetime = lifetime
         self.effective = effective
         context.diagnostics.register(self, section: L("System colors"), lifetime: lifetime)
+        context.colorSync.systemColors = self
         context.menus.register(self, lifetime: lifetime)
         context.colorSync.onProfilesChanged = { [weak self] in self?.context?.requestMenuRebuild() }
         registerNightShift(context, lifetime: lifetime)
@@ -62,6 +64,7 @@ import SnapticShims
 
     func stop() {
         context?.colorSync.onProfilesChanged = nil
+        if context?.colorSync.systemColors === self { context?.colorSync.systemColors = nil }
         lifetime = nil
         context = nil
     }

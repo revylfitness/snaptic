@@ -36,6 +36,7 @@ import SnapticShims
         self.lifetime = lifetime
         self.effective = effective
         context.registerSession(self, lifetime: lifetime)
+        context.ddc.controller = self
         context.diagnostics.register(self, section: L("Monitor controls (DDC)"), lifetime: lifetime)
         let items = DDCMenuItems(context: context, controller: self)
         menuItems = items
@@ -69,6 +70,7 @@ import SnapticShims
         readbackTimer?.invalidate()
         readbackTimer = nil
         context?.ddc.onFramingLearned = nil
+        if context?.ddc.controller === self { context?.ddc.controller = nil }
         sinks.removeAll()
         nextReadback.removeAll()
         loaded.removeAll()
