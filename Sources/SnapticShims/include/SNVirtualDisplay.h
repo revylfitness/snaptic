@@ -63,13 +63,15 @@ typedef NS_ERROR_ENUM(SNVirtualDisplayErrorDomain, SNVirtualDisplayErrorCode) {
 /// Creates the display with a single mode (R5.6). Nil + error on failure.
 + (nullable SNVirtualDisplayHandle *)createWithConfiguration:(SNVirtualDisplayConfiguration *)configuration
                                                  initialMode:(SNVirtualDisplayMode *)mode
-                                                       error:(NSError **)error;
+                                                       error:(NSError **)error
+    NS_SWIFT_NAME(create(configuration:initialMode:));
 
 /// Replaces the display's mode list (Beta). The parent selects one afterwards.
 + (BOOL)applyModes:(NSArray<SNVirtualDisplayMode *> *)modes
              hiDPI:(BOOL)hiDPI
           toHandle:(SNVirtualDisplayHandle *)handle
-             error:(NSError **)error;
+             error:(NSError **)error
+    NS_SWIFT_NAME(apply(modes:hiDPI:to:));
 
 @end
 
