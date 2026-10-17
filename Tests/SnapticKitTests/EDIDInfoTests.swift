@@ -18,14 +18,19 @@ final class EDIDInfoTests: XCTestCase {
         // Chromaticity: red (0.640, 0.330), green (0.300, 0.600), blue (0.150, 0.060), white (0.3125, 0.3291)
         func c10(_ v: Double) -> Int { Int((v * 1024).rounded()) }
         let vals = [c10(0.640), c10(0.330), c10(0.300), c10(0.600), c10(0.150), c10(0.060), c10(0.3125), c10(0.3291)]
-        b[25] = UInt8((vals[0] & 3) << 6 | (vals[1] & 3) << 4 | (vals[2] & 3) << 2 | (vals[3] & 3))
-        b[26] = UInt8((vals[4] & 3) << 6 | (vals[5] & 3) << 4 | (vals[6] & 3) << 2 | (vals[7] & 3))
+        func low(_ a: Int, _ b: Int, _ c: Int, _ d: Int) -> UInt8 {
+            let hi: Int = ((a & 3) << 6) | ((b & 3) << 4)
+            let lo: Int = ((c & 3) << 2) | (d & 3)
+            return UInt8(hi | lo)
+        }
+        b[25] = low(vals[0], vals[1], vals[2], vals[3])
+        b[26] = low(vals[4], vals[5], vals[6], vals[7])
         for (i, v) in vals.enumerated() { b[27 + i] = UInt8(v >> 2) }
         // DTD: 3840 × 2160, 597 × 336 mm
         b[54] = 0x01; b[55] = 0x1D
         b[56] = UInt8(3840 & 0xFF); b[58] = UInt8((3840 >> 8) << 4)
         b[59] = UInt8(2160 & 0xFF); b[61] = UInt8((2160 >> 8) << 4)
-        b[66] = UInt8(597 & 0xFF); b[67] = UInt8(336 & 0xFF); b[68] = UInt8((597 >> 8) << 4 | (336 >> 8))
+        b[66] = UInt8(597 & 0xFF); b[67] = UInt8(336 & 0xFF); b[68] = UInt8(0x21)
         // Name and serial descriptors
         func text(_ offset: Int, _ tag: UInt8, _ s: String) {
             b[offset + 3] = tag
