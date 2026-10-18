@@ -336,7 +336,7 @@ private struct CustomizeMenuContent: View {
         }
     }
 
-    /// The running contributor's default, else the 0.2 default from the Kit table.
+    /// The running contributor's default, else the Kit table's (the two are equal, DisplaysMenuPlanTests).
     private func defaultVisibility(_ id: DisplayMenuItemID) -> MenuItemVisibility {
         let declared = env.context?.menus.descriptors.first { $0.id == id }?.defaultVisibility
         return DisplaysMenuPlan.defaultVisibility(id, declared: declared)
