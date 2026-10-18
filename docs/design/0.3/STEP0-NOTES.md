@@ -56,3 +56,30 @@ Fail-safe stub values chosen so nothing acts before its owner lands: `PowerFacts
 - `AwakeActionID` constants (`awake.toggle`, `awake.keepDisplayOn`, `awake.preset1…4`, `awake.pauseAutomatic`) (G; the host's step-2 M1 hotkey move uses `awake.pauseAutomatic`).
 - The "Turned off by a defaults setting." page state for `Modules.disable.<id>` (H for the shell, G for Awake's header); `ModuleHost.disabledByDefaults` exposes it.
 - `SettingsWindowHost` switching from `settingsPages()` to `settingsRoot()` (H, step 1).
+
+## Step 4 fix rounds: lead decisions and known limits
+
+- **Upgrader insertion on pre-release 0.3 builds (review5 ui N1).** Since fix round 1 the §2.13 insertion runs once
+  per install (marker `awakeUpgrade.v1`). Fix round 2 also skips it when the ledger already holds M1's
+  `fromDisplays.v1` (every 0.3 launch records it), so a tester whose fresh 0.3 install predates the marker keeps
+  Awake on. Accepted residue, pre-release testers only: a tester who already launched a pre-fix-round-1 build twice
+  has Awake turned off once (General turns it back on); a crash between the first-launch modules save and the
+  ledger save still reads as an upgrade on the next launch (review5 code, too small a window to handle).
+- **Awake start ended in its own first arbitration (review5 awake N2), decided:** off-console and locked time count
+  from `max(since, session start)`, so a session started while the console belongs to another user, or while the
+  Mac is locked, gets the same grace as one that was running when that began (§2.12 "off console > 1 h", "a lock
+  lasting that long" are read as during the session). A start that still ends at once (assertion failure) answers
+  with its end reason, not `.invalid`. G implements.
+- **"Keep Awake shortcut really registered" (parity Q2, code M1, ui F3/N3).** G publishes the flag on the
+  lead-owned `AwakeRuntimeState` (sanctioned contract addition); MenuLayout, StatusMenu and MenuBarPage (M) read only
+  that flag.
+- **`--selftest-controls` menu coverage (R5-13, review5 code N1).** The union of the contributors' static
+  `menuItemIDs` must cover every frozen `l.menu.*` id that `ControlRemovals` doesn't remove, once each, and declare no
+  removed id (Kit `ControlLegacy.menuCoverageProblems`). Families (`a.custom.*`) are per instance and skipped.
+  lint03 checks every `DisplayMenuContributor` conformer is in `DisplaysModule.menuContributorTypes`.
+- **TEAMS rule 2 lint limits (review5 code N4).** Not seen: a main-actor member used without `self.` outside the
+  wrap (implicit self after `guard let self`), a queue passed in from another file, and Combine `publisher(for:)`
+  sinks outside Awake (L10 checks those in Awake, for `receive(on:)` only).
+- **Pending lists the lead keeps.** `HelpAnchorsReadmeTests.pendingReadmeAnchors`: README headings step 5 adds (the
+  test skips until then, and fails once a listed heading exists). `lint03.OLD_TERMS_PENDING`: 0.2 names still in
+  D's and C's `L()` text (review5 ux N1); counts only go down, a lower count prints a warning to lower the entry.
