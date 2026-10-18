@@ -442,6 +442,95 @@ final class ConfigPIPTests: XCTestCase {
         XCTAssertEqual(PIPGeometry.frameInterval(fps: 999, displayRefresh: 60), 1.0 / 120, accuracy: 1e-12)
     }
 
+    // MARK: Menu plan
+
+    private func entry(_ name: String, _ source: PIPSourceRef, kind: PIPKind = .window, target: DisplayKey? = nil) -> PIPEntry {
+        var c = PIPConfiguration(name: name, kind: kind)
+        c.target = target
+        return PIPEntry(source: source, configuration: c)
+    }
+
+    func testMenuPlanIsAbsentWithoutSavedConfigurations() {
+        XCTAssertNil(PIPMenuPlan.plan(entries: [], running: [], connected: [keyA]))
+    }
+
+    func testMenuPlanMarksRunningAndAvailable() throws {
+        let a = entry("A", .display(keyA))
+        let offline = entry("Offline", .display(keyB))
+        let window = entry("Window", .window)
+        let plan = try XCTUnwrap(PIPMenuPlan.plan(entries: [a, offline, window], running: [a.configuration.id],
+                                                  connected: [keyA]))
+        XCTAssertEqual(plan.rows.map(\.name), ["A", "Offline", "Window"])
+        XCTAssertEqual(plan.rows.map(\.running), [true, false, false])
+        XCTAssertEqual(plan.rows.map(\.available), [true, false, true])
+        XCTAssertFalse(plan.truncated)
+        XCTAssertTrue(plan.anyRunning)
+        let idle = try XCTUnwrap(PIPMenuPlan.plan(entries: [a], running: [], connected: [keyA]))
+        XCTAssertFalse(idle.anyRunning)
+    }
+
+    func testMenuPlanStreamAvailability() {
+        // A stream needs its source and a different, connected target.
+        XCTAssertTrue(PIPMenuPlan.isAvailable(entry("S", .display(keyA), kind: .fullScreen, target: keyB), connected: [keyA, keyB]))
+        XCTAssertFalse(PIPMenuPlan.isAvailable(entry("S", .display(keyA), kind: .fullScreen, target: keyB), connected: [keyA]))
+        XCTAssertFalse(PIPMenuPlan.isAvailable(entry("S", .display(keyA), kind: .fullScreen, target: keyA), connected: [keyA, keyB]))
+        XCTAssertFalse(PIPMenuPlan.isAvailable(entry("S", .display(keyA), kind: .fullScreen, target: nil), connected: [keyA, keyB]))
+        XCTAssertTrue(PIPMenuPlan.isAvailable(entry("W", .window), connected: []))
+        XCTAssertFalse(PIPMenuPlan.isAvailable(entry("W", .window, kind: .fullScreen, target: keyB), connected: []))
+        XCTAssertTrue(PIPMenuPlan.isAvailable(entry("W", .window, kind: .fullScreen, target: keyB), connected: [keyB]))
+        // A running configuration is always clickable (to stop it).
+        let s = entry("S", .display(keyA), kind: .fullScreen, target: keyB)
+        XCTAssertEqual(PIPMenuPlan.plan(entries: [s], running: [s.configuration.id], connected: [])?.rows.first?.available, true)
+    }
+
+    func testMenuPlanKeepsRunningRowsWhenTruncating() throws {
+        let entries = (0..<14).map { entry("P\($0)", .window) }
+        let running: Set<StableID> = [entries[12].configuration.id, entries[13].configuration.id]
+        let plan = try XCTUnwrap(PIPMenuPlan.plan(entries: entries, running: running, connected: []))
+        XCTAssertEqual(plan.rows.count, PIPMenuPlan.maxRows)
+        XCTAssertTrue(plan.truncated)
+        XCTAssertEqual(plan.rows.map(\.name), ["P0", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P12", "P13"])
+        let exact = try XCTUnwrap(PIPMenuPlan.plan(entries: Array(entries.prefix(10)), running: [], connected: []))
+        XCTAssertFalse(exact.truncated)
+        XCTAssertEqual(PIPMenuPlan.plan(entries: entries, running: [], connected: [], limit: 0)?.rows.count, 1)
+    }
+
+    func testFuzzedMenuPlanInvariants() throws {
+        var rng = SeededGenerator(seed: 0x919E)
+        let keys = [keyA, keyB]
+        for _ in 0..<500 {
+            let count = Int(rng.next() % 20)
+            let entries: [PIPEntry] = (0..<count).map { i in
+                let source: PIPSourceRef = rng.next() % 3 == 0 ? .window : .display(keys[Int(rng.next() % 2)])
+                let kind: PIPKind = rng.next() % 2 == 0 ? .window : .fullScreen
+                return entry("E\(i)", source, kind: kind, target: rng.next() % 4 == 0 ? nil : keys[Int(rng.next() % 2)])
+            }
+            let running = Set(entries.filter { _ in rng.next() % 4 == 0 }.map(\.configuration.id))
+            let connected = Set(keys.filter { _ in rng.next() % 2 == 0 })
+            let limit = 1 + Int(rng.next() % 12)
+            guard let plan = PIPMenuPlan.plan(entries: entries, running: running, connected: connected, limit: limit) else {
+                XCTAssertTrue(entries.isEmpty)
+                continue
+            }
+            XCTAssertEqual(plan.rows.count, min(limit, entries.count))
+            XCTAssertEqual(plan.truncated, entries.count > limit)
+            XCTAssertEqual(plan.anyRunning, !running.isEmpty)
+            // Rows keep saved order and are a subset.
+            let order = entries.map(\.configuration.id)
+            let indices = plan.rows.compactMap { row in order.firstIndex(of: row.id) }
+            XCTAssertEqual(indices.count, plan.rows.count)
+            XCTAssertEqual(indices, indices.sorted())
+            XCTAssertEqual(Set(indices).count, indices.count)
+            // Running rows survive truncation whenever they fit.
+            let shownRunning = plan.rows.filter(\.running).count
+            XCTAssertEqual(shownRunning, min(running.count, limit))
+            for row in plan.rows {
+                XCTAssertEqual(row.running, running.contains(row.id))
+                if row.running { XCTAssertTrue(row.available) }
+            }
+        }
+    }
+
     // MARK: Fuzzing
 
     func testFuzzedJSONNeverTrapsAndSanitizeIsIdempotent() throws {

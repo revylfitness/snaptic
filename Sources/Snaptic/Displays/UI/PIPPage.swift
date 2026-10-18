@@ -112,24 +112,8 @@ struct PIPPage: View {
     }
 
     private func row(_ c: PIPConfiguration) -> some View {
-        let running = env.context?.capture.sessions.contains { $0.id == c.id } ?? false
-        let controller = env.context?.capture.controller
-        return HStack {
-            Image(systemName: c.kind == .fullScreen ? "rectangle.on.rectangle" : "pip")
-                .foregroundStyle(running ? Color.accentColor : Color.secondary)
-            VStack(alignment: .leading) {
-                Text(c.name)
-                Text(summary(c)).font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button(running ? L("Stop") : L("Start")) {
-                if running { controller?.endSession(c.id, reason: nil) } else { controller?.userStart(c.id) }
-            }
-            .disabled(controller == nil)
-            Button(selection == c.id ? L("Done") : L("Edit")) { selection = selection == c.id ? nil : c.id }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(c.name)
+        PIPConfigurationRow(configuration: c, summary: summary(c), revision: env.runtime.revision(.pip),
+                            capture: env.context?.capture, selection: $selection)
     }
 
     private func summary(_ c: PIPConfiguration) -> String {
@@ -298,6 +282,38 @@ struct PIPPage: View {
 }
 
 /// Running sessions with per-session and bulk controls.
+/// One saved configuration. Its Start/Stop state is controller state, so the row observes `revision(.pip)`
+/// (0.3 §4.5; the page itself observes only the environment).
+private struct PIPConfigurationRow: View {
+    let configuration: PIPConfiguration
+    let summary: String
+    @ObservedObject var revision: ControllerRevision
+    let capture: CaptureService?
+    @Binding var selection: StableID?
+
+    var body: some View {
+        let c = configuration
+        let running = capture?.sessions.contains { $0.id == c.id } ?? false
+        let controller = capture?.controller
+        HStack {
+            Image(systemName: c.kind == .fullScreen ? "rectangle.on.rectangle" : "pip")
+                .foregroundStyle(running ? Color.accentColor : Color.secondary)
+            VStack(alignment: .leading) {
+                Text(c.name)
+                Text(summary).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button(running ? L("Stop") : L("Start")) {
+                if running { controller?.endSession(c.id, reason: nil) } else { controller?.userStart(c.id) }
+            }
+            .disabled(controller == nil)
+            Button(selection == c.id ? L("Done") : L("Edit")) { selection = selection == c.id ? nil : c.id }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(c.name)
+    }
+}
+
 private struct PIPRunningSection: View {
     @ObservedObject var capture: CaptureService
 
@@ -337,6 +353,19 @@ private struct PIPRunningSection: View {
                 }
             }
         }
+    }
+}
+
+/// "Draw Crop on the Window…", enabled while that PIP's window is up (controller state: observes `revision(.pip)`).
+private struct PIPDrawCropButton: View {
+    let id: StableID
+    @ObservedObject var revision: ControllerRevision
+    let capture: CaptureService?
+
+    var body: some View {
+        let running = capture?.sessions.contains { $0.id == id && $0.kind == .window } ?? false
+        Button(L("Draw Crop on the Window…")) { capture?.controller?.beginCrop(id) }
+            .disabled(!running)
     }
 }
 
@@ -464,9 +493,7 @@ private struct PIPConfigurationEditor: View {
                 }
             }
             HStack {
-                let running = env.context?.capture.sessions.contains { $0.id == id && $0.kind == .window } ?? false
-                Button(L("Draw Crop on the Window…")) { env.context?.capture.controller?.beginCrop(id) }
-                    .disabled(!running)
+                PIPDrawCropButton(id: id, revision: env.runtime.revision(.pip), capture: env.context?.capture)
                 Button(L("Reset Crop")) { update { $0.crop = nil } }
                     .disabled(c.crop == nil)
             }
