@@ -157,8 +157,9 @@ Without installing: `/Applications/Snaptic.app/Contents/MacOS/Snaptic cli help`.
 
 **Usage.** `snaptic [--json] [--yes] <command> [arguments]`. `snaptic help` lists the commands available right now (a command appears only while its feature is on); `snaptic help <command>` narrows it. `--` ends options, so `-10` is read as a value.
 
-- `--json`: machine-readable output (and errors as `{"exitCode": …, "error": …}`).
-- `--yes`: skips the "Keep this change?" panel, but only if you also turned on "Let commands skip the confirmation panel". Otherwise the panel shows and the command waits for your answer.
+- `--json`: machine-readable output. Lists and `get`, `set`, `ddc`, `mode`, `layout`, `virtual` and `pip list` print JSON arrays or objects; any other command prints `{"ok": true}` (with `"output"` when it has text). Errors, including the client's own (an unknown option, Snaptic not running), print `{"exitCode": …, "error": …}`.
+- `--yes`: skips the "Keep this change?" panel, but only if you also turned on "Let commands skip the confirmation panel". The change is then kept right after the displays settle; the safety helper and the undo journal protect it exactly as they protect a confirmed change. Otherwise the panel shows and the command waits for your answer.
+- Commands that change displays (`mode …`, `match-ui`, `mirror`, `rotate`, `disconnect`, `layout apply`) wait for the outcome: exit 0 when the change was applied or kept, 6 when it was declined in the panel or timed out.
 - Values can be absolute (`60`), relative (`+10`, `-5`) or percentages (`50%`, `+10%`).
 
 **Choosing a display.** `main`, `mouse` (or `pointer`), `focus`, `all`; a number from `snaptic list` (the same numbers Identify shows); `id:N` (a CoreGraphics display id); a 32-character display key; or a name (an exact match first, then a unique prefix, case-insensitive). A prefix that matches several displays exits with 2 and lists them. Commands that take an optional display default to the main one; `get …` defaults to all.
@@ -174,7 +175,7 @@ Without installing: `/Applications/Snaptic.app/Contents/MacOS/Snaptic cli help`.
 | `feature disable <feature>` | Displays | Off only |
 | `identify`, `redetect`, `diagnostics` | Displays | Diagnostics has identifiers masked |
 | `panic`, `resume` | Displays | Restore All Displays; resume automation |
-| `mode list\|set\|up\|down\|hidpi\|native\|default\|halved\|undo\|redo\|notch\|favorite N <display> [WxH[@Hz] [hidpi]]` | Resolution | Confirms new modes |
+| `mode list\|up\|down\|hidpi\|native\|default\|halved\|undo\|redo\|notch [display]`, `mode set <display> WxH[@Hz] [hidpi\|lodpi]`, `mode favorite N [display]` | Resolution | Confirms new modes; e.g. `snaptic mode favorite 2 mouse` |
 | `match-ui` | Match UI size | Confirms |
 | `set brightness <value> [display]`, `get brightness [display]` | Brightness control | |
 | `toggle xdr [display]`, `get xdr [display]` | Extra brightness | |
@@ -211,7 +212,7 @@ Verbs are case-insensitive, so `toggle nightShift` and `toggle smartHiDPI` work 
 | 3 | Nothing matched (display, action, layout, configuration) |
 | 4 | Refused by policy (off-only, protected setting, the safety rules) |
 | 5 | Unavailable: Snaptic isn't running, command-line control is off, or the feature is off or unsupported |
-| 6 | Cancelled or timed out (the confirmation was declined or expired; the client waits up to 30 s) |
+| 6 | Cancelled or timed out (the confirmation was declined or expired; the client waits up to 90 s: the longest panel plus 30 s) |
 
 **Recipes.** A Stream Deck "Run shell" or Raycast script command can call `snaptic set brightness +10 mouse`, `snaptic input "HDMI 1" 2` or `snaptic layout apply Office`.
 

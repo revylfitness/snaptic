@@ -67,6 +67,81 @@ final class KitBackupTests: XCTestCase {
         XCTAssertNotNil((merged["ddc"] as? [String: Any])?["unlocks"])
     }
 
+    // MARK: Lists of objects with ids (FIXES-R3 8)
+
+    /// A Displays section with the kinds of lists that carry stripped fields.
+    private var listSection: [String: Any] {
+        ["layouts": ["undoToast": true,
+                     "layouts": [["id": "L1", "name": "Office", "trust": ["os": 26, "digest": "d1"], "autoApply": "always"],
+                                 ["id": "L2", "name": "Home", "trust": ["os": 26, "digest": "d2"], "autoApply": "never"]]],
+         "virtualScreens": ["screens": [["id": "V1", "name": "Sidecar", "allowLowResolution": true, "hiDPI": true]]],
+         "pip": ["protectedBundlePrefixes": ["com.bank"],
+                 "configurations": [["id": "P1", "name": "Cam", "kind": "window"], ["id": "P2", "name": "Desk", "kind": "display"]]],
+         "perDisplay": ["k1": ["management": ["preventSleep": true, "ignoreForAutoDisconnect": true, "rotationLock": false]]],
+         "ddc": ["unlocks": ["k1": ["0xD6"]], "step": 4],
+         "automation": ["hooks": [["id": "H1", "path": "/bin/true"]]],
+         "features": ["brightness": true, "disconnect": true]]
+    }
+
+    private func canonical(_ data: Data) -> String {
+        let o = (try? JSONSerialization.jsonObject(with: data)) ?? [:]
+        return String(decoding: try! JSONSerialization.data(withJSONObject: o, options: [.sortedKeys]), as: UTF8.self)
+    }
+
+    /// Export → import of your own backup changes nothing, stripped fields included.
+    func testOwnBackupRoundTripChangesNothing() throws {
+        let current = json(listSection)
+        let doc = try XCTUnwrap(KitBackup.makeDocument(sections: ["displays": current, "modules": json(modules)],
+                                                         created: "2026-10-17T00:00:00Z", appVersion: "0.2.0"))
+        let text = String(decoding: doc, as: UTF8.self)
+        XCTAssertFalse(text.contains("digest"), "trust is stripped from the export")
+        XCTAssertFalse(text.contains("allowLowResolution"))
+        let parsed = try KitBackup.parseDocument(doc).get()
+        for (name, now) in [("displays", current), ("modules", json(modules))] {
+            let imported = try XCTUnwrap(parsed[name])
+            let merged = try XCTUnwrap(KitBackup.merge(current: now, imported: imported, section: name))
+            XCTAssertEqual(canonical(merged), canonical(now), name)
+            XCTAssertEqual(KitBackup.changedPaths(from: now, to: merged), [], name)
+        }
+    }
+
+    func testListElementsMergeByIDKeepingStrippedFields() throws {
+        let current = json(listSection)
+        // The backup renamed L1, dropped L2, added L3 and reordered the PIP configurations.
+        let imported = json(["layouts": ["layouts": [["id": "L3", "name": "Cafe"], ["id": "L1", "name": "Work"]]],
+                             "pip": ["configurations": [["id": "P2", "name": "Desk 2"], ["id": "P1", "name": "Cam"]]]])
+        let merged = object(try XCTUnwrap(KitBackup.merge(current: current, imported: imported, section: "displays")))
+        let layouts = try XCTUnwrap((merged["layouts"] as? [String: Any])?["layouts"] as? [[String: Any]])
+        XCTAssertEqual(layouts.map { $0["id"] as? String }, ["L3", "L1"])
+        XCTAssertEqual(layouts[1]["name"] as? String, "Work")
+        XCTAssertEqual((layouts[1]["trust"] as? [String: Any])?["digest"] as? String, "d1", "current trust survives")
+        XCTAssertEqual(layouts[1]["autoApply"] as? String, "always")
+        XCTAssertNil(layouts[0]["trust"], "a new layout never arrives trusted")
+        let pip = try XCTUnwrap((merged["pip"] as? [String: Any])?["configurations"] as? [[String: Any]])
+        XCTAssertEqual(pip.map { $0["id"] as? String }, ["P2", "P1"])
+        XCTAssertEqual(pip[0]["kind"] as? String, "display")
+        XCTAssertEqual(pip[0]["name"] as? String, "Desk 2")
+    }
+
+    func testListsWithoutIDsAreStillReplaced() throws {
+        let current = json(["a": [["x": 1], ["x": 2]], "b": [1, 2, 3], "c": [["id": "1", "v": 1]], "d": [["id": "1"]]])
+        let imported = json(["a": [["x": 9]], "b": [4], "c": [["v": 2]], "d": [Any]()])
+        let merged = object(try XCTUnwrap(KitBackup.merge(current: current, imported: imported)))
+        XCTAssertEqual((merged["a"] as? [[String: Any]])?.first?["x"] as? Int, 9)
+        XCTAssertEqual(merged["b"] as? [Int], [4])
+        XCTAssertEqual((merged["c"] as? [[String: Any]])?.first?["v"] as? Int, 2)
+        XCTAssertNil((merged["c"] as? [[String: Any]])?.first?["id"], "an element without id replaces the list")
+        XCTAssertEqual((merged["d"] as? [Any])?.count, 0, "an empty import empties the list")
+        // Numeric ids and duplicate ids.
+        let n = object(try XCTUnwrap(KitBackup.merge(current: json(["l": [["id": 1, "keep": "k", "v": 1]]]),
+                                                     imported: json(["l": [["id": 1, "v": 2], ["id": 1, "v": 3]]]))))
+        let l = try XCTUnwrap(n["l"] as? [[String: Any]])
+        XCTAssertEqual(l.count, 2)
+        XCTAssertEqual(l[0]["keep"] as? String, "k")
+        XCTAssertEqual(l[0]["v"] as? Int, 2)
+        XCTAssertNil(l[1]["keep"])
+    }
+
     func testChangedPaths() throws {
         let old = json(["a": 1, "b": ["c": true, "d": "x"], "e": [1, 2]])
         let new = json(["a": 1, "b": ["c": false, "d": "x"], "e": [1, 3], "f": 0])

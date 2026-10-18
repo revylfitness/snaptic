@@ -412,6 +412,13 @@ import SnapticShims
             let a = req.arguments
             switch a.first?.lowercased() {
             case "list", nil:
+                if req.json {
+                    let rows: [[String: Any]] = self.screens.enumerated().map { i, s in
+                        ["number": i + 1, "id": s.id.rawValue, "name": s.name, "aspect": "\(s.aspectWidth):\(s.aspectHeight)",
+                         "connected": self.isLive(s.id)]
+                    }
+                    return .ok(KitControl.jsonText(rows) ?? "[]")
+                }
                 return .ok(self.screens.enumerated().map { pair -> String in
                     let s = pair.element
                     return "\(pair.offset + 1). \(s.name) \(s.aspectWidth):\(s.aspectHeight)" + (self.isLive(s.id) ? " [connected]" : "")

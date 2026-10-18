@@ -516,9 +516,13 @@ import SnapticShims
                 guard let caps = await ctx.ddc.capabilities(of: display.key, refresh: true) else {
                     return .failure(ControlExit.unavailable, L("The display returned no capabilities"))
                 }
-                let codes = caps.vcp.keys.sorted().map { VCPPolicy.hex($0) }.joined(separator: " ")
+                let codes = caps.vcp.keys.sorted().map { VCPPolicy.hex($0) }
                 let model = TextSanitizer.clean(caps.model ?? "?", maxScalars: 64)
-                return .ok("model \(model), mccs \(caps.mccsVersion ?? "?")\nvcp \(codes)")
+                if request.json {
+                    return DisplayTargets.rows([(display, [], ["model": model, "mccs": caps.mccsVersion ?? "", "vcp": codes])],
+                                               json: true, none: "", ctx)
+                }
+                return .ok("model \(model), mccs \(caps.mccsVersion ?? "?")\nvcp \(codes.joined(separator: " "))")
             case "get":
                 guard let code = VCPPolicy.parseCode(parsed.values[0]) else { return .failure(ControlExit.usage, L("Not a VCP code")) }
                 guard self.effective.contains(.ddcControls) || self.effective.contains(.ddcCustom) else {
@@ -526,6 +530,10 @@ import SnapticShims
                 }
                 guard let r = await ctx.ddc.read(code, from: display.key) else {
                     return .failure(ControlExit.unavailable, L("No reply"))
+                }
+                if request.json {
+                    return DisplayTargets.rows([(display, [], ["code": "0x" + VCPPolicy.hex(code), "current": Int(r.current),
+                                                               "max": Int(r.max)])], json: true, none: "", ctx)
                 }
                 return .ok("\(r.current)/\(r.max)")
             default:
@@ -544,7 +552,12 @@ import SnapticShims
                     return .failure(ControlExit.refused, L("That's the only display you can see"))
                 }
                 let outcome = await self.writeOutcome(code, value, to: display.key)
-                return outcome == .done ? .ok() : .failure(outcome.exitCode, Self.message(outcome))
+                guard outcome == .done else { return .failure(outcome.exitCode, Self.message(outcome)) }
+                if request.json {
+                    return DisplayTargets.rows([(display, [], ["code": "0x" + VCPPolicy.hex(code), "value": Int(value)])],
+                                               json: true, none: "", ctx)
+                }
+                return .ok()
             }
         }
     }
@@ -576,6 +589,7 @@ import SnapticShims
         guard effective.contains(.ddcControls) else { return .failure(ControlExit.unavailable, L("DDC controls are off")) }
         let displays = DisplayTargets.resolve(parsed.target, ctx).filter { ctx.ddc.isAvailable($0.key) && isControlEnabled(code, for: $0.key) }
         guard !displays.isEmpty else { return .failure(ControlExit.notFound, L("No DDC display with that control matches")) }
+        var written: [(display: DisplayInfo, text: [String], json: [String: Any])] = []
         for d in displays {
             let live = ctx.runtime.runtime(for: d.key)
             let current = (code == VCPPolicy.volume ? live.volume : live.contrast) ?? 0.5
@@ -585,8 +599,10 @@ import SnapticShims
             let outcome = await writeOutcome(code, raw(d.key, code, fraction: v), to: d.key)
             guard outcome == .done else { return .failure(outcome.exitCode, Self.message(outcome)) }
             if code == VCPPolicy.volume { live.volume = v } else { live.contrast = v }
+            written.append((d, [], [code == VCPPolicy.volume ? "volume" : "contrast": Int((v * 100).rounded())]))
         }
-        return .ok()
+        guard request.json, let ctx = context else { return .ok() }
+        return DisplayTargets.rows(written, json: true, none: L("No DDC display with that control matches"), ctx)
     }
 
     /// Reads the control fresh (falls back to the last value seen).

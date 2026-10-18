@@ -368,7 +368,11 @@ enum PerDisplayEdit {
                 }
                 ctx.brightness.set(v, for: d.key, source: .cli)
             }
-            return .ok()
+            guard request.json else { return .ok() }
+            let rows = displays.map { d -> (display: DisplayInfo, text: [String], json: [String: Any]) in
+                (d, [], ["brightness": Int(((ctx.brightness.value(for: d.key) ?? 0) * 100).rounded())])
+            }
+            return DisplayTargets.rows(rows, json: true, none: L("No display with brightness control matches"), ctx)
         }
         ctx.commands.register("get brightness", policy: .read, offOnly: false, cliAllowed: true,
                               summary: L("Print brightness per display: get brightness [display]"), lifetime: lifetime) {

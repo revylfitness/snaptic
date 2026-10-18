@@ -243,8 +243,14 @@ import SnapticKit
                 guard ctx.runtime.isEffective(.color) else { return .failure(ControlExit.unavailable, L("Color adjustments are off")) }
                 let displays = DisplayTargets.resolve(parsed.target, ctx).filter { self.canAdjust($0) }
                 guard !displays.isEmpty else { return .failure(ControlExit.notFound, L("No display with color adjustments matches")) }
-                for d in displays { self.update(d.key) { $0[keyPath: path] = min(range.upperBound, max(range.lowerBound, value)) } }
-                return .ok()
+                let clamped = min(range.upperBound, max(range.lowerBound, value))
+                for d in displays { self.update(d.key) { $0[keyPath: path] = clamped } }
+                guard request.json else { return .ok() }
+                let field = String(verb.dropFirst(4))
+                let rows = displays.map { d -> (display: DisplayInfo, text: [String], json: [String: Any]) in
+                    (d, [], [field: clamped])
+                }
+                return DisplayTargets.rows(rows, json: true, none: L("No display with color adjustments matches"), ctx)
             }
         }
         ctx.commands.register("color", policy: .low, offOnly: false, cliAllowed: true,

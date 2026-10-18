@@ -129,10 +129,12 @@ package enum KitBackup {
         return result.isEmpty ? .failure(.noSections) : .success(result)
     }
 
-    /// `imported` laid over `current`: objects merge key by key, anything else (numbers,
-    /// strings, arrays) is replaced, except `unionPaths` of `section`, which only grow.
-    /// Fields the import doesn't carry keep their current value, which is how stripped
-    /// fields survive an import.
+    /// `imported` laid over `current`: objects merge key by key; arrays whose elements are all
+    /// objects with an `id` merge element by element (FIXES-R3 8: the imported list and order,
+    /// each element laid over the current one with the same id, so a layout keeps its trust);
+    /// anything else (numbers, strings, other arrays) is replaced, except `unionPaths` of
+    /// `section`, which only grow. Fields the import doesn't carry keep their current value,
+    /// which is how stripped fields survive an import.
     package static func merge(current: Data, imported: Data, section: String? = nil) -> Data? {
         guard let base = try? JSONSerialization.jsonObject(with: current),
               let overlay = try? JSONSerialization.jsonObject(with: imported) else { return nil }
@@ -234,11 +236,37 @@ package enum KitBackup {
     }
 
     private static func deepMerge(_ base: Any, _ overlay: Any) -> Any {
+        if let a = base as? [Any], let b = overlay as? [Any], let merged = mergeByID(current: a, imported: b) { return merged }
         guard var a = base as? [String: Any], let b = overlay as? [String: Any] else { return overlay }
         for (key, value) in b {
             a[key] = a[key].map { deepMerge($0, value) } ?? value
         }
         return a
+    }
+
+    /// Element-wise merge of two lists of `id`-carrying objects; nil when either list holds
+    /// anything else (then the import replaces the list). Elements only in `current` are
+    /// dropped (the import decides the members); new ids come in as imported.
+    private static func mergeByID(current: [Any], imported: [Any]) -> [Any]? {
+        guard !imported.isEmpty else { return nil }
+        var byID: [String: Any] = [:]
+        for item in current {
+            guard let o = item as? [String: Any], let id = idKey(o) else { return nil }
+            if byID[id] == nil { byID[id] = o }
+        }
+        var out: [Any] = []
+        for item in imported {
+            guard let o = item as? [String: Any], let id = idKey(o) else { return nil }
+            // A duplicated id uses the current element once; later copies come in as imported.
+            if let old = byID.removeValue(forKey: id) { out.append(deepMerge(old, o)) } else { out.append(o) }
+        }
+        return out
+    }
+
+    /// An element's `id` (a string or a number) as canonical text.
+    private static func idKey(_ object: [String: Any]) -> String? {
+        guard let id = object["id"], !(id is [Any]), !(id is [String: Any]), !(id is NSNull) else { return nil }
+        return canonical(id)
     }
 
     private static func diff(_ a: Any?, _ b: Any?, path: String, into paths: inout [String]) {

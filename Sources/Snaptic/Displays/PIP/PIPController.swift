@@ -1068,14 +1068,14 @@ fileprivate extension DisplayActionID {
         ctx.commands.register("pip", policy: .low, offOnly: false, cliAllowed: true, summary: PIPCommand.usage,
                               lifetime: lifetime) { [weak self] request in
             guard let self else { return .failure(ControlExit.unavailable, L("Picture in Picture is off.")) }
-            return self.handleCommand(request.arguments)
+            return self.handleCommand(request.arguments, json: request.json)
         }
     }
 
     /// `pip …` (PLAN §4.10(3)): saved configurations only; starting only while on
     /// console and unlocked. Stopping is always allowed. Displays are picked with
     /// `DisplaySelectorResolver`, so `--display 2` is the "2" Identify shows.
-    private func handleCommand(_ arguments: [String]) -> ControlResponse {
+    private func handleCommand(_ arguments: [String], json: Bool = false) -> ControlResponse {
         guard let ctx = context else { return .failure(ControlExit.unavailable, L("Picture in Picture is off.")) }
         guard let command = PIPCommand.parse(arguments) else { return .failure(ControlExit.usage, "usage: " + PIPCommand.usage) }
         let entries = PIPConfig.entries(in: ctx.config.value)
@@ -1091,6 +1091,21 @@ fileprivate extension DisplayActionID {
         case .list:
             let numbers = Dictionary(DisplaySelectorResolver.ordered(ctx).enumerated().map { pair in (pair.element.key, pair.offset + 1) },
                                      uniquingKeysWith: { first, _ in first })
+            if json {
+                let rows: [[String: Any]] = entries.map { e in
+                    let c = e.configuration
+                    var row: [String: Any] = ["id": c.id.rawValue, "name": c.name, "kind": c.kind.rawValue,
+                                              "state": sessions[c.id]?.publicState.rawValue ?? "stopped"]
+                    switch e.source {
+                    case .display(let key):
+                        row["source"] = "display"
+                        if let n = numbers[key] { row["display"] = n }
+                    case .window: row["source"] = "window"
+                    }
+                    return row
+                }
+                return .ok(KitControl.jsonText(rows) ?? "[]")
+            }
             let lines = entries.map { e -> String in
                 let c = e.configuration
                 let source: String
