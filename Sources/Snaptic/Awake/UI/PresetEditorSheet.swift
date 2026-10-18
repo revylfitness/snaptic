@@ -21,49 +21,71 @@ struct PresetEditorSheet: View, ControlDeclaring {
     }
 
     var body: some View {
-        let presets = sessions.value.presets
         AdvancedSheet(L("Sessions"), restoreDefaults: restore, restoreControl: ControlID("awake.sessions.restore")) {
-            Section {
-                ReorderableList(SettingsBinding.store(env.config, \.sessions.presets),
-                                onEdit: { preset in expanded = preset.id },
-                                onDelete: presets.count > 1 ? { (preset: AwakePreset) in deleting = preset.id } : nil) { preset in
-                    PresetRow(env: env, id: preset.id, preset: preset, defaults: sessions.value,
-                              effective: runtime.effectiveFeatures,
-                              isExpanded: Binding(get: { expanded == preset.id },
-                                                  set: { expanded = $0 ? preset.id : nil }),
-                              delete: presets.count > 1 ? { deleting = preset.id } : nil,
-                              revealsHere: preset.id == presets.first?.id)
-                }
-            } header: {
-                Text(L("Sessions in the menu"))
-                    .modifier(SettingsAnchor(ControlID("awake.sessions.list")))
-            } footer: {
-                Text(L("Keep Awake and Start Session list these in this order. Drag to reorder."))
-            }
-            Section {
-                ButtonRow(L("Add Session"), help: addHelp(presets.count), symbol: "plus",
-                          control: ControlID("awake.sessions.add")) {
-                    let id = StableID()
-                    if let next = env.config.value.sessions.addingPreset(id: id) {
-                        env.config.value.sessions = next
-                        expanded = id
-                    }
-                }
-                .disabled(presets.count >= AwakeSessionsConfig.maxPresets)
-            }
+            listSection
+            addSection
         }
-        .alert(L("Delete this session?"), isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
-            Button(L("Delete"), role: .destructive) {
-                if let id = deleting {
-                    env.config.value.sessions = env.config.value.sessions.removingPreset(id)
-                    if expanded == id { expanded = nil }
-                }
-                deleting = nil
-            }
+        .alert(L("Delete this session?"), isPresented: deletingShown) {
+            Button(L("Delete"), role: .destructive) { confirmDelete() }
             Button(L("Cancel"), role: .cancel) { deleting = nil }
         } message: {
             Text(L("It’s removed from Keep Awake, the Awake menu and its shortcut."))
         }
+    }
+
+    private var listSection: some View {
+        let presets: [AwakePreset] = sessions.value.presets
+        let canDelete = presets.count > 1
+        let onEdit: (AwakePreset) -> Void = { preset in expanded = preset.id }
+        let onDelete: ((AwakePreset) -> Void)? = canDelete ? { preset in deleting = preset.id } : nil
+        return Section {
+            ReorderableList(SettingsBinding.store(env.config, \.sessions.presets), onEdit: onEdit,
+                            onDelete: onDelete) { (preset: AwakePreset) -> PresetRow in
+                row(preset, first: presets.first?.id, canDelete: canDelete)
+            }
+        } header: {
+            Text(L("Sessions in the menu"))
+                .modifier(SettingsAnchor(ControlID("awake.sessions.list")))
+        } footer: {
+            Text(L("Keep Awake and Start Session list these in this order. Drag to reorder."))
+        }
+    }
+
+    private func row(_ preset: AwakePreset, first: StableID?, canDelete: Bool) -> PresetRow {
+        let id = preset.id
+        let expandedBinding = Binding<Bool>(get: { expanded == id }, set: { on in expanded = on ? id : nil })
+        let delete: (@MainActor () -> Void)? = canDelete ? { deleting = id } : nil
+        return PresetRow(env: env, id: id, preset: preset, defaults: sessions.value, effective: runtime.effectiveFeatures,
+                         isExpanded: expandedBinding, delete: delete, revealsHere: id == first)
+    }
+
+    private var addSection: some View {
+        let count = sessions.value.presets.count
+        return Section {
+            ButtonRow(L("Add Session"), help: addHelp(count), symbol: "plus", control: ControlID("awake.sessions.add")) {
+                addPreset()
+            }
+            .disabled(count >= AwakeSessionsConfig.maxPresets)
+        }
+    }
+
+    private var deletingShown: Binding<Bool> {
+        Binding<Bool>(get: { deleting != nil }, set: { shown in if !shown { deleting = nil } })
+    }
+
+    private func addPreset() {
+        let id = StableID()
+        guard let next = env.config.value.sessions.addingPreset(id: id) else { return }
+        env.config.value.sessions = next
+        expanded = id
+    }
+
+    private func confirmDelete() {
+        if let id = deleting {
+            env.config.value.sessions = env.config.value.sessions.removingPreset(id)
+            if expanded == id { expanded = nil }
+        }
+        deleting = nil
     }
 
     private func addHelp(_ count: Int) -> String {
@@ -102,53 +124,63 @@ private struct PresetRow: View {
 
     var body: some View {
         DisclosureGroup(isExpanded: isExpanded) {
-            VStack(alignment: .leading, spacing: 10) {
-                LabeledContent(L("Name")) {
-                    TextField(L("Name"), text: name, prompt: Text(preset.kind.title(AwakeFormat.text)))
-                        .labelsHidden()
-                        .frame(maxWidth: 220)
-                }
-                .modifier(SettingsAnchor(ControlID("awake.sessions.name")))
-                PickerSetting(L("Kind"), selection: kindChoice, options: [
-                    PickerOption(AwakePresetKindChoice.indefinite, L("Until turned off")),
-                    PickerOption(AwakePresetKindChoice.duration, L("For a duration")),
-                    PickerOption(AwakePresetKindChoice.untilTime, L("Until a time")),
-                    PickerOption(AwakePresetKindChoice.untilIdle, L("Until downloads and tasks finish")),
-                ], style: .popUp, defaultValue: nil, anchor: ControlID("awake.sessions.kind"))
-                kindFields
-                PickerSetting(L("Display"), help: L("When the display may turn off during this session."),
-                              selection: display, options: displayOptions, style: .popUp, defaultValue: .useDefault,
-                              anchor: ControlID("awake.sessions.display"))
-                if displayPolicy == .keepOnWhileActive {
-                    StepperSetting(L("Turn the display off after"),
-                                   help: L("Minutes without keyboard or mouse input."),
-                                   value: idleMinutes, in: AwakeSessionOptions.displayIdleMinutesRange,
-                                   defaultValue: AwakeSessionOptions().displayIdleMinutes, format: .minutes)
-                        .padding(.leading, 20)
-                }
-                if effective.contains(.activity) {
-                    PickerSetting(L("Activity"), help: L("Whether this session also keeps you from appearing away."),
-                                  selection: activity, options: activityOptions, style: .popUp,
-                                  defaultValue: .useDefault, anchor: ControlID("awake.sessions.activity"))
-                }
-                if let delete {
-                    HStack {
-                        Spacer()
-                        Button(L("Delete Session…"), role: .destructive) { delete() }
-                    }
-                }
-            }
-            .padding(.vertical, 4)
+            fields
         } label: {
-            HStack {
-                Text(preset.title(AwakeFormat.text))
-                Spacer(minLength: 8)
-                if preset.id == defaults.defaultPreset.id {
-                    Text(L("Default")).foregroundStyle(.secondary)
+            rowLabel
+        }
+        .modifier(SettingsRevealExpansion(revealsHere ? Self.revealIDs : [], isExpanded: isExpanded))
+    }
+
+    private var rowLabel: some View {
+        HStack {
+            Text(preset.title(AwakeFormat.text))
+            Spacer(minLength: 8)
+            if preset.id == defaults.defaultPreset.id {
+                Text(L("Default")).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var fields: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            LabeledContent(L("Name")) {
+                TextField(L("Name"), text: name, prompt: Text(preset.kind.title(AwakeFormat.text)))
+                    .labelsHidden()
+                    .frame(maxWidth: 220)
+            }
+            .modifier(SettingsAnchor(ControlID("awake.sessions.name")))
+            PickerSetting(L("Kind"), selection: kindChoice, options: [
+                PickerOption(AwakePresetKindChoice.indefinite, L("Until turned off")),
+                PickerOption(AwakePresetKindChoice.duration, L("For a duration")),
+                PickerOption(AwakePresetKindChoice.untilTime, L("Until a time")),
+                PickerOption(AwakePresetKindChoice.untilIdle, L("Until downloads and tasks finish")),
+            ], style: .popUp, defaultValue: nil, anchor: ControlID("awake.sessions.kind"))
+            kindFields
+            PickerSetting(L("Display"), help: L("When the display may turn off during this session."),
+                          selection: display, options: displayOptions, style: .popUp,
+                          defaultValue: OptionChoice<AwakeDisplayPolicy>.useDefault,
+                          anchor: ControlID("awake.sessions.display"))
+            if displayPolicy == .keepOnWhileActive {
+                StepperSetting(L("Turn the display off after"),
+                               help: L("Minutes without keyboard or mouse input."),
+                               value: idleMinutes, in: AwakeSessionOptions.displayIdleMinutesRange,
+                               defaultValue: AwakeSessionOptions().displayIdleMinutes, format: .minutes)
+                    .padding(.leading, 20)
+            }
+            if effective.contains(.activity) {
+                PickerSetting(L("Activity"), help: L("Whether this session also keeps you from appearing away."),
+                              selection: activity, options: activityOptions, style: .popUp,
+                              defaultValue: OptionChoice<AwakeActivityMode>.useDefault,
+                              anchor: ControlID("awake.sessions.activity"))
+            }
+            if let delete {
+                HStack {
+                    Spacer()
+                    Button(L("Delete Session…"), role: .destructive) { delete() }
                 }
             }
         }
-        .modifier(SettingsRevealExpansion(revealsHere ? Self.revealIDs : [], isExpanded: isExpanded))
+        .padding(.vertical, 4)
     }
 
     private static let revealIDs = [
