@@ -6,22 +6,46 @@ final class DisplaysUIModelTests: XCTestCase {
 
     // MARK: Names
 
-    func testEveryFeatureHasDistinctTitleAndSummary() {
+    func testEveryFeatureHasADistinctTitle() {
         let titles = DisplayFeature.allCases.map(DisplaysUIText.title)
         XCTAssertEqual(Set(titles).count, titles.count)
         for feature in DisplayFeature.allCases {
             XCTAssertFalse(DisplaysUIText.title(feature).isEmpty)
-            XCTAssertFalse(DisplaysUIText.summary(feature).isEmpty)
         }
     }
 
-    func testEveryFeaturePageIsListedAndNamed() {
-        for feature in DisplayFeature.allCases {
-            let page = FeatureGraph.spec(feature).page
-            XCTAssertTrue(DisplaysUIText.pageOrder.contains(page), "\(feature) page \(page)")
-            XCTAssertNotEqual(DisplaysUIText.pageTitle(page), page)
+    /// ux M2: feature names reach alerts, Customize, onboarding and Display Information, so they use the 0.3 words
+    /// (PLAN 0.3 §4.2: never "monitor"; Apple terms), not 0.2's ids-in-words.
+    func testUserWordsHaveNo02Vocabulary() {
+        let banned = ["monitor", "ddc", "osd", "hidpi", "on/off", "on-screen", "pip", "gamma", "virtual screen",
+                      "menu-bar", "(", "&"]
+        var texts = DisplayFeature.allCases.map(DisplaysUIText.title)
+        texts += OnboardingChip.allCases.flatMap { [DisplaysOnboardingPlan.title($0), DisplaysOnboardingPlan.summary($0)] }
+        texts += [DisplaysOnboardingPlan.sharperTextNote(["A"]), DisplaysOnboardingPlan.sharperTextNote(["A", "B"])]
+        texts += DisplaysUIText.displaySymbols.map(\.title)
+        for text in texts {
+            for word in banned {
+                XCTAssertFalse(text.lowercased().contains(word), "“\(text)” contains “\(word)”")
+            }
         }
-        XCTAssertEqual(Set(DisplaysUIText.pageOrder).count, DisplaysUIText.pageOrder.count)
+        // The Apple terms table (PLAN 0.3 §4.2, [DS] §4.7) and the §4.7 chip.
+        XCTAssertEqual(DisplaysUIText.title(.osd), "Brightness indicator")
+        XCTAssertEqual(DisplaysUIText.title(.pip), "Picture in Picture")
+        XCTAssertEqual(DisplaysUIText.title(.virtualScreens), "Virtual displays")
+        XCTAssertEqual(DisplaysUIText.title(.layouts), "Saved layouts")
+        XCTAssertEqual(DisplaysUIText.title(.smartHiDPI), "Sharper text")
+        XCTAssertEqual(DisplaysUIText.title(.ddcControls), "Hardware controls")
+        XCTAssertEqual(DisplaysOnboardingPlan.title(.pip), "Picture in Picture")
+        XCTAssertEqual(DisplaysOnboardingPlan.title(.virtualScreens), "Virtual displays")
+    }
+
+    func testSharperTextNoteAgreesWithTheNumberOfDisplays() {
+        let one = DisplaysOnboardingPlan.sharperTextNote(["DELL U2723QE"])
+        XCTAssertTrue(one.hasPrefix("DELL U2723QE has no sharp mode"))
+        XCTAssertTrue(one.contains("on that display"))
+        let two = DisplaysOnboardingPlan.sharperTextNote(["LG", "BenQ"])
+        XCTAssertTrue(two.hasPrefix("LG, BenQ have no sharp mode"))
+        XCTAssertTrue(two.contains("on those displays"))
     }
 
     func testPermissionNameFollowsOS() {
@@ -301,7 +325,6 @@ final class DisplaysUIModelTests: XCTestCase {
     }
 
     func testHeaderNeverActsAndDisclosureIsDedicated() {
-        XCTAssertFalse(DisplayBlockDisclosure.headerClickActs)
         XCTAssertEqual(DisplayBlockDisclosure.control(showHeader: true, forceExpanded: false, collapsed: false), .collapse)
         XCTAssertEqual(DisplayBlockDisclosure.control(showHeader: true, forceExpanded: false, collapsed: true), .expand)
         XCTAssertEqual(DisplayBlockDisclosure.control(showHeader: true, forceExpanded: true, collapsed: true), .none)

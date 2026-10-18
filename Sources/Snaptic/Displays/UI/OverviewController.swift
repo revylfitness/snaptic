@@ -43,7 +43,15 @@ import SnapticKit
 
     func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) {}
 
-    func configDidChange(from old: DisplaysConfig, to new: DisplaysConfig) {}
+    /// Every section: the Displays menu reads `.menu` (Customize Displays Menu, style, badges, hidden displays,
+    /// order, "Show All Displays"), names and icons (`.identity`, per-display identity) and most other sections, and
+    /// only some owners request a rebuild for their own. The always-on overview marks the status menu dirty on any
+    /// change (it rebuilds lazily, when next opened; ui-correctness F3).
+    static var observedSections: Set<DisplaysConfigSection> { Set(DisplaysConfigSection.allCases) }
+
+    func configDidChange(from old: DisplaysConfig, to new: DisplaysConfig) {
+        context?.requestMenuRebuild()
+    }
 
     func stop() {
         closeUI()

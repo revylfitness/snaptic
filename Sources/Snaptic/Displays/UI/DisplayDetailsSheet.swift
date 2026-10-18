@@ -53,9 +53,8 @@ struct DisplayDetailsSheet: View, ControlDeclaring {
     @ViewBuilder private func identity(_ display: DisplayInfo) -> some View {
         Section {
             DisplayNameRow(display: display, config: env.config, identity: identity(of: display.key))
-            PickerSetting(L("Icon"), help: L("Shown in the menu, the Displays panel, and Settings."),
-                          selection: symbolBinding(display), options: symbolOptions(display), style: .popUp,
-                          defaultValue: "", anchor: ControlID("displays.details.icon"))
+            DisplayIconTiles(choices: symbolChoices(display), selection: symbolBinding(display))
+                .modifier(SettingsAnchor(ControlID("displays.details.icon")))
             LabeledContent {
                 Button(L("Customize Displays Menu…")) { openCustomizeMenu(display.key) }
                     .modifier(SettingsAnchor(ControlID("displays.details.customizeMenu")))
@@ -85,14 +84,16 @@ struct DisplayDetailsSheet: View, ControlDeclaring {
         })
     }
 
-    private func symbolOptions(_ display: DisplayInfo) -> [PickerOption<String>] {
-        var options = [PickerOption("", L("Automatic"), symbol: DisplaysLive.automaticSymbol(for: display))]
-        options += DisplaysUIText.displaySymbols.map { PickerOption($0.symbol, $0.title, symbol: $0.symbol) }
-        // A symbol set elsewhere (an imported configuration) stays selectable.
+    /// Automatic first (drawn with the symbol it picks for this display), then the curated icons; a symbol set
+    /// elsewhere (an imported configuration) stays selectable as "Custom", never under its raw name (ux m20).
+    private func symbolChoices(_ display: DisplayInfo) -> [DisplayIconTiles.Choice] {
+        var choices = [DisplayIconTiles.Choice(value: "", symbol: DisplaysLive.automaticSymbol(for: display),
+                                               title: L("Automatic"))]
+        choices += DisplaysUIText.displaySymbols.map { .init(value: $0.symbol, symbol: $0.symbol, title: $0.title) }
         if let other = identity(of: display.key).symbol, !DisplaysUIText.isCuratedSymbol(other) {
-            options.append(PickerOption(other, other, symbol: other))
+            choices.append(.init(value: other, symbol: other, title: L("Custom")))
         }
-        return options
+        return choices
     }
 
     /// Closes the sheet, then shows Menu Bar › Customize Displays Menu with this display selected (parity M6).
@@ -338,5 +339,77 @@ private struct DisplayInformationDisclosure: View {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
+    }
+}
+
+// MARK: - Icon tiles
+
+/// Display Details › Icon (PLAN 0.3 §4.3 "Icon (glyph tiles)"): rendered symbols in rows under the label, so the
+/// eighteen-odd choices fit the sheet's width (SettingsUI's one-row GlyphTilePicker would not). Same look and
+/// accessibility as GlyphTilePicker: a tooltip and label per tile, `.isSelected`, arrow keys move the selection.
+struct DisplayIconTiles: View {
+    struct Choice: Hashable {
+        /// What is stored ("" = Automatic).
+        let value: String
+        /// What is drawn.
+        let symbol: String
+        let title: String
+    }
+
+    let choices: [Choice]
+    let selection: Binding<String>
+    private static let perRow = 9
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L("Icon"))
+                Text(L("Shown in the menu, the Displays panel, and Settings."))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Grid(horizontalSpacing: 6, verticalSpacing: 6) {
+                ForEach(Array(stride(from: 0, to: choices.count, by: Self.perRow)), id: \.self) { start in
+                    GridRow {
+                        ForEach(choices[start..<min(start + Self.perRow, choices.count)], id: \.value) { tile($0) }
+                    }
+                }
+            }
+            .focusable()
+            .onKeyPress(.leftArrow) { move(-1) }
+            .onKeyPress(.rightArrow) { move(1) }
+            .onKeyPress(.upArrow) { move(-Self.perRow) }
+            .onKeyPress(.downArrow) { move(Self.perRow) }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(L("Icon"))
+        }
+    }
+
+    private func tile(_ choice: Choice) -> some View {
+        let selected = choice.value == selection.wrappedValue
+        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        return Button {
+            selection.wrappedValue = choice.value
+        } label: {
+            Image(systemName: choice.symbol)
+                .font(.system(size: 14))
+                .frame(width: 32, height: 26)
+                .background(shape.fill(selected ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.05)))
+                .overlay(shape.strokeBorder(selected ? Color.accentColor : Color.primary.opacity(0.1),
+                                            lineWidth: selected ? 1.5 : 0.5))
+                .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .help(choice.title)
+        .accessibilityLabel(choice.title)
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+    }
+
+    private func move(_ delta: Int) -> KeyPress.Result {
+        guard !choices.isEmpty else { return .ignored }
+        let i = choices.firstIndex { $0.value == selection.wrappedValue } ?? 0
+        let next = min(choices.count - 1, max(0, i + delta))
+        if choices[next].value != selection.wrappedValue { selection.wrappedValue = choices[next].value }
+        return .handled
     }
 }
