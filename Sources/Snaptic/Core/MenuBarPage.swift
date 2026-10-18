@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import SnapticKit
 
@@ -44,6 +45,8 @@ private struct MenuBarPageContent: View {
     @State private var customizeFocus: DisplayKey?
     /// The sheet was opened by this page's own button.
     @State private var openedHere = false
+    /// Bumped when displays come or go: Displays' Show When Active icon (and so the Snaptic glyph) follows them.
+    @State private var screensRevision = 0
 
     var body: some View {
         SettingsPageScaffold(route: SettingsRoute(SettingsRootID.menuBar)) {
@@ -105,6 +108,9 @@ private struct MenuBarPageContent: View {
         }
         .onAppear { noteCustomizeOpening() }
         .onChange(of: shell.openSheet) { _, _ in noteCustomizeOpening() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+            screensRevision &+= 1
+        }
     }
 
     /// The Customize sheet is the shell's sheet `CustomizeMenuSheetControls.surface`. Opened from elsewhere — Display
@@ -291,6 +297,7 @@ private struct MenuBarPageContent: View {
     /// page and the Snaptic item agree on its glyph (code N3). Awake's item has its own glyph family and never
     /// collides.
     private var ownIconSymbols: [String] {
+        _ = screensRevision   // re-read on display changes
         let config = modules.value
         let own = config.ownIconIDs(running: host.runningModules, displaysActive: MenuPlacement.hasExternalDisplay)
         return MenuPlacement.ownIconSymbols(own.map { host.module($0) }, in: config)
