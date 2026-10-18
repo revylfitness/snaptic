@@ -337,7 +337,9 @@ package enum SliderLabels {
         return labels[i]
     }
 
-    /// Exact label (spaces and "×"/"x" ignored), else the nearest "W × H" label to a typed size.
+    /// Exact label (spaces and "×"/"x" ignored), else the nearest "W × H" label to a typed size, else (labels that
+    /// are numbers such as "80%", resolution's percent mode) the label nearest to a typed number with or without
+    /// "%". PLAN §4.1: a discrete slider snaps a typed value to the nearest position.
     private static func parseLabel(_ s: String, _ labels: [String]) -> Double? {
         func normalized(_ t: String) -> String {
             var out = ""
@@ -348,23 +350,50 @@ package enum SliderLabels {
         }
         let typed = normalized(s)
         if let i = labels.firstIndex(where: { normalized($0) == typed }) { return Double(i) }
-        guard let size = pair(typed) else { return nil }
         var best: (index: Int, distance: Double)?
-        for (i, label) in labels.enumerated() {
-            guard let p = pair(normalized(label)) else { continue }
-            let d = (p.0 - size.0) * (p.0 - size.0) + (p.1 - size.1) * (p.1 - size.1)
-            if let b = best, d >= b.distance { continue }
-            best = (i, d)
+        if let size = pair(typed) {
+            for (i, label) in labels.enumerated() {
+                guard let p = pair(normalized(label)) else { continue }
+                let d = (p.0 - size.0) * (p.0 - size.0) + (p.1 - size.1) * (p.1 - size.1)
+                if let b = best, d >= b.distance { continue }
+                best = (i, d)
+            }
+        } else if let n = percentNumber(typed), n.isFinite {
+            for (i, label) in labels.enumerated() {
+                guard let v = percentNumber(normalized(label)), v.isFinite else { continue }
+                let d = abs(v - n)
+                if let b = best, d >= b.distance { continue }
+                best = (i, d)
+            }
         }
         return best.map { Double($0.index) }
     }
 
-    /// "1512x982" (normalized) → (1512, 982).
+    /// "1512x982" (normalized; a trailing " HiDPI · 60 Hz" on a label ignored) → (1512, 982).
     private static func pair(_ s: String) -> (Double, Double)? {
-        let parts = s.split(separator: "x", omittingEmptySubsequences: false)
+        let parts = s.split(separator: "x", maxSplits: 1, omittingEmptySubsequences: false)
         guard parts.count == 2,
               let w = SliderMath.parseNumber(String(parts[0]), separator: "."),
-              let h = SliderMath.parseNumber(String(parts[1]), separator: ".") else { return nil }
+              let h = SliderMath.parseNumber(leadingNumber(String(parts[1])), separator: ".") else { return nil }
         return (w, h)
+    }
+
+    /// The digits (and one ".") a string starts with: "982hidpi·60hz" → "982".
+    private static func leadingNumber(_ s: String) -> String {
+        var out = String.UnicodeScalarView()
+        var dot = false
+        for u in s.unicodeScalars {
+            if u.value >= 48 && u.value <= 57 { out.append(u); continue }
+            if u == ".", !dot { dot = true; out.append(u); continue }
+            break
+        }
+        return String(out)
+    }
+
+    /// "110%" or "110" (normalized) → 110; nil for anything else.
+    private static func percentNumber(_ s: String) -> Double? {
+        let body = s.hasSuffix("%") ? String(s.dropLast()) : s
+        guard !body.isEmpty else { return nil }
+        return SliderMath.parseNumber(body, separator: ".")
     }
 }

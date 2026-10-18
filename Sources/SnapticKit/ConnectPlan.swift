@@ -300,8 +300,6 @@ package enum ConnectPlan {
     /// Steps 2–5 wait for this much reconfiguration quiet, capped (R5.3).
     package static let quietSeconds: Double = 3
     package static let quietCapSeconds: Double = 10
-    /// Step 1 runs within this long of the registry event.
-    package static let visibilityDeadline: Double = 1
 
     /// The grace for orphaned hosts given the current state.
     package static func grace(secondsSinceWakeOrUnlock: Double?, anyVisible: Bool) -> Double {

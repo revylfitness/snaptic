@@ -15,9 +15,15 @@ package struct VirtualMode: Codable, Hashable, Sendable {
         self.refreshMilliHz = refreshMilliHz
     }
 
-    /// Backing pixels (2× points for HiDPI).
-    package var pixelWidth: Int { hiDPI ? width * 2 : width }
-    package var pixelHeight: Int { hiDPI ? height * 2 : height }
+    /// Backing pixels (2× points for HiDPI). Saturates instead of trapping on an out-of-range stored size.
+    package var pixelWidth: Int { hiDPI ? Self.doubled(width) : width }
+    package var pixelHeight: Int { hiDPI ? Self.doubled(height) : height }
+
+    /// 2 × `v`, saturating at the Int bounds (decoded values aren't trusted until `sanitized`).
+    package static func doubled(_ v: Int) -> Int {
+        let (r, overflow) = v.multipliedReportingOverflow(by: 2)
+        return overflow ? (v < 0 ? Int.min : Int.max) : r
+    }
     package var refreshHz: Double { Double(refreshMilliHz) / 1000 }
     package var label: String {
         let base = "\(width) × \(height)"
@@ -181,12 +187,12 @@ package struct VirtualScreenSpec: Codable, Equatable, Sendable {
         aspectHeight = c.lossy(.aspectHeight, 9)
         sizeInches = c.lossy(.sizeInches, 27)
         hiDPI = c.lossy(.hiDPI, true)
-        modes = c.lossy(.modes, [])
+        modes = c.lossyArray(.modes, [])
         portrait = c.lossy(.portrait, false)
         recreateOnLaunch = c.lossy(.recreateOnLaunch, false)
         headlessPrimary = c.lossy(.headlessPrimary, false)
         primaries = c.lossy(.primaries, nil)
-        associations = (try? c.decodeIfPresent(TolerantArray<VirtualAssociation>.self, forKey: .associations))?.values ?? []
+        associations = c.lossyArray(.associations, [])
         hdr = c.lossy(.hdr, false)
         placement = c.lossy(.placement, .automatic)
         wantsPIP = c.lossy(.wantsPIP, false)
@@ -198,20 +204,23 @@ package struct VirtualScreenSpec: Codable, Equatable, Sendable {
     package var initialMode: VirtualMode? { modes.first }
 
     package var largestMode: VirtualMode? {
-        modes.max { ($0.pixelWidth * $0.pixelHeight, $0.width) < ($1.pixelWidth * $1.pixelHeight, $1.width) }
+        modes.max { Self.area($0) < Self.area($1) || (Self.area($0) == Self.area($1) && $0.width < $1.width) }
     }
+
+    /// Backing pixel count as a Double (exact for every sanitized mode; never overflows on a hostile one).
+    private static func area(_ m: VirtualMode) -> Double { Double(m.pixelWidth) * Double(m.pixelHeight) }
 
     /// Backing size the descriptor reserves: 2 × the largest mode's points (R5.6), or the
     /// largest mode's pixels for LoDPI-only screens.
     package var maxPixels: (wide: Int, high: Int) {
         guard let m = largestMode else { return (0, 0) }
-        return hiDPI ? (m.width * 2, m.height * 2) : (m.width, m.height)
+        return hiDPI ? (VirtualMode.doubled(m.width), VirtualMode.doubled(m.height)) : (m.width, m.height)
     }
 
     /// Fallback when the HiDPI check fails: backing for the initial mode only.
     package var fallbackMaxPixels: (wide: Int, high: Int) {
         guard let m = initialMode else { return (0, 0) }
-        return hiDPI ? (m.width * 2, m.height * 2) : (m.width, m.height)
+        return hiDPI ? (VirtualMode.doubled(m.width), VirtualMode.doubled(m.height)) : (m.width, m.height)
     }
 
     /// Physical size reported to macOS (sets DPI and the default scale). Portrait swaps.
@@ -241,13 +250,6 @@ package struct VirtualScreenSpec: Codable, Equatable, Sendable {
     }
 
     package var serial: UInt32 { Self.serial(for: id.rawValue) }
-
-    /// Modes sorted largest first, deduplicated (used by the UI and the slider).
-    package var sortedModes: [VirtualMode] {
-        var seen = Set<VirtualMode>()
-        return modes.filter { seen.insert($0).inserted }
-            .sorted { ($0.width, $0.height, $0.refreshMilliHz) > ($1.width, $1.height, $1.refreshMilliHz) }
-    }
 
     /// Clamps everything to what the editor can produce and the chip can drive. Modes that
     /// don't fit are dropped; if none survives, a default ladder for the aspect is used.
@@ -289,7 +291,7 @@ package struct VirtualScreenSpec: Codable, Equatable, Sendable {
     /// number of points at least 360, within the chip limit. Portrait swaps the axes.
     package static func ladder(aspectWidth: Int, aspectHeight: Int, hiDPI: Bool, soc: SoCClass = .appleEntry,
                                portrait: Bool = false, refreshMilliHz: Int = 60_000) -> [VirtualMode] {
-        let aw = max(1, aspectWidth), ah = max(1, aspectHeight)
+        let aw = min(maxAspectComponent, max(1, aspectWidth)), ah = min(maxAspectComponent, max(1, aspectHeight))
         let limit = SoCCaps.maxBackingDimension(soc) / (hiDPI ? 2 : 1)
         var result: [VirtualMode] = []
         for w in ladderWidths.reversed() {
@@ -315,28 +317,6 @@ package struct VirtualScreenSpec: Codable, Equatable, Sendable {
     package func modesLimited(toInitial: Bool) -> [VirtualMode] {
         guard toInitial, let first = initialMode else { return modes }
         return modes.filter { $0.width <= first.width && $0.height <= first.height }
-    }
-}
-
-/// An array that decodes element by element, dropping the ones that fail.
-package struct TolerantArray<Element: Decodable>: Decodable {
-    package var values: [Element]
-    package init(from decoder: Decoder) throws {
-        var c = try decoder.unkeyedContainer()
-        var out: [Element] = []
-        while !c.isAtEnd {
-            if let v = try? c.decode(Element.self) {
-                out.append(v)
-            } else {
-                do { _ = try c.decode(SkipValue.self) } catch { break }
-            }
-            if out.count >= 4096 { break }
-        }
-        values = out
-    }
-
-    private struct SkipValue: Decodable {
-        init(from decoder: Decoder) throws {}
     }
 }
 
