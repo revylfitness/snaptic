@@ -6,7 +6,7 @@ import SnapticKit
 /// delta, with offsets, a 2% deadband, DDC writes ≥ 3 s apart and a 10 s pause after a
 /// manual change on a target. ⇧ on the brightness keys skips sync. External changes on
 /// a DDC source are seen only with readback on (R5.8).
-@MainActor final class SyncController: DisplayFeatureController, DiagnosticsContributor, DisplayMenuContributor {
+@MainActor final class SyncController: DisplayFeatureController, DiagnosticsContributor {
     static var id: DisplayControllerID { .sync }
     static var privateSymbols: [PrivateSymbol] { [] }
 
@@ -153,13 +153,6 @@ import SnapticKit
 
     // MARK: Menu
 
-    /// The items moved to `ColorMenuItems` (R5-13), registered in start(). The conformance stays only while
-    /// `DisplaysModule.menuContributorTypes` lists this type; it contributes nothing itself.
-    var descriptors: [DisplayMenuItemDescriptor] { [] }
-
-    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
-
-    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
 
     func diagnostics() -> [(String, String)] {
         guard let context else { return [] }

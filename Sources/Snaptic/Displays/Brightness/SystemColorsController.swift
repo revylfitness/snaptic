@@ -6,7 +6,7 @@ import SnapticShims
 /// System color features (PLAN §6.5): ColorSync profile picker and actions (with the
 /// custom-profile warning), Night Shift toggle and strength, Apple display presets, and
 /// the built-in auto-brightness toggle.
-@MainActor final class SystemColorsController: DisplayFeatureController, DiagnosticsContributor, DisplayMenuContributor {
+@MainActor final class SystemColorsController: DisplayFeatureController, DiagnosticsContributor {
     static var id: DisplayControllerID { .systemColors }
     static var privateSymbols: [PrivateSymbol] { [] }
 
@@ -191,13 +191,6 @@ import SnapticShims
 
     // MARK: Menu
 
-    /// The items moved to `ColorMenuItems` (R5-13), registered in start(). The conformance stays only while
-    /// `DisplaysModule.menuContributorTypes` lists this type; it contributes nothing itself.
-    var descriptors: [DisplayMenuItemDescriptor] { [] }
-
-    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
-
-    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
 
     func diagnostics() -> [(String, String)] {
         guard let context else { return [] }

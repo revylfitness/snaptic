@@ -553,6 +553,12 @@ Sources/Snaptic/Displays/UI/HardwareControlsPage.swift	C	K18	HardwareControlsPag
 Sources/Snaptic/Displays/UI/KeyboardPage.swift	C	K18	KeyboardPage	Keyboard
 Sources/Snaptic/Displays/UI/ColorMenuItems.swift	C	K9	ColorMenuItems	-
 Sources/Snaptic/Displays/Live/DisplayLiveController.swift	C	S	DisplayLiveController	-
+Sources/SnapticKit/DisplaySettingsRules.swift	C	L	-	-
+Tests/SnapticKitTests/DisplaySettingsRulesTests.swift	C	L	-	-
+Sources/SnapticKit/Controls/MenuBarOverlaysSectionControls.swift	C	K21	MenuBarOverlaysSectionControls	displays.overlays
+Sources/Snaptic/Displays/UI/DisplayPageSupport.swift	C	L	-	-
+Sources/Snaptic/Displays/UI/KeyboardShortcutsSheet.swift	C	L	-	-
+Sources/Snaptic/Displays/UI/MenuBarOverlaysSection.swift	C	L	-	-
 Sources/Snaptic/Displays/UI/ResolutionSections.swift	D	K18	ResolutionSections	Resolution
 Sources/Snaptic/Displays/UI/ResolutionOptionsSection.swift	D	K18	ResolutionOptionsSection	Resolution Options;ResolutionSections
 Sources/Snaptic/Displays/UI/MatchTextSizeSection.swift	D	K18	MatchTextSizeSection	Match Text Size

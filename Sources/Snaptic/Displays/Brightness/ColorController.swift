@@ -7,8 +7,7 @@ import SnapticKit
 /// service. Actions for ±, invert, reset and suspend; CLI `set gamma`, `set temperature`,
 /// `set software-contrast`, `color reset|invert|suspend`; a Color submenu per display.
 /// Panic restores ColorSync; adjustments come back on the next change or after Resume.
-@MainActor final class ColorController: DisplayFeatureController, PanicParticipant, DiagnosticsContributor,
-    DisplayMenuContributor {
+@MainActor final class ColorController: DisplayFeatureController, PanicParticipant, DiagnosticsContributor {
     static var id: DisplayControllerID { .color }
     static var privateSymbols: [PrivateSymbol] { [] }
 
@@ -282,13 +281,6 @@ import SnapticKit
 
     // MARK: Menu
 
-    /// The items moved to `ColorMenuItems` (R5-13), registered in start(). The conformance stays only while
-    /// `DisplaysModule.menuContributorTypes` lists this type; it contributes nothing itself.
-    var descriptors: [DisplayMenuItemDescriptor] { [] }
-
-    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
-
-    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
 
     func diagnostics() -> [(String, String)] {
         guard let context else { return [] }

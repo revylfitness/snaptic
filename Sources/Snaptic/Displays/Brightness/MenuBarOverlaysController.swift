@@ -4,8 +4,7 @@ import SnapticKit
 
 /// Menu-bar strip (a black band behind the menu bar, hiding the notch) and rounded corner
 /// overlays, per display (PLAN §2.1 `menuBarOverlays`, parity §5.7). Panic removes them.
-@MainActor final class MenuBarOverlaysController: DisplayFeatureController, PanicParticipant, DiagnosticsContributor,
-    DisplayMenuContributor {
+@MainActor final class MenuBarOverlaysController: DisplayFeatureController, PanicParticipant, DiagnosticsContributor {
     static var id: DisplayControllerID { .menuBarOverlays }
     static var privateSymbols: [PrivateSymbol] { [] }
 
@@ -130,13 +129,6 @@ import SnapticKit
 
     // MARK: Menu
 
-    /// The items moved to `ColorMenuItems` (R5-13), registered in start(). The conformance stays only while
-    /// `DisplaysModule.menuContributorTypes` lists this type; it contributes nothing itself.
-    var descriptors: [DisplayMenuItemDescriptor] { [] }
-
-    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
-
-    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
 
     func diagnostics() -> [(String, String)] {
         [("Strips", String(strips.count)), ("Rounded corners", String(corners.count)), ("Held by panic", heldByPanic ? "yes" : "no")]

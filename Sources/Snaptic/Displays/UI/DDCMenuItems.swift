@@ -6,7 +6,8 @@ import SnapticKit
 /// volume (only with VCP 0x62), contrast (default Hide) and every custom range control marked "Show in menu"; in the
 /// display submenu an "Input" header with checkable inputs, and "Mute" and "Turn Off Display" / "Turn On Display"
 /// in the power group (`cDDCPower`, which migration M10 can promote to the top level). Sliders follow live values
-/// while the menu is open and write through `DisplayLiveController`. Constructed and registered by DDCController.
+/// while the menu is open and write through the shared `DisplaysContext.live`. Constructed and registered by
+/// DDCController.
 @MainActor final class DDCMenuItems: DisplayMenuContributor, ControlDeclaring {
     typealias Controls = DDCMenuItemsControls
 
@@ -21,11 +22,9 @@ import SnapticKit
 
     weak var context: DisplaysContext?
     weak var controller: DDCController?
-    private let live: DisplayLiveController
 
     init(context: DisplaysContext) {
         self.context = context
-        live = DisplayLiveController(context: context)
     }
 
     convenience init(context: DisplaysContext, controller: DDCController) {
@@ -63,7 +62,7 @@ import SnapticKit
                 let slider = MenuSliderRow(title: L("Volume of \(name)"), symbol: "speaker.wave.2", value: runtime.volume,
                                            range: runtime.volumeRange, format: .percent(of: 1),
                                            control: ControlID("menu.display.c.volume")) { [weak self] value, phase in
-                    self?.live.set(.volume, value, for: key, phase: phase)
+                    self?.context?.live.set(.volume, value, for: key, phase: phase)
                 }
                 slider.bind(to: runtime.$volume.eraseToAnyPublisher())
                 result.append((Self.volumeItem, slider))
@@ -72,7 +71,7 @@ import SnapticKit
                 let slider = MenuSliderRow(title: L("Contrast of \(name)"), symbol: "circle.lefthalf.filled",
                                            value: runtime.contrast, range: runtime.contrastRange, format: .percent(of: 1),
                                            control: ControlID("menu.display.c.contrast")) { [weak self] value, phase in
-                    self?.live.set(.contrast, value, for: key, phase: phase)
+                    self?.context?.live.set(.contrast, value, for: key, phase: phase)
                 }
                 slider.bind(to: runtime.$contrast.eraseToAnyPublisher())
                 result.append((Self.contrastItem, slider))
@@ -88,7 +87,7 @@ import SnapticKit
                                                value: controller.customValue(code, for: key), range: 0...1,
                                                format: .percent(of: 1),
                                                control: ControlID("menu.display.c.custom")) { [weak self] value, phase in
-                        self?.live.set(.custom(code), value, for: key, phase: phase)
+                        self?.context?.live.set(.custom(code), value, for: key, phase: phase)
                     }
                     slider.bind(to: controller.customPublisher(code, for: key))
                     result.append((Self.customItem, slider))
