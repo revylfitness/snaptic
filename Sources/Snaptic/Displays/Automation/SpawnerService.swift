@@ -15,7 +15,7 @@ import SnapticKit
     private var running: [UInt64: HelperHandle] = [:]
     private var serial: UInt64 = 0
     private var throttle = HookThrottle()
-    /// Last refusal or failure, for the Automation page (no paths or arguments).
+    /// Last refusal or failure, for Displays › Automations (no paths or arguments).
     private(set) var lastProblem: String?
     var onChange: (@MainActor () -> Void)?
     /// Bumped with every page-visible change (problem, running count), so the page re-renders (0.3 §4.5).
@@ -78,6 +78,13 @@ import SnapticKit
         } catch {
             return report(L("The command couldn't be started."))
         }
+    }
+
+    /// The page's "Clear" on the problem row: the problem stays cleared until the next refusal or failure.
+    func clearProblem() {
+        guard lastProblem != nil else { return }
+        lastProblem = nil
+        changed()
     }
 
     /// Panic and deactivation: every running command's process group is killed.
