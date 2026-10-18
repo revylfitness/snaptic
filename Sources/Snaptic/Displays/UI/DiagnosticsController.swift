@@ -1,9 +1,10 @@
 import AppKit
 import SnapticKit
 
-/// The diagnostics report (PLAN §12). Collects the system facts, module state, per-display
-/// facts and every DiagnosticsRegistry section, plus the EventLog tail. Identifiers are
-/// masked; titles, app names, serial numbers, EDID bytes and key codes never appear.
+/// The diagnostics report (PLAN §12, 0.3 §3.6). Collects the system facts, module state, per-display
+/// facts, every DiagnosticsRegistry section and Awake's lines, plus the EventLog tail. Identifiers are
+/// masked and display names replaced; titles, app names, serial numbers, EDID bytes and key codes never appear.
+/// Display Information shows it live; Copy Diagnostics Report and `snaptic diagnostics` print the same text.
 struct DiagnosticsReport {
     let generated: Date
     let sections: [DiagnosticsSection]
@@ -74,8 +75,13 @@ struct DiagnosticsReport {
                 sections.append(DiagnosticsSection(title: entry.section,
                                                    rows: entry.rows.map { DiagnosticsText.scrub(label: $0.0, value: $0.1) }))
             }
+            // 0.3 §3.6: Awake's own lines (already free of names and identifiers), only while Awake runs.
+            if let awake = DiagnosticsText.awakeSection(ctx.awakeDiagnosticsLines()) { sections.append(awake) }
         }
-        let events = eventLines()
+        // No display name (system, custom or remembered) leaves in a copied or exported report.
+        let names = displayNames(context: context, runtime: runtime)
+        sections = DiagnosticsText.redacting(sections, names: names)
+        let events = eventLines().map { DiagnosticsText.redacting($0, names: names) }
         let iso = ISO8601DateFormatter()
         let text = DiagnosticsText.report(header: "Snaptic diagnostics, \(iso.string(from: now))", sections: sections,
                                           events: events)
@@ -114,7 +120,7 @@ struct DiagnosticsReport {
                                           value: ctx.safeMode.isActive ? "on (\(ctx.safeMode.reason ?? "no reason"))" : "off"))
         rows.append(DiagnosticsRow("Panic latch", ctx.panic.isLatched ? "latched" : "off"))
         if let summary = runtime.lastPanicSummary { rows.append(DiagnosticsText.scrub(label: "Last panic", value: summary)) }
-        rows.append(DiagnosticsRow("Unprotected", DisplaysMenuBuilder.isUnprotected(ctx) ? "yes" : "no"))
+        rows.append(DiagnosticsRow("Unprotected", DisplaysLive.unprotectedReason(ctx) != nil ? "yes" : "no"))
         rows.append(DiagnosticsRow("Guard helper", ctx.guardClient.isAlive ? "running" : "not running"))
         rows.append(DiagnosticsText.scrub(label: "Helpers", value: ctx.helpers.unavailable.map { "unavailable: \($0)" } ?? "available"))
         rows.append(DiagnosticsRow("Sleep prevention", runtime.sleepPreventionActive ? "active" : "off"))
@@ -179,9 +185,21 @@ struct DiagnosticsReport {
             rows.append(DiagnosticsRow("DDC", ctx.ddc.isAvailable(d.key) ? "available" : "not available"))
             let live = ctx.runtime.runtime(for: d.key)
             if let status = live.statusText { rows.append(DiagnosticsText.scrub(label: "Status", value: status)) }
-            sections.append(DiagnosticsSection(title: "Display \(index + 1): \(d.name)", rows: rows))
+            sections.append(DiagnosticsSection(title: DiagnosticsText.displayTitle(number: index + 1, isBuiltin: d.isBuiltin),
+                                               rows: rows))
         }
         return sections
+    }
+
+    /// Every name a display goes by: connected ones' system names and the names Snaptic remembers.
+    private static func displayNames(context: DisplaysContext?, runtime: DisplaysRuntimeState) -> [String] {
+        var names = runtime.displays.map(\.name)
+        if let config = context?.config.value {
+            for identity in config.perDisplay.values.values.map(\.identity) {
+                names += [identity.customName, identity.lastKnownName].compactMap { $0 }
+            }
+        }
+        return names
     }
 
     private static func availabilitySection(_ runtime: DisplaysRuntimeState) -> DiagnosticsSection {

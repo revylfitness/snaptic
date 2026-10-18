@@ -3,8 +3,8 @@ import SnapticKit
 
 /// Displays › Advanced (owner F; PLAN 0.3 §4.3): the cross-cutting groups. "Use Snaptic for" and "Experimental"
 /// (`DisplaysFeatureGroups`), Confirm display changes (B's `ConfirmChangesSection`), Other display apps, the permissions those features
-/// need, and the settings whose 0.3 sections land in step 3 (resolution options, display names), reached by closing
-/// the sheet and opening their page (a sheet never presents another one). Footer: Restore Displays Defaults… · Done.
+/// need, and links to resolution options and the remembered displays, reached by closing the sheet and opening their
+/// page (a sheet never presents another one). Footer: Restore Displays Defaults… · Done.
 struct DisplaysAdvancedSheet: View, ControlDeclaring {
     typealias Controls = DisplaysAdvancedSheetControls
 
@@ -25,15 +25,14 @@ struct DisplaysAdvancedSheet: View, ControlDeclaring {
         AdvancedSheet(L("Displays Advanced Settings"), restoreDefaults: restore) {
             DisplaysFeatureGroups(switcher: switcher, runtime: runtime, features: features)
             ConfirmChangesSection(env: env)
+            ResolutionFiltersSection(env: env)
             if let host = SettingsShell.shared.host {
                 OtherDisplayAppsSection(host: host, store: host.modulesStore)
             }
             permissions
             Section {
-                link(L("Resolution Options"), help: L("Favorites, filters, and the resolution slider."),
-                     page: "displays.resolution")
-                link(L("Remembered Displays"), help: L("Displays Snaptic keeps settings for, and their names."),
-                     page: "displays.identity")
+                link(L("Remembered Displays"), help: L("Displays Snaptic keeps settings for, on Display Information."),
+                     page: DisplayInformationPageControls.surface)
             } header: {
                 Text(L("More settings"))
             }

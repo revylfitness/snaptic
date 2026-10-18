@@ -5,8 +5,8 @@ import SnapticKit
 /// Display Details… (owner F; PLAN 0.3 §4.3): the selected display's name and icon, a link to its menu visibility
 /// (Menu Bar › Customize Displays Menu), its manage actions (Copy Settings From ▾, Forget Remembered Resolution,
 /// Forget This Display…) and an Information disclosure (connection, masked serial, EDID copies). Never presents
-/// another sheet; Forget asks with a standard alert. The owners' Connection, Menu bar overlays and Match text size
-/// groups join in step 3.
+/// another sheet; Forget asks with a standard alert. C's Menu bar overlays section sits in the sheet; D's Connection
+/// and Match text size settings open D's page for the display.
 struct DisplayDetailsSheet: View, ControlDeclaring {
     typealias Controls = DisplayDetailsSheetControls
 
@@ -30,6 +30,8 @@ struct DisplayDetailsSheet: View, ControlDeclaring {
         AdvancedSheet(display?.name ?? L("Display Details"), restoreDefaults: nil) {
             if let display {
                 identity(display)
+                ownerSettings(display)
+                MenuBarOverlaysSection(env: env, key: display.key)
                 manage(display)
                 information(display)
             } else {
@@ -104,6 +106,14 @@ struct DisplayDetailsSheet: View, ControlDeclaring {
                 shell.openSheet = CustomizeMenuSheetControls.surface
             }
         }
+    }
+
+    // MARK: Connection and Match text size (D)
+
+    /// D's sections for this display; each renders nothing when its features are off or the display doesn't qualify.
+    @ViewBuilder private func ownerSettings(_ display: DisplayInfo) -> some View {
+        ConnectionSection(env: env, key: display.key)
+        MatchTextSizeSection(env: env, key: display.key)
     }
 
     // MARK: Manage
@@ -282,6 +292,7 @@ private struct DisplayInformationDisclosure: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .modifier(SettingsRevealExpansion([ControlID("displays.details.information")], isExpanded: $expanded))
         .onChange(of: expanded) { _, isExpanded in if isExpanded && !loaded { load() } }
         .onChange(of: display.hardwareID) { _, _ in
             loaded = false
@@ -291,7 +302,7 @@ private struct DisplayInformationDisclosure: View {
     }
 
     private var facts: [DiagnosticsRow] {
-        var rows: [DiagnosticsRow] = [DiagnosticsRow(L("Connection"), Self.transportName(display.transport))]
+        var rows: [DiagnosticsRow] = [DiagnosticsRow(L("Connection"), DisplaysUIText.transportName(display.transport))]
         if let mode = display.currentMode {
             rows.append(DiagnosticsRow(L("Resolution"), DisplaysUIText.modeLabel(mode.ref)))
             rows.append(DiagnosticsRow(L("Pixels"), "\(mode.ref.pixelWidth) × \(mode.ref.pixelHeight)"))
@@ -310,18 +321,6 @@ private struct DisplayInformationDisclosure: View {
         }
         rows.append(DiagnosticsRow(L("Identifier"), DiagnosticsText.shortKey(display.key)))
         return rows
-    }
-
-    static func transportName(_ transport: Transport) -> String {
-        switch transport {
-        case .builtin: return L("Built-in")
-        case .wired: return L("Cable")
-        case .displayLink: return L("DisplayLink")
-        case .airplay: return L("AirPlay")
-        case .sidecar: return L("Sidecar")
-        case .snapticVirtual: return L("Snaptic virtual display")
-        case .foreignVirtual: return L("Virtual display (other app)")
-        }
     }
 
     private func load() {

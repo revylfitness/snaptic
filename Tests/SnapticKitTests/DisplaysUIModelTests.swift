@@ -495,4 +495,96 @@ final class DisplaysRootModelTests: XCTestCase {
         XCTAssertTrue(DiagnosticsText.exportedEvents(entries, category: { $0.1 }, limit: 0).isEmpty)
         XCTAssertTrue(DiagnosticsText.exportedEvents(entries, category: { $0.1 }, limit: -1).isEmpty)
     }
+
+    // MARK: Display Information (names never leave in a report)
+
+    func testRedactingReplacesWholeNamesIgnoringCase() {
+        let text = "Display 1 (built-in): DELL U2720Q is on; dell u2720q again; DELL U2720Qx stays; Studio Display."
+        let out = DiagnosticsText.redacting(text, names: ["DELL U2720Q", "Studio Display"])
+        XCTAssertEqual(out, "Display 1 (built-in): [display name] is on; [display name] again; DELL U2720Qx stays; "
+                       + "[display name].")
+    }
+
+    func testRedactingSkipsShortAndDuplicateNamesAndPrefersLongest() {
+        XCTAssertEqual(DiagnosticsText.redactableNames(["  TV ", "LG", "LG UltraFine", "lg ultrafine", "LG UltraFine 2"]),
+                       ["LG UltraFine 2", "LG UltraFine"])
+        XCTAssertEqual(DiagnosticsText.redacting("LG UltraFine 2 and LG UltraFine", names: ["LG UltraFine", "LG UltraFine 2"]),
+                       "[display name] and [display name]")
+        XCTAssertEqual(DiagnosticsText.redacting("TV on", names: ["TV"]), "TV on")
+        XCTAssertEqual(DiagnosticsText.redacting("no names", names: []), "no names")
+    }
+
+    func testRedactingTreatsNamesAsLiteralText() {
+        let names = ["Dell (2) [*]", "a.b+c?", "$1 \\ x"]
+        XCTAssertEqual(DiagnosticsText.redacting("x Dell (2) [*] a.b+c? $1 \\ x y abxbcc", names: names),
+                       "x [display name] [display name] [display name] y abxbcc")
+    }
+
+    func testRedactingSectionsCoversTitlesLabelsAndValues() {
+        let sections = [DiagnosticsSection(title: "Office Dell", rows: [DiagnosticsRow("Office Dell status", "Office Dell asleep")])]
+        let out = DiagnosticsText.redacting(sections, names: ["Office Dell"])
+        XCTAssertEqual(out, [DiagnosticsSection(title: "[display name]", rows: [
+            DiagnosticsRow("[display name] status", "[display name] asleep"),
+        ])])
+        XCTAssertEqual(DiagnosticsText.redacting(sections, names: ["x"]), sections)
+    }
+
+    func testRedactingFuzzedNamesNeverLeaveAName() {
+        var rng = SeededGenerator(seed: 0xD15_1AF0)
+        let alphabet = Array("abcXYZ019 .-()[]*+?$\\éß")
+        func word() -> String {
+            String((0..<Int(3 + rng.next() % 10)).map { _ in alphabet[Int(rng.next() % UInt64(alphabet.count))] })
+        }
+        for _ in 0..<300 {
+            let names = (0..<Int(1 + rng.next() % 4)).map { _ in word() }
+            let text = (0..<Int(rng.next() % 6)).map { _ in names[Int(rng.next() % UInt64(names.count))] }
+                .joined(separator: " | ")
+            let out = DiagnosticsText.redacting(text, names: names)
+            for part in out.components(separatedBy: " | ") where !part.isEmpty {
+                let isName = names.contains { $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .caseInsensitiveCompare(part.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame }
+                XCTAssertFalse(isName && part.trimmingCharacters(in: .whitespacesAndNewlines).count
+                               >= DiagnosticsText.minRedactedNameLength, "\(part) survived in \(out)")
+            }
+        }
+    }
+
+    func testTransportNamesAreDistinct() {
+        let names = Transport.allCases.map(DisplaysUIText.transportName)
+        XCTAssertEqual(Set(names).count, Transport.allCases.count)
+        XCTAssertEqual(DisplaysUIText.transportName(.wired), "Cable")
+    }
+
+    func testDisplayTitleAndAwakeSection() {
+        XCTAssertEqual(DiagnosticsText.displayTitle(number: 1, isBuiltin: true), "Display 1 (built-in)")
+        XCTAssertEqual(DiagnosticsText.displayTitle(number: 2, isBuiltin: false), "Display 2")
+        XCTAssertNil(DiagnosticsText.awakeSection([]))
+        XCTAssertNil(DiagnosticsText.awakeSection(["", "   "]))
+        let section = DiagnosticsText.awakeSection(["State: running", "Session uuid: 0F8FAD5B-D9CB-469F-A165-70867728950E",
+                                                    "Keeping your Mac awake"])
+        XCTAssertEqual(section?.title, "Awake")
+        XCTAssertEqual(section?.rows.first, DiagnosticsRow("State", "running"))
+        XCTAssertEqual(section?.rows[1].value, "••••0E")
+        XCTAssertEqual(section?.rows[2], DiagnosticsRow("Note", "Keeping your Mac awake"))
+    }
+
+    func testRememberedDisplaysAndTexts() {
+        let a = DisplayKey(rawValue: String(repeating: "a", count: 32))!
+        let b = DisplayKey(rawValue: String(repeating: "b", count: 32))!
+        let c = DisplayKey(rawValue: String(repeating: "c", count: 32))!
+        XCTAssertEqual(DisplayInformationText.remembered(stored: [c, a, b, a], online: [b]), [a, c])
+        var identity = PerDisplayIdentity()
+        XCTAssertEqual(DisplayInformationText.name(a, identity: nil), "Display aaaa…")
+        identity.lastKnownName = "DELL U2720Q"
+        XCTAssertEqual(DisplayInformationText.name(a, identity: identity), "DELL U2720Q")
+        identity.customName = "Desk"
+        XCTAssertEqual(DisplayInformationText.name(a, identity: identity), "Desk")
+        XCTAssertEqual(DisplayInformationText.resolutionCount(1), "1 resolution")
+        XCTAssertEqual(DisplayInformationText.resolutionCount(3), "3 resolutions")
+        XCTAssertEqual(DisplayInformationText.journal(hasSessionJournal: false, permanentSteps: 0), "Empty")
+        XCTAssertEqual(DisplayInformationText.journal(hasSessionJournal: true, permanentSteps: 1),
+                       "A change can be undone; 1 rotation or HDR step to confirm")
+        XCTAssertEqual(DisplayInformationText.journal(hasSessionJournal: false, permanentSteps: 2),
+                       "Empty; 2 rotation or HDR steps to confirm")
+    }
 }

@@ -799,3 +799,108 @@ extension DiagnosticsText {
         return Array(entries.filter { category($0).isExportedInDiagnostics }.suffix(limit))
     }
 }
+
+// MARK: - Display Information (PLAN 0.3 §4.3 "Display Information", §3.6; owner F)
+
+extension DiagnosticsText {
+    /// What a display name becomes in a copied or exported report.
+    package static let namePlaceholder = "[display name]"
+    /// Names shorter than this are left alone: they would erase ordinary words.
+    package static let minRedactedNameLength = 3
+    /// Most names looked at: two per remembered display (`LossyMap` keeps ≤ 256) plus the connected ones.
+    package static let maxRedactedNames = 1_024
+
+    /// The names to remove from a report: trimmed, at least `minRedactedNameLength` characters, unique ignoring case,
+    /// longest first (so "DELL U2720Q 2" goes before "DELL U2720Q").
+    package static func redactableNames(_ names: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for raw in names.prefix(maxRedactedNames) {
+            let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard name.count >= minRedactedNameLength, name.utf8.count <= maxValueLength else { continue }
+            guard seen.insert(name.lowercased()).inserted else { continue }
+            result.append(name)
+        }
+        return result.sorted { $0.count != $1.count ? $0.count > $1.count : $0 < $1 }
+    }
+
+    /// Replaces every whole-word occurrence of a display name (system, custom or remembered), ignoring case, with
+    /// `namePlaceholder`. A name is whole when no letter or digit touches either end, so "Studio" doesn't eat
+    /// "Studios".
+    package static func redacting(_ text: String, names: [String]) -> String {
+        let list = redactableNames(names)
+        guard !list.isEmpty else { return text }
+        // One pass over one alternation, longest name first, so a placeholder is never matched again.
+        let alternatives = list.map(NSRegularExpression.escapedPattern(for:)).joined(separator: "|")
+        guard let regex = try? NSRegularExpression(pattern: "(?<![\\p{L}\\p{N}])(?:" + alternatives + ")(?![\\p{L}\\p{N}])",
+                                                   options: [.caseInsensitive]) else { return text }
+        return regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text),
+                                              withTemplate: NSRegularExpression.escapedTemplate(for: namePlaceholder))
+    }
+
+    /// `redacting` over every title, label and value.
+    package static func redacting(_ sections: [DiagnosticsSection], names: [String]) -> [DiagnosticsSection] {
+        let list = redactableNames(names)
+        guard !list.isEmpty else { return sections }
+        return sections.map { section in
+            DiagnosticsSection(title: redacting(section.title, names: list), rows: section.rows.map {
+                DiagnosticsRow(redacting($0.label, names: list), redacting($0.value, names: list))
+            })
+        }
+    }
+
+    /// A display's section title in the report: its number in the menu order and its kind, never its name.
+    package static func displayTitle(number: Int, isBuiltin: Bool) -> String {
+        isBuiltin ? "Display \(number) (built-in)" : "Display \(number)"
+    }
+
+    /// Awake's diagnostics lines (`DisplaysContext.awakeDiagnosticsLines()`) as the report's "Awake" section, or nil
+    /// when Awake has nothing to say (it isn't running).
+    package static func awakeSection(_ lines: [String]) -> DiagnosticsSection? {
+        let rows = lines.compactMap(HostReport.row).map { scrub(label: $0.label, value: $0.value) }
+        return rows.isEmpty ? nil : DiagnosticsSection(title: "Awake", rows: rows)
+    }
+}
+
+extension DisplaysUIText {
+    /// How a display connects, in words ("Cable", "AirPlay").
+    package static func transportName(_ transport: Transport) -> String {
+        switch transport {
+        case .builtin: return L("Built-in")
+        case .wired: return L("Cable")
+        case .displayLink: return L("DisplayLink")
+        case .airplay: return L("AirPlay")
+        case .sidecar: return L("Sidecar")
+        case .snapticVirtual: return L("Snaptic virtual display")
+        case .foreignVirtual: return L("Virtual display (other app)")
+        }
+    }
+}
+
+/// Display Information's lists (owner F): the remembered displays and their resolutions, in a stable order.
+package enum DisplayInformationText {
+    /// Displays Snaptic keeps settings for that aren't connected now, by key.
+    package static func remembered(stored: [DisplayKey], online: Set<DisplayKey>) -> [DisplayKey] {
+        Array(Set(stored).subtracting(online)).sorted { $0.rawValue < $1.rawValue }
+    }
+
+    /// A remembered display's name: the user's, the last one seen, or its short key.
+    package static func name(_ key: DisplayKey, identity: PerDisplayIdentity?) -> String {
+        if let custom = identity?.customName, !custom.isEmpty { return custom }
+        if let known = identity?.lastKnownName, !known.isEmpty { return known }
+        return L("Display \(DiagnosticsText.shortKey(key))")
+    }
+
+    /// "1 resolution", "3 resolutions".
+    package static func resolutionCount(_ count: Int) -> String {
+        count == 1 ? L("1 resolution") : L("\(count) resolutions")
+    }
+
+    /// The undo journal in words.
+    package static func journal(hasSessionJournal: Bool, permanentSteps: Int) -> String {
+        let session = hasSessionJournal ? L("A change can be undone") : L("Empty")
+        guard permanentSteps > 0 else { return session }
+        return permanentSteps == 1 ? L("\(session); 1 rotation or HDR step to confirm")
+                                   : L("\(session); \(permanentSteps) rotation or HDR steps to confirm")
+    }
+}
