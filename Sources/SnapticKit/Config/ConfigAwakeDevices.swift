@@ -150,9 +150,57 @@ package enum AwakeHashMaterial {
         return "usb:" + trimmed
     }
 
+    /// "btaudio:<device>" for a CoreAudio Bluetooth device UID. Headsets publish one input and one output device
+    /// ("AC-1D-DF-00-11-22:input", "…:output"), so the UID is reduced to its device part: the leading Bluetooth
+    /// address when there is one (normalized like a MAC), else the UID without a trailing ":input"/":output". nil when
+    /// nothing is left or the UID is longer than 256 scalars.
+    package static func bluetoothAudio(uid: String) -> String? {
+        let trimmed = uid.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\0")))
+        guard !trimmed.isEmpty, trimmed.unicodeScalars.count <= 256 else { return nil }
+        let head = String(trimmed.prefix(17))
+        if head.count == 17, let mac = NetworkMath.normalizeMAC(head) {
+            let rest = trimmed.dropFirst(17)
+            if rest.isEmpty || rest.hasPrefix(":") { return "btaudio:" + mac }
+        }
+        var device = trimmed
+        for suffix in [":input", ":output"] where device.lowercased().hasSuffix(suffix) {
+            device = String(device.dropLast(suffix.count))
+        }
+        return device.isEmpty ? nil : "btaudio:" + device
+    }
+
+    /// "bthid:<address>" for a Bluetooth input device whose IORegistry `SerialNumber` (or `DeviceAddress`) is its
+    /// Bluetooth address; otherwise "bthid:v<vendor>p<product>" (two identical models then match each other); nil
+    /// when neither is known.
+    package static func bluetoothInput(address: String?, vendor: Int, product: Int) -> String? {
+        if let address, let mac = NetworkMath.normalizeMAC(address) { return "bthid:" + mac }
+        guard vendor > 0 || product > 0, (0...0xFFFF).contains(vendor), (0...0xFFFF).contains(product) else { return nil }
+        return "bthid:v\(vendor)p\(product)"
+    }
+
     /// Lowercase hex of a digest (64 characters for SHA-256).
     package static func hex(_ bytes: [UInt8]) -> String {
         let digits = Array("0123456789abcdef")
         return String(bytes.flatMap { [digits[Int($0 >> 4)], digits[Int($0 & 0x0F)]] })
+    }
+}
+
+/// The TCC-free Bluetooth presence rules (PLAN 0.3 §2.8, Beta, [PA] Bluetooth row): Bluetooth audio from CoreAudio's
+/// device list by transport type, Bluetooth input devices from IORegistry `IOHIDDevice` properties by `Transport`.
+/// IOBluetooth (Bluetooth TCC) is never used, and no HID device is opened (Input Monitoring).
+package enum BluetoothPresenceRules {
+    /// kAudioDeviceTransportTypeBluetooth ('blue') and kAudioDeviceTransportTypeBluetoothLE ('blea').
+    package static let audioTransportTypes: Set<UInt32> = [0x626C_7565, 0x626C_6561]
+
+    /// IOHIDDevice `Transport`: "Bluetooth", "Bluetooth Low Energy" (any case); not "USB", "SPI", "Virtual", ….
+    package static func isBluetoothTransport(_ transport: String?) -> Bool {
+        guard let transport else { return false }
+        return transport.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("bluetooth")
+    }
+
+    /// Picker names, cleaned; the fallback when a device has none.
+    package static func displayName(_ raw: String?, fallback: String) -> String {
+        let clean = TextSanitizer.clean(raw ?? "", maxScalars: 64).trimmingCharacters(in: .whitespaces)
+        return clean.isEmpty ? fallback : clean
     }
 }

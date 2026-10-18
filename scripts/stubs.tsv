@@ -459,6 +459,7 @@ Sources/SnapticKit/NetworkMath.swift	J	S	NetworkMath	-
 Sources/SnapticKit/DiskMath.swift	J	S	DiskMath	-
 Sources/SnapticKit/ActivityPolicy.swift	J	S	ActivityPolicy	-
 Sources/SnapticKit/DriveAlivePolicy.swift	J	S	DriveAlivePolicy	-
+Sources/SnapticKit/DrivesPageModel.swift	J	L	-	-
 Sources/SnapticKit/Config/ConfigAwakeDevices.swift	J	S	ConfigAwakeDevices	-
 Tests/SnapticKitTests/CPUMathTests.swift	J	K3	CPUMathTests	-
 Tests/SnapticKitTests/PowerMathTests.swift	J	K3	PowerMathTests	-
@@ -466,6 +467,7 @@ Tests/SnapticKitTests/NetworkMathTests.swift	J	K3	NetworkMathTests	-
 Tests/SnapticKitTests/DiskMathTests.swift	J	K3	DiskMathTests	-
 Tests/SnapticKitTests/ActivityPolicyTests.swift	J	K3	ActivityPolicyTests	-
 Tests/SnapticKitTests/DriveAlivePolicyTests.swift	J	K3	DriveAlivePolicyTests	-
+Tests/SnapticKitTests/DrivesPageModelTests.swift	J	L	-	-
 Tests/SnapticKitTests/ConfigAwakeDevicesTests.swift	J	K3	ConfigAwakeDevicesTests	-
 Sources/SnapticKit/OtherAssertions.swift	J	S	OtherAssertions	-
 Tests/SnapticKitTests/OtherAssertionsTests.swift	J	K3	OtherAssertionsTests	-

@@ -82,6 +82,23 @@ package enum ActivityPolicy {
     }
 }
 
+/// The first-nudge notice (§3.2, N10): "Awake is moving the pointer slightly." [Stop] shows the first time pointer
+/// movement acts in a manual session, once per session. Runtime only.
+package struct NudgeNotice: Equatable, Sendable {
+    /// The manual session the notice was last shown for.
+    package private(set) var shownFor: StableID?
+
+    package init() {}
+
+    /// Records what acted at this interval; true when the notice should show now (the governing manual session
+    /// `session` just moved the pointer for the first time). Declarations, skips and non-manual sources never show it.
+    package mutating func noteAction(_ decision: ActivityDecision, session: StableID?) -> Bool {
+        guard decision == .nudge, let session, shownFor != session else { return false }
+        shownFor = session
+        return true
+    }
+}
+
 package enum IdleMath {
     package static let echoSeconds: Double = 1
     /// Remembered nudge and declaration instants (ActivitySimulator keeps the last 10 of each).

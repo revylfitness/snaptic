@@ -9,7 +9,8 @@ import SnapticKit
 // background work, while locked, off console, during a screensaver, with the displays asleep or around system sleep.
 // Pointer movement follows N10 (ActivityPolicy.nudgeAllowed) and asks first for a hotkey start
 // (SessionController.requestPointerConfirmation). The cap counts on the gate's continuous clock across back-to-back
-// sessions (R5-7); only a new UI start clears it.
+// sessions (R5-7); only a new UI start clears it. The first nudge of a manual session shows "Awake is moving the
+// pointer slightly." [Stop] (§3.2); Stop declines pointer movement for that session (declare only).
 
 @MainActor final class ActivityController: AwakeFeatureController {
     static var id: AwakeControllerID { .activity }
@@ -22,6 +23,10 @@ import SnapticKit
     private var sinks: [AnyCancellable] = []
     private var sleeping = false
     private var cappedLogged = false
+    private var notice = NudgeNotice()
+    /// The first-nudge notice's lifetime: ends with its session (or the controller), which removes the toast.
+    private var noticeLifetime: Lifetime?
+    private var noticeSession: StableID?
 
     init() {}
 
@@ -68,6 +73,8 @@ import SnapticKit
         context?.activity.stop()
         context?.runtime.activity = .off
         context?.runtime.activityCapped = false
+        endNotice()
+        notice = NudgeNotice()
         lifetime = nil
         effective = []
         sleeping = false
@@ -104,6 +111,9 @@ import SnapticKit
     private func evaluate() {
         guard let context, lifetime != nil else { return }
         let governing = context.runtime.governing
+        let manualID: StableID?
+        if case .manual(let session) = governing { manualID = session.id } else { manualID = nil }
+        if noticeSession != nil, noticeSession != manualID { endNotice() }
         // Rules never move the pointer (N10); holds have no activity.
         var mode = governing.options?.activity ?? .off
         if case .trigger = governing, mode == .nudge { mode = .declare }
@@ -145,6 +155,7 @@ import SnapticKit
         context.activity.perform(decision)
         let acted = context.activity.lastAction
         if acted != .skip { context.sessions.noteActivityActed(now: now) }
+        if notice.noteAction(acted, session: manualID), let manualID { showNotice(for: manualID) }
         let shown: AwakeActivityMode = acted == .nudge ? .nudge : acted == .declare ? .declare : .off
         if context.runtime.activity != shown { context.runtime.activity = shown }
     }
@@ -155,6 +166,33 @@ import SnapticKit
         guard let facts = context.power.facts else { return false }
         return AwakeGuards.allowsBackgroundWork(facts, config: context.config.value.guards,
                                                 memory: context.state.value.guardMemory)
+    }
+
+    // MARK: First-nudge notice
+
+    private func showNotice(for session: StableID) {
+        guard let context, let parent = lifetime else { return }
+        endNotice()
+        let life = parent.child()
+        noticeLifetime = life
+        noticeSession = session
+        context.host.toasts.show(L("Awake is moving the pointer slightly."), actions: [
+            ToastAction(title: L("Stop")) { [weak self] in self?.stopPointer() },
+        ], lifetime: life)
+    }
+
+    private func endNotice() {
+        noticeLifetime?.end()
+        noticeLifetime = nil
+        noticeSession = nil
+    }
+
+    /// Stop on the notice: no more pointer movement in this session (it still appears active by declaring).
+    private func stopPointer() {
+        guard let context, lifetime != nil else { return }
+        context.sessions.declinePointer()
+        endNotice()
+        evaluate()
     }
 
     private func setCapped(_ capped: Bool) {
