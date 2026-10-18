@@ -546,3 +546,125 @@ package struct AwakeTriggersConfig: ConfigModel {
         return c
     }
 }
+
+// MARK: - Rule editor (§4.3 "Rule editor sheet")
+
+/// The kind pop-up of a condition row: one entry per editor, so the network conditions are three entries and the
+/// router one is titled "Connected to this network".
+package enum AwakeCriterionChoice: String, CaseIterable, Sendable {
+    case app, display, power, schedule, cpu, audio, idle, volume, usb, subnet, router, vpn, networkActivity, bluetooth
+
+    package init(_ c: AwakeCriterion) {
+        switch c {
+        case .app: self = .app
+        case .display: self = .display
+        case .power: self = .power
+        case .schedule: self = .schedule
+        case .cpuAbove: self = .cpu
+        case .audio: self = .audio
+        case .idle: self = .idle
+        case .volumeMounted: self = .volume
+        case .usbDevice: self = .usb
+        case .network(.subnet): self = .subnet
+        case .network(.router): self = .router
+        case .network(.vpnConnected): self = .vpn
+        case .networkActivity: self = .networkActivity
+        case .bluetooth: self = .bluetooth
+        }
+    }
+
+    package var kind: AwakeCriterionKind {
+        switch self {
+        case .app: return .app
+        case .display: return .display
+        case .power: return .power
+        case .schedule: return .schedule
+        case .cpu: return .cpu
+        case .audio: return .audio
+        case .idle: return .idle
+        case .volume: return .volume
+        case .usb: return .usb
+        case .subnet, .router, .vpn: return .network
+        case .networkActivity: return .networkActivity
+        case .bluetooth: return .bluetooth
+        }
+    }
+
+    package var title: String {
+        switch self {
+        case .app: return L("App")
+        case .display: return L("Display")
+        case .power: return L("Power")
+        case .schedule: return L("Schedule")
+        case .cpu: return L("CPU use")
+        case .audio: return L("Audio")
+        case .idle: return L("Idle time")
+        case .volume: return L("Drive")
+        case .usb: return L("USB device")
+        case .subnet: return L("IP address")
+        case .router: return L("Connected to this network")
+        case .vpn: return L("VPN")
+        case .networkActivity: return L("Network activity")
+        case .bluetooth: return L("Bluetooth audio")
+        }
+    }
+
+    /// Power's values include their inverses ("On battery" / "On power adapter"), so it has no is / is not.
+    package var allowsNegation: Bool { self != .power }
+
+    /// Bluetooth is Beta (C6).
+    package var isBeta: Bool { self == .bluetooth }
+
+    /// What a row of this kind starts with; nil for kinds that need a choice first (an app, a drive, a USB device,
+    /// the current network), which the editor makes from what is there now.
+    package var defaultCriterion: AwakeCriterion? {
+        switch self {
+        case .app, .volume, .usb, .router: return nil
+        case .display: return .display(.anyExternal)
+        case .power: return .power(.onAdapter)
+        case .schedule: return .schedule(days: .weekdays, startMinute: 9 * 60, endMinute: 17 * 60)
+        case .cpu: return .cpuAbove(percent: 50)
+        case .audio: return .audio(.outputActive)
+        case .idle: return .idle(atLeastMinutes: 10)
+        case .subnet: return .network(.subnet(cidr: "192.168.0.0/16"))
+        case .vpn: return .network(.vpnConnected)
+        case .networkActivity: return .networkActivity(atLeastKBps: 100)
+        case .bluetooth: return .bluetooth(.anyAudio)
+        }
+    }
+}
+
+extension AwakeTrigger {
+    /// Delay choices of the Timing disclosure, in seconds (None … 1 hour); a stored value not in the list is shown too.
+    package static let delayChoices = [0, 10, 30, 60, 120, 300, 600, 1_800, 3_600]
+    /// "After I turn it off" choices in minutes; nil = when the conditions are next met.
+    package static let resumeChoices: [Int?] = [nil, 15, 60, 240]
+
+    /// The choices with `current` added in order when it isn't one of them.
+    package static func choices(_ list: [Int], including current: Int) -> [Int] {
+        list.contains(current) ? list : (list + [current]).sorted()
+    }
+
+    /// "None", "30 seconds", "1 minute", "2 minutes", "1 hour".
+    package static func delayTitle(_ seconds: Int) -> String {
+        let s = AwakeMath.clamp(seconds, delayRange)
+        if s == 0 { return L("None") }
+        if s % 3_600 == 0 { return AwakeCountdown.unit(s / 3_600, L("hour"), L("hours")) }
+        if s % 60 == 0 { return AwakeCountdown.unit(s / 60, L("minute"), L("minutes")) }
+        return AwakeCountdown.unit(s, L("second"), L("seconds"))
+    }
+
+    /// A new rule from the editor's + : one condition, or the default display condition.
+    package static func new(id: StableID, criterion: AwakeCriterion?) -> AwakeTrigger {
+        AwakeTrigger(id: id, name: "", criteria: [AwakeCriterionEntry(criterion ?? .display(.anyExternal))])
+    }
+
+    /// Saved from the editor: sanitized, and the start delay a CPU or network-activity rule needs when the user left
+    /// it at None (a spike shouldn't start a session).
+    package func savedFromEditor(wasNew: Bool) -> AwakeTrigger {
+        var t = sanitized()
+        let kinds = Set(t.criteria.map(\.criterion.kind))
+        if wasNew && t.startDelaySeconds == 0 { t.startDelaySeconds = Self.defaultStartDelay(for: kinds) }
+        return t
+    }
+}

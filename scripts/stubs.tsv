@@ -451,6 +451,8 @@ Sources/SnapticKit/AwakePresentation.swift	G	L	-	-
 Tests/SnapticKitTests/AwakeSessionPolicyTests.swift	G	L	-	-
 Tests/SnapticKitTests/AwakePresentationTests.swift	G	L	-	-
 Sources/Snaptic/Awake/Core/AwakeFormat.swift	G	L	-	-
+Sources/Snaptic/Awake/UI/AwakeStatusSection.swift	G	L	-	-
+Sources/Snaptic/Awake/UI/AwakeShortcutsSheet.swift	G	L	-	-
 # 0.3: J (Awake sources)
 Sources/SnapticKit/CPUMath.swift	J	S	CPUMath	-
 Sources/SnapticKit/PowerMath.swift	J	S	PowerMath	-

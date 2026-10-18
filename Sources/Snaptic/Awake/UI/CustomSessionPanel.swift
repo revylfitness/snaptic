@@ -3,7 +3,7 @@ import SwiftUI
 import SnapticKit
 
 // "Custom…" and "Add Time…" (owner: G; PLAN 0.3 §5.3, R5-9, r3 security L8). A small panel opened from the Awake
-// menu (and, in step 3, from the Settings status row): keep awake for a duration or until a time, with the "Keep the
+// menu and from the Settings status row (Custom…, Add Time…): keep awake for a duration or until a time, with the "Keep the
 // display on" choice; in extend mode it adds time to the running session. No control has a Return binding (focus
 // safety): Start and Add act only on a click or an accessibility press; Escape cancels.
 
@@ -102,8 +102,12 @@ struct CustomSessionPanel: View, ControlDeclaring {
 @MainActor final class CustomSessionWindow {
     private var window: NSPanel?
     weak var context: AwakeContext?
+    /// Who starts or extends: the Awake menu, or the Settings status row (`.settings`).
+    let source: AwakeSessionSource
 
-    init() {}
+    init(source: AwakeSessionSource = .menu) {
+        self.source = source
+    }
 
     func present(_ mode: CustomSessionPanel.Mode) {
         guard let ctx = context else { return }
@@ -114,8 +118,9 @@ struct CustomSessionPanel: View, ControlDeclaring {
             initialKeepDisplayOn: sessions.defaultOptions.display != .maySleep,
             onStart: { [weak self] kind, keepDisplayOn in self?.start(kind, keepDisplayOn: keepDisplayOn) },
             onExtend: { [weak self] seconds in
-                _ = self?.context?.sessions.extend(by: seconds, source: .menu)
-                self?.close()
+                guard let self else { return }
+                _ = self.context?.sessions.extend(by: seconds, source: self.source)
+                self.close()
             },
             onCancel: { [weak self] in self?.close() })
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 200),
@@ -141,7 +146,7 @@ struct CustomSessionPanel: View, ControlDeclaring {
         var options = ctx.config.value.sessions.effectiveOptions(for: kind, preset: nil,
                                                                   effective: ctx.runtime.effectiveFeatures)
         options.display = keepDisplayOn ? (options.display == .maySleep ? .keepOn : options.display) : .maySleep
-        _ = ctx.sessions.start(kind, options: options, presetID: nil, source: .menu, overrideGuards: false)
+        _ = ctx.sessions.start(kind, options: options, presetID: nil, source: source, overrideGuards: false)
         close()
     }
 }

@@ -148,3 +148,69 @@ package struct AwakeHistory: ConfigModel {
         return total
     }
 }
+
+// MARK: - History page (§4.3 "History", parity minor 12)
+
+/// What "Start Again" starts: the preset the entry came from while it still exists, else the entry's kind.
+package enum AwakeStartAgain: Equatable, Sendable {
+    case preset(StableID)
+    case kind(AwakeSessionKind)
+}
+
+extension AwakeHistoryEntry {
+    /// nil where Start Again isn't offered (`offersStartAgain`). A timed entry without its preset starts again for
+    /// as long as it ran (rounded up to the minute, 1 minute ... 30 days); "until a time" can't recur at the same
+    /// instant, so it does the same.
+    package func startAgain(presets: [AwakePreset]) -> AwakeStartAgain? {
+        guard offersStartAgain else { return nil }
+        if let id = presetID, presets.contains(where: { $0.id == id }) { return .preset(id) }
+        switch kind {
+        case .indefinite:
+            return .kind(.indefinite)
+        case .duration, .until:
+            let minutes = Int((min(seconds, Double(AwakeClock.maxSessionSeconds)) / 60).rounded(.up))
+            return .kind(.duration(seconds: AwakeMath.clamp(minutes * 60, AwakeClock.durationRange)))
+        case .app:
+            guard let b = bundleID, AwakeBundleID.isValid(b) else { return nil }
+            return .kind(.whileApp(bundleID: b, maxSeconds: nil))
+        case .idle:
+            return .kind(.untilIdle(UntilIdleSpec(), maxSeconds: nil))
+        case .process, .automatic:
+            return nil
+        }
+    }
+}
+
+package enum AwakeHistoryText {
+    /// The row title: the preset's title when it still exists, else a description of the kind ("While Xcode was
+    /// running", "Rule “Desk dock”", "Command line").
+    package static func title(_ e: AwakeHistoryEntry, presetTitle: String?, appName: String?, ruleName: String?) -> String {
+        if let p = presetTitle, !p.isEmpty, e.kind != .automatic, e.kind != .process { return p }
+        switch e.kind {
+        case .indefinite: return L("Until Turned Off")
+        case .duration: return L("For ") + AwakePresetKind.spanTitle(Int(min(e.seconds, 1e9)))
+        case .until: return L("Until a Set Time")
+        case .app: return L("While ") + (appName.flatMap { $0.isEmpty ? nil : $0 } ?? L("an App")) + L(" Was Running")
+        case .idle: return L("Until Downloads and Tasks Finished")
+        case .process: return L("Command Line")
+        case .automatic: return ruleName.flatMap { $0.isEmpty ? nil : L("Rule ") + AwakeDetail.quoted($0) } ?? L("Rule")
+        }
+    }
+
+    /// "3:12 PM – 4:15 PM · 1h 3m" (clocks formatted by the app), plus " · Ended: battery below 20%" for
+    /// interruptions.
+    package static func subtitle(_ e: AwakeHistoryEntry, startClock: String, endClock: String, floor: Int) -> String {
+        var line = startClock + " – " + endClock + " · " + AwakeCountdown.short(max(1, e.seconds))
+        if AwakeEndText.isInterruption(e.endReason) {
+            let phrase = AwakeEndText.phrase(e.endReason, floor: floor, appName: nil, lockedHours: nil)
+            line += " · " + L("Ended: ") + phrase
+        }
+        return line
+    }
+
+    /// "2h 10m", "15m", "None" for a total.
+    package static func total(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds >= 60 else { return L("None") }
+        return AwakeCountdown.short(seconds)
+    }
+}

@@ -231,6 +231,11 @@ import SnapticKit
 
     /// The header's detail (≤ 2 lines): what governs and the most relevant extra; at rest only a last end or a guard.
     func detailLines(_ ctx: AwakeContext) -> [String] {
+        AwakeDetail.lines(Self.detailInput(ctx))
+    }
+
+    /// What the switch header and the Settings status row describe (one source for both).
+    static func detailInput(_ ctx: AwakeContext) -> AwakeDetailInput {
         let rt = ctx.runtime
         let now = AwakeModule.clockNow()
         let triggers = ctx.config.value.triggers.triggers
@@ -261,11 +266,11 @@ import SnapticKit
                                                       lockedHours: ctx.config.value.sessions.behavior.endAfterLockedHours)
             }
         }
-        return AwakeDetail.lines(input)
+        return input
     }
 
     /// "Closing the lid will put your Mac to sleep." on battery or without an external display (§2.12, design m5).
-    private func lidWarning(_ ctx: AwakeContext) -> Bool {
+    private static func lidWarning(_ ctx: AwakeContext) -> Bool {
         guard ctx.runtime.lidWillSleep != nil else { return false }
         let onBattery = ctx.runtime.power.map { $0.batteryPresent && !$0.onAC } ?? false
         let external = NSScreen.screens.contains { screen in

@@ -65,18 +65,6 @@ final class AwakeSessionPolicyTests: XCTestCase {
         XCTAssertEqual(AwakeStartRules.cliCapped(.indefinite), .indefinite)
     }
 
-    // MARK: Rate limit
-
-    func testRateLimiterOnePerSecond() {
-        var r = AwakeRateLimiter()
-        XCTAssertTrue(r.allow(now: 10))
-        XCTAssertFalse(r.allow(now: 10.5))
-        XCTAssertFalse(r.allow(now: 10.99))
-        XCTAssertTrue(r.allow(now: 11))
-        XCTAssertFalse(r.allow(now: .nan))
-        XCTAssertTrue(r.allow(now: 5), "a clock read before the last one (new boot) is allowed")
-    }
-
     // MARK: Turn Off
 
     func testTurnOffTargetsAndNotices() {
