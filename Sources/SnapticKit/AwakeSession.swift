@@ -648,7 +648,7 @@ package enum AwakeRefusal: Error, Equatable, Sendable {
             switch reason {
             case .featureOff: return L("Awake is turned off.")
             case .safeMode: return L("This isn't available in Safe Mode.")
-            case .turnedOffByDefaults: return L("Awake is turned off by a defaults setting.")
+            case .turnedOffByDefaults: return DefaultsLock.text
             }
         case .invalid:
             return L("That session can't start. Check the duration, the app or the process.")

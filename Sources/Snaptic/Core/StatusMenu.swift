@@ -72,7 +72,9 @@ import SnapticKit
                 .sink { [weak self] _ in MainActor.assumeIsolated { self?.applyPlan() } }
                 .store(in: &sinks)
             host.awakeStore.$value
-                .map { MenuLayout.awakeShortcutBound($0.shortcuts) }
+                .map(\.shortcuts)
+                .combineLatest(host.awake.runtime.$failedShortcuts)
+                .map { MenuLayout.awakeShortcutBound($0, failed: $1) }
                 .removeDuplicates()
                 .dropFirst()
                 .receive(on: DispatchQueue.main)
@@ -116,14 +118,21 @@ import SnapticKit
         applyPlan()
     }
 
-    /// The Don't Show fallback (§5.2, parity minor 11): Awake hidden while the Keep Awake shortcut is unset would
-    /// leave no way to it in the menu bar, so it goes back to Show When Active and a toast says why.
+    /// The Don't Show fallback (§5.2, parity minor 11): Awake hidden while the Keep Awake shortcut is unset, or set
+    /// but not registered (another app or macOS has the combo), would leave no way to it in the menu bar, so it goes
+    /// back to Show When Active and a toast says why.
     private func applyAwakePresenceFallback() {
         guard let host else { return }
-        let bound = MenuLayout.awakeShortcutBound(host.awakeStore.value.shortcuts)
-        guard let presence = host.modulesStore.value.awakePresenceFallback(awakeShortcutBound: bound) else { return }
+        guard let presence = host.modulesStore.value.awakePresenceFallback(awakeShortcutBound: awakeShortcutBound(host))
+        else { return }
         host.modulesStore.value.setPresence(presence, for: .awake)
-        host.toasts.show(MenuLayout.awakeFallbackNotice)
+        let isSet = MenuLayout.awakeShortcutBound(host.awakeStore.value.shortcuts)
+        host.toasts.show(isSet ? MenuLayout.awakeFallbackFailedNotice : MenuLayout.awakeFallbackNotice)
+    }
+
+    /// The Keep Awake shortcut is set and registered.
+    private func awakeShortcutBound(_ host: ModuleHost) -> Bool {
+        MenuLayout.awakeShortcutBound(host.awakeStore.value.shortcuts, failed: host.awake.runtime.failedShortcuts)
     }
 
     /// False when no status item shows (a relaunch then opens Settings). Provider items count (code B3). From
@@ -157,7 +166,7 @@ import SnapticKit
             running: host.runningModules,
             awakeActive: host.awake.runtime.governing != .inactive,
             displaysActive: MenuPlacement.hasExternalDisplay,
-            awakeShortcutBound: MenuLayout.awakeShortcutBound(host.awakeStore.value.shortcuts),
+            awakeShortcutBound: awakeShortcutBound(host),
             sharedExistsNow: shared != nil)
     }
 

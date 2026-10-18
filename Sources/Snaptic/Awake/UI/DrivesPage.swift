@@ -84,11 +84,7 @@ struct DrivesPage: View, ControlDeclaring {
         if SettingsShell.shared.host?.safeMode.isActive == true {
             StatusRow(L("Drives aren’t kept awake in Safe Mode."))
         } else {
-            HStack(spacing: 6) {
-                StatusRow(L("Turned off for this Mac by an administrator or a Terminal command."), symbol: "lock.fill")
-                InfoButton(L("Turn Drive Alive Back On"),
-                           message: L("In Terminal, run “defaults delete \(ConfigStore<AwakeConfig>.persistentDomainName) Awake.disable.driveAlive”, then quit and reopen Snaptic. On a managed Mac, ask your administrator."))
-            }
+            DefaultsLockRow(key: KillSwitches.key(prefix: "Awake", id: AwakeFeature.driveAlive.rawValue))
         }
     }
 

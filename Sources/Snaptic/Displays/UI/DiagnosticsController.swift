@@ -233,9 +233,9 @@ struct DiagnosticsReport {
 
     /// The same persistent-domain keys DisplaysModule reads (`Displays.disable.<feature>`).
     private static func killSwitches() -> [DisplayFeature] {
-        guard let values = UserDefaults.standard.persistentDomain(
-            forName: ConfigStore<DisplaysConfig>.persistentDomainName) else { return [] }
-        return DisplayFeature.allCases.filter { (values["Displays.disable.\($0.rawValue)"] as? Bool) == true }
+        let set = KillSwitches.read(UserDefaults.standard.persistentDomain(
+            forName: ConfigStore<DisplaysConfig>.persistentDomainName), prefix: "Displays", as: DisplayFeature.self)
+        return DisplayFeature.allCases.filter { set.contains($0) }
     }
 
     private static func sysctlString(_ name: String) -> String? {

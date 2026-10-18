@@ -164,7 +164,7 @@ private struct AwakeRootContent: View {
                 .disabled(blocked)
             if blocked {
                 Section {
-                    StatusRow(L("Turned off for this Mac by an administrator or a Terminal command."), symbol: "lock.fill")
+                    DefaultsLockRow(module: .awake)
                 }
             }
             if !enabled {

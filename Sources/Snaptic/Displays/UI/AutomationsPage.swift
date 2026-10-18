@@ -149,7 +149,8 @@ private struct AutomationsContent: View {
                                                    control: ControlID("displays.automations.addHook")) { addHook() })
                     .modifier(SettingsAnchor(ControlID("displays.automations.hookList")))
             } else {
-                ReorderableList(listBinding(\.hooks), onEdit: { edit(hook: $0) }, onDelete: { delete(hook: $0) }) { hook in
+                ReorderableList(listBinding(\.hooks), onEdit: { edit(hook: $0) }, onDelete: { delete(hook: $0) },
+                                deleteAsks: true) { hook in
                     hookRow(hook, first: hook.id == hooks.first?.id)
                 }
                 ButtonRow(L("Add Hook…"), control: ControlID("displays.automations.addHook")) { addHook() }
@@ -226,7 +227,7 @@ private struct AutomationsContent: View {
                     .modifier(SettingsAnchor(ControlID("displays.automations.actionList")))
             } else {
                 ReorderableList(listBinding(\.actions), onEdit: { edit(action: $0) },
-                                onDelete: { delete(action: $0) }) { action in
+                                onDelete: { delete(action: $0) }, deleteAsks: true) { action in
                     actionRow(action, first: action.id == actions.first?.id)
                 }
                 ButtonRow(L("Add Action…"), control: ControlID("displays.automations.addAction")) { addAction() }

@@ -143,6 +143,8 @@ final class MenuLayoutTests: XCTestCase {
         // The toast names where Awake went and why (parity #2).
         XCTAssertTrue(MenuLayout.awakeFallbackNotice.contains("menu bar"))
         XCTAssertTrue(MenuLayout.awakeFallbackNotice.contains("shortcut"))
+        XCTAssertTrue(MenuLayout.awakeFallbackFailedNotice.contains("menu bar"))
+        XCTAssertNotEqual(MenuLayout.awakeFallbackFailedNotice, MenuLayout.awakeFallbackNotice)
 
         XCTAssertFalse(MenuLayout.isSelectable(.hidden, for: .awake, awakeShortcutBound: false))
         XCTAssertTrue(MenuLayout.isSelectable(.hidden, for: .awake, awakeShortcutBound: true))
@@ -183,6 +185,11 @@ final class MenuLayoutTests: XCTestCase {
         shortcuts[MenuLayout.keepAwakeAction] = HotkeyCombo(keyCode: 1, carbonModifiers: 0x0100)
         XCTAssertTrue(MenuLayout.awakeShortcutBound(shortcuts))
         XCTAssertEqual(MenuLayout.keepAwakeAction.rawValue, "awake.toggle")
+        // Set but not registered (another app or macOS has the combo) counts as unbound; other failures don't.
+        XCTAssertFalse(MenuLayout.awakeShortcutBound(shortcuts, failed: [MenuLayout.keepAwakeAction]))
+        XCTAssertTrue(MenuLayout.awakeShortcutBound(shortcuts, failed: [AwakeActionID(rawValue: "awake.preset1")]))
+        shortcuts[MenuLayout.keepAwakeAction] = nil
+        XCTAssertFalse(MenuLayout.awakeShortcutBound(shortcuts, failed: []))
     }
 
     // MARK: Displays and the Switcher

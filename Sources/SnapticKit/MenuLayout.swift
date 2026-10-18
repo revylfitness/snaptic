@@ -8,9 +8,11 @@ package enum MenuLayout {
     /// The Keep Awake action (G declares the `AwakeActionID` constants; the raw value is the contract).
     package static let keepAwakeAction = AwakeActionID(rawValue: "awake.toggle")
 
-    /// Awake's "Don't Show" is only allowed while the Keep Awake shortcut is bound (parity M2).
-    package static func awakeShortcutBound(_ shortcuts: LossyMap<AwakeActionID, HotkeyCombo>) -> Bool {
-        shortcuts[keepAwakeAction] != nil
+    /// Awake's "Don't Show" is only allowed while the Keep Awake shortcut is bound (parity M2): set, and not among
+    /// the combos that failed to register (`failed`, AwakeAutomation's conflicts and system refusals).
+    package static func awakeShortcutBound(_ shortcuts: LossyMap<AwakeActionID, HotkeyCombo>,
+                                           failed: Set<AwakeActionID> = []) -> Bool {
+        shortcuts[keepAwakeAction] != nil && !failed.contains(keepAwakeAction)
     }
 
     /// The Snaptic item's default glyph (stored as ""), and the one it uses instead while a module's own icon
@@ -34,6 +36,11 @@ package enum MenuLayout {
     /// The toast the host shows when the Don't Show fallback (`awakePresenceFallback`) moves Awake back.
     package static var awakeFallbackNotice: String {
         L("Awake is back in the menu bar because its keyboard shortcut is no longer set.")
+    }
+
+    /// The same toast when the Keep Awake shortcut is set but couldn't be registered (another app or macOS uses it).
+    package static var awakeFallbackFailedNotice: String {
+        L("Awake is back in the menu bar because its keyboard shortcut is used by another app or by macOS.")
     }
 
     /// Whether `presence` may be chosen for a module now: Awake's Don't Show needs a bound Keep Awake shortcut.

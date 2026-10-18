@@ -12,12 +12,16 @@ struct ActionMenuItem: Identifiable {
     var children: [ActionMenuItem] = []
     /// A separator line (`ActionMenuItem.separator(_:)`).
     var isSeparator = false
+    /// A checkable row ("✓ Keep Display On", as the menus show it) when not nil: the title stays put and `action`
+    /// toggles the state. nil = a plain action.
+    var checked: Bool? = nil
 
-    init(id: String, title: String, enabled: Bool = true, control: ControlID? = nil,
+    init(id: String, title: String, enabled: Bool = true, checked: Bool? = nil, control: ControlID? = nil,
          action: @escaping @MainActor () -> Void) {
         self.id = id
         self.title = title
         self.enabled = enabled
+        self.checked = checked
         self.control = control
         self.action = action
     }
@@ -100,6 +104,10 @@ private struct ActionMenuEntry: View {
                 }
             }
             .disabled(!item.enabled)
+        } else if let checked = item.checked {
+            // A Toggle in a menu draws the ✓ (macOS menus' checkable item); a click runs the item's action.
+            Toggle(item.title, isOn: Binding(get: { checked }, set: { _ in item.action() }))
+                .disabled(!item.enabled)
         } else {
             Button(item.title) { item.action() }
                 .disabled(!item.enabled)

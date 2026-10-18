@@ -229,7 +229,7 @@ import SnapticKit
             var a = controllers[FeatureGraph.controller(of: feature)]?.availability(of: feature, context: ctx)
                 ?? .unavailable(L("Not available on this Mac"))
             if a.isAvailable, let reason = privateMissing[feature] { a = .unavailable(reason) }
-            if killSwitches.contains(feature) { a = .unavailable(L("Turned off by a defaults setting")) }
+            if killSwitches.contains(feature) { a = .unavailable(DefaultsLock.text) }
             table[feature] = a
             if !a.isAvailable { missing.insert(feature) }
         }

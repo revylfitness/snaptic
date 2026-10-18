@@ -102,7 +102,7 @@ private struct DisplaysRootContent: View {
                 .disabled(blocked)
             if blocked {
                 Section {
-                    StatusRow(L("Turned off for this Mac by an administrator or a Terminal command."), symbol: "lock.fill")
+                    DefaultsLockRow(module: .displays)
                 }
             }
             if !enabled {

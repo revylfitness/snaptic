@@ -20,8 +20,14 @@ import SnapticKit
     private var effective: Set<AwakeFeature> = []
     /// Connection holds and their held connections (finished with the hold's final line).
     private var connections: [StableID: ControlHold] = [:]
-    /// Combos that failed to register (conflict or system refusal), for Settings.
-    private(set) var failedShortcuts: Set<AwakeActionID> = []
+    /// Combos that failed to register (conflict or system refusal), for Settings and the menu bar's Don't Show
+    /// fallback: published as `AwakeRuntimeState.failedShortcuts` (the runtime outlives this controller).
+    private(set) var failedShortcuts: Set<AwakeActionID> = [] {
+        didSet {
+            guard let runtime = context?.runtime, runtime.failedShortcuts != failedShortcuts else { return }
+            runtime.failedShortcuts = failedShortcuts
+        }
+    }
 
     init() {}
 
@@ -30,7 +36,8 @@ import SnapticKit
     private func registerHotkeys() {
         hotkeysLifetime?.end()
         hotkeysLifetime = nil
-        failedShortcuts = []
+        var failed: Set<AwakeActionID> = []
+        defer { failedShortcuts = failed }   // one publish per registration pass
         guard let ctx = context, let lifetime, effective.contains(.shortcuts) else { return }
         let life = lifetime.child()
         hotkeysLifetime = life
@@ -41,7 +48,7 @@ import SnapticKit
                     self?.perform(action)
                 }
             } catch {
-                failedShortcuts.insert(action)
+                failed.insert(action)
             }
         }
     }
@@ -311,6 +318,7 @@ import SnapticKit
         verbsLifetime?.end()
         hotkeysLifetime = nil
         verbsLifetime = nil
+        failedShortcuts = []
         lifetime = nil
         context = nil
     }

@@ -114,17 +114,14 @@ struct AwakeDisplayChoice: Equatable {
 
     /// Online displays with salted records, read now (the same facts DisplayPresence uses).
     static func readDisplays() -> [AwakeDisplayChoice] {
-        var count: UInt32 = 0
-        guard CGGetOnlineDisplayList(0, nil, &count) == .success, count > 0 else { return [] }
-        var ids = [CGDirectDisplayID](repeating: 0, count: Int(min(count, 64)))
-        guard CGGetOnlineDisplayList(UInt32(ids.count), &ids, &count) == .success else { return [] }
+        let ids = CGDirectDisplayID.online()
         let salt = DisplayIdentity.salt()
         var names: [CGDirectDisplayID: String] = [:]
         for screen in NSScreen.screens {
             guard let n = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { continue }
             names[CGDirectDisplayID(n.uint32Value)] = screen.localizedName
         }
-        return ids.prefix(Int(count)).map { (id: CGDirectDisplayID) -> AwakeDisplayChoice in
+        return ids.map { (id: CGDirectDisplayID) -> AwakeDisplayChoice in
             let builtin = CGDisplayIsBuiltin(id) != 0
             var uuid: String?
             if let cf = CGDisplayCreateUUIDFromDisplayID(id)?.takeRetainedValue() {
