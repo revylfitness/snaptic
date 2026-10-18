@@ -117,6 +117,12 @@ struct DisplayMenuItemDescriptor {
     func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)]
     /// Items for the global `.tools` and `.quick` slots.
     func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)]
+    /// Every item id this contributor can ever produce (static, for the controls self-test, R5-13).
+    static var menuItemIDs: [DisplayMenuItemID] { get }
+}
+
+extension DisplayMenuContributor {
+    static var menuItemIDs: [DisplayMenuItemID] { [] }
 }
 
 /// A display as the rest of the app sees it. A Smart HiDPI pair is one entry:
