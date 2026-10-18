@@ -314,7 +314,7 @@ private struct KeyboardAdvancedSheet: View {
                           isOn: SettingsBinding.store(env.config, \.keys.alternateKeys),
                           anchor: ControlID("displays.keyboard.advanced.alternateKeys"))
             LabeledContent {
-                InfoButton(L("Modifier Keys"), message: Self.modifiers)
+                InfoButton(L("Modifier keys"), message: Self.modifiers)
             } label: {
                 Text(L("Modifier keys"))
                 Text(L("Hold them with the brightness keys for other displays and fine steps."))

@@ -56,7 +56,7 @@ import SnapticKit
         }
         registerActions(context, lifetime: lifetime)
         context.commands.register("toggle xdr", policy: .low, offOnly: false, cliAllowed: true,
-                                  summary: L("Toggle extra brightness: toggle xdr [display]"),
+                                  summary: L("Turn extra brightness on or off: toggle xdr [display]"),
                                   lifetime: lifetime) { [weak self] request, _ in
             guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
             let usage = L("Usage: toggle xdr [display]. ") + DisplayTargets.usage
