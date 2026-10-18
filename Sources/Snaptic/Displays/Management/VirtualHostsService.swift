@@ -173,12 +173,34 @@ import SnapticShims
 
     // MARK: Create / modes / destroy
 
+    /// Accurate text for a spawn failure (N11): "still starting" is not "restart to update".
+    static func spawnFailure(_ error: Error) -> VirtualHostSpawnFailure {
+        guard let spawn = error as? HelperSpawnError else { return .launchFailed }
+        switch spawn {
+        case .unavailable(let reason):
+            return reason == HelperSpawner.notReadyMessage ? .helpersStarting : .helpersUnavailable(reason)
+        case .verificationFailed(let problem):
+            return problem == "identity" ? .appChanged : .checkFailed
+        default:
+            return .launchFailed
+        }
+    }
+
     /// Spawns a host and creates the display with the single `initialMode` (R5.6). Backing is
     /// 2 × the largest mode, or the initial mode only when `limitToInitial`. `serialSeed`:
     /// Smart HiDPI passes the physical display's fingerprint so the identity is stable per panel.
     func create(spec: VirtualScreenSpec, initialMode: VirtualMode, limitToInitial: Bool = false,
                 serialSeed: String? = nil) async throws -> UInt32 {
         guard let ctx = context else { throw HostError.notRunning }
+        // Right after launch the spawner may still be preparing: wait for it rather than
+        // failing with "still starting" (N11).
+        if !ctx.helpers.isReady, ctx.helpers.unavailable == nil {
+            let ready = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
+                ctx.helpers.whenPrepared { c.resume(returning: $0) }
+            }
+            guard context === ctx else { throw HostError.notRunning }
+            if !ready { throw HostError.unavailable(VirtualHostSpawnFailure.helpersUnavailable(ctx.helpers.unavailable ?? "").message) }
+        }
         if let h = hosts[spec.id], !h.exited, let id = h.displayID { return id }
         if let h = hosts[spec.id], !h.exited { throw HostError.failed(.alreadyCreated) }
         guard Self.isAvailable else { throw HostError.unavailable(L("Virtual displays aren't available on this Mac")) }
@@ -213,7 +235,7 @@ import SnapticShims
                 onExit: { [weak self] status in self?.hostExited(specID, status: status) })
         } catch {
             if hosts[specID] === host { hosts[specID] = nil }
-            throw HostError.unavailable(L("Restart Snaptic to finish updating"))
+            throw HostError.unavailable(Self.spawnFailure(error).message)
         }
         host.handle = spawned
         // Stopped or destroyed while the suspended child was being verified (off main):

@@ -29,9 +29,11 @@ import SnapticKit
         let current = c.currentMode(display)
         if stops.count >= 2, let current, let index = stops.firstIndex(of: current) {
             let value = Double(index) / Double(stops.count - 1)
+            var sliderRef: WeakMenuItem?
             let slider = MenuSliderItem(title: L("Resolution"), symbol: "rectangle.arrowtriangle.2.outward", value: value) { [weak self] v in
-                self?.sliderMoved(key, value: v)
+                self?.sliderMoved(key, value: v, item: sliderRef?.item)
             }
+            sliderRef = WeakMenuItem(slider)
             slider.toolTip = c.sliderValueText(current, key: key)
             items.append((.dResolutionSlider, slider))
         }
@@ -86,8 +88,10 @@ import SnapticKit
     }
 
     /// The slider snaps to stops (and to favorite/current/default/native unless ⌥ is held) and
-    /// applies 0.4 s after it stops moving (mode changes are slow).
-    private func sliderMoved(_ key: DisplayKey, value: Double) {
+    /// applies 0.4 s after it stops moving (mode changes are slow). A change that may need
+    /// confirming closes the menu first (W8b), so Return and Esc reach the confirm panel
+    /// instead of the menu's tracking loop.
+    private func sliderMoved(_ key: DisplayKey, value: Double, item: NSMenuItem?) {
         sliderApply?.cancel()
         let bypass = NSEvent.modifierFlags.contains(.option)
         let work = DispatchWorkItem { [weak self] in
@@ -97,10 +101,34 @@ import SnapticKit
                 guard stops.count >= 2 else { return }
                 let raw = Int((min(1, max(0, value)) * Double(stops.count - 1)).rounded())
                 let i = c.snappedStop(raw, in: stops, key: key, bypass: bypass)
-                c.apply(stops[i], to: key)
+                let target = stops[i]
+                if let d = self?.context?.registry.info(for: key), c.currentMode(d) == target { return }
+                guard ResolutionMenuItems.cancelTracking(of: item) else {
+                    c.apply(target, to: key)
+                    return
+                }
+                // Default mode only: runs once the menu's tracking loop has ended.
+                RunLoop.main.perform(inModes: [.default]) { [weak self] in
+                    MainActor.assumeIsolated { self?.controller?.apply(target, to: key) }
+                }
             }
         }
         sliderApply = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
     }
+
+    /// Ends tracking of the menu tree holding `item` (the status menu, or the floating
+    /// panel's menu). False when it isn't in an open menu.
+    private static func cancelTracking(of item: NSMenuItem?) -> Bool {
+        guard var menu = item?.menu else { return false }
+        while let parent = menu.supermenu { menu = parent }
+        menu.cancelTrackingWithoutAnimation()
+        return true
+    }
+}
+
+/// Weak holder: the slider's own closure must not keep the item alive.
+private struct WeakMenuItem {
+    weak var item: NSMenuItem?
+    init(_ item: NSMenuItem) { self.item = item }
 }

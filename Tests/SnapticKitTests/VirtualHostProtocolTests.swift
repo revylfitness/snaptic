@@ -73,4 +73,18 @@ final class VirtualHostProtocolTests: XCTestCase {
     func testFailureMessagesExist() {
         for f in VirtualHostFailure.allCases { XCTAssertFalse(f.message.isEmpty) }
     }
+
+    func testSpawnFailureTextsAreDistinct() {
+        let restart = VirtualHostSpawnFailure.appChanged.message
+        XCTAssertNotEqual(VirtualHostSpawnFailure.helpersStarting.message, restart, "N11: still starting ≠ restart to update")
+        XCTAssertNotEqual(VirtualHostSpawnFailure.launchFailed.message, restart)
+        XCTAssertNotEqual(VirtualHostSpawnFailure.checkFailed.message, restart)
+        XCTAssertEqual(VirtualHostSpawnFailure.helpersUnavailable("Helpers are off in Safe Mode").message,
+                       "Helpers are off in Safe Mode")
+        XCTAssertFalse(VirtualHostSpawnFailure.helpersUnavailable("  ").message.isEmpty)
+        XCTAssertTrue(VirtualHostSpawnFailure.helpersStarting.isTransient)
+        XCTAssertFalse(VirtualHostSpawnFailure.appChanged.isTransient)
+        let all: [VirtualHostSpawnFailure] = [.helpersStarting, .helpersUnavailable("x"), .appChanged, .checkFailed, .launchFailed]
+        XCTAssertEqual(Set(all.map(\.message)).count, all.count)
+    }
 }

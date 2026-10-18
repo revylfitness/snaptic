@@ -668,7 +668,6 @@ enum HostInfo {
             if let since = s.awaitingSince, now - since >= BrightnessFirstRead.maxWaitSeconds { reevaluate(key) }
         }
         guard let context, let lifetime, context.sessionGate.isOpen else { return }
-        let now = ProcessInfo.processInfo.systemUptime
         for (key, s) in states where s.hardware == .apple && now - s.lastSetAt > 2 {
             let io = context.appleBrightness
             lifetime.spawn { [weak self] in
