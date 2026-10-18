@@ -5,7 +5,7 @@ import SnapticKit
 ///
 /// ```
 /// [!] status rows (only while true): module state, "Display Automation Is Paused" + Resume Display Automation,
-///     other display apps, "Unprotected" + Restart Snaptic
+///     other display apps, "Safety Helper Stopped" + Restart Snaptic
 /// [▭] one device row per display (+ its sliders), disconnected displays dimmed at the end
 /// [↺] Restore All Displays            only while a change awaits confirmation
 /// [▦] Arrange Displays…
@@ -65,8 +65,8 @@ import SnapticKit
             items.append(item)
         }
         if let reason = DisplaysLive.unprotectedReason(ctx) {
-            let title = ctx.helpers.unavailable != nil ? L("Unprotected: Snaptic’s Helpers Can’t Run")
-                : L("Unprotected: Safety Helper Isn’t Running")
+            // The page's words in menu Title Case ("The safety helper stopped."; ux nit 6).
+            let title = ctx.helpers.unavailable != nil ? L("Snaptic’s Helpers Can’t Run") : L("Safety Helper Stopped")
             let item = MenuKit.status(title, symbol: "exclamationmark.shield", control: ControlID("menu.displays.status"))
             item.toolTip = reason
             items.append(item)

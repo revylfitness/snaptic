@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import SnapticKit
 
@@ -36,7 +37,7 @@ private struct MenuBarPageContent: View {
     @ObservedObject var modules: ConfigStore<ModulesConfig>
     @ObservedObject var displays: ConfigStore<DisplaysConfig>
     @ObservedObject var awake: ConfigStore<AwakeConfig>
-    /// For the Keep Awake shortcut's registration (a set but failed shortcut counts as unbound).
+    /// For the Keep Awake shortcut's registration (`keepAwakeRegistered`; anything else counts as unbound).
     @ObservedObject var awakeRuntime: AwakeRuntimeState
     @ObservedObject private var shell = SettingsShell.shared
     /// The display the Customize sheet opens with (Display Details' "Customize Displays Menu…" link sets
@@ -44,6 +45,8 @@ private struct MenuBarPageContent: View {
     @State private var customizeFocus: DisplayKey?
     /// The sheet was opened by this page's own button.
     @State private var openedHere = false
+    /// Bumped when displays come or go: Displays' Show When Active icon (and so the Snaptic glyph) follows them.
+    @State private var screensRevision = 0
 
     var body: some View {
         SettingsPageScaffold(route: SettingsRoute(SettingsRootID.menuBar)) {
@@ -84,7 +87,10 @@ private struct MenuBarPageContent: View {
                 }
             }
             Section {
-                GlyphTilePicker(L("Snaptic icon"), symbols: Self.snapticSymbols(current: modules.value.sharedSymbol),
+                GlyphTilePicker(L("Snaptic icon"),
+                                symbols: MenuLayout.snapticSymbolChoices(stored: modules.value.sharedSymbol,
+                                                                         ownIconSymbols: ownIconSymbols)
+                                    .filter(ModulesConfig.isCuratedSymbol),
                                 labels: Self.symbolLabels, selection: snapticSymbol,
                                 anchor: ControlID("menubar.page.snapticIcon"))
             }
@@ -102,6 +108,9 @@ private struct MenuBarPageContent: View {
         }
         .onAppear { noteCustomizeOpening() }
         .onChange(of: shell.openSheet) { _, _ in noteCustomizeOpening() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+            screensRevision &+= 1
+        }
     }
 
     /// The Customize sheet is the shell's sheet `CustomizeMenuSheetControls.surface`. Opened from elsewhere — Display
@@ -168,9 +177,13 @@ private struct MenuBarPageContent: View {
         }
     }
 
-    private var awakeShortcutBound: Bool {
-        MenuLayout.awakeShortcutBound(awake.value.shortcuts, failed: awakeRuntime.failedShortcuts)
+    /// The same status the menu bar's Don't Show fallback uses (StatusMenu): registered only per G's runtime flag.
+    private var awakeShortcutStatus: MenuLayout.AwakeShortcutStatus {
+        MenuLayout.awakeShortcutStatus(awake.value.shortcuts, failed: awakeRuntime.failedShortcuts,
+                                       registered: awakeRuntime.keepAwakeRegistered)
     }
+
+    private var awakeShortcutBound: Bool { awakeShortcutStatus.isBound }
 
     /// Always Show in Menu Bar · Show When Active (Displays, Awake) · Show in Snaptic Menu · Don't Show; Awake's
     /// Don't Show only with a Keep Awake shortcut (parity M2).
@@ -195,10 +208,9 @@ private struct MenuBarPageContent: View {
 
     private var modulesFooter: String? {
         var lines: [String] = []
-        if !awakeShortcutBound && modules.value.isEnabled(.awake) {
-            lines.append(MenuLayout.awakeShortcutBound(awake.value.shortcuts)
-                         ? L("To hide Awake, choose a Keep Awake shortcut that no other app or macOS uses.")
-                         : L("To hide Awake, first set a Keep Awake shortcut."))
+        // Only while Awake runs: off (or turned off by a defaults setting) its row is moot and nothing is registered.
+        if awakeRuntime.moduleState != .stopped, let hint = MenuLayout.awakeHideHint(awakeShortcutStatus) {
+            lines.append(hint)
         }
         if PermissionFlow.isMacOS27OrLater {
             lines.append(L("macOS can also hide icons in System Settings › Menu Bar. Opening Snaptic again always shows Settings."))
@@ -256,11 +268,6 @@ private struct MenuBarPageContent: View {
         return unique([symbol] + extra + (current.isEmpty ? [] : [current]))
     }
 
-    private static func snapticSymbols(current: String) -> [String] {
-        unique([MenuLayout.snapticSymbol, MenuLayout.snapticAlternateSymbol, "circle.grid.cross"]
-               + (current.isEmpty ? [] : [current]))
-    }
-
     private static func unique(_ symbols: [String]) -> [String] {
         var seen = Set<String>()
         return symbols.filter { ModulesConfig.isCuratedSymbol($0) && seen.insert($0).inserted }
@@ -285,22 +292,25 @@ private struct MenuBarPageContent: View {
         })
     }
 
-    /// The glyphs of the modules set to an icon of their own (the Snaptic item's default steps aside for one of them,
-    /// `MenuLayout.sharedSymbol`). Awake's item has its own glyph family and never collides.
+    /// The glyphs of the own icons the menu bar shows now: the same modules as the live plan's `ownIcon`
+    /// (`ModulesConfig.ownIconIDs`: running, and Displays' Show When Active only with an external display), so the
+    /// page and the Snaptic item agree on its glyph (code N3). Awake's item has its own glyph family and never
+    /// collides.
     private var ownIconSymbols: [String] {
+        _ = screensRevision   // re-read on display changes
         let config = modules.value
-        let own = ModuleID.allCases.filter {
-            $0 != .awake && config.isEnabled($0) && [.ownIcon, .ownIconWhenActive].contains(config.presence($0))
-        }
+        let own = config.ownIconIDs(running: host.runningModules, displaysActive: MenuPlacement.hasExternalDisplay)
         return MenuPlacement.ownIconSymbols(own.map { host.module($0) }, in: config)
     }
 
+    /// Shows the glyph the Snaptic item shows; choosing the default stores "" (`storedSharedSymbol`), so it steps
+    /// aside by itself whenever an own icon uses it and a choice never pins a colliding glyph.
     private var snapticSymbol: Binding<String> {
         let store = modules
         let own = ownIconSymbols
         return Binding(get: { MenuLayout.sharedSymbol(stored: store.value.sharedSymbol, ownIconSymbols: own) },
                        set: { chosen in
-                           let value = MenuLayout.storedSharedSymbol(chosen: chosen, ownIconSymbols: own)
+                           let value = MenuLayout.storedSharedSymbol(chosen: chosen)
                            guard store.value.sharedSymbol != value, ModulesConfig.isCuratedSymbol(value) else { return }
                            store.value.sharedSymbol = value
                        })
