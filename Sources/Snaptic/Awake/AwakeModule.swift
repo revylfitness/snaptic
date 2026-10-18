@@ -5,8 +5,7 @@ import SnapticKit
 
 /// The Awake module (lead; PLAN 0.3 §2.1, §2.11): resolves the effective features, activates the services they
 /// need in dependency order, and starts one controller per AwakeControllerID that has effective features. Mirrors
-/// DisplaysModule; the three stores are ModuleHost's (one owner, R5-14). In step 0 every service and controller is a
-/// team stub, so a running Awake module keeps nothing awake.
+/// DisplaysModule; the three stores are ModuleHost's (one owner, R5-14).
 @MainActor final class AwakeModule: SnapticModule, StatusItemProvider {
     let id: ModuleID = .awake
     let title = L("Awake")
@@ -253,13 +252,21 @@ import SnapticKit
 
     /// `Awake.disable.<feature>` from Snaptic's persistent domain only (N14); unkillable features ignore them.
     private static func readKillSwitches() -> Set<AwakeFeature> {
-        let domain = UserDefaults.standard.persistentDomain(forName: ConfigStore<AwakeConfig>.persistentDomainName) ?? [:]
-        return Set(AwakeFeature.allCases.filter { (domain["Awake.disable." + $0.rawValue] as? Bool) == true })
+        KillSwitches.read(UserDefaults.standard.persistentDomain(forName: ConfigStore<AwakeConfig>.persistentDomainName),
+                          prefix: "Awake")
     }
 
     /// Wall, continuous (CLOCK_MONOTONIC_RAW, counts sleep) and boot session (N2).
     static func clockNow() -> ClockNow {
         let continuous = Double(clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)) / 1e9
+        return ClockNow(wall: Date().timeIntervalSince1970, continuous: continuous, bootSession: bootSession())
+    }
+
+    /// The boot session can't change within a process: read once (review code F7), retried only while unreadable.
+    private static var cachedBootSession: String?
+
+    private static func bootSession() -> String {
+        if let cached = cachedBootSession { return cached }
         var size = 0
         sysctlbyname("kern.bootsessionuuid", nil, &size, nil, 0)
         var boot = ""
@@ -267,6 +274,7 @@ import SnapticKit
             var buffer = [CChar](repeating: 0, count: size)
             if sysctlbyname("kern.bootsessionuuid", &buffer, &size, nil, 0) == 0 { boot = String(cString: buffer) }
         }
-        return ClockNow(wall: Date().timeIntervalSince1970, continuous: continuous, bootSession: boot)
+        if !boot.isEmpty { cachedBootSession = boot }
+        return boot
     }
 }

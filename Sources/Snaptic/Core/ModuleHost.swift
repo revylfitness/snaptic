@@ -19,7 +19,7 @@ import SnapticKit
     static let awakeHistoryKey = "SnapticAwakeHistoryV1"
     static let ledgerKey = MigrationLedger.key
     /// `Modules.disable.<id>` (N14): a module with this key set to true in Snaptic's persistent domain never starts.
-    static func disableKey(_ id: ModuleID) -> String { "Modules.disable." + id.rawValue }
+    static func disableKey(_ id: ModuleID) -> String { KillSwitches.key(prefix: "Modules", id: id.rawValue) }
     /// Collapses quick on/off/on toggles into one transition.
     static let applyDelay: TimeInterval = 0.3
 
@@ -99,7 +99,7 @@ import SnapticKit
         let awakeState = ConfigStore<AwakeRuntimeSnapshot>(key: Self.awakeStateKey)
         let awakeHistory = ConfigStore<AwakeHistory>(key: Self.awakeHistoryKey)
         let ledger = ConfigStore<MigrationLedger>(key: Self.ledgerKey)
-        let disabled = Set(ModuleID.allCases.filter { (domain?[ModuleHost.disableKey($0)] as? Bool) == true })
+        let disabled = KillSwitches.read(domain, prefix: "Modules", as: ModuleID.self)
         let m1 = Self.runMigrations(modules: store, modulesExisted: modulesExisted, displays: displaysConfig,
                                     awake: awakeConfig, ledger: ledger, toasts: toasts)
         if disabled.contains(.awake) {

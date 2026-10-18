@@ -86,4 +86,16 @@ final class KitModulesTests: XCTestCase {
         // The separator keeps (namespace, name) pairs apart.
         XCTAssertNotEqual(StableID.derived(namespace: "ab", name: "c"), StableID.derived(namespace: "a", name: "bc"))
     }
+
+    func testKillSwitchesReadOnlyTrueForKnownIDs() {
+        XCTAssertEqual(KillSwitches.key(prefix: "Modules", id: "awake"), "Modules.disable.awake")
+        let domain: [String: Any] = ["Modules.disable.awake": true, "Modules.disable.displays": false,
+                                     "Modules.disable.windowSwitcher": "1", "Modules.disable.teleport": true,
+                                     "Displays.disable.awake": true, "Awake.disable.history": true]
+        XCTAssertEqual(KillSwitches.read(domain, prefix: "Modules", as: ModuleID.self), [.awake])
+        let awake: Set<AwakeFeature> = KillSwitches.read(domain, prefix: "Awake")
+        XCTAssertEqual(awake, [.history])
+        XCTAssertEqual(KillSwitches.read(nil, prefix: "Modules", as: ModuleID.self), [])
+        XCTAssertEqual(KillSwitches.read([:], prefix: "Displays", as: DisplayFeature.self), [])
+    }
 }
