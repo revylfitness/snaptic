@@ -44,6 +44,7 @@ package enum DisplayInformationPageControls: ControlTable {
                     search: SearchSpec("Forget All Remembered Displays", keywords: ["forget", "remove settings"],
                                        root: root, route: route)),
         ControlSpec("displays.info.rememberedResolutions", .list, replaces: ["l.d.safety.keptModes.forget"],
+                    keys: ["safety.keptModes"],
                     search: SearchSpec("Remembered resolutions", keywords: ["kept modes", "don't ask again"],
                                        root: root, route: route)),
     ]
