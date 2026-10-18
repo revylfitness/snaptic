@@ -273,7 +273,7 @@ enum PermissionStatus: Equatable { case granted, denied, unknown }
         case .accessibility:
             return L("Lets Snaptic see its shortcuts, list and switch windows, and read display keys.")
         case .screenRecording:
-            return L("Lets Snaptic show window thumbnails and previews, and picture in picture.")
+            return L("Lets Snaptic show window thumbnails and previews, and Picture in Picture.")
         }
     }
 
