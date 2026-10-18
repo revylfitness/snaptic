@@ -35,9 +35,15 @@ import SnapticShims
         let id: UInt64
         let undo: [UndoOp]
         let changes: [DisplayChange]
+        let before: LayoutSnapshot
         var life = TrialLifecycle()
         /// Something may already have reached the displays.
         var applied = false
+        /// The Keep batches went out (and the kept modes were remembered).
+        var keepWritten = false
+        /// Those batches wrote modes, origins and main `.permanently`: a revert must write
+        /// them back permanently too (FIXES-R2 N4).
+        var keptPermanently = false
     }
 
     private var active = false
@@ -119,10 +125,15 @@ import SnapticShims
             if let end = p.life.end { stopped = (p.token, end) }
             switch action {
             case .undo:
-                _ = applyUndoNow(p.undo, ctx: ctx)
+                _ = applyUndoNow(p.undo, permanent: p.keptPermanently, ctx: ctx)
+                if p.keepWritten { forgetKept(p.changes, ctx: ctx) }
                 ctx.guardClient.disarm(p.id)
                 EventLog.shared.record(.transaction, "Pending trial reverted (Displays stopped)")
             case .commit:
+                // FIXES-R2 N6: the user chose Keep, so Displays stopping finishes the Keep the
+                // same way the trial task would have: Keep batches, kept modes remembered
+                // (config persists them), commit. Never reverted, never left half-kept.
+                if !p.keepWritten { writeKeep(&p, ctx: ctx) }
                 ctx.guardClient.commit(p.id)
                 EventLog.shared.record(.transaction, "Trial kept (Displays stopped during Keep)")
             case .none:
@@ -139,7 +150,7 @@ import SnapticShims
         if let ctx = context {
             let ops = reenableOps(ctx)
             if !ops.isEmpty {
-                let n = applyUndoNow(ops, ctx: ctx)
+                let n = applyUndoNow(ops, permanent: false, ctx: ctx)
                 EventLog.shared.record(.transaction, "Re-enabled \(n) displays Snaptic disconnected")
             }
         }
@@ -290,6 +301,8 @@ import SnapticShims
         let violations = Invariants.violations(before: before, changes: changes, context: invariantContext)
         if !violations.isEmpty {
             EventLog.shared.record(.transaction, "Refused \(changes.count) changes: \(violations.count) invariants")
+            // W9: the same text ManagedTransactions shows (identical toasts merge), with a way out.
+            if violations.first == .guardNotArmed { offerRestart(L("Safety helper unavailable"), req: req, ctx: ctx) }
             report(req, before: before, risk: risk, outcome: .refused(violations))
             return .refused(violations)
         }
@@ -319,25 +332,25 @@ import SnapticShims
                 guard ok else {
                     clearJournal()
                     layoutFactsChanged()
-                    return .failed(L("Safety helper unavailable."))
+                    return guardUnavailable(req, ctx: ctx)
                 }
             }
         } else if needsLong {
             let ok = await ctx.guardClient.setLongAndWait(long.undo, restoreColorSync: long.restoreColorSync)
             guard isCurrent(epoch) else { return off }
-            guard ok else { return .failed(L("Safety helper unavailable.")) }
+            guard ok else { return guardUnavailable(req, ctx: ctx) }
         }
 
         // Apply (CG only: MonitorPanel changes that aren't already applied are trials).
         let scopeFor: (DisplayChange) -> ConfigScope = { [weak self] c in
             self?.finalScope(for: c, request: req, ctx: ctx) ?? .forSession
         }
-        let applied = await applyStaged(changes, scope: scopeFor, ctx: ctx, shouldStop: { [weak self] in
+        let applied = await applyStaged(changes, scope: scopeFor, ctx: ctx, onStage: { _ in }, shouldStop: { [weak self] in
             self?.isCurrent(epoch) != true
         })
         guard isCurrent(epoch) else { return off }
         if let failure = applied.failure ?? (applied.stopped ? L("Displays are turned off.") : nil) {
-            _ = applyUndoNow(undo, ctx: ctx)
+            _ = applyUndoNow(undo, permanent: false, ctx: ctx)
             clearJournal()
             layoutFactsChanged()
             EventLog.shared.record(.transaction, "Apply failed and was undone")
@@ -365,7 +378,7 @@ import SnapticShims
         trialSerial &+= 1
         let token = trialSerial
         let trialID = ctx.guardClient.makeTrialID()
-        pending = PendingTrial(token: token, id: trialID, undo: undo, changes: changes)
+        pending = PendingTrial(token: token, id: trialID, undo: undo, changes: changes, before: before)
 
         // Protection before applying (fail closed): journal, permanent ops, guard arm.
         // The journal also carries what is long-armed right now, so a crash mid-trial still
@@ -391,7 +404,7 @@ import SnapticShims
             journal?.resolvePermanent(trial: trialID)
             pending = nil
             layoutFactsChanged()
-            return .failed(L("Safety helper unavailable."))
+            return guardUnavailable(req, ctx: ctx)
         }
 
         // Apply, with the trial scope; stops between stages when a revert is requested.
@@ -401,7 +414,11 @@ import SnapticShims
         case .proceed: break
         }
         pending?.applied = true
-        let applied = await applyStaged(changes, scope: { _ in Self.trialScope }, ctx: ctx, shouldStop: { [weak self] in
+        // N8: each stage that may take a while first moves the guard's deadline past itself.
+        let guardClient = ctx.guardClient
+        let applied = await applyStaged(changes, scope: { _ in Self.trialScope }, ctx: ctx, onStage: { cap in
+            guardClient.extend(trialID, seconds: cap + 10)
+        }, shouldStop: { [weak self] in
             self?.trialShouldStop(token) ?? true
         })
         if let failure = applied.failure {
@@ -457,24 +474,16 @@ import SnapticShims
     /// Keep: commit intent, re-apply with the final scope (never skipping, R5.2), afterKeep.
     /// Panic or a guard revert arriving meanwhile still turns it into a revert.
     private func keepTrial(_ token: UInt64, req: TransactionRequest, ctx: DisplaysContext) async -> TransactionOutcome {
-        guard let p = pending, p.token == token else { return stoppedOutcome(token) }
-        _ = await ctx.guardClient.commitIntentAndWait(p.id)
+        guard let id = pending?.id, pending?.token == token else { return stoppedOutcome(token) }
+        _ = await ctx.guardClient.commitIntentAndWait(id)
         switch step(token, { $0.checkpoint() }) {
         case .abandon: return stoppedOutcome(token)
         case .revert(let why): return await revertTrial(token, why, req: req, ctx: ctx)
         case .proceed: break
         }
-        let cg = p.changes.filter { !$0.isMonitorPanel }
-        let (permanent, session) = CGConfig.keepBatches(cg)
-        ctx.guardClient.busy(seconds: 5)
-        let virtualsOnline = ctx.registry.cachedSnapshot()?.entries.contains { $0.transport == .snapticVirtual } ?? false
-        let permScope: ConfigScope = virtualsOnline && !permanent.allSatisfy({ Self.isPhysicalMode($0, ctx: ctx) })
-            ? .forSession : .permanently
-        let functions = cgFunctions(ctx)
-        let hidden = hiddenModes(for: cg, ctx: ctx)
-        if !permanent.isEmpty { _ = CGConfig.apply(permanent, scope: permScope, functions: functions, hiddenModes: hidden) }
-        if !session.isEmpty { _ = CGConfig.apply(session, scope: .forSession, functions: functions, hiddenModes: hidden) }
-        rememberKept(p.changes, ctx: ctx)
+        guard var p = pending, p.token == token else { return stoppedOutcome(token) }
+        writeKeep(&p, ctx: ctx)
+        pending = p
         if let afterKeep = req.afterKeep {
             await afterKeep()
         }
@@ -487,8 +496,10 @@ import SnapticShims
         case .proceed:
             break
         }
+        // N5: the journal and the guard's long-armed set cover the kept layout before the
+        // guard forgets the trial (the pipe is ordered: `long` is handled before `commit`).
+        handOverToLongArm(Invariants.predict(p.before, applying: p.changes), ctx: ctx)
         ctx.guardClient.commit(p.id)
-        journal?.clearSession()
         journal?.resolvePermanent(trial: p.id)
         pending = nil
         suppressAutomaticUntil = SessionGate.uptime() + Self.keepSuppressSeconds
@@ -505,15 +516,22 @@ import SnapticShims
         // Our own staged undo is underway: keep the guard's deadline from racing it (its
         // hang rule still covers a stall here).
         if !p.life.guardReverted { ctx.guardClient.extend(p.id, seconds: 30) }
-        _ = await revertStaged(p.undo, ctx: ctx, shouldStop: { [weak self] in self?.isTrialCurrent(token) != true })
+        let guardClient = ctx.guardClient
+        let trialID = p.id
+        let guardReverted = p.life.guardReverted
+        _ = await revertStaged(p.undo, permanent: p.keptPermanently, ctx: ctx, onStage: { cap in
+            if !guardReverted { guardClient.extend(trialID, seconds: cap + 10) }
+        }, shouldStop: { [weak self] in self?.isTrialCurrent(token) != true })
         guard isTrialCurrent(token) else { return stoppedOutcome(token) }
         if let afterRevert = req.afterRevert {
             await afterRevert()
             guard isTrialCurrent(token) else { return stoppedOutcome(token) }
         }
         _ = step(token) { $0.finishRevert() ? .proceed : .abandon }
+        // N5: whatever the restored layout still needs long-armed is journaled and handed to
+        // the guard before it forgets the trial.
+        handOverToLongArm(ctx.registry.snapshot() ?? p.before, ctx: ctx)
         ctx.guardClient.disarm(p.id)
-        journal?.clearSession()
         journal?.resolvePermanent(trial: p.id)
         pending = nil
         suppressAutomaticUntil = SessionGate.uptime() + Self.keepSuppressSeconds
@@ -558,6 +576,62 @@ import SnapticShims
         }
     }
 
+    /// The Keep batches (final scope, never skipping, R5.2) and the kept modes remembered.
+    /// Synchronous, so `deactivate()` can finish a Keep the trial task didn't get to (N6).
+    private func writeKeep(_ p: inout PendingTrial, ctx: DisplaysContext) {
+        let cg = p.changes.filter { !$0.isMonitorPanel }
+        let (permanent, session) = CGConfig.keepBatches(cg)
+        ctx.guardClient.busy(seconds: 5)
+        let virtualsOnline = ctx.registry.cachedSnapshot()?.entries.contains { $0.transport == .snapticVirtual } ?? false
+        let permScope: ConfigScope = virtualsOnline && !permanent.allSatisfy({ Self.isPhysicalMode($0, ctx: ctx) })
+            ? .forSession : .permanently
+        let functions = cgFunctions(ctx)
+        let hidden = hiddenModes(for: cg, ctx: ctx)
+        if !permanent.isEmpty {
+            // Marked before the call: a partial permanent write must be undone permanently too.
+            if permScope == .permanently { p.keptPermanently = true }
+            _ = CGConfig.apply(permanent, scope: permScope, functions: functions, hiddenModes: hidden)
+        }
+        if !session.isEmpty { _ = CGConfig.apply(session, scope: .forSession, functions: functions, hiddenModes: hidden) }
+        rememberKept(p.changes, ctx: ctx)
+        p.keepWritten = true
+    }
+
+    /// FIXES-R2 N5: before the guard forgets a trial (commit / disarm), the session journal
+    /// and the guard's long-armed set already describe what `layout` needs, so there is no
+    /// moment where a crash leaves a disabled display or a mirror without a way back.
+    private func handOverToLongArm(_ layout: LayoutSnapshot, ctx: DisplaysContext) {
+        let long = Invariants.requiredLongArm(layout)
+        if long.undo.isEmpty {
+            clearJournal()
+        } else if journal?.writeSession(undo: long.undo, restoreColorSync: long.restoreColorSync, trialID: nil,
+                                        live: layout) == true {
+            journaledLong = long.undo
+        } else {
+            // The trial's journal would undo the result at the next launch: never leave it.
+            clearJournal()
+        }
+        if !long.isEmpty || ctx.guardClient.hasLongState {
+            ctx.guardClient.setLong(long.undo, restoreColorSync: long.restoreColorSync)
+        }
+    }
+
+    /// W9: the guard couldn't be reached. The text says why; a user request also gets a toast
+    /// with "Restart Snaptic" (ManagedTransactions shows the same text, and identical toasts merge).
+    private func guardUnavailable(_ req: TransactionRequest, ctx: DisplaysContext) -> TransactionOutcome {
+        let text = ctx.guardClient.lastFailure.map { L("Safety helper unavailable: \($0)") } ?? L("Safety helper unavailable.")
+        offerRestart(text, req: req, ctx: ctx)
+        return .failed(text)
+    }
+
+    private func offerRestart(_ text: String, req: TransactionRequest, ctx: DisplaysContext) {
+        guard !req.automatic, let lifetime else { return }
+        let relauncher = ctx.relauncher
+        ctx.toasts.show(text, action: ToastAction(title: L("Restart Snaptic"), perform: {
+            relauncher.relaunch(reason: "safety helper unavailable")
+        }), lifetime: lifetime)
+    }
+
     private func clearJournal() {
         journal?.clearSession()
         journaledLong = nil
@@ -588,8 +662,10 @@ import SnapticShims
     /// HDR → quiet → rotation (poll ≤ 10 s) → quiet → CG batches (modes re-resolved) by scope.
     /// `shouldStop` is asked after every await, so a revert request (or Displays stopping)
     /// keeps the remaining stages from going out.
+    /// `onStage(cap)` runs before each stage that may take up to `cap` seconds (N8: a trial
+    /// extends the guard's deadline there).
     private func applyStaged(_ changes: [DisplayChange], scope: (DisplayChange) -> ConfigScope,
-                             ctx: DisplaysContext, shouldStop: () -> Bool) async -> ApplyResult {
+                             ctx: DisplaysContext, onStage: (Double) -> Void, shouldStop: () -> Bool) async -> ApplyResult {
         let hdr = changes.filter { if case .hdr = $0 { return true } else { return false } }
         let underscan = changes.filter { if case .underscan = $0 { return true } else { return false } }
         let rotation = changes.filter { if case .rotation = $0 { return true } else { return false } }
@@ -597,9 +673,11 @@ import SnapticShims
             guard CGConfig.applyMonitorPanel(c) else { return ApplyResult(failure: L("The display refused the change.")) }
         }
         if !hdr.isEmpty {
+            onStage(8)
             await waitQuiet(ctx, quiet: 1.5, cap: 8)
             if shouldStop() { return ApplyResult(stopped: true) }
         }
+        if !rotation.isEmpty { onStage(10 + 6) }
         for c in rotation {
             guard case .rotation(let id, let degrees) = c, CGConfig.applyMonitorPanel(c) else {
                 return ApplyResult(failure: L("The display refused the change."))
@@ -619,6 +697,7 @@ import SnapticShims
 
         let cg = changes.filter { !$0.isMonitorPanel }
         guard !cg.isEmpty else { return ApplyResult() }
+        onStage(5)
         let functions = cgFunctions(ctx)
         let hidden = hiddenModes(for: cg, ctx: ctx)
         var groups: [(ConfigScope, [DisplayChange])] = []
@@ -641,49 +720,77 @@ import SnapticShims
 
     /// Staged CAS revert with settling between stages. Stops when `shouldStop` (Displays
     /// stopped: `deactivate()` already undid everything synchronously).
-    private func revertStaged(_ undo: [UndoOp], ctx: DisplaysContext,
+    /// `permanent`: the trial's Keep already wrote modes, origins and main `.permanently`,
+    /// so the revert writes those back `.permanently` as well, even where the live value is
+    /// already restored for the session (FIXES-R2 N4). Everything else stays CAS, `.forSession`.
+    private func revertStaged(_ undo: [UndoOp], permanent: Bool, ctx: DisplaysContext, onStage: (Double) -> Void,
                               shouldStop: () -> Bool) async -> (applied: Int, skipped: Int) {
         var applied = 0, skipped = 0
         let functions = cgFunctions(ctx)
         for (stage, ops) in UndoPlanner.stages(undo) {
             if shouldStop() { break }
             guard let live = ctx.registry.snapshot() else { break }
-            let pendingOps = stage == .monitorPanel ? JournalApplier.monitorPanelPending(ops, live: live)
-                                                    : UndoPlanner.pending(ops, live: live)
+            let pendingOps = Self.pendingUndo(stage, ops, live: live, permanent: permanent)
             skipped += ops.count - pendingOps.count
-            let changes = pendingOps.compactMap(UndoPlanner.change(for:))
-            guard !changes.isEmpty else { continue }
+            guard !pendingOps.isEmpty else { continue }
+            let cap: Double = stage == .monitorPanel ? 6 : 4
+            onStage(cap + 5)
             if stage == .monitorPanel {
+                let changes = pendingOps.compactMap(UndoPlanner.change(for:))
                 for c in changes { if CGConfig.applyMonitorPanel(c) { applied += 1 } else { skipped += 1 } }
+                noteApplied(changes, undo: [], ctx: ctx)
             } else {
-                ctx.guardClient.busy(seconds: 5)
-                let r = CGConfig.apply(changes, scope: .forSession, functions: functions, hiddenModes: hiddenModes(for: changes, ctx: ctx))
-                if r.ok { applied += r.applied } else { skipped += changes.count }
+                for (scope, batch) in Self.undoBatches(pendingOps, permanent: permanent) {
+                    let changes = batch.compactMap(UndoPlanner.change(for:))
+                    guard !changes.isEmpty else { continue }
+                    ctx.guardClient.busy(seconds: 5)
+                    let r = CGConfig.apply(changes, scope: scope, functions: functions, hiddenModes: hiddenModes(for: changes, ctx: ctx))
+                    if r.ok { applied += r.applied } else { skipped += changes.count }
+                    noteApplied(changes, undo: [], ctx: ctx)
+                }
             }
-            noteApplied(changes, undo: [], ctx: ctx)
-            await waitQuiet(ctx, quiet: 1, cap: stage == .monitorPanel ? 6 : 4)
+            await waitQuiet(ctx, quiet: 1, cap: cap)
         }
         return (applied, skipped)
     }
 
-    /// Synchronous CAS undo (deactivate/quit and failed applies): no settling.
-    private func applyUndoNow(_ undo: [UndoOp], ctx: DisplaysContext) -> Int {
+    /// Synchronous CAS undo (deactivate/quit and failed applies): no settling. `permanent`
+    /// as in `revertStaged`.
+    private func applyUndoNow(_ undo: [UndoOp], permanent: Bool, ctx: DisplaysContext) -> Int {
         var applied = 0
         let functions = cgFunctions(ctx)
         for (stage, ops) in UndoPlanner.stages(undo) {
             guard let live = ctx.registry.snapshot() else { break }
-            let pendingOps = stage == .monitorPanel ? JournalApplier.monitorPanelPending(ops, live: live)
-                                                    : UndoPlanner.pending(ops, live: live)
-            let changes = pendingOps.compactMap(UndoPlanner.change(for:))
+            let pendingOps = Self.pendingUndo(stage, ops, live: live, permanent: permanent)
             if stage == .monitorPanel {
+                let changes = pendingOps.compactMap(UndoPlanner.change(for:))
                 for c in changes where CGConfig.applyMonitorPanel(c) { applied += 1 }
-            } else if !changes.isEmpty {
-                let r = CGConfig.apply(changes, scope: .forSession, functions: functions)
-                applied += r.applied
+                noteApplied(changes, undo: [], ctx: ctx)
+            } else {
+                for (scope, batch) in Self.undoBatches(pendingOps, permanent: permanent) {
+                    let changes = batch.compactMap(UndoPlanner.change(for:))
+                    guard !changes.isEmpty else { continue }
+                    let r = CGConfig.apply(changes, scope: scope, functions: functions)
+                    applied += r.applied
+                    noteApplied(changes, undo: [], ctx: ctx)
+                }
             }
-            noteApplied(changes, undo: [], ctx: ctx)
         }
         return applied
+    }
+
+    private static func pendingUndo(_ stage: UndoStage, _ ops: [UndoOp], live: LayoutSnapshot, permanent: Bool) -> [UndoOp] {
+        if stage == .monitorPanel { return JournalApplier.monitorPanelPending(ops, live: live) }
+        return permanent ? UndoPlanner.pendingAfterPermanentKeep(ops, live: live) : UndoPlanner.pending(ops, live: live)
+    }
+
+    /// One CG batch per scope: after a permanent Keep, modes/origins/main go `.permanently`
+    /// (first, like the Keep), the rest `.forSession`.
+    private static func undoBatches(_ ops: [UndoOp], permanent: Bool) -> [(ConfigScope, [UndoOp])] {
+        guard permanent else { return [(.forSession, ops)] }
+        let perm = ops.filter(\.isPermanentOnKeep)
+        let session = ops.filter { !$0.isPermanentOnKeep }
+        return [(.permanently, perm), (.forSession, session)].filter { !$0.1.isEmpty }
     }
 
     private func waitQuiet(_ ctx: DisplaysContext, quiet: Double, cap: Double) async {
@@ -927,7 +1034,7 @@ import SnapticShims
             value.safety.keptModes[key]?.forget(m)
         }
         if value != ctx.config.value { ctx.config.value = value }
-        let applied = applyUndoNow(ops, ctx: ctx)
+        let applied = applyUndoNow(ops, permanent: false, ctx: ctx)
         layoutFactsChanged()
         return applied
     }

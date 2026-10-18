@@ -24,6 +24,10 @@ enum ConfirmResult: Equatable {
     private var interactive = false
     private var hostProvider: (@MainActor () -> Set<UInt32>)?
     private var screenObserver: NSObjectProtocol?
+    /// W8a: the app that was frontmost before an interactive panel took focus; re-activated
+    /// after Keep/Revert so the user lands back where they were.
+    private var previousApp: NSRunningApplication?
+    private var activatedSelf = false
 
     override init() { super.init() }
 
@@ -42,6 +46,9 @@ enum ConfirmResult: Equatable {
             shownAt = SessionGate.uptime()
             deadline = shownAt + seconds
             lastAnnounce = 0
+            let front = NSWorkspace.shared.frontmostApplication
+            previousApp = front?.processIdentifier == getpid() ? nil : front
+            activatedSelf = false
             layoutWindows()
             screenObserver = NotificationCenter.default.addObserver(
                 forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
@@ -79,6 +86,7 @@ enum ConfirmResult: Equatable {
             let mouse = NSEvent.mouseLocation
             let key = windows.values.first { $0.screen.map { NSMouseInRect(mouse, $0.frame, false) } ?? false } ?? windows.values.first
             NSApp.activate(ignoringOtherApps: true)
+            activatedSelf = true
             key?.makeKey()
         }
         tick()
@@ -113,6 +121,13 @@ enum ConfirmResult: Equatable {
         for w in windows.values { w.orderOut(nil) }
         windows = [:]
         hostProvider = nil
+        // Hand focus back only if we took it and the user hasn't moved on to another app.
+        if activatedSelf, let app = previousApp, !app.isTerminated,
+           NSWorkspace.shared.frontmostApplication?.processIdentifier == getpid() {
+            app.activate(options: [])
+        }
+        previousApp = nil
+        activatedSelf = false
         let c = continuation
         continuation = nil
         c?.resume(returning: result)

@@ -52,6 +52,9 @@ extension PropertyValue {
 }
 
 extension UndoOp {
+    /// Properties a Keep writes `.permanently` (DisplayChange.keepScope).
+    package var isPermanentOnKeep: Bool { property == .mode || property == .origin || property == .main }
+
     /// Where this op runs in the single undo order (R5.2).
     package var stage: UndoStage {
         switch (property, restore) {
@@ -157,6 +160,18 @@ package enum UndoPlanner {
         ops.compactMap { op in
             guard let resolved = resolve(op, in: live), let value = liveValue(resolved, in: live) else { return nil }
             return value.matches(resolved.expected) ? resolved : nil
+        }
+    }
+
+    /// The revert of a trial whose Keep already wrote modes, origins and main `.permanently`
+    /// (FIXES-R2 N4): those ops must be written back permanently too, so they stay pending
+    /// even where the live value already equals the restore (panic or the guard undid them
+    /// for the session only). Every other op is plain compare-and-swap.
+    package static func pendingAfterPermanentKeep(_ ops: [UndoOp], live: LayoutSnapshot) -> [UndoOp] {
+        ops.compactMap { op in
+            guard let resolved = resolve(op, in: live), let value = liveValue(resolved, in: live) else { return nil }
+            if value.matches(resolved.expected) { return resolved }
+            return resolved.isPermanentOnKeep && value.matches(resolved.restore) ? resolved : nil
         }
     }
 

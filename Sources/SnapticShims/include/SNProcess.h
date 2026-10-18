@@ -16,6 +16,11 @@ NS_ASSUME_NONNULL_BEGIN
 /// Together with the pid it identifies one process (pids are reused).
 + (uint64_t)startTimeForPID:(pid_t)pid NS_SWIFT_NAME(startTime(for:));
 
+/// An id of the process instance `pid` names: its start time in microseconds since 1970,
+/// read with sysctl(KERN_PROC_PID), which (unlike PROC_PIDTBSDINFO) also answers for other
+/// users' processes. 0 if the process is gone or can't be read.
++ (uint64_t)instanceIDForPID:(pid_t)pid NS_SWIFT_NAME(instanceID(for:));
+
 /// Open file descriptors of this process (PROC_PIDLISTFDS), or nil if unavailable.
 + (nullable NSArray<NSNumber *> *)openFileDescriptors;
 

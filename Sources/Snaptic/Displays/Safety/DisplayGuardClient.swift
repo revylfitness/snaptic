@@ -7,6 +7,10 @@ import SnapticKit
 // timer using HostHeartbeat.mainAgeMillis(). Acks within 1 s or the caller refuses the change.
 // The parent alone ends the guard: `shutdown` when nothing is armed, else EOF (so the guard
 // undoes any long-armed state when the module stops or the app quits).
+//
+// FIXES-R2 N1/N2: every acknowledged request carries a fresh `seq` and waits in a Kit
+// GuardAckTracker under exactly that seq (GuardLinkTests). Each spawned guard is a new
+// generation: its lines and its exit are ignored once another guard (or none) took over.
 
 @MainActor final class DisplayGuardClient: DisplayServiceLifecycle, DiagnosticsContributor {
     static var serviceID: DisplayServiceID { .guardProcess }
@@ -18,8 +22,10 @@ import SnapticKit
     private var handle: HelperHandle?
     private var ready = false
     private(set) var canMonitorPanel = false
-    private var nextID: UInt64 = 1
-    private var acks: [UInt64: CheckedContinuation<Bool, Never>] = [:]
+    /// Trial ids (a separate counter from request seqs, which the tracker owns).
+    private var nextTrialID: UInt64 = 1
+    /// Requests waiting for their ack, keyed by seq, per guard generation.
+    private var acks = GuardAckTracker<CheckedContinuation<Bool, Never>>()
     /// Each waiter has its own timeout (FIXES-R1 B5): an old waiter's timer never resolves a
     /// newer waiter of a freshly spawned guard.
     private var readyWaiters: [UInt64: CheckedContinuation<Bool, Never>] = [:]
@@ -70,7 +76,7 @@ import SnapticKit
         impairment = (dim: false, overlay: false)
         classes = []
         armedTrials = []
-        terminate(sendShutdown: !hadLong)
+        terminate(sendShutdown: !hadLong, grace: hadLong ? Self.undoGraceSeconds : Self.shutdownGraceSeconds)
         updateActivity()
         context = nil
     }
@@ -108,32 +114,35 @@ import SnapticKit
             let now = SessionGate.uptime()
             spawnTimes = spawnTimes.filter { now - $0 < 600 }
             guard spawnTimes.count < 3 else {
-                lastFailure = L("The safety helper keeps stopping")
+                lastFailure = L("The safety helper keeps stopping. Restart Snaptic.")
                 return false
             }
             spawnTimes.append(now)
             let dir = JournalFiles.defaultDirectory() ?? ""
-            // The spawner verifies the suspended child off main; `starting` makes concurrent
-            // callers wait for `ready` instead of spawning a second guard meanwhile.
+            // A new generation before the spawn: this guard's lines and exit carry it, and
+            // anything still waiting on an earlier guard fails now (N2).
+            let generation = newGeneration()
+            // `starting` makes concurrent callers wait for `ready` instead of spawning a
+            // second guard while this one is being started (and verified).
             starting = true
             let spawned: HelperHandle
             do {
                 spawned = try await ctx.helpers.spawn(.displayGuard,
                                                       arguments: ["--protocol", String(GuardProtocol.version), "--journal-dir", dir],
-                                                      onLine: { [weak self] line in self?.receive(line) },
-                                                      onExit: { [weak self] status in self?.exited(status) })
+                                                      onLine: { [weak self] line in self?.receive(line, generation: generation) },
+                                                      onExit: { [weak self] status in self?.exited(status, generation: generation) })
             } catch {
                 starting = false
-                lastFailure = (error as? HelperSpawnError).map { "\($0)" } ?? L("Couldn't start the safety helper")
+                lastFailure = Self.describe(error)
                 EventLog.shared.record(.guardProcess, "Guard failed to start")
                 resolveReadyWaiters(false)
                 return false
             }
             starting = false
-            // Stopped (or the child already died) while it was being verified.
-            guard active, context === ctx, !spawned.isReaped else {
+            // Stopped, or superseded, or the child already died while it was being started.
+            guard active, context === ctx, acks.generation == generation, !spawned.isReaped else {
                 spawned.terminate()
-                if active { lastFailure = L("Couldn't start the safety helper") }
+                if active { lastFailure = L("Couldn't start the safety helper.") }
                 resolveReadyWaiters(false)
                 return false
             }
@@ -163,10 +172,36 @@ import SnapticKit
             send(.impairment(dimToBlack: impairment.dim, overlayBelowFloor: impairment.overlay))
             if !classes.isEmpty { send(.classification(classes)) }
         } else if timedOut && handle != nil && !ready {
-            lastFailure = L("The safety helper didn't answer")
-            terminate(sendShutdown: false)
+            lastFailure = L("The safety helper didn't answer.")
+            terminate(sendShutdown: false, grace: Self.unresponsiveGraceSeconds)
         }
         return ok
+    }
+
+    /// How long a guard we stopped talking to may take to exit on its own before SIGKILL:
+    /// after `shutdown` it exits at once; after EOF it may first undo long-armed state
+    /// (quiescence ≤ 8 s + 4 s, then the applies); one that never answered gets a second.
+    static let shutdownGraceSeconds = 3.0
+    static let undoGraceSeconds = 25.0
+    static let unresponsiveGraceSeconds = 1.0
+
+    /// Readable text for a spawn failure (W9: never an enum dump).
+    static func describe(_ error: Error) -> String {
+        guard let e = error as? HelperSpawnError else { return L("Couldn't start the safety helper.") }
+        switch e {
+        case .unavailable(let reason): return reason
+        case .unsupportedKind: return L("Couldn't start the safety helper.")
+        case .pipe: return L("Couldn't connect to the safety helper. Restart Snaptic.")
+        case .spawnFailed: return L("macOS couldn't start the safety helper. Restart Snaptic.")
+        case .verificationFailed: return L("The safety helper failed a security check. Restart Snaptic.")
+        case .refused(let r): return r.message
+        }
+    }
+
+    /// Starts a new guard generation: requests waiting on the previous guard fail.
+    private func newGeneration() -> UInt64 {
+        for w in acks.startGeneration() { w.resume(returning: false) }
+        return acks.generation
     }
 
     static let prepareWaitSeconds = 5.0
@@ -194,21 +229,31 @@ import SnapticKit
     /// queue before closing. If the app exits before they're written, the guard sees EOF,
     /// which undoes exactly what `shutdown` would have left alone (nothing armed) or what
     /// it must undo anyway (long-armed state), and CAS makes any repeated undo a no-op.
-    private func terminate(sendShutdown: Bool) {
+    /// N2: the old guard becomes a stale generation at once (its lines and exit are
+    /// ignored) and is killed if it is still running after `grace` seconds.
+    private func terminate(sendShutdown: Bool, grace: Double) {
         heartbeat?.cancel()
         heartbeat = nil
         if let h = handle {
             if sendShutdown { send(.shutdown) }
             h.writer?.close()
+            DispatchQueue.main.asyncAfter(deadline: .now() + grace) {
+                MainActor.assumeIsolated {
+                    if !h.isReaped { h.terminate() }
+                }
+            }
         }
         handle = nil
         ready = false
         armedTrials = []
+        _ = newGeneration()
         failPending()
         updateActivity()
     }
 
-    private func exited(_ status: Int32) {
+    private func exited(_ status: Int32, generation: UInt64) {
+        // A guard we already let go of (N2): its exit must not tear down its successor.
+        guard generation == acks.generation, handle != nil else { return }
         let wasAlive = isAlive
         heartbeat?.cancel()
         heartbeat = nil
@@ -224,9 +269,7 @@ import SnapticKit
     }
 
     private func failPending() {
-        let pending = acks
-        acks = [:]
-        pending.values.forEach { $0.resume(returning: false) }
+        for w in acks.failAll() { w.resume(returning: false) }
         resolveReadyWaiters(false)
     }
 
@@ -237,21 +280,22 @@ import SnapticKit
         writer.send(data)
     }
 
-    private func receive(_ line: Data) {
-        guard let reply = GuardProtocol.decodeReply(line) else { return }
+    private func receive(_ line: Data, generation: UInt64) {
+        // Lines from a guard we already let go of (N2) are ignored.
+        guard generation == acks.generation, handle != nil, let reply = GuardProtocol.decodeReply(line) else { return }
         switch reply {
         case .ready(let version, let mp):
             guard version == GuardProtocol.version else {
-                lastFailure = L("Restart Snaptic to finish updating")
-                terminate(sendShutdown: true)
+                lastFailure = L("Restart Snaptic to finish updating.")
+                terminate(sendShutdown: true, grace: Self.shutdownGraceSeconds)
                 return
             }
             ready = true
             canMonitorPanel = mp
             lastFailure = nil
             resolveReadyWaiters(true)
-        case .ack(let id):
-            acks.removeValue(forKey: id)?.resume(returning: true)
+        case .ack(let seq):
+            acks.acknowledge(seq, from: generation)?.resume(returning: true)
         case .reverted(let trial, let applied, let skipped):
             if let trial { armedTrials.remove(trial) }
             updateActivity()
@@ -261,23 +305,24 @@ import SnapticKit
         }
     }
 
+    /// Sends the request `make(seq)` builds and waits for `ack(seq)` from this guard, at most
+    /// `GuardProtocol.ackTimeoutSeconds`. The waiter is keyed by the seq actually sent (N1).
     private func sendAndWait(_ make: (UInt64) -> GuardMessage) async -> Bool {
         guard isAlive else { return false }
-        let id = nextID
-        nextID &+= 1
         return await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
-            acks[id] = c
-            send(make(id))
-            DispatchQueue.main.asyncAfter(deadline: .now() + GuardProtocol.ackTimeoutSeconds) { [weak self] in
-                MainActor.assumeIsolated { self?.acks.removeValue(forKey: id)?.resume(returning: false) }
+            let timeout = GuardProtocol.ackTimeoutSeconds
+            let seq = acks.begin(c, at: SessionGate.uptime(), timeout: timeout)
+            send(make(seq))
+            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
+                MainActor.assumeIsolated { self?.acks.timeOut(seq)?.resume(returning: false) }
             }
         }
     }
 
-    /// Fresh id for a trial.
+    /// Fresh id for a trial (never reused in this run).
     func makeTrialID() -> UInt64 {
-        let id = nextID
-        nextID &+= 1
+        let id = nextTrialID
+        nextTrialID &+= 1
         return id
     }
 
@@ -285,7 +330,7 @@ import SnapticKit
         guard await ensureRunning() else { return false }
         armedTrials.insert(id)
         updateActivity()
-        let ok = await sendAndWait { _ in .armTrial(id: id, undo: undo, deadlineSeconds: deadlineSeconds) }
+        let ok = await sendAndWait { .armTrial(id: id, seq: $0, undo: undo, deadlineSeconds: deadlineSeconds) }
         if !ok {
             armedTrials.remove(id)
             updateActivity()
@@ -297,8 +342,8 @@ import SnapticKit
     func extend(_ id: UInt64, seconds: Double) {
         send(.extend(id: id, seconds: min(max(seconds, 0), GuardProtocol.maxExtendSeconds)))
     }
-    func commitIntent(_ id: UInt64) { send(.commitIntent(id: id)) }
-    func commitIntentAndWait(_ id: UInt64) async -> Bool { await sendAndWait { _ in .commitIntent(id: id) } }
+    /// From the ack on, the guard no longer reverts the trial by deadline or hang.
+    func commitIntentAndWait(_ id: UInt64) async -> Bool { await sendAndWait { .commitIntent(id: id, seq: $0) } }
     func commit(_ id: UInt64) {
         armedTrials.remove(id)
         updateActivity()
@@ -316,9 +361,8 @@ import SnapticKit
         longColorSync = restoreColorSync
         updateActivity()
         guard isAlive else { return }
-        let id = nextID
-        nextID &+= 1
-        send(.long(id: id, undo: undo, restoreColorSync: restoreColorSync))
+        // Nobody waits for this ack; a fresh seq keeps it from answering anyone else.
+        send(.long(seq: acks.nextSeq(), undo: undo, restoreColorSync: restoreColorSync))
     }
 
     /// Like setLong, but waits for the ack (restore transactions, PLAN §4.3 step 5).
@@ -328,7 +372,7 @@ import SnapticKit
         updateActivity()
         if undo.isEmpty && !restoreColorSync && !isAlive { return true }
         guard await ensureRunning() else { return false }
-        return await sendAndWait { id in .long(id: id, undo: undo, restoreColorSync: restoreColorSync) }
+        return await sendAndWait { .long(seq: $0, undo: undo, restoreColorSync: restoreColorSync) }
     }
 
     /// Dim states that let the guard stop a hung app after 30 s.
@@ -367,6 +411,7 @@ import SnapticKit
         rows.append(("MonitorPanel in guard", canMonitorPanel ? "yes" : "no"))
         rows.append(("Long-armed ops", "\(longUndo.count)\(longColorSync ? " + ColorSync" : "")"))
         rows.append(("Armed trials", "\(armedTrials.count)"))
+        rows.append(("Requests awaiting ack", "\(acks.pendingCount)"))
         rows.append(("App Nap held off", activity == nil ? "no" : "yes"))
         if isUnprotected { rows.append(("State", "Unprotected — restart Snaptic")) }
         if let f = lastFailure { rows.append(("Last problem", f)) }

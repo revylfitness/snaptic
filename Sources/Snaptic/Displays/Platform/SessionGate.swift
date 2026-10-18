@@ -192,10 +192,12 @@ enum SessionEvent: Equatable {
     private var activation: NSObjectProtocol?
     private var episode = AuthEpisode()
     private weak var gate: SessionGate?
-    /// Owner paths by pid, valid only for the process instance with that start time; pids
+    /// Owner paths by pid, valid only for the process instance with that instance id; pids
     /// absent from the latest window list are dropped (FIXES-R1 B6: pids are reused).
+    /// FIXES-R2 N3: the id comes from sysctl, which answers for other users' processes too
+    /// (PROC_PIDTBSDINFO doesn't), and a window whose owner can't be identified is never skipped.
     private struct CachedPath {
-        let startTime: UInt64
+        let instanceID: UInt64
         let path: String
     }
     private var pathCache: [pid_t: CachedPath] = [:]
@@ -303,15 +305,21 @@ enum SessionEvent: Equatable {
     }
 
     /// The executable path of the process instance `pid` names right now. A cached path is
-    /// reused only when the start time still matches; a fresh read is bracketed by two
-    /// start-time reads so a pid reused in between yields no path (the window is skipped).
+    /// reused only when the instance id still matches; a fresh read is bracketed by two id
+    /// reads, so a pid reused in between is read again rather than cached under the wrong id.
+    /// When no id can be read the path is looked up uncached (never skipped: an auth window
+    /// whose owner we can't identify must still count).
     private static func ownerPath(_ pid: pid_t, cached: CachedPath?) -> CachedPath {
-        let start = SNProcess.startTime(for: pid)
-        guard start != 0 else { return CachedPath(startTime: 0, path: "") }
-        if let cached, cached.startTime == start { return cached }
+        let id = SNProcess.instanceID(for: pid)
+        guard id != 0 else { return CachedPath(instanceID: 0, path: processPath(pid) ?? "") }
+        if let cached, cached.instanceID == id { return cached }
         let path = processPath(pid) ?? ""
-        guard SNProcess.startTime(for: pid) == start else { return CachedPath(startTime: 0, path: "") }
-        return CachedPath(startTime: start, path: path)
+        guard SNProcess.instanceID(for: pid) == id else {
+            // Reused while we read: the path belongs to whichever instance answered; use it
+            // for this pass only.
+            return CachedPath(instanceID: 0, path: processPath(pid) ?? "")
+        }
+        return CachedPath(instanceID: id, path: path)
     }
 
     private static func processPath(_ pid: pid_t) -> String? {

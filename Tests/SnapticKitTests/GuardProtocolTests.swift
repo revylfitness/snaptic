@@ -8,9 +8,9 @@ final class GuardProtocolTests: XCTestCase {
     func testEveryMessageRoundTripsAsOneLine() throws {
         let messages: [GuardMessage] = [
             .hello(protocolVersion: GuardProtocol.version, build: "B-1"),
-            .armTrial(id: 7, undo: [op], deadlineSeconds: 30),
-            .extend(id: 7, seconds: 5), .commitIntent(id: 7), .commit(id: 7), .disarm(id: 7),
-            .long(id: 8, undo: [op], restoreColorSync: true),
+            .armTrial(id: 7, seq: 1, undo: [op], deadlineSeconds: 30),
+            .extend(id: 7, seconds: 5), .commitIntent(id: 7, seq: 2), .commit(id: 7), .disarm(id: 7),
+            .long(seq: 8, undo: [op], restoreColorSync: true),
             .impairment(dimToBlack: true, overlayBelowFloor: false),
             .busy(seconds: 3),
             .classification([GuardDisplayClass(id: 1, transport: .builtin, strong: true, weak: false),
@@ -22,7 +22,7 @@ final class GuardProtocolTests: XCTestCase {
             XCTAssertFalse(data.contains(0x0A), "JSON lines never contain a raw newline")
             XCTAssertEqual(GuardProtocol.decodeMessage(data), m)
         }
-        let replies: [GuardReply] = [.ready(protocolVersion: 1, canMonitorPanel: true), .ack(id: 3),
+        let replies: [GuardReply] = [.ready(protocolVersion: 1, canMonitorPanel: true), .ack(seq: 3),
                                      .reverted(trial: nil, applied: 2, skipped: 1), .failed("x")]
         for r in replies {
             XCTAssertEqual(GuardProtocol.decodeReply(try XCTUnwrap(GuardProtocol.encode(r))), r)
@@ -30,10 +30,14 @@ final class GuardProtocolTests: XCTestCase {
     }
 
     func testBoundsAreEnforced() {
-        XCTAssertNil(GuardProtocol.decodeMessage(GuardProtocol.encode(.armTrial(id: 1, undo: [], deadlineSeconds: 1000))!))
-        XCTAssertNil(GuardProtocol.decodeMessage(GuardProtocol.encode(.armTrial(id: 1, undo: Array(repeating: op, count: 300),
+        XCTAssertNil(GuardProtocol.decodeMessage(GuardProtocol.encode(.armTrial(id: 1, seq: 1, undo: [], deadlineSeconds: 1000))!))
+        XCTAssertNil(GuardProtocol.decodeMessage(GuardProtocol.encode(.armTrial(id: 1, seq: 1, undo: Array(repeating: op, count: 300),
                                                                                 deadlineSeconds: 30))!))
         XCTAssertNil(GuardProtocol.decodeMessage(GuardProtocol.encode(.extend(id: 1, seconds: -1))!))
+        // seq 0 is never sent: an ack for it could not be told apart from "no ack wanted".
+        XCTAssertNil(GuardProtocol.decodeMessage(GuardProtocol.encode(.armTrial(id: 1, seq: 0, undo: [], deadlineSeconds: 30))!))
+        XCTAssertNil(GuardProtocol.decodeMessage(GuardProtocol.encode(.commitIntent(id: 1, seq: 0))!))
+        XCTAssertNil(GuardProtocol.decodeMessage(GuardProtocol.encode(.long(seq: 0, undo: [], restoreColorSync: false))!))
         XCTAssertNil(GuardProtocol.decodeMessage(Data("{not json".utf8)))
         XCTAssertNil(GuardProtocol.decodeMessage(Data(#"{"unknown":{}}"#.utf8)))
         let long = GuardProtocol.decodeReply(GuardProtocol.encode(.failed(String(repeating: "x", count: 1000)))!)
@@ -67,7 +71,7 @@ final class GuardProtocolTests: XCTestCase {
 
     func testFuzzDecodeNeverTraps() {
         var rng = SeededGenerator(seed: 0x6A4D)
-        let seed = GuardProtocol.encode(.armTrial(id: 7, undo: [op], deadlineSeconds: 30))!
+        let seed = GuardProtocol.encode(.armTrial(id: 7, seq: 3, undo: [op], deadlineSeconds: 30))!
         for _ in 0..<5000 {
             var bytes = [UInt8](seed)
             for _ in 0..<Int(rng.next() % 6) {

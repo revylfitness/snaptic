@@ -31,6 +31,7 @@ Sources/SnapticKit/DisplayModeDescriptor.swift	B	L	-	-
 Sources/SnapticKit/ModeCandidates.swift	B	K1	ModeCandidates	-
 Sources/SnapticKit/EDIDInfo.swift	B	K1	EDIDInfo	struct
 Sources/SnapticKit/GuardProtocol.swift	B	L	-	-
+Sources/SnapticKit/GuardLink.swift	B	L	-	-
 Sources/SnapticKit/JournalModel.swift	B	K1	JournalModel	-
 Sources/SnapticKit/RateLimiter.swift	B	K1	RateLimiter	struct
 Sources/SnapticKit/KitEncoding.swift	B	K1	KitEncoding	-
@@ -257,6 +258,7 @@ Tests/SnapticKitTests/DisplayModeDescriptorTests.swift	B	K3	DisplayModeDescripto
 Tests/SnapticKitTests/ModeCandidatesTests.swift	B	K3	ModeCandidatesTests	-
 Tests/SnapticKitTests/EDIDInfoTests.swift	B	K3	EDIDInfoTests	-
 Tests/SnapticKitTests/GuardProtocolTests.swift	B	K3	GuardProtocolTests	-
+Tests/SnapticKitTests/GuardLinkTests.swift	B	L	-	-
 Tests/SnapticKitTests/JournalModelTests.swift	B	K3	JournalModelTests	-
 Tests/SnapticKitTests/RateLimiterTests.swift	B	K3	RateLimiterTests	-
 Tests/SnapticKitTests/KitEncodingTests.swift	B	K3	KitEncodingTests	-

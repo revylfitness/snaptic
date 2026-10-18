@@ -51,6 +51,31 @@ final class UndoPlannerTests: XCTestCase {
         XCTAssertEqual(pending.map(\.property), [.mode])
     }
 
+    /// FIXES-R2 N4: after a Keep wrote modes/origins/main permanently, a revert writes them
+    /// back even where panic or the guard already restored them for the session; session-only
+    /// properties keep plain CAS, and a value someone else set is still left alone.
+    func testPendingAfterPermanentKeep() {
+        let before = L.snapshot([L.display(1, .builtin), L.display(2, x: 1920), L.display(3, x: 3840)])
+        let m = L.mode(2560, 1440)
+        let ops = UndoPlanner.undo(for: [.mode(2, m), .origin(2, x: 100, y: 0), .enabled(3, false), .main(2)], before: before)
+        XCTAssertEqual(ops.count, 4)
+        // Live: the session-only undo already ran (mode, origin, main and display 3 restored).
+        let restored = before
+        let pending = UndoPlanner.pendingAfterPermanentKeep(ops, live: restored)
+        XCTAssertEqual(Set(pending.map(\.property)), [.mode, .origin, .main], "written back permanently")
+        XCTAssertEqual(UndoPlanner.pending(ops, live: restored), [], "plain CAS would skip all of them")
+        // Still at the trial's values: everything pending, as with plain CAS.
+        var kept = Invariants.predict(before, applying: [.mode(2, m), .origin(2, x: 100, y: 0), .enabled(3, false)])
+        kept.mainID = 2
+        XCTAssertEqual(UndoPlanner.pendingAfterPermanentKeep(ops, live: kept).count, UndoPlanner.pending(ops, live: kept).count)
+        // Someone else moved display 2 meanwhile: its origin is left alone.
+        var other = restored
+        other.entries[1].x = 777
+        XCTAssertFalse(UndoPlanner.pendingAfterPermanentKeep(ops, live: other).contains { $0.property == .origin })
+        XCTAssertTrue(UndoOp(displayID: 1, fingerprint: "", property: .main, restore: .display(1), expected: .display(2)).isPermanentOnKeep)
+        XCTAssertFalse(UndoOp(displayID: 1, fingerprint: "", property: .enabled, restore: .bool(true), expected: .bool(false)).isPermanentOnKeep)
+    }
+
     func testCASModeIgnoresIoModeIDHint() {
         let s = L.snapshot([L.display(1)])
         let target = L.mode(1280, 720, id: 7)

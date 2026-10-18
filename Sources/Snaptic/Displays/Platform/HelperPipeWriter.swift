@@ -144,11 +144,15 @@ final class HelperPipeWriter: @unchecked Sendable {
         return .drained
     }
 
-    /// True the first time. Drops whatever was still queued.
+    /// True the first time. Drops whatever was still queued and wakes every `flush` waiting
+    /// for it (FIXES-R2 N10: nothing will ever be written now; signalling doesn't block).
     private func markBrokenLocked() -> Bool {
         let first = !broken
         broken = true
         pending.removeAll()
+        let waiters = drainWaiters
+        drainWaiters = []
+        waiters.forEach { $0.signal() }
         return first
     }
 

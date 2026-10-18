@@ -4,33 +4,43 @@ import Foundation
 // Times are relative seconds (no clock domain crosses the pipe).
 
 package enum GuardMessage: Codable, Equatable, Sendable {
+    /// Answered with `ready`.
     case hello(protocolVersion: Int, build: String)
-    case armTrial(id: UInt64, undo: [UndoOp], deadlineSeconds: Double)
+    /// Acknowledged with `ack(seq)`. `id` names the trial, `seq` this request (FIXES-R2 N1:
+    /// the two are never the same counter, so no other message's reply can answer it).
+    case armTrial(id: UInt64, seq: UInt64, undo: [UndoOp], deadlineSeconds: Double)
     /// The trial's deadline becomes at least now + `seconds` (never shortened; capped at
-    /// now + `maxDeadlineSeconds`). Sent right before the confirm panel shows (FIXES-R1 B4).
+    /// now + `maxDeadlineSeconds`). Sent after each apply stage and right before the confirm
+    /// panel shows (FIXES-R1 B4, FIXES-R2 N8). No reply.
     case extend(id: UInt64, seconds: Double)
-    case commitIntent(id: UInt64)
+    /// Acknowledged with `ack(seq)`: from then on the guard no longer reverts the trial by
+    /// its deadline or a hang (the user chose Keep).
+    case commitIntent(id: UInt64, seq: UInt64)
+    /// The trial is over (kept, or the app undid it itself). No reply.
     case commit(id: UInt64)
     case disarm(id: UInt64)
-    /// Replaces the whole long-armed set; acknowledged with `ack(id)`.
-    case long(id: UInt64, undo: [UndoOp], restoreColorSync: Bool)
+    /// Replaces the whole long-armed set; acknowledged with `ack(seq)`.
+    case long(seq: UInt64, undo: [UndoOp], restoreColorSync: Bool)
     /// Dim states that justify killing a hung parent after 30 s (dim to black, overlay < 30%).
     case impairment(dimToBlack: Bool, overlayBelowFloor: Bool)
     case busy(seconds: Double)
     case classification([GuardDisplayClass])
     case heartbeat(mainAgeMillis: UInt64)
+    /// Exit without undoing anything (only sent while nothing is armed). No reply.
     case shutdown
 }
 
 package enum GuardReply: Codable, Equatable, Sendable {
     case ready(protocolVersion: Int, canMonitorPanel: Bool)
-    case ack(id: UInt64)
+    /// Echoes the `seq` of the request it answers.
+    case ack(seq: UInt64)
     case reverted(trial: UInt64?, applied: Int, skipped: Int)
     case failed(String)
 }
 
 package enum GuardProtocol {
-    package static let version = 1
+    /// 2: acks echo a per-request `seq` (FIXES-R2 N1).
+    package static let version = 2
     /// Bounds enforced on both sides (a message outside them is a protocol error).
     package static let maxUndoOps = 256
     package static let maxDisplays = 64
@@ -83,12 +93,23 @@ package enum GuardProtocol {
         func ok(_ d: Double, _ maxValue: Double) -> Bool { d.isFinite && d >= 0 && d <= maxValue }
         switch m {
         case .hello(let v, let build): return v > 0 && build.utf8.count <= 128
-        case .armTrial(_, let undo, let deadline): return undo.count <= maxUndoOps && ok(deadline, maxDeadlineSeconds)
+        case .armTrial(_, let seq, let undo, let deadline):
+            return seq != 0 && undo.count <= maxUndoOps && ok(deadline, maxDeadlineSeconds)
         case .extend(_, let s): return ok(s, maxExtendSeconds)
-        case .long(_, let undo, _): return undo.count <= maxUndoOps
+        case .commitIntent(_, let seq): return seq != 0
+        case .long(let seq, let undo, _): return seq != 0 && undo.count <= maxUndoOps
         case .busy(let s): return s.isFinite && s >= 0
         case .classification(let c): return c.count <= maxDisplays
-        case .commitIntent, .commit, .disarm, .impairment, .heartbeat, .shutdown: return true
+        case .commit, .disarm, .impairment, .heartbeat, .shutdown: return true
+        }
+    }
+
+    /// The `seq` the guard's `ack` must echo, for the messages that are acknowledged; nil for
+    /// the others (both sides use this, so they can't disagree about which messages get one).
+    package static func ackSeq(_ m: GuardMessage) -> UInt64? {
+        switch m {
+        case .armTrial(_, let seq, _, _), .commitIntent(_, let seq), .long(let seq, _, _): return seq
+        case .hello, .extend, .commit, .disarm, .impairment, .busy, .classification, .heartbeat, .shutdown: return nil
         }
     }
 

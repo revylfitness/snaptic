@@ -46,7 +46,7 @@ struct SafetyPage: View {
                     }
                     .disabled(env.context == nil)
                     if env.runtime.isPanicLatched {
-                        Button(L("Resume Display Automation")) { env.context?.panic.resume() }
+                        Button(L("Resume Display Automation")) { _ = env.context?.actions.perform(PanicCoordinator.resumeActionID, on: .all) }
                     }
                 }
                 Text(L("Undoes resolution changes from the last minute, reconnects displays Snaptic turned off, removes dimming and overlays, stops virtual screens and streams, and pauses automation until you resume. Rotation and HDR are not touched. Also available from the menu and as `snaptic panic`."))

@@ -11,6 +11,7 @@
 #import <stdlib.h>
 #import <string.h>
 #import <sys/proc_info.h>
+#import <sys/sysctl.h>
 
 @implementation SNProcess
 
@@ -32,6 +33,18 @@
     int n = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, (int)sizeof(info));
     if (n != (int)sizeof(info)) { return 0; }
     return (uint64_t)info.pbi_start_tvsec * 1000000ULL + (uint64_t)info.pbi_start_tvusec;
+}
+
++ (uint64_t)instanceIDForPID:(pid_t)pid {
+    if (pid <= 0) { return 0; }
+    int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, pid};
+    struct kinfo_proc info;
+    memset(&info, 0, sizeof(info));
+    size_t size = sizeof(info);
+    if (sysctl(mib, 4, &info, &size, NULL, 0) != 0 || size != sizeof(info)) { return 0; }
+    if (info.kp_proc.p_pid != pid) { return 0; }
+    struct timeval start = info.kp_proc.p_starttime;
+    return (uint64_t)start.tv_sec * 1000000ULL + (uint64_t)start.tv_usec;
 }
 
 + (nullable NSArray<NSNumber *> *)openFileDescriptors {

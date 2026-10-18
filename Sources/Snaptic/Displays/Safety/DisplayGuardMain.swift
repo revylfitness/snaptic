@@ -32,12 +32,6 @@ enum DisplayGuardMain {
 }
 
 @MainActor final class GuardCore {
-    private struct Trial {
-        var undo: [UndoOp]
-        var deadline: Double
-        var committing: Bool
-    }
-
     private let parent: pid_t
     private let parentStartTime: UInt64
     private let files: JournalFiles?
@@ -46,12 +40,8 @@ enum DisplayGuardMain {
     private var canMonitorPanel = false
     private var writer: HelperPipeWriter?
 
-    private var trials: [UInt64: Trial] = [:]
-    private var longUndo: [UndoOp] = []
-    private var longColorSync = false
-    private var dimImpairing = false
-    private var classes: [GuardDisplayClass] = []
-    private var hang = HangDetector()
+    /// What the parent told us (Kit, tested with the client's side: GuardLinkTests).
+    private var session = GuardSession()
     private var hangActed = false
     private var parentKilled = false
     private var noVisibleSince: Double?
@@ -103,44 +93,13 @@ enum DisplayGuardMain {
         handle(message)
     }
 
+    /// Every message gets exactly the replies GuardSession promises: `ready` for `hello`,
+    /// `ack(seq)` for the acknowledged ones (GuardProtocol.ackSeq), nothing else.
     private func handle(_ message: GuardMessage) {
-        let now = SessionGate.uptime()
-        switch message {
-        case .hello:
-            reply(.ready(protocolVersion: GuardProtocol.version, canMonitorPanel: canMonitorPanel))
-        case .armTrial(let id, let undo, let deadline):
-            trials[id] = Trial(undo: undo, deadline: now + deadline, committing: false)
-            updateActivity()
-            reply(.ack(id: id))
-        case .extend(let id, let seconds):
-            if var t = trials[id], !t.committing {
-                t.deadline = GuardProtocol.extendedDeadline(current: t.deadline, now: now, seconds: seconds)
-                trials[id] = t
-            }
-            reply(.ack(id: id))
-        case .commitIntent(let id):
-            trials[id]?.committing = true
-            reply(.ack(id: id))
-        case .commit(let id), .disarm(let id):
-            trials[id] = nil
-            updateActivity()
-            reply(.ack(id: id))
-        case .long(let id, let undo, let colorSync):
-            longUndo = undo
-            longColorSync = colorSync
-            updateActivity()
-            reply(.ack(id: id))
-        case .impairment(let dim, let overlay):
-            dimImpairing = dim || overlay
-        case .busy(let seconds):
-            hang.busy(seconds: seconds, at: now)
-        case .classification(let list):
-            classes = list
-        case .heartbeat(let age):
-            hang.heartbeat(mainAgeMillis: age, at: now)
-        case .shutdown:
-            shutdown()
-        }
+        guard !exiting else { return }
+        for r in session.handle(message, at: SessionGate.uptime(), canMonitorPanel: canMonitorPanel) { reply(r) }
+        updateActivity()
+        if session.shutdownRequested { shutdown() }
     }
 
     private func reply(_ r: GuardReply) {
@@ -156,28 +115,26 @@ enum DisplayGuardMain {
         let now = SessionGate.uptime()
 
         // Trial deadlines (with or without a hung or long-armed parent).
-        for (id, t) in trials where !t.committing && now >= t.deadline {
-            revertTrial(id, reason: "deadline")
-        }
-        for (id, t) in trials where t.committing && now >= t.deadline + 60 { trials[id] = nil }
+        for id in session.dueTrials(at: now) { revertTrial(id, reason: "deadline") }
+        session.pruneCommitting(at: now)
 
         // Hang: only armed trials and long-armed states that impair visibility (R5.2).
-        let impairing = longUndo.contains { $0.stage == .enable } || longColorSync || dimImpairing
-        if let hung = hang.hangSeconds(at: now), !trials.isEmpty || impairing {
-            for (id, t) in trials where !t.committing { revertTrial(id, reason: "hang") }
+        let impairing = session.isImpairing
+        if let hung = session.hang.hangSeconds(at: now), !session.trials.isEmpty || impairing {
+            for id in session.revertibleTrials { revertTrial(id, reason: "hang") }
             if impairing && !hangActed {
                 hangActed = true
                 EventLog.shared.record(.guardProcess, "Parent hung: restoring visibility")
-                applyOps(longUndo.filter { $0.stage == .enable } + unmirrorOpsForDeadHosts())
-                if longColorSync { CGDisplayRestoreColorSyncSettings() }
+                applyOps(session.longUndo.filter { $0.stage == .enable } + unmirrorOpsForDeadHosts())
+                if session.longColorSync { CGDisplayRestoreColorSyncSettings() }
             }
-            if hung >= GuardProtocol.killParentAfterSeconds, dimImpairing, !parentKilled,
+            if hung >= GuardProtocol.killParentAfterSeconds, session.dimImpairing, !parentKilled,
                parentStartTime != 0, SNProcess.startTime(for: parent) == parentStartTime {
                 parentKilled = true
                 EventLog.shared.record(.guardProcess, "Parent hung with the screen dimmed: stopping it")
                 kill(parent, SIGKILL)
             }
-        } else if hang.hangSeconds(at: now) == nil {
+        } else if session.hang.hangSeconds(at: now) == nil {
             hangActed = false
         }
 
@@ -185,11 +142,11 @@ enum DisplayGuardMain {
         let s = snapshot()
         if Invariants.visible(s).isEmpty && !s.entries.isEmpty {
             if noVisibleSince == nil { noVisibleSince = now }
-            if !noVisibleActed, hang.isHeartbeatStale(at: now),
+            if !noVisibleActed, session.hang.isHeartbeatStale(at: now),
                now - (noVisibleSince ?? now) >= GuardProtocol.noVisiblePersistSeconds {
                 noVisibleActed = true
                 EventLog.shared.record(.guardProcess, "No visible display: re-enabling")
-                applyOps(longUndo.filter { $0.stage == .enable })
+                applyOps(session.longUndo.filter { $0.stage == .enable })
                 killOrphanedHosts(in: s)
             }
         } else {
@@ -201,17 +158,18 @@ enum DisplayGuardMain {
     /// The live layout with what the parent told us (Snaptic virtuals, headless).
     private func snapshot() -> LayoutSnapshot {
         var overlay = LayoutReader.Overlay()
-        for c in classes where c.transport == .snapticVirtual {
+        for c in session.classes where c.transport == .snapticVirtual {
             overlay.transports[c.id] = .snapticVirtual
             if c.weak { overlay.headless.insert(c.id) }
         }
-        for c in classes where c.transport != .snapticVirtual { overlay.transports[c.id] = c.transport }
+        for c in session.classes where c.transport != .snapticVirtual { overlay.transports[c.id] = c.transport }
         return reader.read(overlay)
     }
 
+    /// Re-checked per trial: an earlier revert in the same pass pumped the run loop, and the
+    /// parent's commitIntent / commit / disarm may have been handled meanwhile.
     private func revertTrial(_ id: UInt64, reason: String) {
-        guard let t = trials[id] else { return }
-        trials[id] = nil
+        guard session.trials[id]?.committing == false, let t = session.takeTrial(id) else { return }
         let r = applyOps(t.undo)
         EventLog.shared.record(.guardProcess, "Trial reverted (\(reason)): \(r.applied) applied, \(r.skipped) skipped")
         reply(.reverted(trial: id, applied: r.applied, skipped: r.skipped))
@@ -235,17 +193,17 @@ enum DisplayGuardMain {
 
     private func snapshotOverlay() -> LayoutReader.Overlay {
         var o = LayoutReader.Overlay()
-        for c in classes { o.transports[c.id] = c.transport }
+        for c in session.classes { o.transports[c.id] = c.transport }
         return o
     }
 
     /// Un-mirror ops (from the long set) whose Snaptic host has already died.
     private func unmirrorOpsForDeadHosts() -> [UndoOp] {
-        let dead = Set(classes.filter { c in
+        let dead = Set(session.classes.filter { c in
             guard let pid = c.hostPID else { return false }
             return kill(pid, 0) == -1 && errno == ESRCH
         }.map(\.id))
-        return longUndo.filter { op in
+        return session.longUndo.filter { op in
             guard op.stage == .unmirror, case .display(let src?) = op.expected else { return false }
             return dead.contains(src)
         }
@@ -253,7 +211,7 @@ enum DisplayGuardMain {
 
     /// Kills Snaptic hosts whose virtual no physical display mirrors (start-time checked).
     private func killOrphanedHosts(in s: LayoutSnapshot) {
-        for c in classes where c.transport == .snapticVirtual && !c.weak {
+        for c in session.classes where c.transport == .snapticVirtual && !c.weak {
             guard let pid = c.hostPID, let start = c.hostStartTime, pid > 1 else { continue }
             let mirrored = s.entries.contains { $0.mirrorOf == c.id && $0.isPhysical }
             guard !mirrored, SNProcess.startTime(for: pid) == start else { continue }
@@ -272,18 +230,18 @@ enum DisplayGuardMain {
         while !SessionGate.readSession().onConsole { _ = CFRunLoopRunInMode(.defaultMode, 1, false) }
         let claimed = JournalModel.claimedName(pid: getpid())
         let haveJournal = files?.claim(JournalModel.sessionFileName, as: claimed) ?? false
-        let armed = trials.filter { !$0.value.committing }
+        let armed = session.revertibleTrials.compactMap { id in session.takeTrial(id).map { (id, $0) } }
         if !armed.isEmpty {
             waitQuiet(quiet: GuardProtocol.quiescenceQuietSeconds, cap: GuardProtocol.quiescenceCapSeconds)
-            for (_, t) in armed.sorted(by: { $0.key > $1.key }) { applyOps(t.undo) }
-            resolvePermanent(Set(armed.keys))
+            for (_, t) in armed { applyOps(t.undo) }            // newest first
+            resolvePermanent(Set(armed.map(\.0)))
         }
-        let longOps = longUndo.filter { $0.stage == .enable || $0.stage == .unmirror }
+        let longOps = session.longUndo.filter { $0.stage == .enable || $0.stage == .unmirror }
         if !longOps.isEmpty {
             waitQuiet(quiet: 1, cap: 4)
             applyOps(longOps)
         }
-        if longColorSync { CGDisplayRestoreColorSyncSettings() }
+        if session.longColorSync { CGDisplayRestoreColorSyncSettings() }
         if haveJournal { files?.remove(claimed) }
         EventLog.shared.record(.guardProcess, "Parent exited; guard done")
         finishAndExit()
@@ -336,7 +294,7 @@ enum DisplayGuardMain {
     }
 
     private func updateActivity() {
-        let armed = !trials.isEmpty || !longUndo.isEmpty || longColorSync
+        let armed = session.hasArmedState
         if armed && activity == nil {
             activity = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep,
                                                             reason: "Snaptic display safety")
@@ -370,7 +328,7 @@ enum DisplayGuardMain {
         case 0xE000_0270, 0xE000_0280:                  // kIOMessageCanSystemSleep, kIOMessageSystemWillSleep
             IOAllowPowerChange(powerPort, Int(bitPattern: argument))
         case 0xE000_0300, 0xE000_0320:                  // kIOMessageSystemHasPoweredOn, WillPowerOn
-            hang.didWake(at: SessionGate.uptime())
+            session.hang.didWake(at: SessionGate.uptime())
         default:
             break
         }

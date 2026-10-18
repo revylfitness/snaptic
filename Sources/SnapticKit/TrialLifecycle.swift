@@ -12,6 +12,8 @@ import Foundation
 //   lock or a new request arriving during the short Keep write don't undo the user's choice.
 // - `stop()` (Displays stopping, synchronous) resolves on the spot: a trial whose Keep is
 //   underway is committed, any other is undone by the caller. The task then sees `.abandon`.
+//   FIXES-R2 N6: "committed" means the Keep is finished properly (Keep batches written if
+//   they hadn't gone out yet, kept modes remembered and persisted), never half-kept.
 
 package enum TrialRevertReason: String, Codable, Equatable, Sendable, CaseIterable {
     /// The Revert button, Esc.
