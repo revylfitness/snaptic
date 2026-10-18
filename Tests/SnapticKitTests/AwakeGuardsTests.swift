@@ -125,8 +125,8 @@ final class AwakeGuardsTests: XCTestCase {
         let first = eval(f, memory: m)
         XCTAssertEqual(first.verdict, .allow, "sessions continue")
         XCTAssertEqual(first.memory.unreadableReads, 1)
-        // F2: the first read decides (PowerMonitor fires only on changed facts, so a second identical read never
-        // reaches evaluate): background work stops and the toast is due on the same read.
+        // F2: the first read decides: background work stops and the toast is due on the same read, without waiting
+        // for a confirming read.
         XCTAssertTrue(AwakeGuards.batteryUnreadable(f, memory: first.memory))
         XCTAssertFalse(AwakeGuards.allowsBackgroundWork(f, config: AwakeGuardsConfig(), memory: first.memory))
         XCTAssertEqual(AwakeGuards.backgroundBlock(f, config: AwakeGuardsConfig()), .batteryUnreadable)

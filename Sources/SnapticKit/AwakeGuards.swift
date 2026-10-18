@@ -301,8 +301,8 @@ package enum AwakeGuards {
     }
 
     /// Why Drive Alive and activity may not run now, or nil (security M1): critical heat, a latched battery whose
-    /// level can't be read (treated as 0%, from the first such read: no second identical reading is needed, since
-    /// PowerMonitor reports only changed facts), and discharging below the hard floor or the enabled user floor.
+    /// level can't be read (treated as 0%, from the first such read: the stop and its toast never wait for a
+    /// confirming read), and discharging below the hard floor or the enabled user floor.
     package static func backgroundBlock(_ now: PowerFacts, config: AwakeGuardsConfig) -> AwakeBackgroundBlock? {
         let config = config.sanitized()
         if now.thermal == .critical { return .heat }
