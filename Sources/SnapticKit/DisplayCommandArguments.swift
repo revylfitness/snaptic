@@ -2,8 +2,8 @@ import Foundation
 
 /// Splits a display verb's arguments into its values and an optional display selector
 /// (PLAN §11): `set brightness 50 [display]`, `ddc set 10 50 [display]`, `get volume [display]`.
-/// The selector is `--display <selector>` / `--display=<selector>` (after `--` on the
-/// command line), or everything after the values joined with single spaces, so an
+/// The selector is `--display <selector>` / `--display=<selector>` (passed through by the
+/// CLI client), or everything after the values joined with single spaces, so an
 /// unquoted name with spaces ("LG UltraFine") still works. The app resolves the selector
 /// text with `DisplaySelectorResolver`.
 package enum DisplayCommandArguments {
