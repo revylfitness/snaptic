@@ -461,4 +461,62 @@ final class KitControlTests: XCTestCase {
             XCTAssertTrue((0...4).contains(pool.active) && (0...8).contains(pool.held))
         }
     }
+
+    // MARK: Awake verbs (0.3 §2.10, §3.1)
+
+    func testAwakeVerbTable() {
+        let rules = KitControl.awakeVerbRules
+        XCTAssertEqual(rules.map(\.verb), ["awake status", "awake start", "awake hold", "awake preset", "awake extend",
+                                           "awake stop", "awake pause"])
+        XCTAssertEqual(Set(rules.map(\.verb)).count, rules.count)
+        for rule in rules {
+            XCTAssertTrue(rule.verb.split(separator: " ").allSatisfy { KitControl.isVerbWord(String($0)) }, rule.verb)
+            XCTAssertLessThanOrEqual(rule.verb.split(separator: " ").count, KitControl.maxVerbWords)
+            XCTAssertEqual(KitControl.verbRule(rule.verb), rule)
+        }
+        XCTAssertEqual(rules.filter(\.holds).map(\.verb), ["awake hold"])
+        XCTAssertEqual(Set(rules.filter(\.offOnly).map(\.verb)), ["awake stop", "awake pause"])
+        XCTAssertEqual(Set(rules.filter(\.sessionLimited).map(\.verb)),
+                       ["awake start", "awake hold", "awake stop", "awake extend"])
+        XCTAssertEqual(KitControl.verbRule("awake status")?.policy, .read)
+        XCTAssertNil(KitControl.verbRule("awake"))
+        XCTAssertNil(KitControl.verbRule("brightness"))
+        XCTAssertEqual(KitControl.sessionVerbsPerSecond, 1)
+    }
+
+    /// Every documented command line reaches its verb through the client's parsing and the server's matching, is
+    /// never mistaken for a protected setting or a turn-on, and parses with the Awake grammar.
+    func testAwakeCommandLinesReachTheirVerbs() throws {
+        let verbs = KitControl.awakeVerbRules.map(\.verb) + ["version", "modules", "module disable", "list"]
+        let lines: [[String]] = [
+            ["awake", "status"], ["awake", "status", "--json"], ["--json", "awake", "status"],
+            ["awake", "start"], ["awake", "start", "2h"], ["awake", "start", "1h", "30m", "--display-may-sleep"],
+            ["awake", "start", "until", "5:30", "pm"], ["awake", "start", "idle"],
+            ["awake", "hold"], ["awake", "hold", "--max", "2h"], ["awake", "hold", "--pid", "4242"],
+            ["awake", "hold", "--pid", "4242", "--max", "30m"],
+            ["awake", "preset", "1"], ["awake", "preset", "Focus", "Time"], ["awake", "extend", "15m"],
+            ["awake", "stop"], ["awake", "pause"], ["awake", "pause", "2h"], ["AWAKE", "Hold"],
+        ]
+        for line in lines {
+            let command = try KitControl.parseCommandLine(line).get()
+            let match = try XCTUnwrap(KitControl.match(command.words, verbs: verbs), line.joined(separator: " "))
+            let rule = try XCTUnwrap(KitControl.verbRule(match.verb))
+            XCTAssertNil(KitControl.protectedSetting(verb: match.verb, arguments: match.arguments))
+            if rule.offOnly { XCTAssertFalse(KitControl.requestsTurningOn(match.arguments), line.joined(separator: " ")) }
+            let word = String(rule.verb.split(separator: " ").last ?? "")
+            XCTAssertNotNil(AwakeCommandGrammar.parse(verb: word, args: match.arguments), line.joined(separator: " "))
+        }
+        XCTAssertEqual(try KitControl.parseCommandLine(["--json", "awake", "status"]).get().json, true)
+        // Off-only verbs refuse a turn-on word; a hold without its pid is a usage error.
+        XCTAssertTrue(KitControl.requestsTurningOn(["on"]))
+        XCTAssertNil(AwakeCommandGrammar.parse(verb: "hold", args: ["--pid"]))
+        guard case .hold(let pid, nil)? = AwakeCommandGrammar.parse(verb: "hold", args: ["--pid", "4242"]) else {
+            return XCTFail("--pid form")
+        }
+        XCTAssertEqual(pid, 4242)
+        guard case .hold(nil, let cap)? = AwakeCommandGrammar.parse(verb: "hold", args: ["--max", "2h"]) else {
+            return XCTFail("connection form")
+        }
+        XCTAssertEqual(cap, 7_200)
+    }
 }

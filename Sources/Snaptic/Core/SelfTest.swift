@@ -17,11 +17,16 @@ import SnapticShims
 ///
 /// `--selftest-controls <token-file>` (0.3 §4.8, token-gated): walks a Switcher `Config` with every optional set and
 /// one shortcut, in process, and exits 1 unless every key has a control (a legacy path, a Switcher table key or an
-/// internal key) and every legacy path still exists or was removed.
+/// internal key) and every legacy path still exists or was removed. Then (0.3 §2.10, §3.1) it sends every documented
+/// `snaptic awake …` command line, both `awake hold` forms included, through the client's parsing and the real
+/// `ControlCommandRegistry.dispatch` to probe handlers that parse with `AwakeCommandGrammar`, and checks the exit
+/// codes, `holding`, which handler got the connection's hold, the host's verb rules, the shared 1/s window and help.
 ///
 /// `--selftest-control-server <token-file>` (0.3 R5-5, token-gated): no modules, only a `ControlServer` with a test
-/// registry on SNAPTIC_SELFTEST_SOCKET (under the token file's directory). Prints `held=<n> active=<n>` on every pool
-/// change and `closed <reason>` per hold; exits on SIGTERM or after 120 s. Driven by scripts/selftest-control-server.sh.
+/// registry on SNAPTIC_SELFTEST_SOCKET (under the token file's directory). Before it says `listening` it checks both
+/// `awake hold` forms over its own socket (the connection form holds until the client closes; `--pid` replies and
+/// closes); then it prints `held=<n> active=<n>` on every pool change and `closed <reason>` per `selftest hold`;
+/// exits on SIGTERM or after 120 s. Driven by scripts/selftest-control-server.sh.
 enum SelfTest {
     static let tokenVariable = "SNAPTIC_SELFTEST_TOKEN"
     /// The CLI client's token-mode override (R5-5): the token file to compare with, and the socket to use.
@@ -63,7 +68,179 @@ enum SelfTest {
         say("selftest-controls: \(walked.count) paths, \(KitKeyPaths.leaves(walked).count) keys, "
             + "\(tables.count) Switcher tables\n")
         for problem in problems { say("selftest: controls: " + problem + "\n") }
-        exit(problems.isEmpty ? 0 : 1)
+        let awake = runAwakeVerbCheck()
+        say("selftest-controls: \(KitControl.awakeVerbRules.count) Awake verbs, \(awakeCases.count) command lines\n")
+        for problem in awake { say("selftest: awake verbs: " + problem + "\n") }
+        exit(problems.isEmpty && awake.isEmpty ? 0 : 1)
+    }
+
+    // MARK: Awake verbs (0.3 §2.10, §3.1)
+
+    /// How long the in-process Awake checks may take.
+    static let awakeCheckSeconds: Double = 5
+
+    /// A command line (the words after `snaptic`) and what dispatch must make of it.
+    private struct AwakeCase {
+        let words: [String]
+        let exit: Int32
+        let holding: Bool
+        /// Reaches the probe handler (false: refused by the registry first).
+        let handled: Bool
+
+        init(_ words: [String], exit: Int32 = ControlExit.ok, holding: Bool = false, handled: Bool = true) {
+            self.words = words
+            self.exit = exit
+            self.holding = holding
+            self.handled = handled
+        }
+    }
+
+    /// Every documented form (§2.10 table, README usage), plus the refusals the registry owns.
+    private static var awakeCases: [AwakeCase] {
+        let me = String(getpid())
+        return [
+            AwakeCase(["awake", "status"]),
+            AwakeCase(["awake", "status", "--json"]),
+            AwakeCase(["--json", "awake", "status"]),
+            AwakeCase(["awake", "start"]),
+            AwakeCase(["awake", "start", "2h"]),
+            AwakeCase(["awake", "start", "1h", "30m", "--display-may-sleep"]),
+            AwakeCase(["awake", "start", "until", "5:30", "pm"]),
+            AwakeCase(["awake", "start", "idle"]),
+            AwakeCase(["awake", "start", "soon"], exit: ControlExit.usage),
+            // `awake hold`, both forms: the connection form holds, `--pid` answers and closes.
+            AwakeCase(["awake", "hold"], holding: true),
+            AwakeCase(["awake", "hold", "--max", "2h"], holding: true),
+            AwakeCase(["AWAKE", "Hold"], holding: true),
+            AwakeCase(["awake", "hold", "--pid", me]),
+            AwakeCase(["awake", "hold", "--pid", me, "--max", "30m"]),
+            AwakeCase(["awake", "hold", "--pid"], exit: ControlExit.usage),
+            AwakeCase(["awake", "hold", "--max", "25h"], exit: ControlExit.usage),
+            AwakeCase(["awake", "preset", "1"]),
+            AwakeCase(["awake", "preset", "Focus", "Time"]),
+            AwakeCase(["awake", "extend", "15m"]),
+            AwakeCase(["awake", "stop"]),
+            AwakeCase(["awake", "stop", "on"], exit: ControlExit.refused, handled: false),
+            AwakeCase(["awake", "pause"]),
+            AwakeCase(["awake", "pause", "2h"]),
+            AwakeCase(["awake", "pause", "on"], exit: ControlExit.refused, handled: false),
+        ]
+    }
+
+    /// Runs the Awake verb checks on main, bounded by `awakeCheckSeconds`. Returns the problems.
+    private static func runAwakeVerbCheck() -> [String] {
+        MainActor.assumeIsolated {
+            let run = AwakeCheckRun()
+            Task { @MainActor in
+                run.problems = await awakeVerbProblems()
+                run.done = true
+            }
+            let deadline = Date().addingTimeInterval(awakeCheckSeconds)
+            while !run.done && Date() < deadline {
+                _ = CFRunLoopRunInMode(.defaultMode, 0.02, false)
+            }
+            return run.done ? run.problems : ["timed out after \(Int(awakeCheckSeconds)) s"]
+        }
+    }
+
+    @MainActor private static func awakeVerbProblems() async -> [String] {
+        let lifetime = Lifetime()
+        defer { lifetime.end() }
+        let registry = ControlCommandRegistry()
+        let log = AwakeProbeLog()
+        let clock = AwakeCheckClock()
+        registry.now = { clock.seconds }
+        registerAwakeProbes(registry, lifetime: lifetime, log: log)
+        var problems: [String] = []
+        for rule in KitControl.awakeVerbRules {
+            guard let entry = registry.entry(rule.verb) else {
+                problems.append(rule.verb + " isn't registered")
+                continue
+            }
+            if entry.policy != rule.policy || entry.offOnly != rule.offOnly || entry.holds != rule.holds {
+                problems.append(rule.verb + ": the host's rules weren't applied")
+            }
+        }
+        let peer = ControlPeer(pid: getpid(), uid: getuid(), startTime: SNProcess.startTime(for: getpid()))
+        for item in awakeCases {
+            clock.seconds += 2
+            let line = item.words.joined(separator: " ")
+            let before = log.calls.count
+            let response = await dispatch(item.words, registry: registry, peer: peer)
+            if response.exitCode != item.exit {
+                problems.append("\(line): exit \(response.exitCode), expected \(item.exit) (\(response.output))")
+            }
+            if response.holding != item.holding { problems.append("\(line): holding is \(response.holding)") }
+            let handled = log.calls.count > before
+            if handled != item.handled { problems.append("\(line): " + (handled ? "reached" : "didn't reach") + " the handler") }
+            if handled, let call = log.calls.last, call.hadHold != (KitControl.verbRule(call.verb)?.holds == true) {
+                problems.append("\(line): the handler " + (call.hadHold ? "got" : "didn't get") + " the connection's hold")
+            }
+        }
+        // The shared 1/s window: a second session verb within the second is refused before its handler; `status`
+        // isn't limited; a second later the next one runs.
+        clock.seconds += 2
+        _ = await dispatch(["awake", "start", "2h"], registry: registry, peer: peer)
+        let calls = log.calls.count
+        let quick = await dispatch(["awake", "hold", "--pid", String(getpid())], registry: registry, peer: peer)
+        if quick.exitCode != ControlExit.unavailable || log.calls.count != calls {
+            problems.append("a second session verb within 1 s wasn't refused (exit \(quick.exitCode))")
+        }
+        if await dispatch(["awake", "status"], registry: registry, peer: peer).exitCode != ControlExit.ok {
+            problems.append("awake status was rate-limited")
+        }
+        clock.seconds += 1.01
+        if await dispatch(["awake", "extend", "15m"], registry: registry, peer: peer).exitCode != ControlExit.ok {
+            problems.append("a session verb a second later was refused")
+        }
+        let help = await dispatch(["help", "awake"], registry: registry, peer: peer)
+        for rule in KitControl.awakeVerbRules where !help.output.contains(rule.verb) {
+            problems.append("help doesn't list " + rule.verb)
+        }
+        return problems
+    }
+
+    /// One command line as the CLI client sends it (its own options before the verb, the rest as typed).
+    @MainActor private static func dispatch(_ words: [String], registry: ControlCommandRegistry,
+                                            peer: ControlPeer) async -> ControlResponse {
+        guard case .success(let command) = KitControl.parseCommandLine(words) else {
+            return .failure(ControlExit.usage, "the client refused it")
+        }
+        let all = command.help ? ["help"] + command.words : command.words
+        guard let first = all.first else { return .failure(ControlExit.usage, "no verb") }
+        let request = ControlRequest(verb: first.lowercased(), arguments: Array(all.dropFirst()), json: command.json,
+                                     skipConfirmation: command.yes)
+        return await registry.dispatch(request, peer: peer, hold: ControlHold(), skipConfirmationAllowed: false)
+    }
+
+    /// Registers every `KitControl.awakeVerbRules` verb with a probe standing in for Awake's handler: it parses with
+    /// `AwakeCommandGrammar` (usage error otherwise), answers `holding` for the connection form of `awake hold` and
+    /// an ordinary reply for `--pid` (a live process only). Registered with the opposite flags on purpose: the
+    /// registry must apply the host's rules.
+    @MainActor private static func registerAwakeProbes(_ registry: ControlCommandRegistry, lifetime: Lifetime,
+                                                       log: AwakeProbeLog) {
+        for rule in KitControl.awakeVerbRules {
+            let word = String(rule.verb.split(separator: " ").last ?? "")
+            registry.register(rule.verb, policy: .trial, offOnly: !rule.offOnly, cliAllowed: true, holds: !rule.holds,
+                              summary: "Self-test " + rule.verb, lifetime: lifetime) { request, context in
+                log.calls.append((rule.verb, context.hold != nil))
+                guard let command = AwakeCommandGrammar.parse(verb: word, args: request.arguments) else {
+                    return .failure(ControlExit.usage, "usage")
+                }
+                guard case .hold(let pid, let cap) = command else { return .ok(word) }
+                guard let hold = context.hold else { return .failure(ControlExit.usage, "no hold") }
+                let capSeconds = cap ?? AwakeClock.holdDefaultCapSeconds
+                if let pid {
+                    guard pid > 1, SNProcess.startTime(for: pid) != 0 else {
+                        return .failure(ControlExit.refused, L("Snaptic couldn't identify the caller."))
+                    }
+                    return .ok(AwakeCommandGrammar.holdReply(pid: pid, capSeconds: capSeconds))
+                }
+                // Strong on purpose, as in `selftest hold`: the hold drops its handlers once they ran.
+                hold.onClose { log.closes.append(hold.closeReason?.rawValue ?? "eof") }
+                return .holding(AwakeCommandGrammar.holdReply(pid: nil, capSeconds: capSeconds))
+            }
+        }
     }
 
     // MARK: --selftest-control-server
@@ -86,14 +263,35 @@ enum SelfTest {
             let registry = ControlCommandRegistry()
             let watches = HoldWatches()
             registerTestVerbs(registry, watches: watches, lifetime: lifetime)
+            // The Awake probes, with a clock that steps 2 s per request: the script never sends Awake verbs, and the
+            // hold check below sends two holds in a row.
+            let log = AwakeProbeLog()
+            let clock = AwakeCheckClock()
+            registry.now = {
+                clock.seconds += 2
+                return clock.seconds
+            }
+            registerAwakeProbes(registry, lifetime: lifetime, log: log)
             let server = ControlServer(registry: registry)
             server.holdPingInterval = 1
-            server.onPoolChange = { held, active in say("held=\(held) active=\(active)\n") }
+            // Quiet until the hold check is done, so the script's counts see only its own connections.
+            let gate = PoolGate()
+            server.onPoolChange = { held, active in
+                if gate.record(held: held, active: active) { say("held=\(held) active=\(active)\n") }
+            }
             server.start(socketPath: socket)
             guard case .listening = server.status else {
                 say("selftest: control server didn't start: \(server.status)\n")
                 exit(1)
             }
+            let problems = awakeHoldCheck(socket: socket, log: log, gate: gate)
+            for problem in problems { say("selftest: awake hold: " + problem + "\n") }
+            guard problems.isEmpty else {
+                server.stop()
+                exit(1)
+            }
+            gate.open()
+            say("awake hold: both forms ok\n")
             say("listening\n")
             signal(SIGTERM, SIG_IGN)
             let term = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
@@ -162,6 +360,131 @@ enum SelfTest {
         registry.register("selftest echo", policy: .read, offOnly: false, cliAllowed: true,
                           summary: "Self-test echo", lifetime: lifetime) { request in
             .ok(request.arguments.isEmpty ? "echo" : request.arguments.joined(separator: " "))
+        }
+    }
+
+    /// Both `awake hold` forms over the server's own socket, from a client on a background queue (the handlers run on
+    /// main): the connection form answers `holding` and its hold ends with `eof` when the client closes; the `--pid`
+    /// form answers once, isn't held and the server closes the connection. Bounded by `awakeCheckSeconds`.
+    @MainActor private static func awakeHoldCheck(socket: String, log: AwakeProbeLog, gate: PoolGate) -> [String] {
+        let result = HoldClientResult()
+        let pid = getpid()
+        DispatchQueue.global(qos: .userInitiated).async {
+            result.finish(holdClientProblems(socket: socket, pid: pid))
+        }
+        let deadline = Date().addingTimeInterval(awakeCheckSeconds)
+        while Date() < deadline {
+            if result.isDone && !log.closes.isEmpty && gate.isIdle { break }
+            _ = CFRunLoopRunInMode(.defaultMode, 0.02, false)
+        }
+        guard result.isDone else { return ["the client timed out"] }
+        var problems = result.problems
+        if log.closes != ["eof"] { problems.append("the connection hold closed as \(log.closes), expected [eof]") }
+        if !gate.isIdle { problems.append("a slot leaked") }
+        if log.calls.map({ $0.verb }) != ["awake hold", "awake hold"] || !log.calls.allSatisfy({ $0.hadHold }) {
+            problems.append("the hold handler saw \(log.calls)")
+        }
+        return problems
+    }
+
+    /// The client side of `awakeHoldCheck` (any thread; plain sockets with poll timeouts).
+    private static func holdClientProblems(socket path: String, pid: pid_t) -> [String] {
+        var problems: [String] = []
+        // Connection form.
+        if let fd = connectTo(path) {
+            let lines = exchange(fd, ControlRequest(verb: "awake", arguments: ["hold", "--max", "5m"], json: false,
+                                                    skipConfirmation: false), waitForEOF: false)
+            let reply = lines.lines.first.flatMap(KitControl.decodeResponse)
+            if reply?.holding != true || reply?.exitCode != ControlExit.ok
+                || reply?.output.hasPrefix("Holding until this command ends") != true {
+                problems.append("connection form: \(String(describing: reply))")
+            }
+            if lines.eof { problems.append("connection form: the server closed a held connection") }
+            close(fd)
+        } else {
+            problems.append("couldn't connect")
+        }
+        // `--pid` form.
+        if let fd = connectTo(path) {
+            let lines = exchange(fd, ControlRequest(verb: "awake", arguments: ["hold", "--pid", String(pid)],
+                                                    json: false, skipConfirmation: false), waitForEOF: true)
+            let reply = lines.lines.first.flatMap(KitControl.decodeResponse)
+            if reply?.holding != false || reply?.exitCode != ControlExit.ok
+                || reply?.output.hasPrefix("Holding while process \(pid) runs") != true {
+                problems.append("--pid form: \(String(describing: reply))")
+            }
+            if !lines.eof { problems.append("--pid form: the server kept the connection open") }
+            if lines.lines.count != 1 { problems.append("--pid form: \(lines.lines.count) lines") }
+            close(fd)
+        } else {
+            problems.append("couldn't connect")
+        }
+        return problems
+    }
+
+    private static func connectTo(_ path: String) -> Int32? {
+        let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { return nil }
+        _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
+        var one: Int32 = 1
+        _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+        var address = sockaddr_un()
+        address.sun_family = sa_family_t(AF_UNIX)
+        let bytes = Array(path.utf8)
+        guard bytes.count < MemoryLayout.size(ofValue: address.sun_path) else {
+            close(fd)
+            return nil
+        }
+        withUnsafeMutableBytes(of: &address.sun_path) { raw in
+            raw.copyBytes(from: bytes)
+            raw[bytes.count] = 0
+        }
+        address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
+        let rc = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        guard rc == 0 else {
+            close(fd)
+            return nil
+        }
+        return fd
+    }
+
+    /// Sends one request, then reads lines for at most 2 s: until the first line, or (`waitForEOF`) until EOF.
+    private static func exchange(_ fd: Int32, _ request: ControlRequest,
+                                             waitForEOF: Bool) -> (lines: [Data], eof: Bool) {
+        guard let line = KitControl.encode(request) else { return ([], false) }
+        let sent = line.withUnsafeBytes { raw -> Bool in
+            guard let base = raw.baseAddress else { return false }
+            var offset = 0
+            while offset < raw.count {
+                let n = write(fd, base + offset, raw.count - offset)
+                if n > 0 { offset += n } else if n < 0 && errno == EINTR { continue } else { return false }
+            }
+            return true
+        }
+        guard sent else { return ([], false) }
+        var reader = ControlLineReader()
+        var lines: [Data] = []
+        var chunk = [UInt8](repeating: 0, count: 4_096)
+        let deadline = Date().addingTimeInterval(2)
+        while true {
+            if !lines.isEmpty && !waitForEOF { return (lines, false) }
+            let remaining = deadline.timeIntervalSinceNow
+            guard remaining > 0 else { return (lines, false) }
+            var poller = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+            let ready = poll(&poller, 1, Int32(remaining * 1000) + 1)
+            if ready < 0 && errno == EINTR { continue }
+            guard ready > 0 else { continue }
+            let n = chunk.withUnsafeMutableBytes { raw in read(fd, raw.baseAddress, raw.count) }
+            if n < 0 && (errno == EINTR || errno == EAGAIN) { continue }
+            guard n > 0 else {
+                if let rest = reader.remainder { lines.append(rest) }
+                return (lines.filter { !KitControl.isPing($0) }, true)
+            }
+            lines += reader.append(chunk[0..<n]).filter { !KitControl.isPing($0) }
         }
     }
 
@@ -307,3 +630,68 @@ private final class ReadyCounter {
     var count = 0
     var exits: [Int32] = []
 }
+
+/// What the Awake probe handlers saw (main thread only).
+@MainActor private final class AwakeProbeLog {
+    var calls: [(verb: String, hadHold: Bool)] = []
+    var closes: [String] = []
+}
+
+/// The Awake verb check's result (main thread only).
+@MainActor private final class AwakeCheckRun {
+    var problems: [String] = []
+    var done = false
+}
+
+/// The registry clock the Awake checks drive (main thread only).
+@MainActor private final class AwakeCheckClock {
+    var seconds: Double = 1_000
+}
+
+/// The control server's pool lines: silent until `open()`, the last counts kept either way (any thread).
+private final class PoolGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var opened = false
+    private var held = 0
+    private var active = 0
+
+    /// Records the counts; true when the line should be printed.
+    func record(held: Int, active: Int) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        self.held = held
+        self.active = active
+        return opened
+    }
+
+    func open() {
+        lock.lock(); defer { lock.unlock() }
+        opened = true
+    }
+
+    var isIdle: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return held == 0 && active == 0
+    }
+}
+
+/// The hold check client's result (any thread).
+private final class HoldClientResult: @unchecked Sendable {
+    private let lock = NSLock()
+    private var finished: [String]?
+
+    func finish(_ problems: [String]) {
+        lock.lock(); defer { lock.unlock() }
+        finished = problems
+    }
+
+    var isDone: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return finished != nil
+    }
+
+    var problems: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return finished ?? []
+    }
+}
+

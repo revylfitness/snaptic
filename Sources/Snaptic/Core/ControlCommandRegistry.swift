@@ -8,7 +8,9 @@ import SnapticKit
 ///   unlocks, allow flags, trust) are never touchable;
 /// - `offOnly` verbs can only turn things off;
 /// - `skipConfirmation` reaches a trial handler only when the user allowed it;
-/// - only `holds: true` verbs get the connection's `ControlHold` and may answer `holding` (0.3 §2.10).
+/// - only `holds: true` verbs get the connection's `ControlHold` and may answer `holding` (0.3 §2.10);
+/// - verbs with a `KitControl.verbRule` (the Awake verbs) get the host's policy, off-only and hold rules whatever
+///   the module passed, and `awake start`/`hold`/`stop`/`extend` share one 1/s window (0.3 §3.1, security L3).
 @MainActor final class ControlCommandRegistry {
     /// 0.3 §2.10: handlers also get the connection's peer and, for `holds: true` verbs, its hold.
     typealias Handler = @MainActor (ControlRequest, ControlContext) async -> ControlResponse
@@ -30,6 +32,10 @@ import SnapticKit
     private var entries: [Entry] = []
     private var serial: UInt64 = 0
     var onChange: (@MainActor () -> Void)?
+    /// The shared window of the session verbs (`ControlVerbRule.sessionLimited`).
+    private var sessionRate = ControlRateWindow(limit: KitControl.sessionVerbsPerSecond, window: 1)
+    /// The clock of that window, in seconds (the controls self-test drives it).
+    var now: @MainActor () -> Double = { ProcessInfo.processInfo.systemUptime }
 
     init() {}
 
@@ -38,6 +44,15 @@ import SnapticKit
     func register(_ verb: String, policy: ControlPolicy, offOnly: Bool, cliAllowed: Bool, holds: Bool = false,
                   summary: String, lifetime: Lifetime, _ handler: @escaping Handler) {
         guard !lifetime.isEnded, Self.isValidVerb(verb) else { return }
+        var policy = policy, offOnly = offOnly, holds = holds
+        if let rule = KitControl.verbRule(verb) {
+            if rule.policy != policy || rule.offOnly != offOnly || rule.holds != holds {
+                EventLog.shared.record(.control, "Verb \(verb) registered with other rules; the host's rules apply")
+            }
+            policy = rule.policy
+            offOnly = rule.offOnly
+            holds = rule.holds
+        }
         serial &+= 1
         let mine = serial
         if entries.contains(where: { $0.verb == verb }) {
@@ -93,6 +108,10 @@ import SnapticKit
         if entry.offOnly && KitControl.requestsTurningOn(match.arguments) {
             EventLog.shared.record(.control, "CLI \(entry.verb) refused: off-only")
             return .failure(ControlExit.refused, L("From the command line this can only be turned off."))
+        }
+        if KitControl.verbRule(entry.verb)?.sessionLimited == true, !sessionRate.allow(now: now()) {
+            EventLog.shared.record(.control, "CLI \(entry.verb) refused: rate")
+            return .failure(ControlExit.unavailable, L("Too many Awake requests; wait a second and try again."))
         }
         let skip = KitControl.skipsConfirmation(requested: request.skipConfirmation, allowed: skipConfirmationAllowed,
                                                 policy: entry.policy)
