@@ -6,8 +6,7 @@ import SnapticKit
 /// method A (overlay) or B (gamma) from what's effective and what calibration said,
 /// extends the brightness slider above 100%, registers toggle / XDR ± actions, the
 /// `toggle xdr` verb, menu toggles with a paused badge, and the auto-pause toast.
-@MainActor final class XDRController: DisplayFeatureController, PanicParticipant, DiagnosticsContributor,
-    DisplayMenuContributor {
+@MainActor final class XDRController: DisplayFeatureController, PanicParticipant, DiagnosticsContributor {
     static var id: DisplayControllerID { .xdr }
     static var privateSymbols: [PrivateSymbol] { [] }
 
@@ -206,13 +205,6 @@ import SnapticKit
 
     // MARK: Menu
 
-    /// The items moved to `ColorMenuItems` (R5-13), registered in start(). The conformance stays only while
-    /// `DisplaysModule.menuContributorTypes` lists this type; it contributes nothing itself.
-    var descriptors: [DisplayMenuItemDescriptor] { [] }
-
-    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
-
-    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
 
     // MARK: Diagnostics
 

@@ -174,6 +174,7 @@ package enum ControlRegistry {
             AwakeMenuRowsControls.self,
             IndicatorControllerControls.self,
             DrivesPageControls.self,
+            MenuBarOverlaysSectionControls.self,
         ]
     }
 }
