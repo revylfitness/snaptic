@@ -119,6 +119,69 @@ final class PowerMathTests: XCTestCase {
         XCTAssertNil(PowerMath.percent(current: -1, max: 100))
     }
 
+    // MARK: Unreadable reads (awake-correctness r2 F2)
+
+    private func facts(percent: Int?, latched: Bool = true) -> PowerFacts {
+        PowerFacts(batteryPresent: latched, onAC: false, percent: percent, charging: false, falling: false,
+                   lastRecovery: nil, lowPowerMode: false, thermal: .nominal)
+    }
+
+    func testTheStreakCountsConsecutiveUnreadableReads() {
+        var s = 0
+        s = PowerMath.unreadableStreak(previous: s, batteryLatched: true, percent: nil)
+        XCTAssertEqual(s, 1)
+        s = PowerMath.unreadableStreak(previous: s, batteryLatched: true, percent: nil)
+        XCTAssertEqual(s, 2)
+        s = PowerMath.unreadableStreak(previous: s, batteryLatched: true, percent: 40)
+        XCTAssertEqual(s, 0)
+        // A desktop (battery never latched) never counts.
+        XCTAssertEqual(PowerMath.unreadableStreak(previous: 5, batteryLatched: false, percent: nil), 0)
+        XCTAssertEqual(PowerMath.unreadableStreak(previous: -3, batteryLatched: true, percent: nil), 1)
+        XCTAssertEqual(PowerMath.unreadableStreak(previous: PowerMath.maxUnreadableStreak, batteryLatched: true,
+                                                  percent: nil), PowerMath.maxUnreadableStreak)
+    }
+
+    func testIdenticalReadableFactsPublishOnceButEveryUnreadableReadPublishes() {
+        let ok = facts(percent: 40)
+        XCTAssertTrue(PowerMath.publishes(old: nil, new: ok, unreadableStreak: 0))
+        XCTAssertFalse(PowerMath.publishes(old: ok, new: ok, unreadableStreak: 0))
+        let lost = facts(percent: nil)
+        XCTAssertTrue(PowerMath.publishes(old: ok, new: lost, unreadableStreak: 1))
+        XCTAssertTrue(PowerMath.publishes(old: lost, new: lost, unreadableStreak: 2))
+        XCTAssertFalse(PowerMath.publishes(old: facts(percent: nil, latched: false), new: facts(percent: nil, latched: false),
+                                           unreadableStreak: 0))
+    }
+
+    func testTheRecheckRunsWhileFallingOrAfterOneUnreadableRead() {
+        XCTAssertFalse(PowerMath.needsRecheck(falling: false, unreadableStreak: 0))
+        XCTAssertTrue(PowerMath.needsRecheck(falling: true, unreadableStreak: 0))
+        XCTAssertTrue(PowerMath.needsRecheck(falling: false, unreadableStreak: 1))
+        XCTAssertFalse(PowerMath.needsRecheck(falling: false, unreadableStreak: 2))
+        XCTAssertTrue(PowerMath.needsRecheck(falling: true, unreadableStreak: 2))
+    }
+
+    /// The monitor's loop (read → streak → publish; every publish is one guard evaluation): two equal unreadable reads
+    /// publish twice, so a guard that needs two consecutive unreadable reads gets its second evaluation.
+    func testTwoEqualUnreadableReadsPublishTwice() {
+        var published: PowerFacts? = facts(percent: 40)
+        var streak = 0
+        var publishes = 0
+        func read(_ new: PowerFacts) {
+            streak = PowerMath.unreadableStreak(previous: streak, batteryLatched: new.batteryPresent, percent: new.percent)
+            guard PowerMath.publishes(old: published, new: new, unreadableStreak: streak) else { return }
+            published = new
+            publishes += 1
+        }
+        read(facts(percent: nil))
+        read(facts(percent: nil))
+        XCTAssertEqual(publishes, 2)
+        XCTAssertEqual(streak, 2)
+        read(facts(percent: 39))
+        read(facts(percent: 39))
+        XCTAssertEqual(publishes, 3)
+        XCTAssertEqual(streak, 0)
+    }
+
     // MARK: Fuzz
 
     func testSeededFuzzKeepsInvariants() {
