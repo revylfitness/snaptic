@@ -28,6 +28,8 @@ package enum ControlRemovals {
                "\u{201C}Display Settings…\u{201D} in each display submenu and \u{201C}Snaptic Settings…\u{201D} cover it (parity minor 3)")
         remove(["l.dfeat.overview", "l.dfeat.diagnostics"],
                "Always on, with no switch; the Displays page and Display Information are always there")
+        remove(["l.menu.d.sleepPrevention"],
+               "Moved to Awake: a rule keeps the Mac awake while a display is connected (migration M1)")
         return map
     }
 }
