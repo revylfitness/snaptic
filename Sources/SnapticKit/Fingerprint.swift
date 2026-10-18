@@ -112,6 +112,11 @@ package enum Fingerprint {
         return out
     }
 
+    /// 0.3 (B fills it in step 1; Awake's display criterion calls it): whether a stored record and a live one name
+    /// the same display. Higher stored tiers that the live side can't compute don't conflict.
+    /// Step-0 stub (lead, kind S): never matches.
+    package static func matches(_ stored: FingerprintRecord, _ live: FingerprintRecord) -> Bool { false }
+
     /// The tier a new key derives from: the best one available.
     package static func bestTier(_ f: DisplayIdentityFacts) -> FingerprintTier {
         canonical(f).keys.min() ?? .vendorModel

@@ -27,6 +27,7 @@ differs from, refines or adds to the plan text, so teams read the code and this 
 | `AwakeLogEvent` | fixed `text` per case, counted vs ring | adds `isCounted` | The counted/ring split as data |
 | SettingsUI `control:` (R5-13) | "last stored property or init parameter" | last init parameter on `SettingsPageHeader`, `NavigationRow`, `PageFooterButtons` (`advancedControl:`, `restoreControl:`); on `ButtonRow`, `ActionMenuItem` and `StatusAction` it comes **before** the trailing `action:` closure (each has an explicit init) | Trailing-closure call sites stay natural |
 | MenuKit `control:` (R5-13) | on `header`, `status`, `device`, `settings`, `quit`, `alternate` | `header(_:control:)`, `status(_:symbol:control:)`, `device(_:symbol:dimmed:submenu:control:)`, `settings(_:control:_:)`, `quit(control:)`, `alternate(of:title:control:_:)` | Same |
+| `Fingerprint.matches(_:_:)` (B) | S stub | added to B's existing `Fingerprint.swift` (the file stays kind L), returns false | B fills it in step 1 |
 | Interim fix in C's `KeysController` | — | while registering `keys.shortcuts`, skips `f.showPanel`/`f.identify` when the combo equals `MenuConfig.showPanelShortcut`/`identifyShortcut` | Migration M4 copies those shortcuts into `keys.shortcuts` in step 0, while F's `OverviewController` still registers them from `MenuConfig`; without the skip the combo would be registered twice. F (step 1) removes OverviewController's own registration and C deletes the skip |
 
 ## Control registry
