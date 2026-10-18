@@ -86,7 +86,8 @@ code on `feature/v03` is the contract (R5 rule carried forward).
 2. Isolation: controllers, services, UI `@MainActor`; `DDCService`/`AppleBrightnessIO`
    `@unchecked Sendable` with lifecycle in an extension. C callbacks use
    `CallbackTarget`; closures passed to `asyncAfter`, NotificationCenter, Timer, KVO wrap
-   `MainActor.assumeIsolated` (linted: `scripts/lint03.py` rule 2). Never `DispatchQueue.main.sync`. Main thread ≤ 50 ms.
+   `MainActor.assumeIsolated` and touch `self` only inside it (linted: `scripts/lint03.py` rule 2; its known
+   blind spots are listed above `RULE2_CALL`). Never `DispatchQueue.main.sync`. Main thread ≤ 50 ms.
 3. No `static let shared` in Displays or Awake (Awake also: observers with `queue: .main`, timers added in
    `.common` modes, lint L10/L14). No `print`/`NSLog` (use `EventLog.shared.record`,
    never with titles, app names, serials, EDID bytes or key codes).

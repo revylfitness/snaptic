@@ -131,6 +131,28 @@ def self_check():
         got = strip_comments(source)
         if got != expected:
             problems.append(f"self-check: strip_comments({source!r}) = {got!r}, expected {expected!r}")
+    # Rule 2 (review5 code N4): True = must be reported.
+    wrap = "MainActor.assumeIsolated { self?.g() }"
+    rule2_cases = [
+        (f"DispatchQueue.main\n    .asyncAfter(deadline: .now() + 1) {{ [weak self] in self?.g() }}", True),
+        (f"DispatchQueue.main.asyncAfter(deadline: .now() + 1) {{ [weak self] in {wrap} }}", False),
+        (f"DispatchQueue.main.asyncAfter(deadline: .now() + 1) {{ [weak self] in\n self?.n = 1\n {wrap}\n}}", True),
+        (f"let q = DispatchQueue.main\nq.asyncAfter(deadline: .now() + 1) {{ [weak self] in self?.g() }}", True),
+        (f"private let queue: DispatchQueue = .main\nfunc f() {{ self.queue.asyncAfter(deadline: .now()) {{ g() }} }}", True),
+        (f"let queue = DispatchQueue(label: \"x\")\nqueue.asyncAfter(deadline: .now() + 1) {{ [weak self] in self?.g() }}",
+         False),
+        (f"let oq = OperationQueue.main\nc.addObserver(forName: .x, object: nil, queue: oq) {{ [weak self] _ in self?.g() }}",
+         True),
+        (f"c.addObserver(forName: .x, object: nil, queue: .main) {{ [weak self] note in\n"
+         f" let v = note.object\n MainActor.assumeIsolated {{ self?.h(v) }}\n}}", False),
+        (f"o = i.observe(\\.isVisible, options: [.new]) {{ [weak self] item, _ in\n let v = item.isVisible\n"
+         f" DispatchQueue.main.async {{ MainActor.assumeIsolated {{ self?.h(v) }} }}\n}}", False),
+        (f"DispatchQueue.main.asyncAfter(deadline: .now()) {{ [weak self] in\n guard let self else {{ return }}\n"
+         f" MainActor.assumeIsolated {{ self.g() }}\n}}", False),
+    ]
+    for source, flagged in rule2_cases:
+        if bool(rule2_file("Sources/Snaptic/SelfCheck.swift", source)) != flagged:
+            problems.append(f"self-check: rule 2 {'missed' if flagged else 'wrongly reported'} {source!r}")
     return problems
 
 
@@ -264,8 +286,14 @@ def unratcheted_problems():
 
 
 # TEAMS rule 2: these calls run their closure on the main thread but not on the main actor (the closure is
-# @Sendable), so its body wraps `MainActor.assumeIsolated`. `asyncAfter` counts only on the main queue and
-# observers only with `queue: .main`; a `DispatchWorkItem` passed as `execute:` is looked up in the same file.
+# @Sendable), so its body wraps `MainActor.assumeIsolated`. `asyncAfter` counts only on the main queue (also with
+# the call on the next line, and through a name the same file binds to `.main`) and observers only with
+# `queue: .main` (or such a name); a `DispatchWorkItem` passed as `execute:` is looked up in the same file. Outside
+# its `assumeIsolated` blocks the closure may read its own parameters but not `self` (a partial wrap), apart from
+# the capture list and `guard let self` / `if let self`.
+# Known limits: a main-actor member used without `self.` outside the wrap (Swift 5.8 implicit self after
+# `guard let self`), a queue passed in from another file, and Combine `publisher(for:)` sinks (L10 checks those in
+# Awake, for `receive(on:)` only) are not seen.
 RULE2_CALL = re.compile(r"\.asyncAfter\(|\baddObserver\(\s*forName:|(?<![\w.])Timer\(|\bscheduledTimer\(|\.observe\(\s*\\")
 RULE2_TOP = re.compile(r"^(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|package|internal|fileprivate|private|final)\s+)*"
                        r"(?:class|struct|enum|extension|actor)\s+([\w.]+)", re.M)
@@ -306,27 +334,79 @@ def rule2_closure(t, m):
 def rule2():
     problems = []
     for p in APP:
-        t = TEXT[p]
-        tops = [(m.start(), m.group(1)) for m in RULE2_TOP.finditer(t)]
-        for m in RULE2_CALL.finditer(t):
-            call = m.group(0)
-            if call == ".asyncAfter(" and not re.search(r"(?:DispatchQueue)?\.main$", t[:m.start()]):
-                continue
-            body, args = rule2_closure(t, m)
-            if call.startswith("addObserver") and not re.search(r"queue:\s*(?:\.main|OperationQueue\.main)\b", args):
-                continue
-            if call.endswith("Timer(") and body is None and "selector:" in args:
-                continue
-            enclosing = next((name for at, name in reversed(tops) if at < m.start()), "")
-            if (p, enclosing) in RULE2_EXEMPT:
-                continue
-            line = t.count("\n", 0, m.start()) + 1
-            if body is None:
-                problems.append(f"{p}:{line}: rule 2 can't find the closure {call.strip()} runs "
-                                "(pass a literal or a local DispatchWorkItem)")
-            elif "assumeIsolated" not in body:
-                problems.append(f"{p}:{line}: rule 2 the closure {call.strip()} runs must wrap MainActor.assumeIsolated")
+        problems += rule2_file(p, TEXT[p])
     return problems
+
+
+def rule2_file(p, t):
+    problems = []
+    tops = [(m.start(), m.group(1)) for m in RULE2_TOP.finditer(t)]
+    for m in RULE2_CALL.finditer(t):
+        call = m.group(0)
+        if call == ".asyncAfter(" and not rule2_main_receiver(t, t[max(0, m.start() - 200):m.start()]):
+            continue
+        body, args = rule2_closure(t, m)
+        if call.startswith("addObserver") and not rule2_main_observer_queue(t, args):
+            continue
+        if call.endswith("Timer(") and body is None and "selector:" in args:
+            continue
+        enclosing = next((name for at, name in reversed(tops) if at < m.start()), "")
+        if (p, enclosing) in RULE2_EXEMPT:
+            continue
+        line = t.count("\n", 0, m.start()) + 1
+        if body is None:
+            problems.append(f"{p}:{line}: rule 2 can't find the closure {call.strip()} runs "
+                            "(pass a literal or a local DispatchWorkItem)")
+        elif "assumeIsolated" not in body:
+            problems.append(f"{p}:{line}: rule 2 the closure {call.strip()} runs must wrap MainActor.assumeIsolated")
+        elif rule2_outside_self(body):
+            problems.append(f"{p}:{line}: rule 2 the closure {call.strip()} runs uses self outside its "
+                            "MainActor.assumeIsolated block")
+    return problems
+
+
+# `.main`, `DispatchQueue.main` or `OperationQueue.main` (what rule 2's calls run on when they run on main).
+RULE2_MAIN = r"(?:(?:DispatchQueue|OperationQueue)\s*)?\.main\b"
+
+
+def rule2_bound_to_main(t, name):
+    """True when the file binds `name` (a stored property or a local) to the main queue."""
+    return re.search(r"(?:\b(?:let|var)\s+|\bself\.|(?<![\w.]))" + re.escape(name)
+                     + r"\s*(?::\s*(?:DispatchQueue|OperationQueue)\??\s*)?=\s*" + RULE2_MAIN, t) is not None
+
+
+def rule2_main_receiver(t, before):
+    """`before` is the text just before `.asyncAfter(`: the receiver is the main queue, written out (possibly on
+    the line above) or as a name the same file binds to it."""
+    if re.search(r"(?:DispatchQueue\s*)?\.main\s*$", before):
+        return True
+    named = re.search(r"(?<![\w.])(?:self\??\.)?(\w+)\s*$", before)
+    return bool(named) and named.group(1) not in ("main", "self") and rule2_bound_to_main(t, named.group(1))
+
+
+def rule2_main_observer_queue(t, args):
+    if re.search(r"queue:\s*" + RULE2_MAIN, args):
+        return True
+    named = re.search(r"queue:\s*(?:self\??\.)?(\w+)\b", args)
+    return bool(named) and named.group(1) not in ("nil", "main") and rule2_bound_to_main(t, named.group(1))
+
+
+def rule2_outside_self(body):
+    """True when the closure body, with its `MainActor.assumeIsolated { … }` blocks, its capture list and any
+    `guard let self` / `if let self` binding removed, still mentions `self`."""
+    rest, i = "", 0
+    for m in re.finditer(r"MainActor\.assumeIsolated\s*\{", body):
+        if m.start() < i:
+            continue
+        end = matching_close(body, m.end() - 1)
+        if end < 0:
+            return False
+        rest += body[i:m.start()]
+        i = end + 1
+    rest += body[i:]
+    rest = re.sub(r"^\{\s*\[[^\]]*\]", "{", rest)
+    rest = re.sub(r"\b(?:guard|if)\s+let\s+self\b(?:\s*=\s*self\b)?", "", rest)
+    return re.search(r"(?<![\w.])self\b", rest) is not None
 
 
 def l15():
