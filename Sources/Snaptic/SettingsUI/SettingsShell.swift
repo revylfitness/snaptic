@@ -37,7 +37,7 @@ import SnapticKit
 
     private(set) weak var host: ModuleHost?
     private var focusGuard = SettingsFocusGuard()
-    private var pendingHighlight: String?
+    private var pendingHighlight: PendingHighlight?
     private var highlightWork: DispatchWorkItem?
     private var revealToken = 0
     private var routeTitles: [String: String] = [:]
@@ -205,45 +205,96 @@ import SnapticKit
         }
     }
 
-    /// Search result chosen: root now, route on the next turn, then the sheet, and the highlight only once the
-    /// sheet has appeared (`sheetDidAppear`) or, without a sheet, one turn after the page (code minor 3).
+    /// Search result chosen: root now; the route on the next turn (macOS 14 drops a push made with the root
+    /// change); the sheet one turn after the push (or at once on a root page); the highlight once the sheet has
+    /// appeared (`sheetDidAppear`) or, without a sheet, one turn after the page (code minor 3). A module that is off
+    /// shows its off state, so the reveal highlights its "Use …" switch instead and opens nothing.
     func reveal(_ entry: SettingsSearchEntry) {
         revealToken &+= 1
         let token = revealToken
         openSheet = nil
+        highlightWork?.cancel()
         highlightedAnchor = nil
         pendingHighlight = nil
         root = entry.root
         paths[entry.root] = []
-        DispatchQueue.main.async { [weak self] in
-            MainActor.assumeIsolated {
-                guard let self, self.revealToken == token else { return }
-                if let route = entry.route, self.destination(route, root: entry.root) != nil {
-                    self.paths[entry.root] = [route]
-                }
-                if let sheet = entry.sheet {
-                    self.pendingHighlight = entry.anchor
-                    self.openSheet = sheet
-                } else {
-                    DispatchQueue.main.async { [weak self] in
-                        MainActor.assumeIsolated {
-                            guard let self, self.revealToken == token else { return }
-                            self.showHighlight(entry.anchor)
-                        }
-                    }
-                }
+        let off = moduleIsOff(entry.root)
+        let target = off ? SettingsIndex.masterSwitch(root: entry.root, in: ControlRegistry.tables) : entry.anchor
+        let fallbacks = off ? [] : SettingsIndex.revealFallbacks(for: entry.anchor, in: ControlRegistry.tables)
+        afterTurn(token) { shell in
+            var pushed = false
+            if !off, let route = entry.route, shell.destination(route, root: entry.root) != nil {
+                shell.paths[entry.root] = [route]
+                pushed = true
             }
+            guard !off, let sheet = entry.sheet else {
+                shell.afterTurn(token) { $0.showHighlight(target, fallbacks: fallbacks, token: token) }
+                return
+            }
+            let open: @MainActor (SettingsShell) -> Void = { shell in
+                shell.pendingHighlight = PendingHighlight(anchor: target, fallbacks: fallbacks, token: token)
+                shell.openSheet = sheet
+                shell.watchSheet(sheet, token: token)
+            }
+            if pushed { shell.afterTurn(token, open) } else { open(shell) }
         }
     }
 
     /// Called by `AdvancedSheet` (and other sheets) when they appear.
     func sheetDidAppear() {
-        guard let anchor = pendingHighlight else { return }
+        guard let pending = pendingHighlight, pending.token == revealToken else { return }
         pendingHighlight = nil
-        showHighlight(anchor)
+        showHighlight(pending.anchor, fallbacks: pending.fallbacks, token: pending.token)
     }
 
-    private func showHighlight(_ anchor: String) {
+    /// A reveal waiting for its sheet to appear.
+    private struct PendingHighlight {
+        let anchor: String?
+        let fallbacks: [String]
+        let token: Int
+    }
+
+    /// `body` on the next main-queue turn, unless a newer reveal or navigation started meanwhile.
+    private func afterTurn(_ token: Int, _ body: @escaping @MainActor (SettingsShell) -> Void) {
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.revealToken == token else { return }
+                body(self)
+            }
+        }
+    }
+
+    /// A sheet that no view presents (its page isn't showing, or doesn't bind `sheetBinding`) never appears: after
+    /// a while the reveal stops waiting, closes the request and highlights on the page instead.
+    private func watchSheet(_ sheet: String, token: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.revealToken == token, let pending = self.pendingHighlight,
+                      pending.token == token else { return }
+                self.pendingHighlight = nil
+                if self.openSheet == sheet { self.openSheet = nil }
+                self.showHighlight(pending.anchor, fallbacks: pending.fallbacks, token: token)
+            }
+        }
+    }
+
+    /// Tints `anchor` for `highlightSeconds`. When its row isn't on screen once the page has scrolled to it (a
+    /// subordinate row whose parent is off), the nearest parent row that is gets the highlight instead.
+    private func showHighlight(_ anchor: String?, fallbacks: [String], token: Int) {
+        guard let anchor else { return }
+        highlight(anchor)
+        guard !fallbacks.isEmpty else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.revealToken == token, self.highlightedAnchor == anchor else { return }
+                let rows = SettingsHighlight.shared
+                guard !rows.isVisible(anchor), let parent = fallbacks.first(where: { rows.isVisible($0) }) else { return }
+                self.highlight(parent)
+            }
+        }
+    }
+
+    private func highlight(_ anchor: String) {
         highlightWork?.cancel()
         highlightedAnchor = anchor
         let item = DispatchWorkItem { [weak self] in
@@ -254,6 +305,14 @@ import SnapticKit
         }
         highlightWork = item
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.highlightSeconds, execute: item)
+    }
+
+    /// A module root whose module is off or turned off by a defaults setting (its page shows the off state).
+    private func moduleIsOff(_ root: String) -> Bool {
+        guard let host, let id = ModuleID(rawValue: root), host.modules.contains(where: { $0.id == id }) else {
+            return false
+        }
+        return host.disabledByDefaults.contains(id) || !host.modulesStore.value.isEnabled(id)
     }
 
     private func remember() {
@@ -283,13 +342,8 @@ import SnapticKit
     /// (R5-13). Static, computed once.
     var searchIndex: [SettingsSearchEntry] {
         if let indexCache { return indexCache }
-        var seen = Set<String>()
-        var all: [SettingsSearchEntry] = []
-        for id in SettingsRootID.all {
-            for e in SettingsIndex.entries(ControlRegistry.tables, root: id) where seen.insert(e.id).inserted {
-                all.append(e)
-            }
-        }
+        var all = SettingsIndex.all(ControlRegistry.tables)
+        var seen = Set(all.map(\.id))
         for module in host?.modules ?? [] {
             for e in module.settingsIndex() where seen.insert(e.id).inserted { all.append(e) }
         }
@@ -302,11 +356,10 @@ import SnapticKit
         Array(SettingsSearch.rank(entries: searchIndex, query: searchText).prefix(50))
     }
 
-    /// "Awake" or "Displays › Color" for a result row.
+    /// "Awake", "Displays › Color" or "Window Switcher › Advanced" for a result row.
     func pageTitle(for entry: SettingsSearchEntry) -> String {
-        let rootName = rootTitle(entry.root)
-        if let route = entry.route, let t = routeTitles[route.id] { return rootName + " › " + t }
-        return rootName
+        SettingsIndex.location(of: entry, rootTitle: rootTitle(entry.root),
+                               routeTitle: entry.route.flatMap { routeTitles[$0.id] })
     }
 }
 

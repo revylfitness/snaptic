@@ -27,6 +27,8 @@ package enum GeneralPageControls: ControlTable {
                     search: SearchSpec("Export Settings", keywords: ["backup", "save", "file"], root: SettingsRootID.general)),
         ControlSpec("general.page.import", .button, replaces: ["l.gen.backup.import"],
                     search: SearchSpec("Import Settings", keywords: ["backup", "restore", "file"], root: SettingsRootID.general)),
-        ControlSpec("general.page.advanced", .button),
+        ControlSpec("general.page.advanced", .button,
+                    search: SearchSpec("General Advanced Settings", keywords: ["more", "safe mode", "reset"],
+                                       root: SettingsRootID.general)),
     ]
 }

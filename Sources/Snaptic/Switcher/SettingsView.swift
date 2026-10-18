@@ -21,7 +21,8 @@ struct SwitcherAdvancedSheet: View, ControlDeclaring {
         AdvancedSheet(L("Window Switcher"),
                       restoreDefaults: RestoreDefaults(scopeName: L("Window Switcher"), destructive: false) { [settings] in
                           settings.reset()
-                      }) {
+                      },
+                      restoreControl: ControlID("switcher.advanced.restoreDefaults")) {
             Section {
                 ToggleSetting(L("Window thumbnails"), help: L("Live images of your windows. Needs Screen Recording."),
                               isOn: SwitcherBinding.feature(settings, .thumbnails),
