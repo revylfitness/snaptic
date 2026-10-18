@@ -34,6 +34,8 @@ struct SliderSetting: View {
     let subordinate: Bool
     let disabledReason: String?
     let phase: (@MainActor (DragPhase) -> Void)?
+    /// Named positions for a discrete slider over `0...labels.count - 1` (resolution: "1512 × 982").
+    let labels: [String]?
 
     @State private var drag: Double?
     @StateObject private var throttle = SliderThrottle()
@@ -43,7 +45,7 @@ struct SliderSetting: View {
          minSymbol: String? = nil, maxSymbol: String? = nil,
          commit: SliderCommit = .throttled(hz: 15), preview: (@MainActor (Double) -> Void)? = nil,
          anchor: ControlID? = nil, subordinate: Bool = false, disabledReason: String? = nil,
-         phase: (@MainActor (DragPhase) -> Void)? = nil) {
+         phase: (@MainActor (DragPhase) -> Void)? = nil, labels: [String]? = nil) {
         self.title = title
         self.help = help
         self.value = value
@@ -59,6 +61,7 @@ struct SliderSetting: View {
         self.subordinate = subordinate
         self.disabledReason = disabledReason
         self.phase = phase
+        self.labels = labels
     }
 
     var body: some View {
@@ -144,7 +147,7 @@ struct SliderSetting: View {
     @ViewBuilder private var slider: some View {
         let binding = Binding<Double>(get: { shown }, set: { slide(to: $0) })
         Group {
-            if ticks != nil, let step {
+            if ticks != nil, let step = snapStep {
                 Slider(value: binding, in: safeRange, step: step) {
                     Text(title)
                 } onEditingChanged: { editing($0) }
@@ -156,18 +159,19 @@ struct SliderSetting: View {
         }
         .labelsHidden()
         .accessibilityLabel(title)
-        .accessibilityValue(SettingsFormat.spoken(shown, format))
+        .accessibilityValue(SettingsFormat.spoken(shown, format, labels: labels))
         .accessibilityAdjustableAction { direction in
             switch direction {
-            case .increment: write(SliderMath.nudged(shown, direction: 1, range: range, step: step))
-            case .decrement: write(SliderMath.nudged(shown, direction: -1, range: range, step: step))
+            case .increment: write(SliderMath.nudged(shown, direction: 1, range: range, step: snapStep))
+            case .decrement: write(SliderMath.nudged(shown, direction: -1, range: range, step: snapStep))
             @unknown default: break
             }
         }
     }
 
     private var field: some View {
-        NumberField(title, value: Binding(get: { shown }, set: { write($0) }), in: range, step: step, format: format)
+        NumberField(title, value: Binding(get: { shown }, set: { write($0) }), in: range, step: snapStep, format: format,
+                    labels: labels)
     }
 
     private var reset: some View {
@@ -178,7 +182,10 @@ struct SliderSetting: View {
 
     private var shown: Double { drag ?? value.wrappedValue }
 
-    private var ticks: Int? { SliderMath.positions(range: range, step: step) }
+    private var ticks: Int? { SliderMath.positions(range: range, step: snapStep) }
+
+    /// Labeled positions are whole indices.
+    private var snapStep: Double? { labels == nil ? step : (step ?? 1) }
 
     /// SwiftUI's slider needs a non-empty range.
     private var safeRange: ClosedRange<Double> {
@@ -186,17 +193,18 @@ struct SliderSetting: View {
     }
 
     private var atDefault: Bool {
-        SliderMath.isDefault(value: shown, default: defaultValue, step: SliderMath.effectiveStep(step, format: format))
+        SliderMath.isDefault(value: shown, default: defaultValue,
+                             step: labels == nil ? SliderMath.effectiveStep(step, format: format) : 1)
     }
 
     private var resetLabel: String {
         guard let d = defaultValue else { return L("Reset \(title)") }
-        return L("Reset \(title) to \(SettingsFormat.spoken(d, format))")
+        return L("Reset \(title) to \(SettingsFormat.spoken(d, format, labels: labels))")
     }
 
     private var resetTooltip: String {
         guard let d = defaultValue else { return L("Reset to Default") }
-        return L("Reset to \(SettingsFormat.text(d, format))")
+        return L("Reset to \(SettingsFormat.text(d, format, labels: labels))")
     }
 
     // MARK: Commit
@@ -216,7 +224,7 @@ struct SliderSetting: View {
     }
 
     private func slide(to raw: Double) {
-        let v = SliderMath.clampSnap(raw, range: range, step: step)
+        let v = SliderMath.clampSnap(raw, range: range, step: snapStep)
         guard drag != nil else {
             // Keyboard, VoiceOver or a click without a drag: commit at once.
             write(v)
@@ -239,7 +247,7 @@ struct SliderSetting: View {
     }
 
     private func write(_ raw: Double) {
-        let v = SliderMath.clampSnap(raw, range: range, step: step)
+        let v = SliderMath.clampSnap(raw, range: range, step: snapStep)
         if value.wrappedValue != v { value.wrappedValue = v }
     }
 

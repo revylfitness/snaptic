@@ -22,8 +22,6 @@ package enum ValueFormat: Equatable, Sendable {
     case kelvin
     /// A number with exactly `digits` decimals (0…6) and no unit.
     case plain(digits: Int)
-    /// A discrete slider over `labels.indices` whose positions have names ("1512 × 982"). Values are indices.
-    case labels([String])
 }
 
 package enum SliderMath {
@@ -68,7 +66,7 @@ package enum SliderMath {
         case .percent(let of): return abs(of) > 0 && abs(of).isFinite ? abs(of) / 100 : 0.01
         case .seconds, .minutes: return 0.1
         case .hertz: return 0.01
-        case .points, .nits, .kelvin, .labels: return 1
+        case .points, .nits, .kelvin: return 1
         case .plain(let digits): return 1 / pow10(clampDigits(digits))
         }
     }
@@ -108,7 +106,6 @@ package enum SliderMath {
         case .nits: return number(value, digits: 0, trim: false, separator: sep) + " nits"
         case .kelvin: return number(value, digits: 0, trim: false, separator: sep) + " K"
         case .plain(let digits): return number(value, digits: clampDigits(digits), trim: false, separator: sep)
-        case .labels(let labels): return label(at: value, labels) ?? ""
         }
     }
 
@@ -130,18 +127,12 @@ package enum SliderMath {
         case .nits: return with(number(value, digits: 0, trim: false, separator: sep), L("nit"), L("nits"))
         case .kelvin: return number(value, digits: 0, trim: false, separator: sep) + " " + L("kelvin")
         case .plain(let digits): return number(value, digits: clampDigits(digits), trim: false, separator: sep)
-        case .labels(let labels):
-            return (label(at: value, labels) ?? "").replacingOccurrences(of: " × ", with: " " + L("by") + " ")
-                .replacingOccurrences(of: "×", with: " " + L("by") + " ")
         }
     }
 
     /// The widest formatted value of the range, by character count (the field sizes itself with monospaced
     /// digits, so the longest text is the widest).
     package static func widestText(range: ClosedRange<Double>, step: Double?, format: ValueFormat) -> String {
-        if case .labels(let labels) = format {
-            return labels.max { $0.count < $1.count } ?? ""
-        }
         let lo = range.lowerBound, hi = range.upperBound
         var candidates = [lo, hi]
         if let s = validStep(step) {
@@ -168,7 +159,6 @@ package enum SliderMath {
         guard text.count <= maxInputLength else { return nil }
         var s = trimmed(text).lowercased()
         guard !s.isEmpty else { return nil }
-        if case .labels(let labels) = format { return parseLabel(s, labels) }
         let suffixes = unitSuffixes(format)
         for suffix in suffixes where s.hasSuffix(suffix) {
             s = trimmed(String(s.dropLast(suffix.count)))
@@ -240,13 +230,7 @@ package enum SliderMath {
         return (value < 0 && total != 0 ? "-" : "") + text
     }
 
-    private static func label(at value: Double, _ labels: [String]) -> String? {
-        guard !labels.isEmpty, value.isFinite else { return nil }
-        let i = Int(min(Double(labels.count - 1), max(0, value.rounded())))
-        return labels[i]
-    }
-
-    private static func trimmed(_ s: String) -> String {
+    fileprivate static func trimmed(_ s: String) -> String {
         func isSpace(_ u: Unicode.Scalar) -> Bool {
             u == " " || u == "\t" || u == "\n" || u == "\r" || u.value == 0xA0 || u.value == 0x202F || u.value == 0x2009
         }
@@ -269,12 +253,12 @@ package enum SliderMath {
         case .points: return ["points", "point", "pts", "pt"]
         case .nits: return ["nits", "nit", "cd/m²", "cd/m2"]
         case .kelvin: return ["kelvin", "k"]
-        case .plain, .labels: return []
+        case .plain: return []
         }
     }
 
     /// Optional sign, digits, at most one decimal point ("." or `separator`), digits. Nothing else.
-    private static func parseNumber(_ s: String, separator: String) -> Double? {
+    fileprivate static func parseNumber(_ s: String, separator: String) -> Double? {
         var scalars = Array(s.unicodeScalars)
         guard !scalars.isEmpty else { return nil }
         var negative = false
@@ -318,6 +302,40 @@ package enum SliderMath {
         }
         return negative ? -v : v
     }
+}
+
+/// A discrete slider whose positions have names ("1512 × 982", "Default", "Native"); values are indices. Used by
+/// `SliderSetting(…, labels:)` and `NumberField(…, labels:)` in place of the format's numbers.
+package enum SliderLabels {
+    /// The label of the nearest index (clamped); "" without labels.
+    package static func text(_ value: Double, _ labels: [String]) -> String {
+        label(at: value, labels) ?? ""
+    }
+
+    /// VoiceOver text: "1512 by 982".
+    package static func spoken(_ value: Double, _ labels: [String]) -> String {
+        text(value, labels).replacingOccurrences(of: " × ", with: " " + L("by") + " ")
+            .replacingOccurrences(of: "×", with: " " + L("by") + " ")
+    }
+
+    /// The longest label (field width).
+    package static func widest(_ labels: [String]) -> String {
+        labels.max { $0.count < $1.count } ?? ""
+    }
+
+    /// Exact label (case, spaces and "×"/"x" ignored), else the nearest "W × H" label to a typed size.
+    package static func parse(_ text: String, _ labels: [String]) -> Double? {
+        guard text.count <= SliderMath.maxInputLength else { return nil }
+        let s = SliderMath.trimmed(text).lowercased()
+        guard !s.isEmpty else { return nil }
+        return parseLabel(s, labels)
+    }
+
+    private static func label(at value: Double, _ labels: [String]) -> String? {
+        guard !labels.isEmpty, value.isFinite else { return nil }
+        let i = Int(min(Double(labels.count - 1), max(0, value.rounded())))
+        return labels[i]
+    }
 
     /// Exact label (spaces and "×"/"x" ignored), else the nearest "W × H" label to a typed size.
     private static func parseLabel(_ s: String, _ labels: [String]) -> Double? {
@@ -345,8 +363,8 @@ package enum SliderMath {
     private static func pair(_ s: String) -> (Double, Double)? {
         let parts = s.split(separator: "x", omittingEmptySubsequences: false)
         guard parts.count == 2,
-              let w = parseNumber(String(parts[0]), separator: "."),
-              let h = parseNumber(String(parts[1]), separator: ".") else { return nil }
+              let w = SliderMath.parseNumber(String(parts[0]), separator: "."),
+              let h = SliderMath.parseNumber(String(parts[1]), separator: ".") else { return nil }
         return (w, h)
     }
 }

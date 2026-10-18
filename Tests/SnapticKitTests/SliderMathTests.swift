@@ -103,11 +103,14 @@ final class SliderMathTests: XCTestCase {
 
     func testFormatLabels() {
         let labels = ["1280 × 800", "1512 × 982", "1800 × 1169"]
-        XCTAssertEqual(SliderMath.format(1, .labels(labels), decimalSeparator: "."), "1512 × 982")
-        XCTAssertEqual(SliderMath.format(1.4, .labels(labels), decimalSeparator: "."), "1512 × 982")
-        XCTAssertEqual(SliderMath.format(7, .labels(labels), decimalSeparator: "."), "1800 × 1169")
-        XCTAssertEqual(SliderMath.format(-3, .labels(labels), decimalSeparator: "."), "1280 × 800")
-        XCTAssertEqual(SliderMath.format(0, .labels([]), decimalSeparator: "."), "")
+        XCTAssertEqual(SliderLabels.text(1, labels), "1512 × 982")
+        XCTAssertEqual(SliderLabels.text(1.4, labels), "1512 × 982")
+        XCTAssertEqual(SliderLabels.text(7, labels), "1800 × 1169")
+        XCTAssertEqual(SliderLabels.text(-3, labels), "1280 × 800")
+        XCTAssertEqual(SliderLabels.text(.nan, labels), "")
+        XCTAssertEqual(SliderLabels.text(0, []), "")
+        XCTAssertEqual(SliderLabels.widest(["1280 × 800", "1512 × 982", "800 × 600"]), "1280 × 800")
+        XCTAssertEqual(SliderLabels.widest([]), "")
     }
 
     // MARK: spoken
@@ -122,8 +125,7 @@ final class SliderMathTests: XCTestCase {
         XCTAssertEqual(SliderMath.spoken(1, .nits, decimalSeparator: "."), "1 nit")
         XCTAssertEqual(SliderMath.spoken(170, .points, decimalSeparator: "."), "170 points")
         XCTAssertEqual(SliderMath.spoken(6500, .kelvin, decimalSeparator: "."), "6500 kelvin")
-        XCTAssertEqual(SliderMath.spoken(1, .labels(["1280 × 800", "1512 × 982"]), decimalSeparator: "."),
-                       "1512 by 982")
+        XCTAssertEqual(SliderLabels.spoken(1, ["1280 × 800", "1512 × 982"]), "1512 by 982")
         XCTAssertEqual(SliderMath.spoken(.nan, .seconds, decimalSeparator: "."), "no value")
     }
 
@@ -135,8 +137,6 @@ final class SliderMathTests: XCTestCase {
         XCTAssertEqual(SliderMath.widestText(range: 1000...10000, step: 100, format: .kelvin), "10000 K")
         XCTAssertEqual(SliderMath.widestText(range: 48...120, step: nil, format: .hertz), "119.45 Hz")
         XCTAssertEqual(SliderMath.widestText(range: 0.5...2, step: 0.1, format: .seconds), "0.5 s")
-        XCTAssertEqual(SliderMath.widestText(range: 0...2, step: 1, format: .labels(["1280 × 800", "1512 × 982", "800 × 600"])),
-                       "1280 × 800")
         XCTAssertEqual(SliderMath.widestText(range: -100...100, step: 1, format: .plain(digits: 0)), "-100")
     }
 
@@ -194,13 +194,15 @@ final class SliderMathTests: XCTestCase {
 
     func testParseLabels() {
         let labels = ["1280 × 800", "1512 × 982", "1800 × 1169"]
-        XCTAssertEqual(SliderMath.parse("1512x982", .labels(labels), decimalSeparator: "."), 1)
-        XCTAssertEqual(SliderMath.parse("1512 × 982", .labels(labels), decimalSeparator: "."), 1)
-        XCTAssertEqual(SliderMath.parse("1500 x 1000", .labels(labels), decimalSeparator: "."), 1)
-        XCTAssertEqual(SliderMath.parse("4000x3000", .labels(labels), decimalSeparator: "."), 2)
-        XCTAssertNil(SliderMath.parse("wide", .labels(labels), decimalSeparator: "."))
-        XCTAssertNil(SliderMath.parse("1512x", .labels(labels), decimalSeparator: "."))
-        XCTAssertEqual(SliderMath.parse("Native", .labels(["Default", "Native"]), decimalSeparator: "."), 1)
+        XCTAssertEqual(SliderLabels.parse("1512x982", labels), 1)
+        XCTAssertEqual(SliderLabels.parse(" 1512 × 982 ", labels), 1)
+        XCTAssertEqual(SliderLabels.parse("1500 x 1000", labels), 1)
+        XCTAssertEqual(SliderLabels.parse("4000x3000", labels), 2)
+        XCTAssertNil(SliderLabels.parse("wide", labels))
+        XCTAssertNil(SliderLabels.parse("1512x", labels))
+        XCTAssertNil(SliderLabels.parse("", labels))
+        XCTAssertNil(SliderLabels.parse(String(repeating: "1", count: 65), labels))
+        XCTAssertEqual(SliderLabels.parse("Native", ["Default", "Native"]), 1)
     }
 
     // MARK: Fuzz
@@ -228,8 +230,7 @@ final class SliderMathTests: XCTestCase {
     func testSeededParseNeverTraps() {
         var g = SeededGenerator(seed: 0xF00D)
         let alphabet = Array("0123456789.,-+ %smhzkpt×x\u{2212}\u{00A0}e")
-        let formats: [ValueFormat] = [.percent(of: 1), .seconds, .minutes, .hertz, .kelvin, .plain(digits: 1),
-                                      .labels(["1280 × 800", "1512 × 982"])]
+        let formats: [ValueFormat] = [.percent(of: 1), .seconds, .minutes, .hertz, .kelvin, .plain(digits: 1)]
         for _ in 0..<4000 {
             let length = Int(g.next() % 21)
             var text = ""
@@ -239,6 +240,7 @@ final class SliderMathTests: XCTestCase {
                     XCTAssertTrue(v.isFinite, text)
                 }
             }
+            if let i = SliderLabels.parse(text, ["1280 × 800", "1512 × 982"]) { XCTAssertTrue(i == 0 || i == 1, text) }
         }
     }
 
