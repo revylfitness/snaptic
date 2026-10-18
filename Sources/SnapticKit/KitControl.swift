@@ -36,13 +36,40 @@ package struct ControlResponse: Codable, Equatable, Sendable, Error {
     /// Process exit code for the CLI (`ControlExit`; the README lists them).
     package var exitCode: Int32
     package var output: String
-    package init(exitCode: Int32, output: String) {
+    /// 0.3 §2.10: the server keeps the connection open after this reply (a connection hold). The client prints the
+    /// output, keeps reading (ignoring ping lines) and exits with the final line's code, or 5 on EOF without one.
+    package var holding: Bool
+
+    package init(exitCode: Int32, output: String, holding: Bool = false) {
         self.exitCode = exitCode
         self.output = output
+        self.holding = holding
     }
     package static func ok(_ output: String = "") -> ControlResponse { ControlResponse(exitCode: 0, output: output) }
     package static func failure(_ code: Int32, _ message: String) -> ControlResponse {
         ControlResponse(exitCode: code, output: message)
+    }
+    /// The first reply of a connection hold.
+    package static func holding(_ output: String) -> ControlResponse {
+        ControlResponse(exitCode: ControlExit.ok, output: output, holding: true)
+    }
+
+    private enum CodingKeys: String, CodingKey { case exitCode, output, holding }
+
+    /// Hand-written so replies from a 0.2 server (no `holding` key) still decode.
+    package init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        exitCode = try c.decode(Int32.self, forKey: .exitCode)
+        output = c.lossy(.output, "")
+        holding = c.lossy(.holding, false)
+    }
+
+    /// `holding` is written only when true, so ordinary replies keep their 0.2 bytes.
+    package func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(exitCode, forKey: .exitCode)
+        try c.encode(output, forKey: .output)
+        if holding { try c.encode(true, forKey: .holding) }
     }
 }
 
@@ -93,6 +120,23 @@ package enum KitControl {
     package static let maxArguments = 32
     package static let maxArgumentBytes = 1024
     package static let maxVerbWords = 4
+    /// 0.3 §2.10: held connections (`awake hold`) have their own pool and never use the 4 request slots.
+    package static let maxHeldConnections = 8
+    /// Seconds between `{"ping":true}` lines on a held connection (a write failure ends the hold).
+    package static let holdPingSeconds = 300
+    /// A held connection only carries pings and one final line, so its send buffer is kept small: a client that
+    /// stops reading can make Snaptic queue at most this much for it before the hold ends (security L5).
+    package static let heldSendBufferBytes: Int32 = 1024
+
+    /// The ping line servers write on held connections (with its newline).
+    package static var pingLine: Data { Data(#"{"ping":true}"#.utf8) + [0x0A] }
+
+    /// A ping line (without its newline): a JSON object whose only key is `"ping": true`. The client drops these.
+    package static func isPing(_ line: Data) -> Bool {
+        guard line.count <= 64, let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+              object.count == 1, let ping = object["ping"] as? Bool else { return false }
+        return ping
+    }
 
     // MARK: Paths
 
@@ -241,11 +285,13 @@ package enum KitControl {
     /// Verbs that change settings; their arguments are checked against the protected list.
     package static let settingVerbs: Set<String> = ["set", "toggle", "features", "feature", "enable", "disable", "module"]
 
-    /// Never touchable from the CLI (PLAN §4.10(3)).
+    /// Never touchable from the CLI (PLAN §4.10(3); 0.3 §2.10 adds the Awake words in step 1; the step-3 merge that
+    /// removes Displays' sleep prevention drops "sleepprevention" and "preventsleep", R5-14).
     package static let protectedSettings: Set<String> = [
         "hooks", "customactions", "actions", "cli", "commandline", "disconnect", "autodisconnectbuiltin",
         "dimtoblack", "unlocks", "unlock", "allowwithoutasking", "allow", "trust",
         "sleepprevention", "preventsleep",
+        "awake", "nudge", "pointernudge", "drivealive", "activity", "guards", "batteryguard", "thermalguard",
     ]
 
     private static let onWords: Set<String> = ["on", "true", "yes", "enable", "enabled", "start"]
@@ -270,6 +316,7 @@ package enum KitControl {
     /// With `--json`, every successful reply is JSON (FIXES-R3 10): a handler's own JSON object
     /// or array passes through; anything else becomes `{"ok":true}` or
     /// `{"ok":true,"output":"…"}`. Failures are left alone (the client formats those).
+    /// `holding` is kept (0.3 §2.10).
     package static func jsonReply(_ response: ControlResponse) -> ControlResponse {
         guard response.exitCode == ControlExit.ok else { return response }
         let text = response.output
@@ -281,7 +328,9 @@ package enum KitControl {
         }
         var object: [String: Any] = ["ok": true]
         if !text.isEmpty { object["output"] = text }
-        return .ok(jsonText(object) ?? #"{"ok":true}"#)
+        var wrapped = response
+        wrapped.output = jsonText(object) ?? #"{"ok":true}"#
+        return wrapped
     }
 
     /// The client's error object: `{"error":"…","exitCode":N}`.
@@ -316,12 +365,15 @@ package enum KitControl {
         return DisplayFeature.allCases.first { normalize($0.rawValue) == wanted }
     }
 
-    /// The protected setting a request would touch, if any.
+    /// The protected setting a request would touch, if any. A module id after `module` names the module, not a
+    /// setting: `module disable awake` stays reachable (the verb is off-only and its help lists Awake, 0.3 §2.10),
+    /// while `set awake …` and `toggle awake …` are refused.
     package static func protectedSetting(verb: String, arguments: [String]) -> String? {
         let words = verb.split(separator: " ").map { $0.lowercased() } + arguments.map { $0.lowercased() }
         guard let first = words.first, settingVerbs.contains(first) else { return nil }
         let normalized = words.dropFirst().map { $0.replacingOccurrences(of: "-", with: "").replacingOccurrences(of: "_", with: "") }
-        return normalized.first { protectedSettings.contains($0) }
+        let moduleNames = first == "module" ? Set(ModuleID.allCases.map { $0.rawValue.lowercased() }) : []
+        return normalized.first { protectedSettings.contains($0) && !moduleNames.contains($0) }
     }
 }
 
@@ -404,5 +456,81 @@ package struct ControlRateWindow: Sendable {
         guard stamps.count < limit else { return false }
         stamps.append(now)
         return true
+    }
+}
+
+/// Splits a byte stream into newline-terminated lines (the CLI client's reader, 0.3 §2.10). Bytes after a newline are
+/// kept for the next line, never dropped; a line longer than `maxLineBytes` sets `overflowed` and drops what was pending.
+package struct ControlLineReader: Sendable {
+    package let maxLineBytes: Int
+    private var pending: [UInt8] = []
+    package private(set) var overflowed = false
+
+    package init(maxLineBytes: Int = KitControl.maxMessageBytes) {
+        self.maxLineBytes = max(1, maxLineBytes)
+    }
+
+    /// Appends `bytes` and returns the lines they completed, in order, without their newlines.
+    package mutating func append<S: Sequence>(_ bytes: S) -> [Data] where S.Element == UInt8 {
+        var lines: [Data] = []
+        for byte in bytes {
+            if byte == 0x0A {
+                if !overflowed { lines.append(Data(pending)) }
+                pending.removeAll(keepingCapacity: true)
+                overflowed = false
+            } else if !overflowed {
+                pending.append(byte)
+                if pending.count > maxLineBytes {
+                    overflowed = true
+                    pending.removeAll()
+                }
+            }
+        }
+        return lines
+    }
+
+    /// Bytes after the last newline (a final line without one), or nil when there are none.
+    package var remainder: Data? { pending.isEmpty || overflowed ? nil : Data(pending) }
+
+    /// Whether a partial line is waiting.
+    package var hasPartialLine: Bool { !pending.isEmpty || overflowed }
+}
+
+/// The control server's two connection pools (0.3 §2.10 "Slots"): 4 request slots and 8 held slots. A `holding` reply
+/// moves a connection from the request pool to the held pool exactly once; its finish then frees the held slot only.
+package struct ControlSlotPool: Equatable, Sendable {
+    package private(set) var active = 0
+    package private(set) var held = 0
+    package let maxActive: Int
+    package let maxHeld: Int
+
+    package init(maxActive: Int = KitControl.maxConcurrentConnections, maxHeld: Int = KitControl.maxHeldConnections) {
+        self.maxActive = max(1, maxActive)
+        self.maxHeld = max(0, maxHeld)
+    }
+
+    /// Takes a request slot for a new connection; false when all are busy.
+    package mutating func admit() -> Bool {
+        guard active < maxActive else { return false }
+        active += 1
+        return true
+    }
+
+    /// Moves one connection from the request pool to the held pool; false (nothing changes) when the held pool is
+    /// full, and the caller then refuses the hold and releases the request slot as usual.
+    package mutating func promote() -> Bool {
+        guard held < maxHeld, active > 0 else { return false }
+        active -= 1
+        held += 1
+        return true
+    }
+
+    /// Frees the slot of a finished connection: the held one if it was promoted, else its request slot.
+    package mutating func release(wasHeld: Bool) {
+        if wasHeld {
+            held = max(0, held - 1)
+        } else {
+            active = max(0, active - 1)
+        }
     }
 }

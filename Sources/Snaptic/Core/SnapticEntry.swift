@@ -13,7 +13,7 @@ enum SnapticEntry {
         switch KitArgs.mode(arguments: arguments) {
         case .displayGuard: DisplayGuardMain.run(arguments)
         case .virtualHost: VirtualHostMain.run(arguments)
-        case .selftestHelpers, .selftestChild: SelfTest.run(arguments)
+        case .selftestHelpers, .selftestChild, .selftestControls, .selftestControlServer: SelfTest.run(arguments)
         case .cli: CLIClient.run(arguments)
         case .app: break
         }

@@ -6,6 +6,11 @@ import SnapticKit
 /// to the running Snaptic over its per-user socket and prints the reply. Never starts
 /// AppKit and never touches TCC-guarded APIs. Exit codes: 0 ok, 2 usage, 3 not found,
 /// 4 refused, 5 unavailable, 6 cancelled or timed out.
+///
+/// 0.3 §2.10 holding mode (`snaptic awake hold`): a reply with `holding` is printed and flushed, then the client keeps
+/// reading with no timeout, drops ping lines, and exits with the final line's code (5 on EOF without one). It never
+/// writes after the request and never half-closes, so its own exit (or Control-C, or a closed terminal) is the EOF
+/// that ends the hold. `--pid N` gets an ordinary reply and exits at once.
 enum CLIClient {
     static func run(_ arguments: [String]) -> Never {
         let rest = arguments.count > 1 && arguments[1] == "cli" ? Array(arguments.dropFirst(2)) : Array(arguments.dropFirst())
@@ -24,8 +29,13 @@ enum CLIClient {
         }
         let request = ControlRequest(verb: first.lowercased(), arguments: Array(words.dropFirst()), json: command.json,
                                      skipConfirmation: command.yes)
-        guard let home = AccountPaths.home else { fail(ControlExit.unavailable, L("Your home folder couldn't be found.")) }
-        let path = KitControl.socketPath(home: home)
+        let path: String
+        if let selftest = selftestSocketPath() {
+            path = selftest
+        } else {
+            guard let home = AccountPaths.home else { fail(ControlExit.unavailable, L("Your home folder couldn't be found.")) }
+            path = KitControl.socketPath(home: home)
+        }
         guard KitControl.isUsableSocketPath(path), let line = KitControl.encode(request) else {
             fail(ControlExit.usage, L("The command is too long."))
         }
@@ -36,13 +46,42 @@ enum CLIClient {
                  L("Snaptic isn't running, or command-line control is off (Settings → General → Command-Line Control)."))
         }
         guard sendAll(fd, line) else { fail(ControlExit.unavailable, L("Snaptic closed the connection.")) }
-        guard let reply = readReply(fd, timeout: KitControl.clientTimeoutSeconds) else {
-            fail(ControlExit.cancelled, L("Snaptic didn't answer in time."))
+        var reader = ControlLineReader()
+        let reply: Data
+        switch nextLine(fd, &reader, timeout: KitControl.clientTimeoutSeconds) {
+        case .line(let data): reply = data
+        case .timedOut: fail(ControlExit.cancelled, L("Snaptic didn't answer in time."))
+        case .closed: fail(ControlExit.unavailable, L("Snaptic closed the connection."))
         }
-        close(fd)
         guard let response = KitControl.decodeResponse(reply) else { fail(ControlExit.unavailable, L("Unreadable reply.")) }
+        guard response.holding && response.exitCode == ControlExit.ok else {
+            close(fd)
+            show(response)
+            exit(response.exitCode)
+        }
 
-        if command.json && response.exitCode != ControlExit.ok {
+        // Holding: the connection is the hold. Print, flush, and wait for the final line however long it takes.
+        show(response)
+        fflush(stdout)
+        while true {
+            switch nextLine(fd, &reader, timeout: nil) {
+            case .line(let data):
+                if KitControl.isPing(data) { continue }
+                guard let final = KitControl.decodeResponse(data) else { continue }
+                close(fd)
+                show(final)
+                fflush(stdout)
+                exit(final.exitCode)
+            case .timedOut, .closed:
+                close(fd)
+                fail(ControlExit.unavailable, L("Snaptic ended the hold without saying why (it may have quit)."))
+            }
+        }
+    }
+
+    /// Prints a reply: output on stdout for success, the message on stderr (or an error object with --json).
+    private static func show(_ response: ControlResponse) {
+        if json && response.exitCode != ControlExit.ok {
             let message = response.output.isEmpty ? ControlExit.describe(response.exitCode) : response.output
             print(KitControl.errorJSON(response.exitCode, message))
         } else if response.exitCode == ControlExit.ok {
@@ -50,7 +89,16 @@ enum CLIClient {
         } else {
             printError(response.output.isEmpty ? ControlExit.describe(response.exitCode) : response.output)
         }
-        exit(response.exitCode)
+    }
+
+    /// R5-5 token mode: the self-test's socket, only when SNAPTIC_SELFTEST_TOKEN is set and equals the contents of
+    /// SNAPTIC_SELFTEST_TOKEN_FILE. This grants nothing (a client choosing a socket has no capability); the gate
+    /// keeps the override out of normal use.
+    private static func selftestSocketPath() -> String? {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment[SelfTest.tokenVariable] != nil, let file = environment[SelfTest.tokenFileVariable],
+              let socket = environment[SelfTest.socketVariable], SelfTest.tokenMatches(file: file) else { return nil }
+        return socket
     }
 
     /// `--json` was given: errors go to stdout as `{"exitCode":…,"error":…}`.
@@ -103,24 +151,49 @@ enum CLIClient {
         }
     }
 
-    /// One reply line, waiting with poll() so a stuck Snaptic can't hang the caller.
-    private static func readReply(_ fd: Int32, timeout: Double) -> Data? {
-        var buffer = Data()
-        let deadline = Date().addingTimeInterval(timeout)
-        var chunk = [UInt8](repeating: 0, count: 8_192)
-        while buffer.count <= KitControl.maxMessageBytes {
-            let remaining = deadline.timeIntervalSinceNow
-            guard remaining > 0 else { return nil }
-            var poller = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
-            let ready = poll(&poller, 1, Int32(min(remaining, 3600) * 1000))
-            if ready < 0 && errno == EINTR { continue }
-            guard ready > 0 else { return nil }
-            let n = chunk.withUnsafeMutableBytes { raw in read(fd, raw.baseAddress, raw.count) }
-            if n < 0 && errno == EINTR { continue }
-            guard n > 0 else { break }
-            buffer.append(contentsOf: chunk[0..<n])
-            if let newline = buffer.firstIndex(of: 0x0A) { return Data(buffer[buffer.startIndex..<newline]) }
-        }
-        return buffer.isEmpty ? nil : buffer
+    private enum LineResult {
+        case line(Data)
+        case timedOut
+        case closed
     }
+
+    /// The next line, waiting with poll() so a stuck Snaptic can't hang the caller (nil timeout: wait forever, for
+    /// a held connection). Bytes after a newline are kept for the next call, never dropped. A last line without a
+    /// newline before EOF still counts.
+    private static func nextLine(_ fd: Int32, _ reader: inout ControlLineReader, timeout: Double?) -> LineResult {
+        if !pendingLines.isEmpty { return .line(pendingLines.removeFirst()) }
+        let deadline = timeout.map { Date().addingTimeInterval($0) }
+        var chunk = [UInt8](repeating: 0, count: 8_192)
+        while true {
+            var wait: Int32 = -1
+            if let deadline {
+                let remaining = deadline.timeIntervalSinceNow
+                guard remaining > 0 else { return .timedOut }
+                wait = Int32(min(remaining, 3600) * 1000)
+            }
+            var poller = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+            let ready = poll(&poller, 1, wait)
+            if ready < 0 && errno == EINTR { continue }
+            if ready == 0 { continue }
+            guard ready > 0 else { return .closed }
+            let n = chunk.withUnsafeMutableBytes { raw in read(fd, raw.baseAddress, raw.count) }
+            if n < 0 && (errno == EINTR || errno == EAGAIN) { continue }
+            guard n > 0 else {
+                if let rest = reader.remainder {
+                    reader = ControlLineReader()
+                    return .line(rest)
+                }
+                return .closed
+            }
+            var lines = reader.append(chunk[0..<n])
+            if !lines.isEmpty {
+                let first = lines.removeFirst()
+                pendingLines = lines
+                return .line(first)
+            }
+        }
+    }
+
+    /// Lines a read completed beyond the one returned (several can arrive in one chunk).
+    private static var pendingLines: [Data] = []
 }

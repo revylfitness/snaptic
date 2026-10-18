@@ -308,4 +308,157 @@ final class KitControlTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(KitControl.clientTimeoutSeconds,
                                     Double(SafetyConfig.confirmSecondsRange.upperBound) + KitControl.applyMarginSeconds)
     }
+
+    // MARK: 0.3 connection holds (§2.10)
+
+    func testResponseHoldingRoundTripsAndOldRepliesDecode() throws {
+        let held = ControlResponse.holding("Holding until this command ends (at most 12 h). Press Control-C to stop.")
+        XCTAssertTrue(held.holding)
+        let line = try XCTUnwrap(KitControl.encode(held))
+        XCTAssertEqual(KitControl.decodeResponse(line.dropLast()), held)
+        // A 0.2 server's reply has no "holding" key; a reply with a junk value is not a hold.
+        let old = try XCTUnwrap(KitControl.decodeResponse(Data(#"{"exitCode":0,"output":"ok"}"#.utf8)))
+        XCTAssertEqual(old, .ok("ok"))
+        XCTAssertFalse(old.holding)
+        XCTAssertEqual(KitControl.decodeResponse(Data(#"{"exitCode":4,"output":"x","holding":"yes"}"#.utf8)),
+                       .failure(4, "x"))
+        XCTAssertEqual(KitControl.decodeResponse(Data(#"{"exitCode":0}"#.utf8)), .ok(""))
+        XCTAssertNil(KitControl.decodeResponse(Data(#"{"output":"no code"}"#.utf8)))
+    }
+
+    func testOrdinaryRepliesKeepTheirBytes() throws {
+        let line = try XCTUnwrap(KitControl.encode(ControlResponse.ok("hi")))
+        XCTAssertEqual(String(decoding: line, as: UTF8.self), "{\"exitCode\":0,\"output\":\"hi\"}\n")
+        let held = try XCTUnwrap(KitControl.encode(ControlResponse.holding("h")))
+        XCTAssertEqual(String(decoding: held, as: UTF8.self), "{\"exitCode\":0,\"holding\":true,\"output\":\"h\"}\n")
+    }
+
+    func testJSONReplyKeepsHolding() throws {
+        let wrapped = KitControl.jsonReply(.holding("Holding while process 42 runs."))
+        XCTAssertTrue(wrapped.holding)
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(wrapped.output.utf8)) as? [String: Any])
+        XCTAssertEqual(object["output"] as? String, "Holding while process 42 runs.")
+        XCTAssertFalse(KitControl.jsonReply(.ok("x")).holding)
+    }
+
+    func testHoldLimitsAndPing() {
+        XCTAssertEqual(KitControl.maxHeldConnections, 8)
+        XCTAssertEqual(KitControl.holdPingSeconds, 300)
+        XCTAssertEqual(KitControl.pingLine.last, 0x0A)
+        XCTAssertTrue(KitControl.isPing(KitControl.pingLine.dropLast()))
+        XCTAssertTrue(KitControl.isPing(Data(#" { "ping" : true } "#.utf8)))
+        for notPing in [#"{"ping":false}"#, #"{"ping":true,"exitCode":0}"#, #"{"exitCode":0,"output":"ping"}"#,
+                        "ping", "", #"{"ping":1}"#, "[true]"] {
+            XCTAssertFalse(KitControl.isPing(Data(notPing.utf8)), notPing)
+        }
+        // A reply is never mistaken for a ping, and a ping never decodes as a reply.
+        XCTAssertNil(KitControl.decodeResponse(KitControl.pingLine.dropLast()))
+    }
+
+    func testProtectedAwakeWords() {
+        for word in ["awake", "nudge", "pointernudge", "drivealive", "activity", "guards", "batteryguard", "thermalguard"] {
+            XCTAssertTrue(KitControl.protectedSettings.contains(word), word)
+        }
+        // The 0.2 words stay until the step-3 merge removes Displays' sleep prevention (R5-14).
+        XCTAssertTrue(KitControl.protectedSettings.isSuperset(of: ["sleepprevention", "preventsleep"]))
+        XCTAssertEqual(KitControl.protectedSetting(verb: "set", arguments: ["pointer-nudge", "on"]), "pointernudge")
+        XCTAssertEqual(KitControl.protectedSetting(verb: "feature", arguments: ["enable", "drive_alive"]), "drivealive")
+        XCTAssertEqual(KitControl.protectedSetting(verb: "set", arguments: ["awake", "on"]), "awake")
+        XCTAssertEqual(KitControl.protectedSetting(verb: "toggle", arguments: ["thermal-guard"]), "thermalguard")
+        // `module disable awake` names the module (off-only), not a setting.
+        XCTAssertNil(KitControl.protectedSetting(verb: "module disable", arguments: ["awake"]))
+        XCTAssertNil(KitControl.protectedSetting(verb: "module", arguments: ["disable", "Awake"]))
+        XCTAssertEqual(KitControl.protectedSetting(verb: "module disable", arguments: ["cli"]), "cli")
+        XCTAssertNil(KitControl.protectedSetting(verb: "awake", arguments: ["hold"]), "awake verbs aren't setting verbs")
+    }
+
+    func testLineReaderKeepsBytesAfterTheNewline() {
+        var reader = ControlLineReader(maxLineBytes: 100)
+        let first = reader.append(Array("{\"a\":1}\n{\"ping\":true}\n{\"b\"".utf8))
+        XCTAssertEqual(first.map { String(decoding: $0, as: UTF8.self) }, ["{\"a\":1}", "{\"ping\":true}"])
+        XCTAssertTrue(reader.hasPartialLine)
+        XCTAssertEqual(reader.remainder.map { String(decoding: $0, as: UTF8.self) }, "{\"b\"")
+        XCTAssertEqual(reader.append(Array(":2}\n".utf8)).map { String(decoding: $0, as: UTF8.self) }, ["{\"b\":2}"])
+        XCTAssertNil(reader.remainder)
+        XCTAssertEqual(reader.append(Array("\n".utf8)), [Data()], "an empty line is still a line")
+    }
+
+    func testLineReaderDropsOverlongLinesOnly() {
+        var reader = ControlLineReader(maxLineBytes: 4)
+        XCTAssertEqual(reader.append(Array("12345".utf8)), [])
+        XCTAssertTrue(reader.overflowed)
+        XCTAssertNil(reader.remainder)
+        XCTAssertEqual(reader.append(Array("678\nok\n".utf8)), [Data("ok".utf8)])
+        XCTAssertFalse(reader.overflowed)
+    }
+
+    func testLineReaderFuzzIsChunkingIndependent() {
+        var rng = SeededGenerator(seed: 0x11E5)
+        for _ in 0..<500 {
+            let alphabet: [UInt8] = [0x0A, 0x61, 0x62, 0x7B, 0x7D]
+            let stream = (0..<Int(rng.next() % 200)).map { _ in alphabet[Int(rng.next() % UInt64(alphabet.count))] }
+            var whole = ControlLineReader(maxLineBytes: 16)
+            let expected = whole.append(stream)
+            var chunked = ControlLineReader(maxLineBytes: 16)
+            var got: [Data] = []
+            var index = 0
+            while index < stream.count {
+                let n = 1 + Int(rng.next() % 9)
+                got += chunked.append(stream[index..<min(stream.count, index + n)])
+                index += n
+            }
+            XCTAssertEqual(got, expected)
+            XCTAssertEqual(chunked.remainder, whole.remainder)
+            XCTAssertTrue(got.allSatisfy { $0.count <= 16 && !$0.contains(0x0A) })
+        }
+    }
+
+    func testSlotPoolMovesAHoldExactlyOnce() {
+        var pool = ControlSlotPool()
+        for _ in 0..<4 { XCTAssertTrue(pool.admit()) }
+        XCTAssertFalse(pool.admit(), "a 5th request is busy")
+        XCTAssertTrue(pool.promote())
+        XCTAssertEqual(pool.active, 3)
+        XCTAssertEqual(pool.held, 1)
+        XCTAssertTrue(pool.admit(), "a hold frees its request slot")
+        pool.release(wasHeld: true)
+        XCTAssertEqual(pool.held, 0)
+        XCTAssertEqual(pool.active, 4, "the held connection's finish never frees a request slot")
+    }
+
+    func testSlotPoolRefusesTheNinthHold() {
+        var pool = ControlSlotPool()
+        for _ in 0..<8 {
+            XCTAssertTrue(pool.admit())
+            XCTAssertTrue(pool.promote())
+        }
+        XCTAssertTrue(pool.admit())
+        XCTAssertFalse(pool.promote())
+        XCTAssertEqual(pool.held, 8)
+        XCTAssertEqual(pool.active, 1)
+        pool.release(wasHeld: false)
+        XCTAssertEqual(pool, { var p = ControlSlotPool(); for _ in 0..<8 { _ = p.admit(); _ = p.promote() }; return p }())
+    }
+
+    func testSlotPoolFuzzKeepsCountsInRange() {
+        var rng = SeededGenerator(seed: 0x5107)
+        var pool = ControlSlotPool()
+        var connections: [Bool] = []   // wasHeld per open connection
+        for _ in 0..<20_000 {
+            switch rng.next() % 3 {
+            case 0:
+                if pool.admit() { connections.append(false) }
+            case 1:
+                if let i = connections.firstIndex(of: false), pool.promote() { connections[i] = true }
+            default:
+                if !connections.isEmpty {
+                    let i = Int(rng.next() % UInt64(connections.count))
+                    pool.release(wasHeld: connections.remove(at: i))
+                }
+            }
+            XCTAssertEqual(pool.active, connections.filter { !$0 }.count)
+            XCTAssertEqual(pool.held, connections.filter { $0 }.count)
+            XCTAssertTrue((0...4).contains(pool.active) && (0...8).contains(pool.held))
+        }
+    }
 }

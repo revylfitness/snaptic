@@ -11,6 +11,7 @@ Sources/SnapticKit/Config/ConfigDisplays.swift	lead	L	-	-
 Sources/SnapticKit/KitLossy.swift	lead	L	-	-
 Sources/SnapticKit/KitText.swift	A	L	-	-
 Sources/SnapticKit/KitControl.swift	A	S	KitControl	-
+Sources/SnapticKit/KitKeyPaths.swift	A	L	-	-
 Sources/SnapticKit/KitHookPolicy.swift	A	K1	KitHookPolicy	-
 Sources/SnapticKit/KitLaunchStability.swift	A	K1	KitLaunchStability	-
 Sources/SnapticKit/KitArgs.swift	A	K1	KitArgs	-
@@ -238,6 +239,7 @@ Tests/SnapticKitTests/ConfigDisplaysTests.swift	lead	L	-	-
 Tests/SnapticKitTests/KitLossyTests.swift	lead	L	-	-
 Tests/SnapticKitTests/KitTextTests.swift	A	K3	KitTextTests	-
 Tests/SnapticKitTests/KitControlTests.swift	A	K3	KitControlTests	-
+Tests/SnapticKitTests/KitKeyPathsTests.swift	A	L	-	-
 Tests/SnapticKitTests/KitHookPolicyTests.swift	A	K3	KitHookPolicyTests	-
 Tests/SnapticKitTests/KitLaunchStabilityTests.swift	A	K3	KitLaunchStabilityTests	-
 Tests/SnapticKitTests/KitArgsTests.swift	A	K3	KitArgsTests	-

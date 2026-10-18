@@ -7,15 +7,21 @@ import SnapticKit
 /// - protected settings (hooks, actions, CLI, disconnect, auto-disconnect, dim to black,
 ///   unlocks, allow flags, trust) are never touchable;
 /// - `offOnly` verbs can only turn things off;
-/// - `skipConfirmation` reaches a trial handler only when the user allowed it.
+/// - `skipConfirmation` reaches a trial handler only when the user allowed it;
+/// - only `holds: true` verbs get the connection's `ControlHold` and may answer `holding` (0.3 §2.10).
 @MainActor final class ControlCommandRegistry {
-    typealias Handler = @MainActor (ControlRequest) async -> ControlResponse
+    /// 0.3 §2.10: handlers also get the connection's peer and, for `holds: true` verbs, its hold.
+    typealias Handler = @MainActor (ControlRequest, ControlContext) async -> ControlResponse
+    /// The 0.2 one-argument handler; kept through an overload until the step-3 exit.
+    typealias LegacyHandler = @MainActor (ControlRequest) async -> ControlResponse
 
     struct Entry {
         let verb: String
         let policy: ControlPolicy
         let offOnly: Bool
         let cliAllowed: Bool
+        /// May keep the connection open with a `holding` reply (§2.10).
+        let holds: Bool
         let summary: String
         let handler: Handler
         fileprivate let serial: UInt64
@@ -27,10 +33,10 @@ import SnapticKit
 
     init() {}
 
-    /// `offOnly`: the CLI may only turn the thing off (R5.4). Ends with `lifetime`.
-    /// A verb registered twice: the newer registration wins.
-    func register(_ verb: String, policy: ControlPolicy, offOnly: Bool, cliAllowed: Bool, summary: String,
-                  lifetime: Lifetime, _ handler: @escaping Handler) {
+    /// `offOnly`: the CLI may only turn the thing off (R5.4). `holds`: the handler gets the connection's hold and
+    /// may answer `holding` (§2.10). Ends with `lifetime`. A verb registered twice: the newer registration wins.
+    func register(_ verb: String, policy: ControlPolicy, offOnly: Bool, cliAllowed: Bool, holds: Bool = false,
+                  summary: String, lifetime: Lifetime, _ handler: @escaping Handler) {
         guard !lifetime.isEnded, Self.isValidVerb(verb) else { return }
         serial &+= 1
         let mine = serial
@@ -38,13 +44,20 @@ import SnapticKit
             EventLog.shared.record(.control, "Verb \(verb) registered twice; the newer one wins")
             entries.removeAll { $0.verb == verb }
         }
-        entries.append(Entry(verb: verb, policy: policy, offOnly: offOnly, cliAllowed: cliAllowed, summary: summary,
-                             handler: handler, serial: mine))
+        entries.append(Entry(verb: verb, policy: policy, offOnly: offOnly, cliAllowed: cliAllowed, holds: holds,
+                             summary: summary, handler: handler, serial: mine))
         onChange?()
         lifetime.onEnd { [weak self] in
             self?.entries.removeAll { $0.serial == mine }
             self?.onChange?()
         }
+    }
+
+    /// The 0.2 form: a one-argument handler, never a hold. Removed at the step-3 exit.
+    func register(_ verb: String, policy: ControlPolicy, offOnly: Bool, cliAllowed: Bool, summary: String,
+                  lifetime: Lifetime, _ handler: @escaping LegacyHandler) {
+        register(verb, policy: policy, offOnly: offOnly, cliAllowed: cliAllowed, holds: false, summary: summary,
+                 lifetime: lifetime) { request, _ in await handler(request) }
     }
 
     /// Registered verbs, sorted.
@@ -60,9 +73,11 @@ import SnapticKit
 
     // MARK: Dispatch
 
-    /// Runs one request from the control server. `skipConfirmationAllowed` is the user's
-    /// "Let commands skip the confirmation panel" setting.
-    func dispatch(_ request: ControlRequest, skipConfirmationAllowed: Bool) async -> ControlResponse {
+    /// Runs one request from the control server. `peer` and `hold` describe the connection (the hold reaches the
+    /// handler only for `holds: true` verbs); `skipConfirmationAllowed` is the user's "Let commands skip the
+    /// confirmation panel" setting.
+    func dispatch(_ request: ControlRequest, peer: ControlPeer, hold: ControlHold,
+                  skipConfirmationAllowed: Bool) async -> ControlResponse {
         let words = request.verb.split(separator: " ").map(String.init) + request.arguments
         if words.first == "help" { return help(Array(words.dropFirst()), json: request.json) }
 
@@ -83,8 +98,12 @@ import SnapticKit
                                                 policy: entry.policy)
         let forwarded = ControlRequest(verb: entry.verb, arguments: match.arguments, json: request.json,
                                        skipConfirmation: skip)
-        let response = await entry.handler(forwarded)
-        EventLog.shared.record(.control, "CLI \(entry.verb) → \(response.exitCode)" + (skip ? " (no panel)" : ""))
+        let context = ControlContext(peer: peer, hold: entry.holds ? hold : nil)
+        var response = await entry.handler(forwarded, context)
+        // Only a hold verb keeps its connection; from any other verb a `holding` reply is an ordinary close.
+        if response.holding && !(entry.holds && response.exitCode == ControlExit.ok) { response.holding = false }
+        EventLog.shared.record(.control, "CLI \(entry.verb) → \(response.exitCode)" + (skip ? " (no panel)" : "")
+                               + (response.holding ? " (holding)" : ""))
         // FIXES-R3 10: with --json every successful reply is JSON.
         return request.json ? KitControl.jsonReply(response) : response
     }

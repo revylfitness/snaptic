@@ -8,6 +8,10 @@ package enum LaunchMode: Equatable, Sendable {
     case cli
     case selftestHelpers
     case selftestChild
+    /// 0.3 §4.8: the in-process Switcher key-path check (token-gated, CI only).
+    case selftestControls
+    /// 0.3 R5-5: a bare ControlServer with a test registry (token-gated, CI only).
+    case selftestControlServer
     case app
 }
 
@@ -70,6 +74,8 @@ package enum KitArgs {
             case "--virtual-host": return .virtualHost
             case "--selftest-helpers": return .selftestHelpers
             case "--selftest-child": return .selftestChild
+            case "--selftest-controls": return .selftestControls
+            case "--selftest-control-server": return .selftestControlServer
             case "cli": return .cli
             default: break
             }

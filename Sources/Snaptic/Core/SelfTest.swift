@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import SnapticKit
+import SnapticShims
 
 /// The helper fd-inheritance self-test (PLAN §14.1, R5.5, R4C §4.3). Built in every
 /// configuration and kept out of help texts; it grants nothing.
@@ -13,15 +14,169 @@ import SnapticKit
 ///
 /// `--selftest-child`: a helper that goes through HelperPrologue (signal resets, fd
 /// closing, parent identity check) and exits when its stdin reaches EOF.
+///
+/// `--selftest-controls <token-file>` (0.3 §4.8, token-gated): walks a Switcher `Config` with every optional set and
+/// one shortcut, in process, and exits 1 unless every key has a control (a legacy path, a Switcher table key or an
+/// internal key) and every legacy path still exists or was removed.
+///
+/// `--selftest-control-server <token-file>` (0.3 R5-5, token-gated): no modules, only a `ControlServer` with a test
+/// registry on SNAPTIC_SELFTEST_SOCKET (under the token file's directory). Prints `held=<n> active=<n>` on every pool
+/// change and `closed <reason>` per hold; exits on SIGTERM or after 120 s. Driven by scripts/selftest-control-server.sh.
 enum SelfTest {
     static let tokenVariable = "SNAPTIC_SELFTEST_TOKEN"
+    /// The CLI client's token-mode override (R5-5): the token file to compare with, and the socket to use.
+    static let tokenFileVariable = "SNAPTIC_SELFTEST_TOKEN_FILE"
+    static let socketVariable = "SNAPTIC_SELFTEST_SOCKET"
 
     static func run(_ arguments: [String]) -> Never {
         switch arguments.dropFirst().first {
         case "--selftest-child": runChild(arguments)
         case "--selftest-helpers": runParent(arguments)
+        case "--selftest-controls": runControls(arguments)
+        case "--selftest-control-server": runControlServer(arguments)
         default: exit(KitArgs.exitUsage)
         }
+    }
+
+    // MARK: --selftest-controls
+
+    /// The Switcher's control tables (settings page, sheets and its menu section).
+    private static func isSwitcherSurface(_ surface: String) -> Bool {
+        surface == "switcher" || surface.hasPrefix("switcher.") || surface == "menu.switcher"
+    }
+
+    private static func runControls(_ arguments: [String]) -> Never {
+        guard arguments.count == 3, tokenMatches(file: arguments[2]) else { exit(KitArgs.exitUsage) }
+        var config = Config()
+        // Every optional set, one element in every list (R5-13), so each key path shows up.
+        config.shortcuts = [Shortcut()]
+        config.gatherShortcut = HotkeyCombo(keyCode: 5, carbonModifiers: 0x0800)
+        config.excludedBundleIDs = ["com.example.excluded"]
+        config.passthroughBundleIDs = ["com.example.passthrough"]
+        config.privateBundleIDs = ["com.example.private"]
+        let walked = KitKeyPaths.paths(config)
+        let tables = ControlRegistry.tables.filter { isSwitcherSurface($0.surface) }
+        let declared = Set(tables.flatMap { $0.controls.flatMap(\.keys) })
+        let problems = KitKeyPaths.coverageProblems(walked: walked, legacy: ControlLegacy.switcherKeyPaths,
+                                                    declared: declared, internalKeys: ControlLegacy.internalKeys,
+                                                    removed: Set(ControlRemovals.removed.keys))
+        say("selftest-controls: \(walked.count) paths, \(KitKeyPaths.leaves(walked).count) keys, "
+            + "\(tables.count) Switcher tables\n")
+        for problem in problems { say("selftest: controls: " + problem + "\n") }
+        exit(problems.isEmpty ? 0 : 1)
+    }
+
+    // MARK: --selftest-control-server
+
+    /// How long the server lives without a SIGTERM.
+    static let controlServerSeconds: Double = 120
+    /// A watched pid's exit finishes its hold this much later, so a client's own EOF (kill -9 closes the socket at
+    /// the same moment) is reported as `eof`, and only a hold whose fd outlived the process says `pid`.
+    static let pidGraceSeconds: Double = 0.2
+
+    private static func runControlServer(_ arguments: [String]) -> Never {
+        guard arguments.count == 3, tokenMatches(file: arguments[2]) else { exit(KitArgs.exitUsage) }
+        guard let socket = ProcessInfo.processInfo.environment[socketVariable],
+              isUnder(directoryOf: arguments[2], socket) else {
+            say("selftest: \(socketVariable) must name a socket in the token file's directory\n")
+            exit(KitArgs.exitUsage)
+        }
+        MainActor.assumeIsolated {
+            let lifetime = Lifetime()
+            let registry = ControlCommandRegistry()
+            let watches = HoldWatches()
+            registerTestVerbs(registry, watches: watches, lifetime: lifetime)
+            let server = ControlServer(registry: registry)
+            server.holdPingInterval = 1
+            server.onPoolChange = { held, active in say("held=\(held) active=\(active)\n") }
+            server.start(socketPath: socket)
+            guard case .listening = server.status else {
+                say("selftest: control server didn't start: \(server.status)\n")
+                exit(1)
+            }
+            say("listening\n")
+            signal(SIGTERM, SIG_IGN)
+            let term = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+            term.setEventHandler {
+                MainActor.assumeIsolated {
+                    server.stop()
+                    exit(0)
+                }
+            }
+            term.resume()
+            DispatchQueue.main.asyncAfter(deadline: .now() + controlServerSeconds) {
+                MainActor.assumeIsolated {
+                    say("selftest: control server timed out after \(Int(controlServerSeconds)) s\n")
+                    server.stop()
+                    exit(0)
+                }
+            }
+            withExtendedLifetime((lifetime, registry, watches, server, term)) {
+                CFRunLoopRun()
+            }
+        }
+        exit(0)
+    }
+
+    /// `selftest hold` (a connection hold that also ends when the peer pid exits), `selftest slow` (3 s) and
+    /// `selftest echo`.
+    @MainActor private static func registerTestVerbs(_ registry: ControlCommandRegistry, watches: HoldWatches,
+                                                     lifetime: Lifetime) {
+        registry.register("selftest hold", policy: .low, offOnly: false, cliAllowed: true, holds: true,
+                          summary: "Self-test hold", lifetime: lifetime) { _, context in
+            guard let hold = context.hold else { return .failure(ControlExit.usage, "not a hold") }
+            let pid = context.peer.pid
+            guard pid > 1, let started = context.peer.startTime else {
+                return .failure(ControlExit.refused, L("Snaptic couldn't identify the caller."))
+            }
+            let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
+            source.setEventHandler { [weak hold] in
+                MainActor.assumeIsolated {
+                    source.cancel()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + pidGraceSeconds) {
+                        hold?.finish(.ok("Awake hold ended: the process exited."))
+                    }
+                }
+            }
+            source.resume()
+            let id = watches.add(source)
+            // Armed first, then re-verified (security M4): the same process, still there, and the client still on.
+            guard !hold.isClosed, SNProcess.startTime(for: pid) == started else {
+                watches.remove(id)
+                return .failure(ControlExit.refused, L("Snaptic couldn't identify the caller."))
+            }
+            // Strong on purpose: the connection may be gone when this runs, and the hold drops its handlers once
+            // they ran, so there is no lasting cycle.
+            hold.onClose {
+                watches.remove(id)
+                let reason = hold.closeReason ?? .eof
+                say("closed " + (reason == .finished ? "pid" : reason.rawValue) + "\n")
+            }
+            return .holding("Holding until this command ends. Press Control-C to stop.")
+        }
+        registry.register("selftest slow", policy: .read, offOnly: false, cliAllowed: true,
+                          summary: "Self-test slow request", lifetime: lifetime) { _ in
+            try? await Task.sleep(for: .seconds(3))
+            return .ok("slow")
+        }
+        registry.register("selftest echo", policy: .read, offOnly: false, cliAllowed: true,
+                          summary: "Self-test echo", lifetime: lifetime) { request in
+            .ok(request.arguments.isEmpty ? "echo" : request.arguments.joined(separator: " "))
+        }
+    }
+
+    /// Whether `path`'s directory is the token file's directory or below it (both resolved, no symlink games).
+    private static func isUnder(directoryOf tokenFile: String, _ path: String) -> Bool {
+        guard KitControl.isUsableSocketPath(path), !path.split(separator: "/").contains(".."),
+              let base = resolved((tokenFile as NSString).deletingLastPathComponent),
+              let directory = resolved((path as NSString).deletingLastPathComponent) else { return false }
+        return directory == base || directory.hasPrefix(base + "/")
+    }
+
+    private static func resolved(_ path: String) -> String? {
+        guard let pointer = realpath(path, nil) else { return nil }
+        defer { free(pointer) }
+        return String(cString: pointer)
     }
 
     /// What a child writes once its prologue (fd closing, parent identity check) passed.
@@ -95,7 +250,7 @@ enum SelfTest {
     }
 
     /// Constant-time compare of the environment token with the file's contents.
-    private static func tokenMatches(file path: String) -> Bool {
+    static func tokenMatches(file path: String) -> Bool {
         guard let expected = ProcessInfo.processInfo.environment[tokenVariable], expected.utf8.count >= 16 else {
             return false
         }
@@ -129,6 +284,22 @@ private final class SpawnAttempt {
     var handle: HelperHandle?
     var failure: String?
     var done = false
+}
+
+/// The control-server self-test's process watches, by hold (main thread only).
+@MainActor private final class HoldWatches {
+    private var sources: [UInt64: DispatchSourceProcess] = [:]
+    private var next: UInt64 = 0
+
+    func add(_ source: DispatchSourceProcess) -> UInt64 {
+        next &+= 1
+        sources[next] = source
+        return next
+    }
+
+    func remove(_ id: UInt64) {
+        sources.removeValue(forKey: id)?.cancel()
+    }
 }
 
 /// Main-thread-only tallies for the self-test parent.
