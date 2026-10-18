@@ -315,7 +315,7 @@ import SnapticKit
             }
             for id in plan.shared {
                 // The compact Awake section has no header (§5.4).
-                groups.append(section(id, host: host, header: id != .awake))
+                groups.append(section(id, host: host, header: id != .awake, compact: id == .awake))
             }
             groups.append(sharedFooter(host: host, config: config, plan: plan))
         }
@@ -336,11 +336,14 @@ import SnapticKit
         ]
     }
 
-    /// A module's section without leading, trailing or doubled separators; empty when it has nothing to show.
-    private func section(_ id: ModuleID, host: ModuleHost, header: Bool) -> [NSMenuItem] {
+    /// A module's section without leading, trailing or doubled separators; empty when it has nothing to show. The
+    /// compact Awake section in the Snaptic item has no internal separators either (§5.4: the switch header's height
+    /// sets the group apart).
+    private func section(_ id: ModuleID, host: ModuleHost, header: Bool, compact: Bool = false) -> [NSMenuItem] {
         let module = host.module(id)
         var items: [NSMenuItem] = []
-        for item in module.menuSection() where !(item.isSeparatorItem && (items.last?.isSeparatorItem ?? true)) {
+        for item in module.menuSection() where !(item.isSeparatorItem && (compact || (items.last?.isSeparatorItem ?? true))) {
+            item.menu?.removeItem(item)
             items.append(item)
         }
         while items.last?.isSeparatorItem == true { items.removeLast() }
@@ -366,7 +369,8 @@ import SnapticKit
     /// Quit Snaptic (§5.2).
     private func ownFooter(_ id: ModuleID, host: ModuleHost, config: ModulesConfig, plan: StatusItemPlan) -> [NSMenuItem] {
         let module = host.module(id)
-        let page = module.settingsPages().first?.id ?? id.rawValue
+        // The module's sidebar root (its id): "Displays Settings…" opens Settings › Displays.
+        let page = id.rawValue
         var items = [MenuKit.settings(module.title + L(" Settings…"), control: ControlID("menu.snaptic.moduleSettings")) { [weak host] in
             host?.openSettings(page: page)
         }]
