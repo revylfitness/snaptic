@@ -43,6 +43,8 @@ Priorities (0.2 order kept, Awake rows added): (1) never leave the user without 
 | C9 | Drive Alive runs only while an Awake session is active, unless the user turns on "Even without a session" | Adopt |
 | C10 | Default session (header switch, hotkey) = **Until Turned Off**, battery guard on at 20% | Adopt (Amphetamine parity) |
 
+**Lead (r1):** C1–C10 adopted as proposed. OQ-1…OQ-6 take their stated defaults until hardware testing says otherwise.
+
 Open questions (need hardware or product input) are marked **[OQ-n]** and collected in §6.8.
 
 ---
