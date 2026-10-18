@@ -223,13 +223,13 @@ final class ListReorderTests: XCTestCase {
 
     func testReorderFuzzKeepsEveryItemOnce() {
         var rng = SeededGenerator(seed: 0x1A70)
+        func pick(_ range: ClosedRange<Int>) -> Int { range.lowerBound + Int(rng.next() % UInt64(range.count)) }
         for _ in 0..<300 {
-            let count = Int.random(in: 0...10, using: &rng)
-            let items = (0..<count).map { Item(id: String(Int.random(in: 0...6, using: &rng)), n: $0) }
-            let order = (0..<Int.random(in: 0...12, using: &rng)).map { _ in String(Int.random(in: 0...8, using: &rng)) }
-            let result = ListReorder.reordered(items, id: \.id, order: order)
-            XCTAssertEqual(result.map(\.n).sorted(), items.map(\.n))
+            let count = pick(0...10)
+            let items: [Item] = (0..<count).map { Item(id: String(pick(0...6)), n: $0) }
+            let order: [String] = (0..<pick(0...12)).map { _ in String(pick(0...8)) }
+            let result: [Item] = ListReorder.reordered(items, id: { $0.id }, order: order)
+            XCTAssertEqual(result.map { $0.n }.sorted(), items.map { $0.n })
         }
     }
 }
-

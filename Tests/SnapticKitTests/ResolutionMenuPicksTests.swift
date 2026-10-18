@@ -155,17 +155,18 @@ final class ResolutionMenuPicksTests: XCTestCase {
 
     func testSliderStopsFuzz() {
         var rng = SeededGenerator(seed: 0x5D3)
+        func pick(_ range: ClosedRange<Int>) -> Int { range.lowerBound + Int(rng.next() % UInt64(range.count)) }
         for _ in 0..<500 {
-            let count = Int.random(in: 0...12, using: &rng)
-            let widths = (0..<count).map { _ in Int.random(in: 0...8000, using: &rng) }.sorted()
-            let target = Int.random(in: -100...9000, using: &rng)
+            let count = pick(0...12)
+            let widths = (0..<count).map { _ in pick(0...8000) }.sorted()
+            let target = pick(-100...9000)
             if let i = ResolutionSliderStops.nearestIndex(width: target, in: widths) {
-                let best = widths.map { abs($0 - target) }.min()!
+                let best = widths.map { abs($0 - target) }.min() ?? -1
                 XCTAssertEqual(abs(widths[i] - target), best)
             } else {
                 XCTAssertTrue(widths.isEmpty)
             }
-            let position = Double.random(in: -5...20, using: &rng)
+            let position = Double(pick(-500...2000)) / 100
             if let i = ResolutionSliderStops.index(position, count: count) {
                 XCTAssertTrue((0..<count).contains(i))
             } else {
