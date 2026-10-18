@@ -109,8 +109,8 @@ struct DisplaysStatusSection: View {
                         Text(env.runtime.lastPanicSummary ?? L("Restore All Displays ran."))
                         Text(L("Layouts, protection, hooks and virtual-screen recreation wait until you resume."))
                             .font(.caption).foregroundStyle(.secondary)
-                        // B's registered action (the same one as its Tools menu item).
-                        Button(L("Resume Display Automation")) { _ = ctx.actions.perform(.resumeAutomation, on: .all) }
+                        // B's PanicCoordinator (its Tools item calls the same method).
+                        Button(L("Resume Display Automation")) { ctx.panic.resume() }
                     }
                     .accessibilityElement(children: .contain)
                 }
