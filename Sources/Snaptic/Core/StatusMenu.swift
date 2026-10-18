@@ -71,11 +71,13 @@ import SnapticKit
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _ in MainActor.assumeIsolated { self?.applyPlan() } }
                 .store(in: &sinks)
-            host.awakeStore.$value
-                .map(\.shortcuts)
-                .combineLatest(host.awake.runtime.$failedShortcuts)
-                .map { MenuLayout.awakeShortcutBound($0, failed: $1) }
-                .removeDuplicates()
+            // The Keep Awake shortcut: stored combo, registration failures, G's "registered now" flag, and Awake
+            // running (its start registers the shortcut before `moduleState` turns `.running`).
+            let runtime = host.awake.runtime
+            Publishers.CombineLatest4(host.awakeStore.$value.map(\.shortcuts), runtime.$failedShortcuts,
+                                      runtime.$keepAwakeRegistered, runtime.$moduleState.map { $0 != .stopped })
+                .map { (MenuLayout.awakeShortcutStatus($0, failed: $1, registered: $2), $3) }
+                .removeDuplicates(by: ==)
                 .dropFirst()
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _ in
@@ -118,21 +120,29 @@ import SnapticKit
         applyPlan()
     }
 
-    /// The Don't Show fallback (§5.2, parity minor 11): Awake hidden while the Keep Awake shortcut is unset, or set
-    /// but not registered (another app or macOS has the combo), would leave no way to it in the menu bar, so it goes
-    /// back to Show When Active and a toast says why.
+    /// The Don't Show fallback (§5.2, parity minor 11): Awake hidden while the Keep Awake shortcut isn't registered
+    /// (unset, taken by another app or macOS, or Awake's shortcuts turned off) would leave no way to it in the menu
+    /// bar, so it goes back to Show When Active and a toast says why. Never while Awake doesn't run (off, or turned
+    /// off by a defaults setting: it shows nothing then, ui N3).
     private func applyAwakePresenceFallback() {
         guard let host else { return }
-        guard let presence = host.modulesStore.value.awakePresenceFallback(awakeShortcutBound: awakeShortcutBound(host))
+        let status = awakeShortcutStatus(host)
+        guard let presence = host.modulesStore.value.awakePresenceFallback(awakeRunning: awakeRuns(host),
+                                                                           awakeShortcutBound: status.isBound)
         else { return }
         host.modulesStore.value.setPresence(presence, for: .awake)
-        let isSet = MenuLayout.awakeShortcutBound(host.awakeStore.value.shortcuts)
-        host.toasts.show(isSet ? MenuLayout.awakeFallbackFailedNotice : MenuLayout.awakeFallbackNotice)
+        if let notice = MenuLayout.awakeFallbackNotice(status) { host.toasts.show(notice) }
     }
 
-    /// The Keep Awake shortcut is set and registered.
-    private func awakeShortcutBound(_ host: ModuleHost) -> Bool {
-        MenuLayout.awakeShortcutBound(host.awakeStore.value.shortcuts, failed: host.awake.runtime.failedShortcuts)
+    /// Awake runs now (started, not turned off by a defaults setting); its shortcut registration is settled then.
+    private func awakeRuns(_ host: ModuleHost) -> Bool {
+        host.runningModules.contains(.awake) && host.awake.runtime.moduleState != .stopped
+    }
+
+    /// The Keep Awake shortcut as the menu bar sees it: registered only per G's runtime flag (code M1).
+    private func awakeShortcutStatus(_ host: ModuleHost) -> MenuLayout.AwakeShortcutStatus {
+        MenuLayout.awakeShortcutStatus(host.awakeStore.value.shortcuts, failed: host.awake.runtime.failedShortcuts,
+                                       registered: host.awake.runtime.keepAwakeRegistered)
     }
 
     /// False when no status item shows (a relaunch then opens Settings). Provider items count (code B3). From
@@ -166,7 +176,7 @@ import SnapticKit
             running: host.runningModules,
             awakeActive: host.awake.runtime.governing != .inactive,
             displaysActive: MenuPlacement.hasExternalDisplay,
-            awakeShortcutBound: awakeShortcutBound(host),
+            awakeShortcutBound: awakeShortcutStatus(host).isBound,
             sharedExistsNow: shared != nil)
     }
 
@@ -365,8 +375,10 @@ import SnapticKit
     private func safeModeRows(_ host: ModuleHost) -> [NSMenuItem] {
         [
             MenuKit.status(L("Safe Mode Is On"), control: ControlID("menu.snaptic.safeMode")),
+            // The same confirmation as General and Displays (ux N5): the ellipsis promises a question.
             MenuKit.action(L("Leave Safe Mode…"), control: ControlID("menu.snaptic.leaveSafeMode")) { [weak host] in
-                host?.relauncher.relaunch(reason: "leave safe mode")
+                guard let host else { return }
+                SafeModeLeave.confirm(relauncher: host.relauncher)
             },
         ]
     }

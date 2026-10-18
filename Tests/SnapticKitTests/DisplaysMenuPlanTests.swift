@@ -16,9 +16,6 @@ final class DisplaysMenuPlanTests: XCTestCase {
         ControlLegacy.ids.filter { $0.rawValue.hasPrefix("l.menu.") && !$0.rawValue.hasPrefix("l.menu.fixed.") }
     }
 
-    /// The 0.2 "Prevent Display Sleep" item moved to Awake (migration M1); its home is Awake's menu table.
-    private let awakeHome = "d.sleepPrevention"
-
     private var menuSpecs: [ControlSpec] { DisplayMenuBlockControls.controls + DisplaysMenuBuilderControls.controls }
 
     // MARK: The table
@@ -29,11 +26,12 @@ final class DisplaysMenuPlanTests: XCTestCase {
         XCTAssertEqual(Set(DisplaysMenuPlan.items.map(\.id)).count, 46, "duplicate ids")
     }
 
-    /// Not in the Displays menu: the removal table plus d.sleepPrevention, whose home is Awake (migration M1).
-    func testRemovedItemsAreTheRemovalTablePlusSleepPrevention() {
-        var removed = Set(ControlRemovals.removed.keys.filter { $0.rawValue.hasPrefix("l.menu.") && !$0.rawValue.hasPrefix("l.menu.fixed.") }
+    /// Not in the Displays menu: exactly the removal table's menu ids (d.sleepPrevention among them: Awake's rules
+    /// replace it, migration M1).
+    func testRemovedItemsAreTheRemovalTable() {
+        let removed = Set(ControlRemovals.removed.keys.filter { $0.rawValue.hasPrefix("l.menu.") && !$0.rawValue.hasPrefix("l.menu.fixed.") }
             .map(menuID))
-        removed.insert(awakeHome)
+        XCTAssertTrue(removed.contains("d.sleepPrevention"))
         let table = Set(DisplaysMenuPlan.items.filter { $0.location == .removed }.map(\.id.rawValue))
         XCTAssertEqual(table, removed)
     }
@@ -389,7 +387,7 @@ final class DisplaysMenuPlanTests: XCTestCase {
     func testEveryKeptMenuIDHasExactlyOnePlacementAndOneSheetRow() {
         let removed = Set(ControlRemovals.removed.keys)
         let sheet = CustomizeMenuSheetControls.controls
-        for legacy in legacyMenuIDs where !removed.contains(legacy) && menuID(legacy) != awakeHome {
+        for legacy in legacyMenuIDs where !removed.contains(legacy) {
             let placements = menuSpecs.compactMap(\.menu).filter { $0.legacyMenuID?.rawValue == menuID(legacy) }
             XCTAssertEqual(placements.count, 1, legacy.rawValue)
             guard let placement = placements.first else { continue }
@@ -444,7 +442,7 @@ final class DisplaysMenuPlanTests: XCTestCase {
             }
             XCTAssertEqual(found.count, 1, "\(legacy.rawValue): \(found.map(\.id.rawValue))")
             guard let home = found.first, legacyMenuIDs.contains(legacy),
-                  ![awakeHome, DisplaysMenuPlan.customActionPrefix].contains(menuID(legacy)) else { continue }
+                  menuID(legacy) != DisplaysMenuPlan.customActionPrefix else { continue }
             XCTAssertEqual(home.menu?.legacyMenuID?.rawValue, menuID(legacy), legacy.rawValue)
             XCTAssertNotEqual(home.menu?.customize ?? MenuCustomize.none, MenuCustomize.none, legacy.rawValue)
         }
