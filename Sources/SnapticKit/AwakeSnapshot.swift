@@ -222,9 +222,11 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
         guard let r = base.rule, let st = base.stop, !st.clean, !base.bootSession.isEmpty, now.wall.isFinite else {
             return nil
         }
-        let end = max(r.startWall, min(st.wall, now.wall))
+        // Same boot: never after now either; another boot's wall clock is no bound (as for `awayEnds`).
+        let sameBoot = base.bootSession == now.bootSession
+        let end = max(r.startWall, sameBoot ? min(st.wall, now.wall) : st.wall)
         return AwakeAwayEnd(item: .rule(r), startWall: min(r.startWall, end), endWall: end,
-                            reason: base.bootSession == now.bootSession ? .moduleStopped : .reboot)
+                            reason: sameBoot ? .moduleStopped : .reboot)
     }
 
     /// The wall instant Snaptic last kept this snapshot's items: the stop stamp (never after `now`), else `now`.

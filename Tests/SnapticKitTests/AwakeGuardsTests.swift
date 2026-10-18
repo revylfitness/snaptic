@@ -363,6 +363,7 @@ final class AwakeGuardsTests: XCTestCase {
         func bool() -> Bool { rng.next() % 2 == 0 }
         var memory = GuardMemory()
         var previous: PowerFacts?
+        var streak = 0
         var t = 0.0
         for _ in 0..<50_000 {
             var config = AwakeGuardsConfig()
@@ -371,10 +372,13 @@ final class AwakeGuardsTests: XCTestCase {
             config.endOnAdapterDisconnect = bool()
             config.endOnLowPowerMode = bool()
             let percent: Int? = rng.next() % 10 == 0 ? nil : Int(rng.next() % 101)
-            let f = PowerFacts(batteryPresent: rng.next() % 5 != 0, onAC: bool(), percent: percent, charging: bool(),
+            let present = rng.next() % 5 != 0
+            // PowerMonitor's read streak (§2.6: two consecutive unreadable reads make the battery unreadable).
+            streak = PowerMath.unreadableStreak(previous: streak, batteryLatched: present, percent: percent)
+            let f = PowerFacts(batteryPresent: present, onAC: bool(), percent: percent, charging: bool(),
                                falling: bool(), lastRecovery: bool() ? t - Double(rng.next() % 600) : nil,
                                lowPowerMode: rng.next() % 4 == 0,
-                               thermal: ThermalLevel(rawValue: Int(rng.next() % 4)) ?? .nominal)
+                               thermal: ThermalLevel(rawValue: Int(rng.next() % 4)) ?? .nominal, unreadableStreak: streak)
             let override = bool(), active = bool()
             t += Double(rng.next() % 120)
             let r = AwakeGuards.evaluate(f, previous: previous, config: config, memory: memory, time: t, active: active,
@@ -402,10 +406,11 @@ final class AwakeGuardsTests: XCTestCase {
             let background = AwakeGuards.allowsBackgroundWork(f, config: config, memory: r.memory)
             if f.thermal == .critical { XCTAssertFalse(background) }
             if f.discharging, let p = f.percent, p < AwakeGuards.hardFloorPercent { XCTAssertFalse(background) }
-            if f.batteryPresent && f.percent == nil { XCTAssertFalse(background) }
+            let confirmed = f.batteryPresent && f.percent == nil && streak >= AwakeGuards.unreadableReadsToConfirm
+            if confirmed { XCTAssertFalse(background) }
             XCTAssertEqual(background, AwakeGuards.backgroundBlock(f, config: config) == nil)
-            XCTAssertEqual(AwakeGuards.batteryUnreadable(f, memory: r.memory),
-                           f.batteryPresent && f.percent == nil && f.thermal != .critical)
+            XCTAssertEqual(AwakeGuards.batteryUnreadable(f, memory: r.memory), confirmed && f.thermal != .critical)
+            XCTAssertEqual(r.memory.unreadableReads, f.batteryPresent && f.percent == nil ? streak : 0)
             // Memory stays sane.
             XCTAssertEqual(r.memory.holding == nil, r.memory.heldSince == nil)
             if let h = r.memory.holding {
