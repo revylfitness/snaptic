@@ -47,18 +47,18 @@ struct DisplaysOverviewPage: View {
         }
         Section(L("Tools")) {
             HStack {
-                Button(L("Identify Displays")) { _ = ctx.actions.perform(OverviewController.identifyAction, on: .all) }
+                Button(L("Identify Displays")) { _ = ctx.actions.perform(.fIdentify, on: .all) }
                 Button(L("Redetect")) { _ = ctx.actions.perform(OverviewController.redetectAction, on: .all) }
-                Button(L("Show Displays Panel")) { _ = ctx.actions.perform(OverviewController.showPanelAction, on: .pointer) }
+                Button(L("Show Displays Panel")) { _ = ctx.actions.perform(.fShowPanel, on: .pointer) }
             }
             LabeledContent(L("Displays panel shortcut")) {
-                ShortcutRecorder(combo: shortcutBinding(\.showPanelShortcut))
+                ShortcutRecorder(combo: shortcutBinding(.fShowPanel))
             }
             Text(L("Opens these controls at the pointer, even when the menu-bar icon is hidden in the menu bar's overflow."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
             LabeledContent(L("Identify shortcut")) {
-                ShortcutRecorder(combo: shortcutBinding(\.identifyShortcut))
+                ShortcutRecorder(combo: shortcutBinding(.fIdentify))
             }
         }
         Section(L("Features")) {
@@ -70,11 +70,13 @@ struct DisplaysOverviewPage: View {
         }
     }
 
-    private func shortcutBinding(_ path: WritableKeyPath<MenuConfig, HotkeyCombo?>) -> Binding<HotkeyCombo?> {
+    /// The panel and Identify shortcuts are ordinary Displays shortcuts since migration M4 (KeysController
+    /// registers them); the 0.2 `MenuConfig` fields stay as they were for a downgrade.
+    private func shortcutBinding(_ id: DisplayActionID) -> Binding<HotkeyCombo?> {
         let config = env.config
         return Binding(
-            get: { config.value.menu[keyPath: path] },
-            set: { config.value.menu[keyPath: path] = $0.flatMap(MenuConfig.sanitizedCombo) })
+            get: { config.value.keys.shortcuts[id] },
+            set: { config.value.keys.shortcuts[id] = $0.flatMap(MenuConfig.sanitizedCombo) })
     }
 }
 

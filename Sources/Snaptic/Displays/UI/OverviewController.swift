@@ -4,14 +4,14 @@ import SnapticKit
 
 /// The always-on overview controller (PLAN §2.1 `overview`, R5.8): registers the
 /// "Show Displays panel", Identify and Redetect actions (menu Tools items, quick-menu
-/// item, shortcuts, CLI verbs) and owns the floating Displays panel and the Identify labels.
+/// item, CLI verbs) and owns the floating Displays panel and the Identify labels.
+/// Their shortcuts are ordinary Displays shortcuts (`keys.shortcuts[.fShowPanel]` / `[.fIdentify]`,
+/// migration M4), registered by `KeysController` like every other action's (0.3 §4.4 #5).
 @MainActor final class OverviewController: DisplayFeatureController, DisplayMenuContributor, DiagnosticsContributor,
     SessionParticipant {
     static var id: DisplayControllerID { .overview }
     static var privateSymbols: [PrivateSymbol] { [] }
 
-    static let showPanelAction = DisplayActionID(rawValue: "f.showPanel")
-    static let identifyAction = DisplayActionID(rawValue: "f.identify")
     static let redetectAction = DisplayActionID(rawValue: "f.redetect")
     static let identifyItem = DisplayMenuItemID(rawValue: "f.tools.identify")
     static let redetectItem = DisplayMenuItemID(rawValue: "f.tools.redetect")
@@ -21,8 +21,6 @@ import SnapticKit
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
     private var lifetime: Lifetime?
-    private var hotkeyLifetime: Lifetime?
-    private var hotkeyProblems: [String] = []
     private let panel = DisplaysPanelController()
     private let identifyOverlay = IdentifyOverlay()
 
@@ -41,23 +39,15 @@ import SnapticKit
         context.menus.register(self, lifetime: lifetime)
         context.diagnostics.register(self, section: L("Displays menu and panel"), lifetime: lifetime)
         context.registerSession(self, lifetime: lifetime)
-        registerHotkeys(context.config.value.menu, announce: false)
         lifetime.onEnd { [weak self] in self?.closeUI() }
     }
 
     func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) {}
 
-    func configDidChange(from old: DisplaysConfig, to new: DisplaysConfig) {
-        if old.menu.showPanelShortcut != new.menu.showPanelShortcut || old.menu.identifyShortcut != new.menu.identifyShortcut {
-            registerHotkeys(new.menu, announce: true)
-        }
-    }
+    func configDidChange(from old: DisplaysConfig, to new: DisplaysConfig) {}
 
     func stop() {
         closeUI()
-        hotkeyLifetime?.end()
-        hotkeyLifetime = nil
-        hotkeyProblems = []
         lifetime = nil
         context = nil
     }
@@ -75,9 +65,9 @@ import SnapticKit
     // MARK: Registrations
 
     private func registerActions(_ ctx: DisplaysContext, lifetime: Lifetime) {
-        ctx.actions.register(Action(id: Self.showPanelAction, title: L("Show Displays Panel"), feature: .overview,
+        ctx.actions.register(Action(id: .fShowPanel, title: L("Show Displays Panel"), feature: .overview,
                                     cliAllowed: true) { [weak self] _ in self?.togglePanel() }, lifetime: lifetime)
-        ctx.actions.register(Action(id: Self.identifyAction, title: L("Identify Displays"), feature: .overview,
+        ctx.actions.register(Action(id: .fIdentify, title: L("Identify Displays"), feature: .overview,
                                     cliAllowed: true) { [weak self] _ in _ = self?.identifyDisplays() }, lifetime: lifetime)
         ctx.actions.register(Action(id: Self.redetectAction, title: L("Redetect Displays"), feature: .overview,
                                     cliAllowed: true) { [weak self] _ in self?.redetect() }, lifetime: lifetime)
@@ -96,40 +86,6 @@ import SnapticKit
             guard let self else { return .failure(ControlExit.unavailable, L("Displays isn't running")) }
             self.redetect()
             return .ok(L("Looking for displays"))
-        }
-    }
-
-    private func registerHotkeys(_ menu: MenuConfig, announce: Bool) {
-        hotkeyLifetime?.end()
-        hotkeyLifetime = nil
-        hotkeyProblems = []
-        guard let ctx = context, let lifetime else { return }
-        let life = lifetime.child()
-        hotkeyLifetime = life
-        let wanted: [(HotkeyCombo?, String, @MainActor () -> Void)] = [
-            (menu.showPanelShortcut, L("Show Displays panel"), { [weak self] in self?.togglePanel() }),
-            (menu.identifyShortcut, L("Identify displays"), { [weak self] in _ = self?.identifyDisplays() }),
-        ]
-        for (combo, owner, action) in wanted {
-            guard let combo else { continue }
-            do {
-                _ = try ctx.hotkeys.register(combo, owner: owner, lifetime: life, action: action)
-            } catch {
-                let problem = "\(owner): \(Self.describe(error))"
-                hotkeyProblems.append(problem)
-                EventLog.shared.record(.keys, "Displays shortcut not registered: \(Self.describe(error))")
-                if announce { ctx.toasts.show(problem, lifetime: lifetime) }
-            }
-        }
-    }
-
-    private static func describe(_ error: Error) -> String {
-        guard let error = error as? GlobalHotkeys.RegisterError else { return L("the shortcut couldn't be registered") }
-        switch error {
-        case .conflict(let owner): return L("already used by \(owner)")
-        case .systemRefused: return L("macOS refused the shortcut")
-        case .invalid(let reason): return reason
-        case .ended: return L("the feature stopped before the shortcut was registered")
         }
     }
 
@@ -234,11 +190,13 @@ import SnapticKit
     // MARK: DiagnosticsContributor
 
     func diagnostics() -> [(String, String)] {
-        let menu = context?.config.value.menu ?? MenuConfig()
+        let config = context?.config.value
+        let menu = config?.menu ?? MenuConfig()
+        let shortcuts = config?.keys.shortcuts
         return [
-            ("Panel shortcut", menu.showPanelShortcut == nil ? "none" : "set"),
-            ("Identify shortcut", menu.identifyShortcut == nil ? "none" : "set"),
-            ("Shortcut problems", hotkeyProblems.isEmpty ? "none" : hotkeyProblems.joined(separator: "; ")),
+            // Registered (and any problem reported) by KeysController, like every Displays shortcut.
+            ("Panel shortcut", shortcuts?[.fShowPanel] == nil ? "none" : "set"),
+            ("Identify shortcut", shortcuts?[.fIdentify] == nil ? "none" : "set"),
             ("Panel open", panel.isVisible ? "yes" : "no"),
             ("Menu style", menu.compact ? "compact" : "expanded"),
             ("Section order", menu.orderedSections.map(\.rawValue).joined(separator: ", ")),

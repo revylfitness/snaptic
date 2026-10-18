@@ -451,15 +451,8 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
         let life = lifetime.child()
         hotkeyLifetime = life
         let config = context.config.value.keys
-        let menu = context.config.value.menu
         if effective.contains(.shortcuts) {
             for (id, combo) in config.shortcuts.values.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
-                // 0.3 step-0 interim (lead): migration M4 copies the panel and Identify shortcuts here while
-                // OverviewController still registers them from MenuConfig; skip the same combo so it isn't
-                // registered twice. Removed when OverviewController moves to these ids (F, step 1).
-                if (id == .fShowPanel && combo == menu.showPanelShortcut) || (id == .fIdentify && combo == menu.identifyShortcut) {
-                    continue
-                }
                 let title = context.actions.action(id)?.title ?? id.rawValue
                 if let problem = PerDisplayEdit.registerHotkey(context, combo, owner: title, lifetime: life, action: { [weak self] in
                     guard let ctx = self?.context else { return }

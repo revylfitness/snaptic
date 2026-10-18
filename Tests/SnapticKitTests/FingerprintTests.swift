@@ -72,4 +72,57 @@ final class FingerprintTests: XCTestCase {
         XCTAssertEqual(Fingerprint.masked("CN0ABC1234"), "••••1234")
         XCTAssertEqual(Fingerprint.masked("12"), "••")
     }
+
+    // MARK: matches(_:_:) (pairwise, 0.3)
+
+    private let h5 = String(repeating: "5", count: 32), h6 = String(repeating: "6", count: 32)
+
+    func testMatchesComparesOnlySharedTiers() {
+        // Stored by Displays with every tier; live from CG facts (t2, t3, t5 only).
+        let stored = FingerprintRecord(t1: h1, t2: h2, t3: h3, t4: h4, t5: h5)
+        XCTAssertTrue(Fingerprint.matches(stored, FingerprintRecord(t2: h2, t3: h3, t5: h5)))
+        // t1 and t4 can't be computed live: absent there, never a conflict.
+        XCTAssertTrue(Fingerprint.matches(stored, FingerprintRecord(t2: h2)))
+        XCTAssertTrue(Fingerprint.matches(FingerprintRecord(t1: h1, t5: h5), FingerprintRecord(t2: h2, t5: h5)))
+    }
+
+    func testMatchesMostSpecificSharedTierDecides() {
+        let stored = FingerprintRecord(t2: h2, t3: h3, t5: h5)
+        // Same model (t5) but another UUID: an identical second monitor.
+        XCTAssertFalse(Fingerprint.matches(stored, FingerprintRecord(t2: h6, t3: h3, t5: h5)))
+        // Same UUID, different serial: the UUID is the more specific tier and decides.
+        XCTAssertTrue(Fingerprint.matches(stored, FingerprintRecord(t2: h2, t3: h6, t5: h6)))
+        // No UUID live (placeholder): serial decides.
+        XCTAssertTrue(Fingerprint.matches(stored, FingerprintRecord(t3: h3, t5: h5)))
+        XCTAssertFalse(Fingerprint.matches(stored, FingerprintRecord(t3: h6, t5: h5)))
+        // Only the model is shared.
+        XCTAssertTrue(Fingerprint.matches(FingerprintRecord(t5: h5), FingerprintRecord(t2: h2, t5: h5)))
+        XCTAssertFalse(Fingerprint.matches(FingerprintRecord(t5: h5), FingerprintRecord(t5: h6)))
+    }
+
+    func testMatchesNeedsASharedTier() {
+        XCTAssertFalse(Fingerprint.matches(FingerprintRecord(), FingerprintRecord()))
+        XCTAssertFalse(Fingerprint.matches(FingerprintRecord(t1: h1), FingerprintRecord()))
+        XCTAssertFalse(Fingerprint.matches(FingerprintRecord(t1: h1, t4: h4), FingerprintRecord(t2: h2, t3: h3, t5: h5)))
+    }
+
+    func testMatchesFuzzAgreesWithMatchAndIsSymmetric() {
+        var rng = SeededGenerator(seed: 0xF1A6)
+        let pool = [h1, h2, h3]
+        func record() -> FingerprintRecord {
+            var r = FingerprintRecord()
+            for tier in FingerprintTier.allCases where rng.next() % 2 == 0 {
+                r[tier] = pool[Int(rng.next() % UInt64(pool.count))]
+            }
+            return r
+        }
+        for _ in 0..<2_000 {
+            let a = record(), b = record()
+            XCTAssertEqual(Fingerprint.matches(a, b), Fingerprint.matches(b, a))
+            XCTAssertEqual(Fingerprint.matches(a, a), !a.isEmpty)
+            // With one stored display, uniqueness always holds, so the map-based matcher must agree.
+            let viaMap = Fingerprint.match(b, in: [key("a"): a]) == key("a")
+            XCTAssertEqual(Fingerprint.matches(a, b), viaMap, "\(a) vs \(b)")
+        }
+    }
 }
