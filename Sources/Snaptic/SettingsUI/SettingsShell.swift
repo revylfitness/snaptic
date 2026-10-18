@@ -457,6 +457,6 @@ private struct SidebarRow: View {
 struct UnavailablePage: View {
     var body: some View {
         ContentUnavailableView(L("This Page Isn’t Available"), systemImage: "rectangle.dashed",
-                               description: Text(L("Turn on the module or feature it belongs to.")))
+                               description: Text(L("Turn on the feature this page belongs to.")))
     }
 }

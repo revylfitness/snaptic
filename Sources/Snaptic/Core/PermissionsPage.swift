@@ -81,7 +81,7 @@ private struct PermissionsPageContent: View {
                         StatusRow(L("Snaptic is running from a temporary location. Move it to Applications before you allow anything."),
                                   style: .warning)
                     } else if copy.userWritable {
-                        StatusRow(L("Your account can change this folder, so another app could replace Snaptic and keep its permissions. Use a signed release, or install with INSTALL=1."),
+                        StatusRow(L("Your account can change this folder, so another app could replace Snaptic and keep its permissions. Use a signed release, or install Snaptic in /Applications with an administrator account."),
                                   style: .warning)
                     }
                 }

@@ -48,7 +48,7 @@ struct ToggleSetting: View {
             titleText
             if let help { Text(help) }
         }
-        .accessibilityLabel(title)
+        .accessibilityLabel(badge?.spoken(title) ?? title)
         .accessibilityHint(help ?? "")
     }
 
