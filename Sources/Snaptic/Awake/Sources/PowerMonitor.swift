@@ -6,8 +6,8 @@ import SnapticKit
 // Power source, battery, Low Power Mode and thermal state (owner: J; PLAN 0.3 §2.6, §2.8, R5-6). Always active with
 // `sessions` (guards need it). Events only: the IOPS run-loop source (power source and percent changes), the Low Power
 // Mode and thermal notifications, and wake; a 60 s `.common` re-check runs only while `falling` is true so the flag
-// ages out, or after a first unreadable read so a second read confirms it. The battery history lives in memory only. Observers hear about changed facts and about every read that
-// finds a latched battery unreadable (PowerMath.publishes).
+// ages out, or after a first unreadable read so a second read confirms it. The battery history lives in memory only.
+// Observers hear about changed facts and about every read that finds a latched battery unreadable (PowerMath.publishes).
 
 @MainActor final class PowerMonitor: ObservableObject, CriterionSource {
     static var kinds: Set<AwakeCriterionKind> { [.power] }
@@ -17,9 +17,8 @@ import SnapticKit
     /// The R5-6 window (in memory only).
     private(set) var history: [BatteryReading] = []
     /// Consecutive reads that found the latched battery without a percent (§2.6; 0 after a readable read, on desktops
-    /// and while inactive). Every such read also fires `changes` even when `facts` didn't change, so guards that count
-    /// unreadable reads per evaluation get one evaluation per read (awake-correctness r2 F2); guards may instead read
-    /// this streak directly (≥ 2 = unreadable).
+    /// and while inactive), published in `facts.unreadableStreak`; the guards read it there (≥ 2 = unreadable). Every
+    /// such read also fires `changes`, so each read gets its evaluation (awake-correctness r2 F2).
     private(set) var unreadableStreak = 0
     private let changes = ChangeFanout()
     private var active = false
@@ -79,8 +78,9 @@ import SnapticKit
 
     // MARK: Reading
 
-    /// Re-reads IOPS and the process-info states now (guards call it before deciding; also every notification).
-    func refresh() {
+    /// Re-reads IOPS and the process-info states: on activation, every IOPS, Low Power Mode, thermal and wake
+    /// notification, and the re-check timer. Observers then evaluate the published facts.
+    private func refresh() {
         guard active else { return }
         let now = AwakeSourceClock.now()
         let read = Self.readPowerSources()
@@ -91,6 +91,8 @@ import SnapticKit
         }
         let present = Self.batterySeen
         let falling = present && PowerMath.falling(history, now: now)
+        unreadableStreak = PowerMath.unreadableStreak(previous: unreadableStreak, batteryLatched: present,
+                                                      percent: read.battery?.percent)
         let new = PowerFacts(batteryPresent: present,
                              onAC: read.onAC,
                              percent: read.battery?.percent,
@@ -98,9 +100,8 @@ import SnapticKit
                              falling: falling,
                              lastRecovery: PowerMath.lastRecovery(history),
                              lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
-                             thermal: Self.thermalLevel(ProcessInfo.processInfo.thermalState))
-        unreadableStreak = PowerMath.unreadableStreak(previous: unreadableStreak, batteryLatched: present,
-                                                      percent: new.percent)
+                             thermal: Self.thermalLevel(ProcessInfo.processInfo.thermalState),
+                             unreadableStreak: unreadableStreak)
         scheduleRecheck(PowerMath.needsRecheck(falling: falling, unreadableStreak: unreadableStreak))
         guard PowerMath.publishes(old: facts, new: new, unreadableStreak: unreadableStreak) else { return }
         if new != facts { facts = new }

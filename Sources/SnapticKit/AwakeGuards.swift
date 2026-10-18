@@ -21,13 +21,17 @@ package struct PowerFacts: Equatable, Sendable {
     package var lastRecovery: Double?
     package var lowPowerMode: Bool
     package var thermal: ThermalLevel
+    /// Consecutive reads (PowerMonitor, `PowerMath.unreadableStreak`) that found the latched battery without a
+    /// percent; 0 after a readable read and on desktops. `AwakeGuards.unreadableReadsToConfirm` of them make the
+    /// battery unreadable (§2.6).
+    package var unreadableStreak: Int
 
     /// Battery present AND (not on AC OR falling within the window): a weak adapter that reports AC while the battery
     /// drains counts as discharging (R5-6).
     package var discharging: Bool { batteryPresent && (!onAC || falling) }
 
     package init(batteryPresent: Bool, onAC: Bool, percent: Int?, charging: Bool, falling: Bool, lastRecovery: Double?,
-                 lowPowerMode: Bool, thermal: ThermalLevel) {
+                 lowPowerMode: Bool, thermal: ThermalLevel, unreadableStreak: Int = 0) {
         self.batteryPresent = batteryPresent
         self.onAC = onAC
         self.percent = percent
@@ -36,6 +40,7 @@ package struct PowerFacts: Equatable, Sendable {
         self.lastRecovery = lastRecovery
         self.lowPowerMode = lowPowerMode
         self.thermal = thermal
+        self.unreadableStreak = unreadableStreak
     }
 }
 
@@ -95,8 +100,8 @@ package struct AwakeGuardsConfig: ConfigModel {
 
 /// Persisted in the snapshot (same boot only).
 package struct GuardMemory: Codable, Equatable, Sendable {
-    /// Consecutive evaluations with no percent on a latched battery (diagnostics; the stop and its toast follow the
-    /// first such read, `AwakeGuards.backgroundBlock`).
+    /// Consecutive reads with no percent on a latched battery, as of the last evaluation (the facts' read streak,
+    /// so re-evaluating the same read never counts twice); ≥ `AwakeGuards.unreadableReadsToConfirm` = unreadable.
     package var unreadableReads: Int = 0
     /// Blocks trigger starts until cleared.
     package var holding: AwakeEndReason? = nil
@@ -197,6 +202,9 @@ package enum AwakeGuards {
     package static let hardFloorPercent = 5
     package static let hysteresisPercent = 5
     package static let thermalCooldownSeconds: Double = 600
+    /// §2.6: two consecutive reads with no percent on a latched battery make it unreadable (one is a blip; PowerMonitor
+    /// re-reads within 60 s after the first, `PowerMath.needsRecheck`).
+    package static let unreadableReadsToConfirm = 2
 
     /// One evaluation (§2.6, R5-6). The verdict says what the facts allow: `.end(r)` ends what runs (`active`) or
     /// refuses a start; `.warn(r)` asks for a one-time notice while active (serious heat, Low Power Mode turning on).
@@ -213,12 +221,9 @@ package enum AwakeGuards {
         var m = memory.sanitized()
         let t = time.isFinite ? time : 0
 
-        // Unreadable battery accounting.
-        if now.batteryPresent && now.percent == nil {
-            m.unreadableReads = min(m.unreadableReads + 1, 1_000)
-        } else {
-            m.unreadableReads = 0
-        }
+        // Unreadable battery accounting: the read streak, not a count of evaluations (a re-check or a settings change
+        // re-evaluates the same read).
+        m.unreadableReads = now.batteryPresent && now.percent == nil ? AwakeMath.clamp(now.unreadableStreak, 0...1_000) : 0
 
         // Heat episode bookkeeping.
         if now.thermal <= .fair {
@@ -301,13 +306,15 @@ package enum AwakeGuards {
     }
 
     /// Why Drive Alive and activity may not run now, or nil (security M1): critical heat, a latched battery whose
-    /// level can't be read (treated as 0%, from the first such read: the stop and its toast never wait for a
-    /// confirming read), and discharging below the hard floor or the enabled user floor.
+    /// level can't be read twice in a row (treated as 0%, §2.6; a single unreadable read is a blip and blocks
+    /// nothing), and discharging below the hard floor or the enabled user floor.
     package static func backgroundBlock(_ now: PowerFacts, config: AwakeGuardsConfig) -> AwakeBackgroundBlock? {
         let config = config.sanitized()
         if now.thermal == .critical { return .heat }
         guard now.batteryPresent else { return nil }
-        guard let p = now.percent else { return .batteryUnreadable }
+        guard let p = now.percent else {
+            return now.unreadableStreak >= unreadableReadsToConfirm ? .batteryUnreadable : nil
+        }
         if now.discharging {
             if p < hardFloorPercent { return .batteryLow }
             if config.batteryFloorEnabled && p < config.batteryFloor { return .batteryLow }
@@ -316,13 +323,14 @@ package enum AwakeGuards {
     }
 
     /// Drive Alive and activity may run only if this is true: `backgroundBlock` is nil. (`memory` is kept for the
-    /// callers; the decision needs only the live facts.)
+    /// callers; the decision needs only the live facts, which carry the read streak.)
     package static func allowsBackgroundWork(_ now: PowerFacts, config: AwakeGuardsConfig, memory: GuardMemory) -> Bool {
         backgroundBlock(now, config: config) == nil
     }
 
-    /// The battery is latched and can't be read: the same read that stops activity and Drive Alive (awake-correctness
-    /// F2), so the one toast explains the stop at once. `memory.unreadableReads` still counts reads for diagnostics.
+    /// The battery is latched and has been unreadable for two reads in a row: the same read that stops activity and
+    /// Drive Alive, so the one toast (SessionController shows it on the false → true edge: once per streak) explains
+    /// the stop (§2.6, review6 awake F2).
     package static func batteryUnreadable(_ now: PowerFacts, memory: GuardMemory) -> Bool {
         backgroundBlock(now, config: AwakeGuardsConfig()) == .batteryUnreadable
     }

@@ -233,43 +233,89 @@ final class AwakeSessionPolicyTests: XCTestCase {
         var b = AwakeBehavior()
         XCTAssertEqual(b.userSwitchEnd, .afterHour)
         XCTAssertNil(AwakeSystemPolicy.end(behavior: b, onConsole: false, offConsoleSince: 0, locked: false, lockedSince: nil,
-                                           now: 3_599))
+                                           sessionStart: 0, now: 3_599))
         XCTAssertEqual(AwakeSystemPolicy.end(behavior: b, onConsole: false, offConsoleSince: 0, locked: false,
-                                             lockedSince: nil, now: 3_600), .userSwitch)
+                                             lockedSince: nil, sessionStart: 0, now: 3_600), .userSwitch)
         XCTAssertEqual(AwakeSystemPolicy.nextCheck(behavior: b, onConsole: false, offConsoleSince: 0, locked: false,
-                                                   lockedSince: nil, now: 600) ?? -1, 3_000, accuracy: 0.001)
+                                                   lockedSince: nil, sessionStart: 0, now: 600) ?? -1, 3_000, accuracy: 0.001)
         b.userSwitchEnd = .immediately
         XCTAssertEqual(AwakeSystemPolicy.end(behavior: b, onConsole: false, offConsoleSince: nil, locked: false,
-                                             lockedSince: nil, now: 0), .userSwitch)
+                                             lockedSince: nil, sessionStart: 0, now: 0), .userSwitch)
         b.userSwitchEnd = .never
         XCTAssertNil(AwakeSystemPolicy.end(behavior: b, onConsole: false, offConsoleSince: 0, locked: false, lockedSince: nil,
-                                           now: 99_999))
+                                           sessionStart: 0, now: 99_999))
         XCTAssertNil(AwakeSystemPolicy.end(behavior: b, onConsole: true, offConsoleSince: nil, locked: true, lockedSince: 0,
-                                           now: 99_999), "no locked limit by default")
+                                           sessionStart: 0, now: 99_999), "no locked limit by default")
         b.endAfterLockedHours = 4
         XCTAssertNil(AwakeSystemPolicy.end(behavior: b, onConsole: true, offConsoleSince: nil, locked: true, lockedSince: 0,
-                                           now: 4 * 3_600 - 1))
+                                           sessionStart: 0, now: 4 * 3_600 - 1))
         XCTAssertEqual(AwakeSystemPolicy.end(behavior: b, onConsole: true, offConsoleSince: nil, locked: true, lockedSince: 0,
-                                             now: 4 * 3_600), .lockedTooLong)
+                                             sessionStart: 0, now: 4 * 3_600), .lockedTooLong)
         XCTAssertNil(AwakeSystemPolicy.end(behavior: b, onConsole: true, offConsoleSince: nil, locked: false,
-                                           lockedSince: nil, now: 9 * 3_600))
+                                           lockedSince: nil, sessionStart: 0, now: 9 * 3_600))
+    }
+
+    /// Lead decision (review5 awake N2, review6 F1): off-console and locked time count from `max(since, start)`.
+    func testGraceCountsFromTheSessionStart() {
+        var b = AwakeBehavior()
+        let h: Double = 3_600
+        // Another user has had the console for 2 h; a CLI start now gets the full hour.
+        XCTAssertNil(AwakeSystemPolicy.end(behavior: b, onConsole: false, offConsoleSince: 0, locked: false,
+                                           lockedSince: nil, sessionStart: 2 * h, now: 2 * h))
+        XCTAssertNil(AwakeSystemPolicy.end(behavior: b, onConsole: false, offConsoleSince: 0, locked: false,
+                                           lockedSince: nil, sessionStart: 2 * h, now: 3 * h - 1))
+        XCTAssertEqual(AwakeSystemPolicy.end(behavior: b, onConsole: false, offConsoleSince: 0, locked: false,
+                                             lockedSince: nil, sessionStart: 2 * h, now: 3 * h), .userSwitch)
+        XCTAssertEqual(AwakeSystemPolicy.nextCheck(behavior: b, onConsole: false, offConsoleSince: 0, locked: false,
+                                                   lockedSince: nil, sessionStart: 2 * h, now: 2 * h) ?? -1, h,
+                       accuracy: 0.001)
+        // A session that was running when the switch happened still counts from the switch.
+        XCTAssertEqual(AwakeSystemPolicy.end(behavior: b, onConsole: false, offConsoleSince: h, locked: false,
+                                             lockedSince: nil, sessionStart: 0, now: 2 * h), .userSwitch)
+        // `.immediately` still means at once, whenever the session started.
+        b.userSwitchEnd = .immediately
+        XCTAssertEqual(AwakeSystemPolicy.end(behavior: b, onConsole: false, offConsoleSince: 0, locked: false,
+                                             lockedSince: nil, sessionStart: 2 * h, now: 2 * h), .userSwitch)
+        // Locked for N hours before the start: the session gets N hours of its own.
+        b = AwakeBehavior()
+        for hours in 1...6 {
+            b.endAfterLockedHours = hours
+            let n = Double(hours) * h
+            XCTAssertNil(AwakeSystemPolicy.end(behavior: b, onConsole: true, offConsoleSince: nil, locked: true,
+                                               lockedSince: 0, sessionStart: n, now: n), "locked \(hours) h")
+            XCTAssertNil(AwakeSystemPolicy.end(behavior: b, onConsole: true, offConsoleSince: nil, locked: true,
+                                               lockedSince: 0, sessionStart: n, now: 2 * n - 1))
+            XCTAssertEqual(AwakeSystemPolicy.end(behavior: b, onConsole: true, offConsoleSince: nil, locked: true,
+                                                 lockedSince: 0, sessionStart: n, now: 2 * n), .lockedTooLong)
+            XCTAssertEqual(AwakeSystemPolicy.nextCheck(behavior: b, onConsole: true, offConsoleSince: nil, locked: true,
+                                                       lockedSince: 0, sessionStart: n, now: n) ?? -1, n, accuracy: 0.001)
+        }
+        // Not locked and on console: nothing counts, whatever the start.
+        XCTAssertNil(AwakeSystemPolicy.nextCheck(behavior: b, onConsole: true, offConsoleSince: nil, locked: false,
+                                                 lockedSince: nil, sessionStart: 0, now: 10 * h))
+        XCTAssertNil(AwakeSystemPolicy.counting(since: nil, sessionStart: 5))
+        XCTAssertEqual(AwakeSystemPolicy.counting(since: 3, sessionStart: .nan), 3, "a bad start never shortens the grace")
+        XCTAssertNil(AwakeSystemPolicy.counting(since: .infinity, sessionStart: 5))
     }
 
     // MARK: Keep Awake shortcut registered (fix round 2 shared decision)
 
     func testKeepAwakeRegisteredOnlyWhenEverythingHolds() {
-        for effective in [false, true] {
-            for combo in [false, true] {
-                for registered in [false, true] {
-                    XCTAssertEqual(AwakeShortcutRegistration.keepAwakeRegistered(shortcutsEffective: effective,
-                                                                                hasCombo: combo, registered: registered),
-                                   effective && combo && registered)
-                }
-            }
-        }
-        // A kill switch, Safe Mode or a stopped module all leave `shortcuts` not effective: never registered.
-        XCTAssertFalse(AwakeShortcutRegistration.keepAwakeRegistered(shortcutsEffective: false, hasCombo: true,
-                                                                     registered: true))
+        typealias R = AwakeShortcutRegistration
+        // Working: the feature is effective, a combo is stored and registering it succeeded.
+        XCTAssertTrue(R.keepAwakeRegistered(shortcutsEffective: true, hasCombo: true, registered: true))
+        // The kill switch, Safe Mode, the Shortcuts setting off or a stopped module: a stale registration doesn't count.
+        XCTAssertFalse(R.keepAwakeRegistered(shortcutsEffective: false, hasCombo: true, registered: true))
+        // The combo was cleared (the old registration may linger until the next pass).
+        XCTAssertFalse(R.keepAwakeRegistered(shortcutsEffective: true, hasCombo: false, registered: true))
+        // Another app or macOS owns the combo: registering failed.
+        XCTAssertFalse(R.keepAwakeRegistered(shortcutsEffective: true, hasCombo: true, registered: false))
+        XCTAssertFalse(R.keepAwakeRegistered(shortcutsEffective: false, hasCombo: false, registered: false))
+        // What the menu bar's Don't Show fallback then sees: a hidden Awake stays reachable only in the working case.
+        let killed = R.keepAwakeRegistered(shortcutsEffective: false, hasCombo: true, registered: true)
+        XCTAssertFalse(MenuLayout.awakeShortcutStatus(LossyMap(), failed: [], registered: killed).isBound)
+        let working = R.keepAwakeRegistered(shortcutsEffective: true, hasCombo: true, registered: true)
+        XCTAssertEqual(MenuLayout.awakeShortcutStatus(LossyMap(), failed: [], registered: working), .registered)
     }
 
     func testRemindersKeepingOnlyTheirSession() {

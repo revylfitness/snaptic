@@ -50,6 +50,8 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
     private var reminders = AwakeReminders()
     /// The last manual session that ended and why (a start that its own first arbitration ended, N2).
     private var lastFinished: (id: StableID, reason: AwakeEndReason)?
+    /// The same for holds (review6 N1): `addHold` answers with the end of a hold its first arbitration ended.
+    private var lastRemovedHold: (id: StableID, reason: AwakeEndReason)?
     private var prompt = AwakePointerPrompt()
     private var lastPower: PowerFacts?
     private var wasUnreadable = false
@@ -59,6 +61,12 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
     private var lastStampAt: Double?
     /// Wall start of the current history segment of a resumed session or hold (F1), persisted in the snapshot.
     private var segmentStarts: [StableID: Double] = [:]
+    /// The rule session in the snapshot (review6 N2): fixed when that rule becomes the top candidate, so the
+    /// snapshot's content doesn't change between heartbeats.
+    private var ruleRecord: (record: AwakeRuleRecord, since: Double)?
+    /// Refreshes the stop stamp on its own while the snapshot carries one (review6 code N1): arbitrations alone can be
+    /// further apart than `heartbeatSeconds` (an indefinite session or a `--pid` hold has no countdown tick).
+    private var heartbeatTimer: Timer?
     /// One more arbitration shortly after a lock or unlock hint (N3: the session dictionary may flip after it).
     private var lockRecheckTimer: Timer?
     private var arbitrating = false
@@ -84,8 +92,8 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
     static let verifySeconds: TimeInterval = 300
     static let cliNoticeSeconds: Double = 600
     static let quickExitSeconds: Double = 2
-    /// While a session or `--pid` hold could be resumed, the snapshot's stop stamp is refreshed this often, so a
-    /// crash is bounded in History too (F1).
+    /// While a session, a `--pid` hold or a rule session is in the snapshot, its stop stamp is refreshed at least
+    /// this often (`heartbeatTimer`), so a crash is bounded in History too (F1).
     static let heartbeatSeconds: Double = 240
     static let lockRecheckSeconds: TimeInterval = 1
 
@@ -253,6 +261,12 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         EventLog.shared.record(AwakeLogEvent.holdStarted)
         announceCommandLine(now)
         arbitrate()
+        guard holds.contains(where: { $0.id == id }) else {
+            // Ended inside its own first arbitration (the assertion couldn't be created, review6 N1): the client
+            // gets that end and exits instead of waiting on a hold that no longer exists.
+            if let last = lastRemovedHold, last.id == id { return .failure(.endedAtStart(last.reason)) }
+            return .failure(.invalid)
+        }
         return .success(hold)
     }
 
@@ -287,6 +301,7 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
     private func removeHold(_ id: StableID, _ reason: AwakeEndReason) -> Bool {
         guard let index = holds.firstIndex(where: { $0.id == id }) else { return false }
         let hold = holds.remove(at: index)
+        lastRemovedHold = (id, reason)
         holdLifetimes.removeValue(forKey: id)?.end()
         let now = AwakeModule.clockNow()
         if reason == .processExited, now.continuous - hold.startedContinuous < Self.quickExitSeconds {
@@ -487,6 +502,8 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         // Ran out while Snaptic wasn't running, or never resumed because the Mac restarted (`.reboot`): recorded at
         // their end, never after Snaptic stopped (F1, F5b).
         for end in stored.awayEnds(now: now, resume: resume) { awayEnds.fire(end) }
+        // A rule session a crash cut short (review6 N2); the rule starts a new one if it still holds.
+        if let end = stored.ruleEnd(now: now) { awayEnds.fire(end) }
         // R5-14(a): holds need the Awake feature and the host's command line (General) on.
         let commandLineOn = ctx.runtime.isEffective(.commandLine) && ctx.host.signals.commandLineEnabled
         for hold in snapshot.holds {
@@ -528,8 +545,7 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
 
     /// Where the history entry of a running session or hold starts: its start, or where its resume began (F1).
     func historyStart(_ id: StableID, startedAt: Double) -> Double {
-        guard let s = segmentStarts[id], s.isFinite, s >= startedAt else { return startedAt }
-        return s
+        AwakeRuntimeSnapshot.segmentStart(stored: segmentStarts[id], startedAt: startedAt)
     }
 
     /// Whether a restored session uses the default options: its preset says "Use default", or (no preset: a CLI or
@@ -641,9 +657,11 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         if facts.onConsole { offConsoleSince = nil } else if offConsoleSince == nil { offConsoleSince = now.continuous }
         if facts.locked { if lockedSince == nil { lockedSince = now.continuous } } else { lockedSince = nil }
         let behavior = ctx.config.value.sessions.behavior
-        if manual != nil, let reason = AwakeSystemPolicy.end(behavior: behavior, onConsole: facts.onConsole,
-                                                              offConsoleSince: offConsoleSince, locked: facts.locked,
-                                                              lockedSince: lockedSince, now: now.continuous) {
+        // Off-console and locked time count from max(since, the session's start) (lead decision, review6 F1).
+        if let m = manual, let reason = AwakeSystemPolicy.end(behavior: behavior, onConsole: facts.onConsole,
+                                                               offConsoleSince: offConsoleSince, locked: facts.locked,
+                                                               lockedSince: lockedSince,
+                                                               sessionStart: m.startedContinuous, now: now.continuous) {
             finishManual(reason, arbitrateAfter: false)
         }
 
@@ -733,7 +751,11 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
             if first { ctx.host.toasts.show(L("Snaptic couldn't keep your Mac awake. Try again, or restart Snaptic.")) }
             ctx.triggers.requestStep()
         case .holds:
+            // Every hold ends, with the toast a manual session gets (the Mac isn't held any more, review6 N1).
             for h in holds { _ = removeHold(h.id, .assertionFailed) }
+            if let text = AwakeEndText.toast(.assertionFailed, floor: floorForText(), appName: nil, lockedHours: nil) {
+                ctx.host.toasts.show(text)
+            }
         case .inactive:
             break
         }
@@ -879,9 +901,10 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         tickTimer?.invalidate()
         tickTimer = nil
         var next = AwakeTick.next(manual: manual, holds: holds, reminders: reminders, now: now)
-        if manual != nil, let check = AwakeSystemPolicy.nextCheck(behavior: behavior, onConsole: facts.onConsole,
-                                                                   offConsoleSince: offConsoleSince, locked: facts.locked,
-                                                                   lockedSince: lockedSince, now: now.continuous) {
+        if let m = manual, let check = AwakeSystemPolicy.nextCheck(behavior: behavior, onConsole: facts.onConsole,
+                                                                    offConsoleSince: offConsoleSince, locked: facts.locked,
+                                                                    lockedSince: lockedSince,
+                                                                    sessionStart: m.startedContinuous, now: now.continuous) {
             next = min(next ?? AwakeTick.maximum, max(check, AwakeTick.minimum))
         }
         guard let delay = next else { return }
@@ -985,28 +1008,63 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
 
     // MARK: Snapshot and needs
 
-    /// On change only (and for the heartbeat while something could be resumed), always a whole snapshot built
-    /// from memory (never read back).
-    private func persist(_ now: ClockNow) {
+    /// On change only (and for the heartbeat while the snapshot carries a stamp), always a whole snapshot built
+    /// from memory (never read back). `heartbeat`: the heartbeat timer fired, so the stamp is refreshed whatever
+    /// else changed.
+    private func persist(_ now: ClockNow, heartbeat: Bool = false) {
         guard let ctx = context, restored else { return }
         let snapshot = currentSnapshot(now, manual: manual, clean: false)
         let stamped = snapshot.stop != nil
-        let heartbeatDue = stamped && (lastStampAt.map { now.continuous - $0 >= Self.heartbeatSeconds } ?? true)
+        let due = heartbeat || lastStampAt.map { now.continuous - $0 >= Self.heartbeatSeconds } ?? true
+        let heartbeatDue = stamped && due
         guard snapshot.content != lastWritten?.content || heartbeatDue else { return }
         lastWritten = snapshot
         lastStampAt = stamped ? now.continuous : nil
         ctx.state.value = snapshot
+        scheduleHeartbeat(stamped)
     }
 
-    /// The snapshot of the running state; a stop stamp only while a session or `--pid` hold is in it (F1).
+    /// One-shot, re-armed by every stamped write, so the stamp is never older than `heartbeatSeconds` (plus the
+    /// timer's tolerance) while Snaptic runs; cancelled when the snapshot carries no stamp.
+    private func scheduleHeartbeat(_ stamped: Bool) {
+        heartbeatTimer?.invalidate()
+        heartbeatTimer = nil
+        guard stamped else { return }
+        let timer = Timer(timeInterval: Self.heartbeatSeconds, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.heartbeatTimer = nil
+                self?.persist(AwakeModule.clockNow(), heartbeat: true)
+            }
+        }
+        timer.tolerance = 10
+        RunLoop.main.add(timer, forMode: .common)
+        heartbeatTimer = timer
+    }
+
+    /// The snapshot of the running state; a stop stamp only while a session, a `--pid` hold or (not at a clean quit,
+    /// which records it) a rule session is in it (F1, review6 N2).
     private func currentSnapshot(_ now: ClockNow, manual: AwakeSession?, clean: Bool) -> AwakeRuntimeSnapshot {
         let triggers = context?.triggers
-        let carried = manual != nil || holds.contains { $0.binding.isProcess }
+        let rule = clean ? nil : governingRule(now)
+        let carried = manual != nil || holds.contains { $0.binding.isProcess } || rule != nil
         return AwakeRuntimeSnapshot(bootSession: now.bootSession, manual: manual, holds: holds,
                                     suppressions: triggers?.suppressions ?? [:], pausedUntil: triggers?.pausedUntil,
                                     guardMemory: guardMemory,
                                     stop: carried ? AwakeStopStamp(wall: now.wall, continuous: now.continuous, clean: clean) : nil,
-                                    segmentStarts: segmentStarts, reminders: reminders)
+                                    rule: rule, segmentStarts: segmentStarts, reminders: reminders)
+    }
+
+    /// The top rule candidate as a record: its wall start is computed once per rule session (TriggerController
+    /// records the same start when it ends).
+    private func governingRule(_ now: ClockNow) -> AwakeRuleRecord? {
+        guard let top = context?.triggers.top else {
+            ruleRecord = nil
+            return nil
+        }
+        if let r = ruleRecord, r.record.triggerID == top.id, r.since == top.since { return r.record }
+        let record = AwakeRuleRecord(triggerID: top.id, startWall: now.wall - max(0, now.continuous - top.since))
+        ruleRecord = (record, top.since)
+        return record
     }
 
     private func updateNeeds() {
@@ -1076,6 +1134,8 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         commandLineSink = nil
         lockRecheckTimer?.invalidate()
         lockRecheckTimer = nil
+        heartbeatTimer?.invalidate()
+        heartbeatTimer = nil
         idleWatch?.end()
         idleWatch = nil
         idleActiveSide = nil
@@ -1104,7 +1164,9 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         lastWritten = nil
         lastStampAt = nil
         segmentStarts = [:]
+        ruleRecord = nil
         lastFinished = nil
+        lastRemovedHold = nil
         restored = false
         quietSince = nil
         quietFor = nil

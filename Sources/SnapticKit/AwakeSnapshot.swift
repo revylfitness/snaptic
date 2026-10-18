@@ -21,10 +21,13 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
     /// Wall time; "Pause Rules".
     package var pausedUntil: Double?
     package var guardMemory: GuardMemory
-    /// When Snaptic stopped (a quit: `clean`) or was last seen running (a heartbeat while something here could be
-    /// resumed). History ends what wasn't carried on here at the latest, so time Snaptic wasn't running is never
-    /// counted (awake-correctness F1). Same clock domain as `bootSession`.
+    /// When Snaptic stopped (a quit: `clean`) or was last seen running (a heartbeat while a session, a `--pid` hold or
+    /// a rule session is in it). History ends what wasn't carried on here at the latest, so time Snaptic wasn't
+    /// running is never counted (awake-correctness F1). Same clock domain as `bootSession`.
     package var stop: AwakeStopStamp?
+    /// The rule session running at the last heartbeat (review6 N2). Rule sessions never resume, and a quit records
+    /// them, so only a snapshot left by a crash (a stamp that isn't `clean`) carries one; restore records it then.
+    package var rule: AwakeRuleRecord?
     /// Wall start of the current history segment of the manual session or a hold, when it was resumed after a gap
     /// (the part before the gap is its own history entry).
     package var segmentStarts: LossyMap<StableID, Double>
@@ -39,12 +42,13 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
         pausedUntil = nil
         guardMemory = GuardMemory()
         stop = nil
+        rule = nil
         segmentStarts = LossyMap()
         reminders = AwakeReminders()
     }
 
     private enum CodingKeys: String, CodingKey {
-        case bootSession, manual, holds, suppressions, pausedUntil, guardMemory, stop, segmentStarts, reminders
+        case bootSession, manual, holds, suppressions, pausedUntil, guardMemory, stop, rule, segmentStarts, reminders
     }
 
     /// R5-3: a bad `manual` decodes as nil and the rest is kept; holds element-wise, duplicate ids keep the first.
@@ -57,6 +61,7 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
         pausedUntil = c.lossy(.pausedUntil, nil)
         guardMemory = c.lossy(.guardMemory, GuardMemory())
         stop = c.lossy(.stop, nil)
+        rule = c.lossy(.rule, nil)
         segmentStarts = c.lossy(.segmentStarts, LossyMap())
         reminders = c.lossy(.reminders, AwakeReminders())
     }
@@ -64,7 +69,7 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
     /// The snapshot SessionController writes from its runtime state: connection holds are left out (N17).
     package init(bootSession: String, manual: AwakeSession?, holds: [AwakeHold],
                  suppressions: [StableID: TriggerSuppression], pausedUntil: Double?, guardMemory: GuardMemory,
-                 stop: AwakeStopStamp? = nil, segmentStarts: [StableID: Double] = [:],
+                 stop: AwakeStopStamp? = nil, rule: AwakeRuleRecord? = nil, segmentStarts: [StableID: Double] = [:],
                  reminders: AwakeReminders = AwakeReminders()) {
         self.bootSession = bootSession
         var m = manual
@@ -75,6 +80,7 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
         self.pausedUntil = pausedUntil
         self.guardMemory = guardMemory
         self.stop = stop
+        self.rule = rule
         self.segmentStarts = LossyMap(segmentStarts)
         self.reminders = reminders
         self = sanitized()
@@ -106,6 +112,7 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
         if let p = pausedUntil, !p.isFinite { c.pausedUntil = nil }
         c.guardMemory = guardMemory.sanitized()
         if let st = stop, !st.isValid { c.stop = nil }
+        if let r = rule, !r.isValid { c.rule = nil }
         let ids = Set([c.manual?.id].compactMap { $0 } + c.holds.map(\.id))
         c.segmentStarts = LossyMap(segmentStarts.values.filter { ids.contains($0.key) && $0.value.isFinite && $0.value >= 0 })
         c.reminders = reminders.keeping(session: c.manual?.id)
@@ -143,8 +150,10 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
         let carried = Set([c.manual?.id].compactMap { $0 } + c.holds.map(\.id))
         c.segmentStarts = LossyMap(base.segmentStarts.values.filter { carried.contains($0.key) })
         c.reminders = base.reminders.keeping(session: c.manual?.id)
-        // The stamp is read once by restore (`awayEnds`, `restoreEnd`, `resumedSegment`) from the stored snapshot.
+        // The stamp and the rule record are read once by restore (`awayEnds`, `restoreEnd`, `resumedSegment`,
+        // `ruleEnd`) from the stored snapshot.
         c.stop = nil
+        c.rule = nil
         return c
     }
 
@@ -178,16 +187,44 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
     }
 
     /// Everything the snapshot owes History when it is discarded unread (a launch with `Modules.disable.awake`):
-    /// the away ends, and every item that would have been carried on, ended `.moduleStopped` when Snaptic stopped.
+    /// the away ends, every item that would have been carried on, ended `.moduleStopped` when Snaptic stopped, and a
+    /// crashed rule session. With `resume` off, a manual session in a snapshot without a stamp was recorded by the
+    /// quit that wrote it (a build before stamps).
     package func discardedEnds(now: ClockNow, resume: Bool) -> [AwakeAwayEnd] {
         var out = awayEnds(now: now, resume: resume)
         let kept = sanitized(now: now)
         let stamped = sanitized().stop != nil
-        if let m = kept.manual, resume || stamped { out.append(restoreEnd(.session(m), reason: .moduleStopped, now: now)) }
+        if let m = kept.manual, resume || stamped, !out.contains(where: { $0.item.id == m.id }) {
+            out.append(restoreEnd(.session(m), reason: .moduleStopped, now: now))
+        }
         for h in kept.holds where !out.contains(where: { $0.item.id == h.id }) {
             out.append(restoreEnd(.hold(h), reason: .moduleStopped, now: now))
         }
+        if let r = ruleEnd(now: now) { out.append(r) }
         return out
+    }
+
+    /// The history entries a launch that discards this snapshot unread owes; none when History isn't effective
+    /// (the user's switch, or `Awake.disable.history` through the feature graph, security S3-1).
+    package func discardedHistory(now: ClockNow, config: AwakeConfig,
+                                  killSwitches: Set<AwakeFeature>) -> [AwakeHistoryEntry] {
+        let effective = AwakeFeatureGraph.resolve(raw: config.rawFeatures, killSwitches: killSwitches, safeMode: false,
+                                                  unavailable: [])
+        guard effective.contains(.history) else { return [] }
+        return discardedEnds(now: now, resume: config.sessions.behavior.resumeAfterRestart).map { AwakeHistoryEntry($0) }
+    }
+
+    /// A rule session cut short by a crash (review6 N2): it ran from its start until the last heartbeat, and ends
+    /// `.moduleStopped` (same boot) or `.reboot` (the Mac restarted since). nil without a stamp, after a clean quit
+    /// (which recorded it), or when the record is unusable.
+    package func ruleEnd(now: ClockNow) -> AwakeAwayEnd? {
+        let base = sanitized()
+        guard let r = base.rule, let st = base.stop, !st.clean, !base.bootSession.isEmpty, now.wall.isFinite else {
+            return nil
+        }
+        let end = max(r.startWall, min(st.wall, now.wall))
+        return AwakeAwayEnd(item: .rule(r), startWall: min(r.startWall, end), endWall: end,
+                            reason: base.bootSession == now.bootSession ? .moduleStopped : .reboot)
     }
 
     /// The wall instant Snaptic last kept this snapshot's items: the stop stamp (never after `now`), else `now`.
@@ -198,7 +235,13 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
 
     /// The start of an item's current history segment (its start, or where a resume after a gap began).
     package func segmentStart(_ id: StableID, startedAt: Double) -> Double {
-        guard let s = segmentStarts[id], s.isFinite, s >= startedAt else { return startedAt }
+        Self.segmentStart(stored: segmentStarts[id], startedAt: startedAt)
+    }
+
+    /// The same for a running item (SessionController's history start): a stored segment start counts only when it
+    /// is finite and not before the item's own start.
+    package static func segmentStart(stored: Double?, startedAt: Double) -> Double {
+        guard let s = stored, s.isFinite, s >= startedAt else { return startedAt }
         return s
     }
 
@@ -276,12 +319,26 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
     }
 }
 
+/// The rule session that governed at the last heartbeat (`AwakeRuntimeSnapshot.rule`): which rule, and its wall start.
+package struct AwakeRuleRecord: Codable, Equatable, Sendable {
+    package var triggerID: StableID
+    package var startWall: Double
+
+    package init(triggerID: StableID, startWall: Double) {
+        self.triggerID = triggerID
+        self.startWall = startWall
+    }
+
+    package var isValid: Bool { startWall.isFinite && startWall >= 0 }
+}
+
 /// When Snaptic stopped or was last seen running (`AwakeRuntimeSnapshot.stop`).
 package struct AwakeStopStamp: Codable, Equatable, Sendable {
     package var wall: Double
     /// CLOCK_MONOTONIC_RAW of the snapshot's boot.
     package var continuous: Double
-    /// true: Snaptic quit at this instant; false: the last heartbeat (a crash ends somewhere after it).
+    /// true: Snaptic quit at this instant (it recorded what ran then); false: the last heartbeat (a crash ends
+    /// somewhere after it, and a rule session in the snapshot is still owed, `ruleEnd`).
     package var clean: Bool
 
     package init(wall: Double, continuous: Double, clean: Bool) {
@@ -315,6 +372,9 @@ extension AwakeHistoryEntry {
         case .hold:
             self.init(start: min(e.startWall, e.endWall), end: e.endWall, kind: .process, source: .commandLine,
                       presetID: nil, triggerID: nil, bundleID: nil, endReason: e.reason)
+        case .rule(let r):
+            self.init(start: min(e.startWall, e.endWall), end: e.endWall, kind: .automatic, source: .rule,
+                      presetID: nil, triggerID: r.triggerID, bundleID: nil, endReason: e.reason)
         }
     }
 }
@@ -322,12 +382,13 @@ extension AwakeHistoryEntry {
 /// One history entry restore owes for an item it doesn't carry on, or for the part of a resumed item before the gap.
 package struct AwakeAwayEnd: Equatable, Sendable {
     package enum Item: Equatable, Sendable {
-        case session(AwakeSession), hold(AwakeHold)
+        case session(AwakeSession), hold(AwakeHold), rule(AwakeRuleRecord)
 
         package var id: StableID {
             switch self {
             case .session(let s): return s.id
             case .hold(let h): return h.id
+            case .rule(let r): return r.triggerID
             }
         }
 
@@ -335,6 +396,7 @@ package struct AwakeAwayEnd: Equatable, Sendable {
             switch self {
             case .session(let s): return s.startedAt
             case .hold(let h): return h.startedAt
+            case .rule(let r): return r.startWall
             }
         }
     }

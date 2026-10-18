@@ -279,6 +279,112 @@ final class AwakeSnapshotTests: XCTestCase {
         XCTAssertEqual(a.content, b.content)
     }
 
+    // MARK: A rule session cut short by a crash (review6 N2)
+
+    func testRuleEndOnlyAfterACrash() throws {
+        let rule = AwakeRuleRecord(triggerID: id("desk"), startWall: t0 + 1_000)
+        var raw = snapshot()
+        raw.rule = rule
+        raw.stop = stamp(9_000, clean: false)
+        // Same boot: it ran until the last heartbeat.
+        let same = try XCTUnwrap(raw.ruleEnd(now: now(20_000)))
+        XCTAssertEqual(same, AwakeAwayEnd(item: .rule(rule), startWall: t0 + 1_000, endWall: t0 + 9_000, reason: .moduleStopped))
+        let entry = AwakeHistoryEntry(same)
+        XCTAssertEqual(entry.kind, .automatic)
+        XCTAssertEqual(entry.source, .rule)
+        XCTAssertEqual(entry.triggerID, id("desk"))
+        XCTAssertEqual(entry.start, t0 + 1_000)
+        XCTAssertEqual(entry.end, t0 + 9_000)
+        XCTAssertEqual(entry.endReason, .moduleStopped)
+        // The Mac restarted since: `.reboot`, still at the heartbeat.
+        XCTAssertEqual(raw.ruleEnd(now: now(50, boot: "BOOT-2"))?.reason, .reboot)
+        XCTAssertEqual(raw.ruleEnd(now: now(50, boot: "BOOT-2"))?.endWall, t0 + 9_000)
+        // A clean quit recorded it already; no stamp, no bound: nothing is owed.
+        raw.stop = stamp(9_000, clean: true)
+        XCTAssertNil(raw.ruleEnd(now: now(20_000)))
+        raw.stop = nil
+        XCTAssertNil(raw.ruleEnd(now: now(20_000)))
+        // Never after now, never before its start.
+        raw.stop = stamp(9_000, clean: false)
+        XCTAssertEqual(raw.ruleEnd(now: now(8_000))?.endWall, t0 + 8_000)
+        raw.rule = AwakeRuleRecord(triggerID: id("desk"), startWall: t0 + 9_500)
+        XCTAssertEqual(raw.ruleEnd(now: now(20_000))?.endWall, t0 + 9_500)
+        // A forged start is dropped; the record survives encoding and is read once (not carried by `sanitized(now:)`).
+        raw.rule = AwakeRuleRecord(triggerID: id("desk"), startWall: .nan)
+        XCTAssertNil(raw.sanitized().rule)
+        XCTAssertNil(raw.ruleEnd(now: now(20_000)))
+        raw.rule = rule
+        let decoded = try JSONDecoder().decode(AwakeRuntimeSnapshot.self, from: JSONEncoder().encode(raw))
+        XCTAssertEqual(decoded.rule, rule)
+        XCTAssertNil(decoded.sanitized(now: now(20_000)).rule)
+        // The rule is snapshot content: a change of rule is written at once, not at the next heartbeat.
+        var other = raw
+        other.rule = AwakeRuleRecord(triggerID: id("other"), startWall: t0 + 1_000)
+        XCTAssertNotEqual(raw.content, other.content)
+    }
+
+    // MARK: Discarded unread (a launch with Modules.disable.awake; review6 code N3)
+
+    func testDiscardedEndsTable() {
+        let running = session(.duration(seconds: 3_600))
+        let expired = hold("short", cap: 600)                 // ran out at 4 600
+        let resumable = hold("long", pid: 401, cap: 7_200)    // runs until 11 200
+        var raw = snapshot(manual: running, holds: [expired, resumable])
+        raw.stop = stamp(5_000)
+        // Same boot, resume on, quit at 5 000, relaunched at 6 000 with the module off: the session and the long hold
+        // end when Snaptic stopped; the short hold ran out on its own before that.
+        let ends = raw.discardedEnds(now: now(6_000), resume: true)
+        XCTAssertEqual(ends.map(\.item.id), [id("short"), id("m"), id("long")])
+        XCTAssertEqual(ends.map(\.reason), [.timeUp, .moduleStopped, .moduleStopped])
+        XCTAssertEqual(ends.map(\.endWall), [t0 + 4_600, t0 + 5_000, t0 + 5_000])
+        XCTAssertEqual(ends.map(\.startWall), [t0 + 4_000, t0 + 4_000, t0 + 4_000])
+        // Resume off: the quit recorded the session, but a stamp means it was left by a crash: still owed.
+        XCTAssertEqual(raw.discardedEnds(now: now(6_000), resume: false).map(\.item.id), [id("short"), id("m"), id("long")])
+        // Resume off without a stamp (a build before stamps): the quit recorded the session; `--pid` holds are owed.
+        var unstamped = raw
+        unstamped.stop = nil
+        let old = unstamped.discardedEnds(now: now(6_000), resume: false)
+        XCTAssertEqual(old.map(\.item.id), [id("short"), id("long")])
+        XCTAssertEqual(old.last?.endWall, t0 + 6_000, "no stamp: until now")
+        XCTAssertEqual(unstamped.discardedEnds(now: now(6_000), resume: true).map(\.item.id),
+                       [id("short"), id("m"), id("long")])
+        // Another boot: everything ended `.reboot` at the stamp (the short hold had already run out).
+        let reboot = raw.discardedEnds(now: now(50, boot: "BOOT-2"), resume: true)
+        XCTAssertEqual(reboot.map(\.item.id), [id("m"), id("short"), id("long")])
+        XCTAssertEqual(reboot.map(\.reason), [.reboot, .timeUp, .reboot])
+        // A crash during a rule session adds it once.
+        raw.stop = stamp(5_000, clean: false)
+        raw.rule = AwakeRuleRecord(triggerID: id("desk"), startWall: t0 + 3_000)
+        let crashed = raw.discardedEnds(now: now(6_000), resume: true)
+        XCTAssertEqual(crashed.map(\.item.id), [id("short"), id("m"), id("long"), id("desk")])
+        XCTAssertEqual(crashed.last?.reason, .moduleStopped)
+        XCTAssertEqual(Set(crashed.map(\.item.id)).count, crashed.count, "never twice")
+        XCTAssertTrue(snapshot().discardedEnds(now: now(6_000), resume: true).isEmpty)
+    }
+
+    /// security S3-1 / review6 N3: the module-off launch records nothing when History isn't effective.
+    func testDiscardedHistoryHonorsHistorySwitchAndKillSwitch() {
+        var raw = snapshot(manual: session(.indefinite))
+        raw.stop = stamp(5_000)
+        var config = AwakeConfig()
+        XCTAssertEqual(raw.discardedHistory(now: now(6_000), config: config, killSwitches: []).count, 1)
+        XCTAssertEqual(raw.discardedHistory(now: now(6_000), config: config, killSwitches: []).first?.endReason,
+                       .moduleStopped)
+        XCTAssertTrue(raw.discardedHistory(now: now(6_000), config: config, killSwitches: [.history]).isEmpty,
+                      "Awake.disable.history")
+        XCTAssertEqual(raw.discardedHistory(now: now(6_000), config: config, killSwitches: [.triggers]).count, 1,
+                       "another kill switch doesn't matter")
+        config.features[.history] = false
+        XCTAssertTrue(raw.discardedHistory(now: now(6_000), config: config, killSwitches: []).isEmpty, "History off")
+    }
+
+    func testSegmentStartStatic() {
+        XCTAssertEqual(AwakeRuntimeSnapshot.segmentStart(stored: nil, startedAt: 10), 10)
+        XCTAssertEqual(AwakeRuntimeSnapshot.segmentStart(stored: 20, startedAt: 10), 20)
+        XCTAssertEqual(AwakeRuntimeSnapshot.segmentStart(stored: 5, startedAt: 10), 10, "never before the start")
+        XCTAssertEqual(AwakeRuntimeSnapshot.segmentStart(stored: .infinity, startedAt: 10), 10)
+    }
+
     // MARK: Seeded fuzz of the outside-writable snapshot (code F5)
 
     func testSeededFuzzNeverTrapsAndSanitizedIsStable() throws {
@@ -287,7 +393,8 @@ final class AwakeSnapshotTests: XCTestCase {
                              suppressions: [id("t"): TriggerSuppression(until: 5_500, untilFalse: true)],
                              paused: 1_700_000_000 + 6_000)
         var stamped = valid
-        stamped.stop = AwakeStopStamp(wall: 1_700_000_000 + 5_200, continuous: 5_200, clean: true)
+        stamped.stop = AwakeStopStamp(wall: 1_700_000_000 + 5_200, continuous: 5_200, clean: false)
+        stamped.rule = AwakeRuleRecord(triggerID: id("r"), startWall: 1_700_000_000 + 3_000)
         stamped.reminders = AwakeReminders()
         let base = try JSONSerialization.jsonObject(with: JSONEncoder().encode(stamped))
         for round in 0..<600 {
@@ -313,6 +420,15 @@ final class AwakeSnapshotTests: XCTestCase {
             }
             XCTAssertLessThanOrEqual(away.count, AwakeHold.maxHolds + 1)
             XCTAssertEqual(Set(away.map(\.item.id)).count, away.count)
+            // Discarded unread (code N3): each item at most once, start ≤ end, never after Snaptic stopped or now.
+            let discarded = decoded.discardedEnds(now: clock, resume: rng.next() % 2 == 0)
+            XCTAssertEqual(Set(discarded.map(\.item.id)).count, discarded.count, "round \(round)")
+            XCTAssertTrue(discarded.allSatisfy { $0.startWall <= $0.endWall && $0.endWall.isFinite })
+            if clock.bootSession == boot { XCTAssertTrue(discarded.allSatisfy { $0.endWall <= max(clock.wall, $0.startWall) }) }
+            if let st = decoded.sanitized().stop, decoded.bootSession == boot {
+                XCTAssertTrue(discarded.allSatisfy { $0.endWall <= max(st.wall, $0.startWall) }, "never after Snaptic stopped")
+            }
+            XCTAssertLessThanOrEqual(discarded.count, AwakeHold.maxHolds + 2)
         }
     }
 

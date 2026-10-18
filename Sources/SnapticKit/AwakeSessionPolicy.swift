@@ -245,18 +245,29 @@ package enum AwakeSystemPolicy {
     /// Off console this long ends `.userSwitch` with `.afterHour`.
     package static let userSwitchGraceSeconds: Double = 3_600
 
-    /// The end reason for the current session facts, or nil. `offConsoleSince`/`lockedSince` are continuous instants.
+    /// Where off-console or locked time starts counting for the session: `max(since, sessionStart)` (lead decision,
+    /// review5 awake N2): a session started while another user has the console, or while the Mac is locked, gets
+    /// the same grace as one that was running when that began. nil when the state isn't current.
+    package static func counting(since: Double?, sessionStart: Double) -> Double? {
+        guard let since, since.isFinite else { return nil }
+        return sessionStart.isFinite ? max(since, sessionStart) : since
+    }
+
+    /// The end reason for the current session facts, or nil. `offConsoleSince`/`lockedSince` and `sessionStart`
+    /// (the governing manual session's `startedContinuous`) are continuous instants.
     package static func end(behavior: AwakeBehavior, onConsole: Bool, offConsoleSince: Double?, locked: Bool,
-                            lockedSince: Double?, now: Double) -> AwakeEndReason? {
+                            lockedSince: Double?, sessionStart: Double, now: Double) -> AwakeEndReason? {
         if !onConsole {
             switch behavior.userSwitchEnd {
             case .immediately: return .userSwitch
             case .afterHour:
-                if let since = offConsoleSince, now - since >= userSwitchGraceSeconds { return .userSwitch }
+                if let since = counting(since: offConsoleSince, sessionStart: sessionStart),
+                   now - since >= userSwitchGraceSeconds { return .userSwitch }
             case .never: break
             }
         }
-        if locked, let hours = behavior.endAfterLockedHours, let since = lockedSince,
+        if locked, let hours = behavior.endAfterLockedHours,
+           let since = counting(since: lockedSince, sessionStart: sessionStart),
            now - since >= Double(hours) * 3_600 {
             return .lockedTooLong
         }
@@ -265,12 +276,14 @@ package enum AwakeSystemPolicy {
 
     /// Seconds until `end` could first return a reason (for a one-shot timer); nil when nothing is pending.
     package static func nextCheck(behavior: AwakeBehavior, onConsole: Bool, offConsoleSince: Double?, locked: Bool,
-                                  lockedSince: Double?, now: Double) -> Double? {
+                                  lockedSince: Double?, sessionStart: Double, now: Double) -> Double? {
         var out: [Double] = []
-        if !onConsole, behavior.userSwitchEnd == .afterHour, let since = offConsoleSince {
+        if !onConsole, behavior.userSwitchEnd == .afterHour,
+           let since = counting(since: offConsoleSince, sessionStart: sessionStart) {
             out.append(max(0, since + userSwitchGraceSeconds - now))
         }
-        if locked, let hours = behavior.endAfterLockedHours, let since = lockedSince {
+        if locked, let hours = behavior.endAfterLockedHours,
+           let since = counting(since: lockedSince, sessionStart: sessionStart) {
             out.append(max(0, since + Double(hours) * 3_600 - now))
         }
         return out.min()
