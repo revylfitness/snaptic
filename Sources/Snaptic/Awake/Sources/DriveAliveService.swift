@@ -309,8 +309,9 @@ private enum DriveAliveIO {
         case .failed(let error): return error
         }
         defer { close(dir.fd) }
-        // Something that isn't ours under the temp name blocks the removal (the exclusive move would fail anyway).
-        if let error = removeLeftover(dir) { return error }
+        // Something that isn't ours under the temp name blocks the removal (the exclusive move would fail anyway);
+        // the row names that file, not `.snaptic-keepalive`, which wasn't checked (security S3-2).
+        if let error = removeLeftover(dir) { return error == .notOurFile ? .removingInTheWay : error }
         let name = DriveAlivePolicy.fileName, temp = DriveAlivePolicy.removingFileName
         // A regular file before it is opened at all (opening a device node or FIFO can have side effects).
         var named = stat()
@@ -328,7 +329,7 @@ private enum DriveAliveIO {
         switch moveExclusive(dir: dir.fd, from: name, to: temp) {
         case 0: break
         case ENOENT: return nil
-        case EEXIST: return .notOurFile
+        case EEXIST: return .removingInTheWay
         default: return .ioError
         }
         var entry = stat()

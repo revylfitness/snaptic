@@ -206,6 +206,11 @@ final class DrivesPageModelTests: XCTestCase {
         XCTAssertEqual(rows.first?.offersWrite, false)
         XCTAssertEqual(DrivesPageModel.statusText(.removeFailed(.ioError), time: { _ in "" }),
                        "Turned off. Snaptic couldn’t delete its hidden .snaptic-keepalive file from the drive.")
+        // A foreign item under the temp name blocked the removal: the row names that file (security S3-2).
+        XCTAssertEqual(DrivesPageModel.statusText(.removeFailed(.removingInTheWay), time: { _ in "" }),
+                       "Turned off. Snaptic left .snaptic-keepalive on the drive because an item named "
+                       + ".snaptic-keepalive.removing that Snaptic didn’t create is in the way.")
+        XCTAssertNotEqual(DrivesPageModel.removeFailedText(.removingInTheWay), DrivesPageModel.removeFailedText(.notOurFile))
         // An unsupported volume keeps its own reason.
         var j = inputs([drive(a, "Backup") { $0.isReadOnly = true }], config([:]))
         j.removeFailures = [a: .ioError]
@@ -218,10 +223,10 @@ final class DrivesPageModelTests: XCTestCase {
         let statuses: [DriveRowStatus] = [
             .firstWriteRunning, .needsFirstWrite, .active(lastWrite: nil), .active(lastWrite: Date()),
             .waitingForSession, .paused, .notConnected,
-        ] + [DriveAliveError.notEligible, .mountChanged, .notOurFile, .ioError, .denied].map(DriveRowStatus.failed)
+        ] + DriveAliveError.allCases.map(DriveRowStatus.failed)
           + [DriveUnsupportedReason.readOnly, .fileSystem("NTFS"), .timeMachine, .noIdentifier, .other]
             .map(DriveRowStatus.unsupported)
-          + [DriveAliveError.notEligible, .mountChanged, .notOurFile, .ioError, .denied].map(DriveRowStatus.removeFailed)
+          + DriveAliveError.allCases.map(DriveRowStatus.removeFailed)
         for status in statuses {
             let text = DrivesPageModel.statusText(status, time: { _ in "3:12 PM" })
             XCTAssertNotNil(text, "\(status)")
@@ -249,7 +254,7 @@ final class DrivesPageModelTests: XCTestCase {
     func testSeededFuzzNeverTrapsAndKeepsInvariants() {
         var rng = SeededGenerator(seed: 0xD21E)
         let keys = (0..<6).map { VolumeUUIDKey(rawValue: String(format: "00000000-0000-0000-0000-%012d", $0))! }
-        let errors: [DriveAliveError] = [.notEligible, .mountChanged, .notOurFile, .ioError, .denied]
+        let errors = DriveAliveError.allCases
         for _ in 0..<2_000 {
             var mounted: [DriveCandidate] = []
             for _ in 0..<Int(rng.next() % 6) {
@@ -268,8 +273,8 @@ final class DrivesPageModelTests: XCTestCase {
             var i = inputs(rng.next() % 8 == 0 ? nil : mounted, config(entries), session: rng.next() % 2 == 0,
                            background: rng.next() % 2 == 0)
             for key in keys where rng.next() % 4 == 0 { i.firstWriteRunning.insert(key) }
-            for key in keys where rng.next() % 4 == 0 { i.firstWriteFailures[key] = errors[Int(rng.next() % 5)] }
-            for key in keys where rng.next() % 4 == 0 { i.removeFailures[key] = errors[Int(rng.next() % 5)] }
+            for key in keys where rng.next() % 4 == 0 { i.firstWriteFailures[key] = errors[Int(rng.next() % UInt64(errors.count))] }
+            for key in keys where rng.next() % 4 == 0 { i.removeFailures[key] = errors[Int(rng.next() % UInt64(errors.count))] }
             let rows = DrivesPageModel.rows(i)
             XCTAssertEqual(rows.count, Set(rows.map(\.id)).count, "unique ids")
             for row in rows {

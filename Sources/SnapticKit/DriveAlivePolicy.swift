@@ -3,7 +3,11 @@ import Foundation
 // Drive Alive policy (owner: J; PLAN 0.3 §2.9, C9, R5-14). Pure and tested; DriveAliveService re-checks the live mount
 // before every write (statfs, BSD name, volume UUID).
 
-package enum DriveAliveError: String, Codable, Sendable { case notEligible, mountChanged, notOurFile, ioError, denied }
+/// `removingInTheWay`: an item Snaptic didn't create sits at `removingFileName`, so a removal can't start (security
+/// S3-2); only removals return it.
+package enum DriveAliveError: String, Codable, Sendable, CaseIterable {
+    case notEligible, mountChanged, notOurFile, ioError, denied, removingInTheWay
+}
 
 package enum DriveAlivePolicy {
     package struct VolumeFacts: Equatable, Sendable {

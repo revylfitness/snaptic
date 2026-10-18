@@ -250,8 +250,9 @@ import SnapticKit
 
     // MARK: Host facts
 
-    /// `Awake.disable.<feature>` from Snaptic's persistent domain only (N14); unkillable features ignore them.
-    private static func readKillSwitches() -> Set<AwakeFeature> {
+    /// `Awake.disable.<feature>` from Snaptic's persistent domain only (N14); unkillable features ignore them. Also
+    /// read by HistoryController for a launch with `Modules.disable.awake` (security S3-1).
+    static func readKillSwitches() -> Set<AwakeFeature> {
         KillSwitches.read(UserDefaults.standard.persistentDomain(forName: ConfigStore<AwakeConfig>.persistentDomainName),
                           prefix: "Awake")
     }

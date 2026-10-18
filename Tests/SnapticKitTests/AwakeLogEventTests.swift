@@ -4,7 +4,7 @@ import XCTest
 final class AwakeLogEventTests: XCTestCase {
     private var every: [AwakeLogEvent] {
         let kinds: [AwakeHistoryKind] = [.indefinite, .duration, .until, .app, .idle, .process, .automatic]
-        let errors: [DriveAliveError] = [.notEligible, .mountChanged, .notOurFile, .ioError, .denied]
+        let errors = DriveAliveError.allCases
         var out: [AwakeLogEvent] = [.holdStarted, .activityCapped, .assertionFailed, .holdRefused, .restoreDropped]
         for k in kinds { out.append(.sessionStarted(k)) }
         for r in AwakeEndReason.allCases { out.append(.sessionEnded(r)) }

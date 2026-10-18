@@ -222,6 +222,8 @@ package enum DrivesPageModel {
         switch error {
         case .notOurFile:
             return L("Turned off. Snaptic left .snaptic-keepalive on the drive because it changed since Snaptic wrote it.")
+        case .removingInTheWay:
+            return L("Turned off. Snaptic left .snaptic-keepalive on the drive because an item named .snaptic-keepalive.removing that Snaptic didn’t create is in the way.")
         case .denied:
             return L("Turned off. macOS denied access, so Snaptic’s hidden .snaptic-keepalive file is still on the drive.")
         case .notEligible, .mountChanged, .ioError:
@@ -235,6 +237,7 @@ package enum DrivesPageModel {
         case .notEligible: return L("this kind of drive isn’t supported.")
         case .mountChanged: return L("the drive changed since it was connected. Eject it, connect it again, then try again.")
         case .notOurFile: return L("an item named .snaptic-keepalive that Snaptic didn’t create is in the way.")
+        case .removingInTheWay: return L("an item named .snaptic-keepalive.removing that Snaptic didn’t create is in the way.")
         case .ioError: return L("writing to it failed. Check the drive, then try again.")
         case .denied: return L("macOS denied access. Allow removable volumes for Snaptic in Privacy & Security, then try again.")
         }

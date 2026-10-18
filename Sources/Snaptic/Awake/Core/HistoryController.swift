@@ -50,7 +50,7 @@ import SnapticKit
     }
 
     /// Rule sessions never resume after a relaunch (the rule starts a new one), so every end is recorded, quitting
-    /// included.
+    /// included; one a crash cut short arrives through the away ends (the snapshot's rule record, review6 N2).
     private func recordRule(_ end: AwakeRuleEnd) {
         append(AwakeHistoryEntry(start: min(end.startWall, end.endWall), end: end.endWall, kind: .automatic,
                                  source: .rule, presetID: nil, triggerID: end.triggerID, bundleID: nil,
@@ -63,16 +63,13 @@ import SnapticKit
     }
 
     /// A launch that discards the snapshot unread (`Modules.disable.awake`, ModuleHost): what it held still gets its
-    /// history entries, ending when Snaptic stopped (F1). Nothing when History is off.
+    /// history entries, ending when Snaptic stopped (F1). Nothing when History isn't effective: its switch off or
+    /// `Awake.disable.history` set (security S3-1, read like AwakeModule reads it).
     static func recordDiscardedSnapshot(_ state: ConfigStore<AwakeRuntimeSnapshot>, history: ConfigStore<AwakeHistory>,
                                         config: AwakeConfig) {
-        guard config.rawFeatures[.history] != false else { return }
         let now = AwakeModule.clockNow()
-        let ends = state.value.discardedEnds(now: now, resume: config.sessions.behavior.resumeAfterRestart)
-        guard !ends.isEmpty else { return }
-        var h = history.value
-        for e in ends { h = h.appending(AwakeHistoryEntry(e), cap: AwakeHistory.maxEntries) }
-        history.value = h.pruned(now: now.wall, keepDays: AwakeHistory.keepDays)
+        let entries = state.value.discardedHistory(now: now, config: config, killSwitches: AwakeModule.readKillSwitches())
+        append(entries, to: history, now: now.wall)
     }
 
     /// Quitting: what resumes after the relaunch is recorded when it really ends.
@@ -81,10 +78,18 @@ import SnapticKit
     }
 
     private func append(_ entry: AwakeHistoryEntry) {
-        guard let ctx = context, let e = entry.sanitized() else { return }
-        let now = Date().timeIntervalSince1970
-        ctx.history.value = ctx.history.value.appending(e, cap: AwakeHistory.maxEntries)
-            .pruned(now: now, keepDays: AwakeHistory.keepDays)
+        guard let ctx = context else { return }
+        Self.append([entry], to: ctx.history, now: Date().timeIntervalSince1970)
+    }
+
+    /// The one write path: each entry sanitized (an unusable one is dropped), capped at 500, then pruned to 90 days;
+    /// nothing is written when no entry is usable.
+    private static func append(_ entries: [AwakeHistoryEntry], to store: ConfigStore<AwakeHistory>, now: Double) {
+        let usable = entries.compactMap { $0.sanitized() }
+        guard !usable.isEmpty else { return }
+        var h = store.value
+        for e in usable { h = h.appending(e, cap: AwakeHistory.maxEntries) }
+        store.value = h.pruned(now: now, keepDays: AwakeHistory.keepDays)
     }
 
     // MARK: AwakeFeatureController
