@@ -48,8 +48,6 @@ package enum DisplaysPageControls: ControlTable {
         ControlSpec("displays.root.refreshRate", .setting, when: [.displayFeature(.resolution), .perItem("display")],
                     replaces: ["l.d.resolution.refresh"],
                     search: SearchSpec("Refresh rate", keywords: ["hertz", "Hz", "ProMotion"], root: root)),
-        ControlSpec("displays.root.arrange", .button, when: [.displayFeature(.arrangement), .hardware(.twoDisplays)],
-                    search: SearchSpec("Arrange Displays", keywords: ["arrangement", "position", "align"], root: root)),
         ControlSpec("displays.root.nav.brightness", .navigation, when: [.module(.displays)],
                     search: SearchSpec("Brightness and Dimming", keywords: ["dim on lock", "restore brightness",
                                                                             "extra brightness", "XDR", "sync"],

@@ -25,13 +25,12 @@ struct DisplaysAdvancedSheet: View, ControlDeclaring {
         AdvancedSheet(L("Displays Advanced Settings"), restoreDefaults: restore) {
             DisplaysFeatureGroups(switcher: switcher, runtime: runtime, features: features)
             ConfirmChangesSection(env: env)
+            ResolutionFiltersSection(env: env)
             if let host = SettingsShell.shared.host {
                 OtherDisplayAppsSection(host: host, store: host.modulesStore)
             }
             permissions
             Section {
-                link(L("Resolution Options"), help: L("Favorites, filters, and the resolution slider."),
-                     page: "displays.resolution")
                 link(L("Remembered Displays"), help: L("Displays Snaptic keeps settings for, on Display Information."),
                      page: DisplayInformationPageControls.surface)
             } header: {

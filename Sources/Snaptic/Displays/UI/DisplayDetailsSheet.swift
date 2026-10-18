@@ -110,36 +110,10 @@ struct DisplayDetailsSheet: View, ControlDeclaring {
 
     // MARK: Connection and Match text size (D)
 
-    /// D's Connection and Match text size settings for this display. A sheet never presents another one, so these
-    /// close the sheet and open D's page for the display (the 0.2 page until D's is built).
+    /// D's sections for this display; each renders nothing when its features are off or the display doesn't qualify.
     @ViewBuilder private func ownerSettings(_ display: DisplayInfo) -> some View {
-        let connection = runtime.isEffective(.disconnect) || runtime.isEffective(.underscan)
-            || (display.isBuiltin && runtime.isEffective(.autoDisconnectBuiltin))
-        let matchTextSize = runtime.isEffective(.scaleMatch)
-        if connection || matchTextSize {
-            Section {
-                if connection {
-                    ButtonRow(L("Connection…"), help: L("Disconnect, underscan, and automatic disconnection."),
-                              control: ControlID("displays.details.connection")) { open(.connection, display.key) }
-                }
-                if matchTextSize {
-                    ButtonRow(L("Match Text Size…"), help: L("Makes text look the same size on every display."),
-                              control: ControlID("displays.details.matchTextSize")) { open(.matchTextSize, display.key) }
-                }
-            }
-        }
-    }
-
-    /// Closes the sheet, then pushes the page with this display selected.
-    private func open(_ route: DisplaysSectionRoute, _ key: DisplayKey) {
-        dismiss()
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated {
-                let shell = SettingsShell.shared
-                shell.selectedDisplay = key
-                shell.push(SettingsRoute(route.rawValue))
-            }
-        }
+        ConnectionSection(env: env, key: display.key)
+        MatchTextSizeSection(env: env, key: display.key)
     }
 
     // MARK: Manage

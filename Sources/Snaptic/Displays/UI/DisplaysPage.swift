@@ -40,14 +40,15 @@ struct DisplaysPage: View, ControlDeclaring {
     /// itself.
     @MainActor static func destination(_ route: SettingsRoute, env: DisplaysPageEnvironment) -> AnyView? {
         if route.id == DisplaysFeaturesPage.route.id { return AnyView(DisplaysFeaturesPage(env: env)) }
+        // Arrange Displays is a sheet on the root page (the menu's "Arrange Displays…" opens this route).
+        if route.id == ArrangeSheetControls.sheet { return AnyView(DisplaysRootSheetRedirect(sheet: ArrangeSheetControls.sheet)) }
         if let page = DisplaysSubpage(rawValue: route.id) {
             SettingsShell.shared.noteTitle(page.title, for: route)
-            if let built = DisplaysOwnerPages.page(page, env: env) { return built }
-            return AnyView(DisplaysSubpageHost(page: page, env: env))
+            return DisplaysOwnerPages.page(page, env: env)
         }
         if let section = DisplaysSectionRoute(rawValue: route.id) {
             SettingsShell.shared.noteTitle(section.title, for: route)
-            return DisplaysOwnerPages.page(section) ?? DisplaysOwnerPages.legacy(section.legacyPage)
+            return DisplaysOwnerPages.page(section)
         }
         return nil
     }
@@ -120,7 +121,7 @@ private struct DisplaysRootContent: View {
                         ])
                     }
                 }
-                arrangementSection(displays: displays)
+                arrangementSection(displays: displays, display: selected)
                 navigationSections
             } else {
                 Section {
@@ -141,8 +142,8 @@ private struct DisplaysRootContent: View {
         .sheet(isPresented: shell.sheetBinding(DisplayDetailsSheetControls.sheet)) {
             DisplayDetailsSheet(env: env, key: selected?.key)
         }
-        .sheet(isPresented: shell.sheetBinding(ArrangeSheetControls.surface)) {
-            ArrangeSheet()
+        .sheet(isPresented: shell.sheetBinding(ArrangeSheetControls.sheet)) {
+            ArrangeSheet(env: env)
         }
     }
 
@@ -273,6 +274,7 @@ private struct DisplaysRootContent: View {
                                       revision: runtime.revision(.resolution))
                     LiveRefreshRow(display: display, anchor: ControlID("displays.root.refreshRate"), model: model,
                                    revision: runtime.revision(.resolution))
+                    ResolutionSections(env: env, display: display)
                 }
             }
         }
@@ -280,16 +282,10 @@ private struct DisplaysRootContent: View {
 
     // MARK: Arrangement
 
-    @ViewBuilder private func arrangementSection(displays: [DisplayInfo]) -> some View {
+    @ViewBuilder private func arrangementSection(displays: [DisplayInfo], display: DisplayInfo?) -> some View {
         Section {
-            if runtime.isEffective(.arrangement), displays.count > 1 {
-                ButtonRow(L("Arrange Displays…"), control: ControlID("displays.root.arrange")) {
-                    if DisplaysOwnerPages.arrangeSheetIsBuilt {
-                        shell.openSheet = ArrangeSheetControls.surface
-                    } else {
-                        shell.push(SettingsRoute("displays.arrangement"))
-                    }
-                }
+            if let display {
+                ArrangementRows(env: env, display: display, displayCount: displays.count)
             }
             navigationRow(.layouts, control: ControlID("displays.root.nav.layouts"))
         }
@@ -353,20 +349,6 @@ enum DisplaysSubpage: String, CaseIterable {
         }
     }
 
-    var summary: String {
-        switch self {
-        case .brightness: return L("Restore, dim, sync, and extra brightness for every display.")
-        case .color: return L("Contrast, gamma, temperature, and color profiles in software.")
-        case .hardware: return L("Volume, input, and power for displays that support them.")
-        case .keyboard: return L("Brightness and volume keys, the brightness indicator, and shortcuts.")
-        case .layouts: return L("Save display arrangements and apply them automatically.")
-        case .virtual: return L("Create displays that exist only in software.")
-        case .pip: return L("Show a live view of any window or display.")
-        case .automations: return L("Run a program when displays change.")
-        case .information: return L("A live report about your displays, to copy when something goes wrong.")
-        }
-    }
-
     var symbol: String {
         switch self {
         case .brightness: return "sun.max.fill"
@@ -418,55 +400,6 @@ enum DisplaysSubpage: String, CaseIterable {
 
     /// Whether the root page's row shows On/Off (Brightness and Dimming and Keyboard show none).
     var showsValue: Bool { headerSwitch != nil || self == .automations }
-
-    /// The 0.2 pages that hold these settings until the owner's sub-page lands.
-    var legacyPages: [String] {
-        switch self {
-        case .brightness: return ["displays.brightness"]
-        case .color: return ["displays.color"]
-        case .hardware: return ["displays.ddc"]
-        case .keyboard: return ["displays.keys", "displays.osd"]
-        case .layouts: return ["displays.protection"]
-        case .virtual: return ["displays.virtual"]
-        case .pip: return ["displays.pip"]
-        case .automations: return ["displays.automation"]
-        case .information: return []
-        }
-    }
-
-    /// What a page that can't show yet needs, for pages without a switch of their own.
-    var needs: [DisplayFeature] {
-        switch self {
-        case .brightness: return [.brightness]
-        default: return []
-        }
-    }
-
-    static func switchTitle(_ feature: DisplayFeature) -> String {
-        switch feature {
-        case .color: return L("Color adjustments")
-        case .ddcControls: return L("Hardware controls")
-        case .layouts: return L("Saved layouts")
-        case .virtualScreens: return L("Virtual displays")
-        case .pip: return L("Picture in Picture")
-        case .hooks: return L("Event hooks")
-        case .customActions: return L("Custom actions")
-        case .brightnessKeys: return L("Brightness keys")
-        case .volumeKeys: return L("Volume keys")
-        case .brightness: return L("Brightness control")
-        default: return DisplaysUIText.title(feature)
-        }
-    }
-
-    static func switchHelp(_ feature: DisplayFeature) -> String {
-        switch feature {
-        case .brightnessKeys: return L("The brightness keys also change external displays.")
-        case .volumeKeys: return L("The volume keys change a display’s speakers when it’s the sound output.")
-        case .hooks: return L("Runs a program when a display connects, disconnects, or sleeps.")
-        case .customActions: return L("Your own programs in the menu and as shortcuts.")
-        default: return DisplaysUIText.summary(feature)
-        }
-    }
 }
 
 /// Sub-routes that aren't navigation rows of the root page: the full-page forms of D's root and Display Details
@@ -483,243 +416,52 @@ enum DisplaysSectionRoute: String, CaseIterable {
         case .connection: return L("Connection")
         }
     }
-
-    /// The 0.2 page that holds these settings until D's page is built.
-    var legacyPage: String {
-        switch self {
-        case .resolution, .matchTextSize: return "displays.resolution"
-        case .connection: return "displays.arrangement"
-        }
-    }
 }
 
-/// The owners' 0.3 pages, each shown directly (they have their own header and switches). Pages still being built in
-/// parallel (D's) show once their type replaces its step-0 stub, and the 0.2 page until then: a page is "built" when
-/// its body no longer has the stub's type (scripts/gen-stubs.py K18/K19). Those are made with their no-argument
-/// `init()` (the stub signature, kept by their owner).
+/// The owners' 0.3 pages, each shown directly (they have their own header and switches).
 @MainActor enum DisplaysOwnerPages {
-    static func page(_ page: DisplaysSubpage, env: DisplaysPageEnvironment) -> AnyView? {
+    static func page(_ page: DisplaysSubpage, env: DisplaysPageEnvironment) -> AnyView {
         switch page {
         case .brightness: return AnyView(BrightnessSubpage(env: env))
         case .color: return AnyView(ColorPage(env: env))
         case .hardware: return AnyView(HardwareControlsPage(env: env))
         case .keyboard: return AnyView(KeyboardPage(env: env))
-        case .layouts: return built(SavedLayoutsPage.self) { SavedLayoutsPage() }
-        case .virtual: return built(VirtualDisplaysPage.self) { VirtualDisplaysPage() }
+        case .layouts: return AnyView(SavedLayoutsPage(env: env))
+        case .virtual: return AnyView(VirtualDisplaysPage(env: env))
         case .pip: return AnyView(PIPPage(env: env))
         case .automations: return AnyView(AutomationsPage(env: env))
         case .information: return AnyView(DisplayInformationPage(env: env))
         }
     }
 
-    static func page(_ route: DisplaysSectionRoute) -> AnyView? {
+    static func page(_ route: DisplaysSectionRoute) -> AnyView {
         switch route {
-        case .resolution: return built(ResolutionSections.self) { ResolutionSections() }
-        case .matchTextSize: return built(MatchTextSizeSection.self) { MatchTextSizeSection() }
-        case .connection: return built(ConnectionSection.self) { ConnectionSection() }
-        }
-    }
-
-    /// Whether D's Arrange Displays sheet replaced its stub (until then the root page opens the 0.2 page).
-    static var arrangeSheetIsBuilt: Bool { isBuiltSheet(ArrangeSheet.self) }
-
-    /// A 0.2 page by id, while Displays runs.
-    static func legacy(_ id: String) -> AnyView? {
-        guard let host = SettingsShell.shared.host, host.isRunning(.displays) else { return nil }
-        return host.displays.settingsPages().first { $0.id == id }?.makeView()
-    }
-
-    static func isBuilt<V: View>(_ type: V.Type) -> Bool {
-        ObjectIdentifier(V.Body.self) != ObjectIdentifier(StubPageProbe.Body.self)
-    }
-
-    static func isBuiltSheet<V: View>(_ type: V.Type) -> Bool {
-        ObjectIdentifier(V.Body.self) != ObjectIdentifier(StubSheetProbe.Body.self)
-    }
-
-    private static func built<V: View>(_ type: V.Type, _ make: () -> V) -> AnyView? {
-        isBuilt(type) ? AnyView(make()) : nil
-    }
-}
-
-/// The body of a step-0 page stub, written exactly as gen-stubs.py writes it (K18): only its type matters.
-private struct StubPageProbe: View {
-    var body: some View {
-        SettingsPageScaffold(route: SettingsRoute(SettingsRootID.displays)) {
-            Text(L("Displays")).font(.headline)
-            Text(L("Not built yet")).foregroundStyle(.secondary)
+        case .resolution: return AnyView(ResolutionSections())
+        case .matchTextSize: return AnyView(MatchTextSizeSection())
+        case .connection: return AnyView(ConnectionSection())
         }
     }
 }
 
-/// The body of a step-0 sheet stub (K19).
-private struct StubSheetProbe: View {
-    @Environment(\.dismiss) private var dismiss
+/// A route that names a sheet of the root page: goes back to the root page, then opens the sheet there (a sheet is
+/// presented by the page that owns it, never pushed).
+private struct DisplaysRootSheetRedirect: View {
+    let sheet: String
 
     var body: some View {
-        VStack(spacing: 0) {
-            SettingsPageScaffold(route: SettingsRoute(SettingsRootID.displays)) {
-                Text(L("Displays")).font(.headline)
-                Text(L("Not built yet")).foregroundStyle(.secondary)
-            }
-            HStack {
-                Spacer()
-                Button(L("Done")) { dismiss() }
-                    .keyboardShortcut(.defaultAction)
-            }
-            .padding(16)
-        }
-        .frame(width: 520)
-    }
-}
-
-/// A root-page navigation target: the 0.2 page(s) holding its settings, under the sub-page's feature switch. One
-/// page with a switch: the switch above the page. Several pages: an index. Nothing to show yet: the header, its
-/// switch and what the page does (or what it needs).
-private struct DisplaysSubpageHost: View {
-    let page: DisplaysSubpage
-    let env: DisplaysPageEnvironment
-    @ObservedObject private var runtime: DisplaysRuntimeState
-    @StateObject private var switcher: DisplaysFeatureSwitcher
-    @StateObject private var features: ConfigSlice<DisplaysConfig, [DisplayFeature: Bool]>
-
-    init(page: DisplaysSubpage, env: DisplaysPageEnvironment) {
-        self.page = page
-        self.env = env
-        _runtime = ObservedObject(wrappedValue: env.runtime)
-        _switcher = StateObject(wrappedValue: DisplaysFeatureSwitcher(env: env))
-        _features = StateObject(wrappedValue: ConfigSlice(env.config, \.rawFeatures))
-    }
-
-    /// The 0.2 pages that exist now (their features run).
-    private var available: [SettingsPage] {
-        guard let host = SettingsShell.shared.host, host.isRunning(.displays) else { return [] }
-        let pages = host.displays.settingsPages()
-        return page.legacyPages.compactMap { id in pages.first { $0.id == id } }
-    }
-
-    var body: some View {
-        let pages = available
-        Group {
-            if pages.count == 1, page.headerSwitch == nil, page.rowSwitches.isEmpty {
-                pages[0].makeView()
-            } else if pages.count == 1, page != .keyboard {
-                VStack(spacing: 0) {
-                    switchBar
-                    Divider()
-                    pages[0].makeView()
-                }
-            } else {
-                index(pages)
-            }
-        }
-        .modifier(DisplaysFeatureOffAlert(switcher: switcher))
-    }
-
-    /// The sub-page's switches above a 0.2 page.
-    private var switchBar: some View {
-        HStack(alignment: .center, spacing: 12) {
-            SettingsIcon(page.symbol, tint: page.tint, size: 28)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(page.title).font(.headline)
-                Text(page.summary)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .accessibilityElement(children: .combine)
-            Spacer(minLength: 8)
-            if let feature = page.headerSwitch {
-                Toggle(DisplaysSubpage.switchTitle(feature),
-                       isOn: switcher.binding([feature], title: DisplaysSubpage.switchTitle(feature)))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .help(DisplaysSubpage.switchTitle(feature))
-            } else {
-                VStack(alignment: .trailing, spacing: 4) {
-                    ForEach(page.rowSwitches, id: \.self) { feature in
-                        Toggle(DisplaysSubpage.switchTitle(feature),
-                               isOn: switcher.binding([feature], title: DisplaysSubpage.switchTitle(feature)))
-                            .toggleStyle(.switch)
-                            .controlSize(.small)
+        Color.clear
+            .onAppear {
+                let sheet = sheet
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        let shell = SettingsShell.shared
+                        shell.go(to: SettingsLocation(root: SettingsRootID.displays))
+                        DispatchQueue.main.async {
+                            MainActor.assumeIsolated { shell.openSheet = sheet }
+                        }
                     }
                 }
             }
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-    }
-
-    private func index(_ pages: [SettingsPage]) -> some View {
-        SettingsPageScaffold(route: SettingsRoute(page.rawValue)) {
-            SettingsPageHeader(page.title, summary: page.summary, symbol: page.symbol, tint: page.tint,
-                               isOn: page.headerSwitch.map { switcher.binding([$0], title: DisplaysSubpage.switchTitle($0)) },
-                               switchLabel: page.headerSwitch.map(DisplaysSubpage.switchTitle))
-            if !page.rowSwitches.isEmpty {
-                Section {
-                    ForEach(page.rowSwitches, id: \.self) { feature in
-                        ToggleSetting(DisplaysSubpage.switchTitle(feature), help: DisplaysSubpage.switchHelp(feature),
-                                      isOn: switcher.binding([feature], title: DisplaysSubpage.switchTitle(feature)),
-                                      disabledReason: unavailableReason(feature))
-                    }
-                }
-            }
-            if pages.isEmpty {
-                waiting
-            } else {
-                Section {
-                    ForEach(pages) { legacy in
-                        NavigationRow(legacy.title, symbol: legacy.symbol, tint: page.tint, route: SettingsRoute(legacy.id))
-                    }
-                }
-            }
-        }
-    }
-
-    /// Why nothing shows yet.
-    @ViewBuilder private var waiting: some View {
-        let switches = page.headerSwitch.map { [$0] } ?? []
-        let rowsOff = !page.rowSwitches.isEmpty
-            && !page.rowSwitches.contains(where: { FeatureGraph.rawState($0, in: features.value) })
-        let needs = page.needs
-        if !(SettingsShell.shared.host?.isRunning(.displays) ?? false) {
-            Section {
-                StatusRow(L("Turn on Displays to use these settings."))
-            }
-        } else if !needs.isEmpty, !needs.contains(where: { FeatureGraph.rawState($0, in: features.value) }) {
-            Section {
-                StatusRow(L("\(DisplaysSubpage.switchTitle(needs[0])) is off."), actions: [
-                    StatusAction(title: L("Turn On")) {
-                        switcher.binding([needs[0]], title: DisplaysSubpage.switchTitle(needs[0])).wrappedValue = true
-                    },
-                ])
-            }
-        } else if !switches.isEmpty, !switches.contains(where: { FeatureGraph.rawState($0, in: features.value) }) {
-            FeatureHighlights(switches.map {
-                FeatureHighlight(id: $0.rawValue, symbol: page.symbol, title: DisplaysSubpage.switchTitle($0),
-                                 text: DisplaysSubpage.switchHelp($0))
-            })
-        } else if rowsOff {
-            EmptyView()
-        } else {
-            Section {
-                StatusRow(reason ?? L("These settings aren’t available right now."), style: .info)
-            }
-        }
-    }
-
-    private var reason: String? {
-        let switches = (page.headerSwitch.map { [$0] } ?? page.rowSwitches) + page.needs
-        for feature in switches {
-            if let r = unavailableReason(feature) { return r }
-            if let r = env.context?.otherApps.pauseReason(for: feature) { return r }
-        }
-        return nil
-    }
-
-    private func unavailableReason(_ feature: DisplayFeature) -> String? {
-        if case .unavailable(let reason)? = runtime.availability[feature] { return reason }
-        return nil
     }
 }
 
