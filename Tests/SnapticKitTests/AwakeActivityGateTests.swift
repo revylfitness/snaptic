@@ -163,4 +163,16 @@ final class AwakeActivityGateTests: XCTestCase {
             }
         }
     }
+
+    func testCapResetsAtTheNextStartAfterALongGapWithoutAnyArbitration() {
+        // R5-7 (awake-correctness F3): acted at 600, governing ended at 5 400; no arbitration in between.
+        let ended = Gate().applying(.hotkeyStart).applying(.acted(now: 600)).applying(.governingEnded(now: 5_400))
+        let longGap = ended.applying(.hotkeyStart).applying(.governingStarted(now: 5_400 + 1_800))
+        XCTAssertNil(longGap.activitySince, "30 min with nothing governing: the cap starts over")
+        let shortGap = ended.applying(.hotkeyStart).applying(.governingStarted(now: 5_400 + 600))
+        XCTAssertEqual(shortGap.activitySince, 600, "10 min: carried")
+        XCTAssertEqual(Gate().applying(.acted(now: 1)).applying(.governingStarted(now: 99_999)).activitySince, 1,
+                       "never ended: nothing to measure from")
+        XCTAssertEqual(ended.applying(.governingStarted(now: .nan)), ended)
+    }
 }
