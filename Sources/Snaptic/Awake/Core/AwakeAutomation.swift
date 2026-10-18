@@ -175,7 +175,7 @@ import SnapticKit
 
     private func pauseVerb(_ request: ControlRequest) -> ControlResponse {
         guard let ctx = context, case .pause(let seconds)? = command("pause", request) else { return Self.usage }
-        ctx.triggers.pause(seconds: Double(seconds ?? 3_600))
+        ctx.triggers.pause(seconds: Double(seconds ?? 3_600), onlyExtend: true)
         let until = ctx.triggers.pausedUntil.map { AwakeCommandGrammar.isoUTC($0) ?? "" } ?? ""
         return .ok(L("Rules are paused until ") + until + ".")
     }
@@ -215,10 +215,14 @@ import SnapticKit
             hold.onClose { [weak self, weak hold] in
                 guard let self else { return }
                 self.connections[id] = nil
-                if hold?.closeReason == .server {
+                switch hold?.closeReason {
+                case .server?:
                     // The control server stopped (command-line control turned off): every hold ends (R5-14).
                     self.context?.sessions.endAllHolds(.commandLineOff)
-                } else {
+                case .limit?:
+                    // The holding reply was refused (8 held already, R5-5): no history entry, no toast.
+                    self.context?.sessions.withdrawHold(id)
+                default:
                     self.context?.sessions.endHold(id, .processExited)
                 }
             }

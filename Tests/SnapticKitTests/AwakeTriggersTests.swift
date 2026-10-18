@@ -271,6 +271,8 @@ final class AwakeTriggersTests: XCTestCase {
         XCTAssertEqual(AwakeTrigger.delayTitle(1_800), "30 minutes")
         XCTAssertEqual(AwakeTrigger.delayTitle(3_600), "1 hour")
         XCTAssertEqual(AwakeTrigger.delayTitle(90), "90 seconds")
+        XCTAssertEqual(AwakeTrigger.delayTitle(60, titleCase: true), "1 Minute")
+        XCTAssertEqual(AwakeTrigger.delayTitle(1_800, titleCase: true), "30 Minutes")
         XCTAssertEqual(AwakeTrigger.choices([0, 30, 60], including: 45), [0, 30, 45, 60])
         XCTAssertEqual(AwakeTrigger.choices([0, 30, 60], including: 30), [0, 30, 60])
         let id = StableID()

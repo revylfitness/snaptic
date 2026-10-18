@@ -58,9 +58,11 @@ import SnapticKit
             case .addTime(let seconds):
                 out += addTime(seconds, ctx)
             case .keepDisplayOn:
-                let on = ctx.sessions.keepsDisplayOn
-                out.append(MenuKit.toggle(L("Keep Display On"), isOn: on, control: ControlID("menu.awake.keepDisplayOn")) { [weak self] in
-                    self?.context?.sessions.setKeepDisplayOn(!on)
+                out.append(MenuKit.toggle(L("Keep Display On"), isOn: ctx.sessions.keepsDisplayOn,
+                                          control: ControlID("menu.awake.keepDisplayOn")) { [weak self] in
+                    // Read at the click, not when the menu was built (ui F2).
+                    guard let sessions = self?.context?.sessions else { return }
+                    sessions.setKeepDisplayOn(!sessions.keepsDisplayOn)
                 })
             case .endHolds:
                 out.append(MenuKit.action(L("End Command-Line Holds"), control: ControlID("menu.awake.endHolds")) { [weak self] in
@@ -87,11 +89,18 @@ import SnapticKit
 
     private func header(_ ctx: AwakeContext) -> NSMenuItem {
         let lines = detailLines(ctx)
+        weak var built: NSMenuItem?
         let item = MenuKit.switchHeader(L("Keep Awake"), isOn: ctx.runtime.governing.isActive, detail: lines,
                                         control: ControlID("menu.awake.header")) { [weak self] on in
             guard let sessions = self?.context?.sessions else { return }
             if on { _ = sessions.startDefault(source: .menu) } else { sessions.turnOff(source: .menu) }
+            // The switch is the whole task (like choosing an item): close the menu, so the rows below it are never
+            // left showing the other state (ux m17); it is rebuilt when it next opens.
+            var root = built?.menu
+            while let parent = root?.supermenu { root = parent }
+            root?.cancelTracking()
         }
+        built = item
         headers.append((item, lines.count))
         return item
     }
@@ -163,7 +172,8 @@ import SnapticKit
             let name = rule.displayName(AwakeFormat.text)
             let id = entry.id
             let item = MenuKit.action(name, control: ControlID("menu.awake.rule")) { [weak self] in
-                self?.context?.host.openSettings(SettingsRoute("awake.rules"))
+                guard let host = self?.context?.host else { return }
+                AwakeRuleLink.open(rule: id, host: host)
             }
             let subtitle: String?
             switch entry.state {
@@ -194,7 +204,8 @@ import SnapticKit
             })
         }
         rows.append(MenuKit.action(L("Edit Rules…"), control: ControlID("menu.awake.editRules")) { [weak self] in
-            self?.context?.host.openSettings(SettingsRoute("awake.rules"))
+            guard let host = self?.context?.host else { return }
+            AwakeRuleLink.open(rule: nil, host: host)
         })
         let item = MenuKit.submenu(L("Rules"), control: ControlID("menu.awake.rules"), rows)
         return MenuKit.withSubtitle(item, rulesSubtitle(ctx))
@@ -218,7 +229,7 @@ import SnapticKit
         if !recent.isEmpty {
             var rows = recent.reversed().map { MenuKit.status($0, control: ControlID("menu.awake.notice")) }
             rows.append(MenuKit.separator())
-            rows.append(MenuKit.action(L("Clear"), control: ControlID("menu.awake.clearNotices")) { [weak self] in
+            rows.append(MenuKit.action(L("Clear Menu"), control: ControlID("menu.awake.clearNotices")) { [weak self] in
                 self?.context?.host.toasts.clearRecent()
             })
             out.append(MenuKit.submenu(L("Recent Notices"), control: ControlID("menu.awake.recentNotices"), rows))

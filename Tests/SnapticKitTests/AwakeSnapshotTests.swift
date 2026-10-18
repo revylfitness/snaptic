@@ -157,4 +157,102 @@ final class AwakeSnapshotTests: XCTestCase {
         XCTAssertFalse(out.contains("uiStartedInProcess"))
         XCTAssertFalse(out.contains("pointer"))
     }
+
+    // MARK: Expired while Snaptic wasn't running (awake-correctness F5b)
+
+    func testExpiredWhileAwayReportsEndsAtTheirInstant() {
+        let raw = snapshot(manual: session(), holds: [hold("a", cap: 600), hold("b", pid: 401, cap: 7_200)])
+        // Everything still running at 4 500: nothing to report.
+        let early = raw.expiredWhileAway(now: now(4_500))
+        XCTAssertNil(early.manual)
+        XCTAssertTrue(early.holds.isEmpty)
+        // At 10 000 the 1-hour session (ended 7 600) and the 10-minute hold (ended 4 600) ran out.
+        let late = raw.expiredWhileAway(now: now(10_000))
+        XCTAssertEqual(late.manual?.session.id, id("m"))
+        XCTAssertEqual(late.manual?.endWall, 1_700_000_000 + 7_600)
+        XCTAssertEqual(late.holds.map(\.hold.id), [id("a")])
+        XCTAssertEqual(late.holds.first?.endWall, 1_700_000_000 + 4_600)
+        XCTAssertNil(raw.sanitized(now: now(10_000)).manual, "the sanitizer still drops it")
+    }
+
+    func testExpiredWhileAwayIgnoresOtherBootsEndlessAndForgedItems() {
+        XCTAssertNil(snapshot(manual: session()).expiredWhileAway(now: now(10_000, boot: "BOOT-2")).manual)
+        XCTAssertNil(snapshot(manual: session(.indefinite)).expiredWhileAway(now: now(99_000)).manual)
+        var forged = session()
+        forged.deadline = 4_000 + 99_999   // deadline doesn't match the duration
+        XCTAssertNil(snapshot(manual: forged).expiredWhileAway(now: now(200_000)).manual)
+        var rule = session()
+        rule.source = .rule
+        XCTAssertNil(snapshot(manual: rule).expiredWhileAway(now: now(10_000)).manual)
+        let until = session(.until(unixTime: 1_700_000_000 + 4_000 + 1_800))
+        let report = snapshot(manual: until).expiredWhileAway(now: now(9_000))
+        XCTAssertEqual(report.manual?.endWall, 1_700_000_000 + 5_800)
+    }
+
+    // MARK: Seeded fuzz of the outside-writable snapshot (code F5)
+
+    func testSeededFuzzNeverTrapsAndSanitizedIsStable() throws {
+        var rng = SeededGenerator(seed: 0xA3A4E)
+        let valid = snapshot(manual: session(.untilIdle(UntilIdleSpec(), maxSeconds: 7_200)), holds: [hold("a"), hold("b", pid: 401)],
+                             suppressions: [id("t"): TriggerSuppression(until: 5_500, untilFalse: true)],
+                             paused: 1_700_000_000 + 6_000)
+        let base = try JSONSerialization.jsonObject(with: JSONEncoder().encode(valid))
+        for round in 0..<600 {
+            let mutated = mutate(base, &rng, depth: 0)
+            guard JSONSerialization.isValidJSONObject(mutated),
+                  let data = try? JSONSerialization.data(withJSONObject: mutated),
+                  let decoded = try? JSONDecoder().decode(AwakeRuntimeSnapshot.self, from: data) else { continue }
+            let clock = now(Double(rng.next() % 20_000), boot: rng.next() % 4 == 0 ? "BOOT-2" : nil)
+            let s = decoded.sanitized(now: clock)
+            XCTAssertEqual(s.sanitized(now: clock), s, "round \(round)")
+            XCTAssertLessThanOrEqual(s.holds.count, AwakeHold.maxHolds)
+            XCTAssertTrue(s.holds.allSatisfy { $0.binding.isProcess && $0.deadline > clock.continuous })
+            XCTAssertNotEqual(s.manual?.source, .rule)
+            XCTAssertNotEqual(s.manual?.overrideGuards, true)
+            if let p = s.pausedUntil { XCTAssertLessThanOrEqual(p - clock.wall, AwakeRuntimeSnapshot.maxPauseSeconds) }
+            XCTAssertLessThanOrEqual(s.suppressions.values.count, AwakeRuntimeSnapshot.maxSuppressions)
+            XCTAssertEqual(try JSONDecoder().decode(AwakeRuntimeSnapshot.self, from: JSONEncoder().encode(s)), s)
+            let away = decoded.expiredWhileAway(now: clock)
+            if let m = away.manual { XCTAssertLessThanOrEqual(m.endWall, clock.wall) }
+            XCTAssertTrue(away.holds.allSatisfy { $0.endWall <= clock.wall })
+            XCTAssertLessThanOrEqual(away.holds.count, AwakeHold.maxHolds)
+        }
+    }
+
+    private func mutate(_ value: Any, _ rng: inout SeededGenerator, depth: Int) -> Any {
+        if var d = value as? [String: Any] {
+            for key in d.keys.sorted() {
+                switch rng.next() % 6 {
+                case 0: d[key] = nil
+                case 1: d[key] = junk(&rng, depth: depth)
+                default: if let v = d[key] { d[key] = mutate(v, &rng, depth: depth + 1) }
+                }
+            }
+            if rng.next() % 5 == 0 { d["extra\(rng.next() % 3)"] = junk(&rng, depth: depth) }
+            return d
+        }
+        if var a = value as? [Any] {
+            a = a.map { mutate($0, &rng, depth: depth + 1) }
+            if let first = a.first, rng.next() % 3 == 0 {
+                a += Array(repeating: first, count: Int(rng.next() % 12))
+            }
+            if rng.next() % 4 == 0 { a.append(junk(&rng, depth: depth)) }
+            return a
+        }
+        return rng.next() % 4 == 0 ? junk(&rng, depth: depth) : value
+    }
+
+    private func junk(_ rng: inout SeededGenerator, depth: Int) -> Any {
+        switch rng.next() % (depth > 3 ? 7 : 9) {
+        case 0: return NSNull()
+        case 1: return Int.max
+        case 2: return -Int(rng.next() % 10_000)
+        case 3: return 1e300
+        case 4: return ["", "BOOT-1", "rule", "commandLine", "duration", "process"][Int(rng.next() % 6)]
+        case 5: return rng.next() % 2 == 0
+        case 6: return Double(rng.next() % 20_000) + 0.5
+        case 7: return [junk(&rng, depth: depth + 1), junk(&rng, depth: depth + 1)]
+        default: return ["type": "duration", "seconds": Int(rng.next() % 100_000), "x": junk(&rng, depth: depth + 1)]
+        }
+    }
 }

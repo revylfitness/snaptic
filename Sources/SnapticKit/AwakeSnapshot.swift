@@ -110,6 +110,43 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
         return c
     }
 
+    /// What `sanitized(now:)` dropped only because it ran out while Snaptic wasn't running (same boot, otherwise
+    /// valid, with a known end): history records it at its end instant (wall, never after `now.wall`). A session
+    /// without an end (Until Turned Off, uncapped app or task sessions) never expires; another boot's items have no
+    /// known end and are not reported.
+    package func expiredWhileAway(now: ClockNow) -> (manual: (session: AwakeSession, endWall: Double)?,
+                                                      holds: [(hold: AwakeHold, endWall: Double)]) {
+        let base = sanitized()
+        guard !base.bootSession.isEmpty, base.bootSession == now.bootSession,
+              now.wall.isFinite, now.continuous.isFinite else { return (manual: nil, holds: []) }
+        var manualEnd: (session: AwakeSession, endWall: Double)?
+        if let m = base.manual, m.sanitized(now: now) == nil, let end = Self.end(of: m),
+           end.continuous <= now.continuous || end.wall <= now.wall {
+            let probe = ClockNow(wall: end.wall - 1, continuous: end.continuous - 1, bootSession: now.bootSession)
+            if let valid = m.sanitized(now: probe) {
+                manualEnd = (session: valid, endWall: min(max(end.wall, valid.startedAt), now.wall))
+            }
+        }
+        var holdEnds: [(hold: AwakeHold, endWall: Double)] = []
+        for h in base.holds where h.sanitized(now: now) == nil && h.deadline <= now.continuous {
+            let span = h.deadline - h.startedContinuous
+            let probe = ClockNow(wall: h.startedAt + span - 1, continuous: h.deadline - 1, bootSession: now.bootSession)
+            guard let valid = h.sanitized(now: probe), !holdEnds.contains(where: { $0.hold.id == valid.id }) else { continue }
+            holdEnds.append((hold: valid, endWall: min(max(valid.startedAt + span, valid.startedAt), now.wall)))
+        }
+        return (manual: manualEnd, holds: holdEnds)
+    }
+
+    /// A session's end on both clocks; nil when it has none.
+    private static func end(of s: AwakeSession) -> (wall: Double, continuous: Double)? {
+        if case .until(let t) = s.kind {
+            guard t.isFinite else { return nil }
+            return (wall: t, continuous: s.startedContinuous + (t - s.startedAt))
+        }
+        guard let d = s.deadline, d.isFinite else { return nil }
+        return (wall: s.startedAt + (d - s.startedContinuous), continuous: d)
+    }
+
     /// Services the restored state needs before restore runs (§2.1 start order).
     package var dynamicNeeds: AwakeDynamicNeeds {
         var needs: AwakeDynamicNeeds = []

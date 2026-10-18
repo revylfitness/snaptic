@@ -499,13 +499,15 @@ package struct AwakeStatusRowFacts: Equatable, Sendable {
 
 package enum AwakeStatusPlan {
     /// Idle: [Pause Rules ▾] [Keep Awake ▾]. Session or rule: [Pause Rules ▾] [Options ▾] [Turn Off]. Holds only:
-    /// [Pause Rules ▾] [Turn Off]. Paused: Resume in Pause Rules ▾'s slot.
+    /// [Pause Rules ▾] [Keep Awake ▾] [Turn Off] — a start adds a manual session beside the holds, like the menus'
+    /// default-preset item (§5.3, R5-9: every session kind starts from Settings alone). Paused: Resume in Pause
+    /// Rules ▾'s slot.
     package static func buttons(_ f: AwakeStatusRowFacts) -> [AwakeStatusButton] {
         var out: [AwakeStatusButton] = []
         if f.rulesExist { out.append(f.rulesPaused ? .resumeRules : .pauseRules) }
         switch f.governing {
         case .inactive: out.append(.keepAwake)
-        case .holds: out.append(.turnOff)
+        case .holds: out += [.keepAwake, .turnOff]
         case .manual, .trigger: out += [.options, .turnOff]
         }
         return out
@@ -536,6 +538,8 @@ package enum AwakeStatusPlan {
 /// The status row's text: one primary line and secondary details, each only while true.
 package enum AwakeStatusText {
     package static let idle = L("Your Mac can sleep as usual.")
+    /// After the lid line: how macOS keeps a Mac awake with its lid closed (closed-display mode).
+    package static let lidRoute = L("To keep it awake with the lid closed, connect power and an external display.")
 
     /// "Keeping your Mac awake until 3:45 PM", "…until turned off", "…while Xcode is running", "…until downloads
     /// and tasks finish", "…while “Desk dock” applies", "Held by Terminal (2)"; idle: "Your Mac can sleep as usual."
@@ -571,6 +575,8 @@ package enum AwakeStatusText {
             }
         }
         out += AwakeDetail.extras(i)
+        // §1.4 closed-display mode: the native route, where there is room for it (the menu header keeps 2 lines).
+        if i.lidWarning { out.append(lidRoute) }
         if !i.governing.isActive, let note = i.idleNote { out.append(note) }
         if let p = pausedUntilClock { out.append(L("Rules are paused until ") + p + ".") }
         return out

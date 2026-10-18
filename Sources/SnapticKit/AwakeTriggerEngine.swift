@@ -126,6 +126,17 @@ package struct TriggerStepResult: Equatable, Sendable {
 }
 
 package enum TriggerEngine {
+    /// "Pause Rules" for `seconds` (clamped to 60 s…`limit`) from `now` (wall). From the command line a pause may only
+    /// be extended (security S-3: resuming rules is never a CLI action): the later of the running pause and the new
+    /// end, so `snaptic awake pause 1m` during a pause until tomorrow changes nothing.
+    package static func pausedUntil(current: Double?, now: Double, seconds: Double, limit: Double,
+                                    onlyExtend: Bool) -> Double {
+        let s = min(max(seconds.isFinite ? seconds : 60, 60), max(60, limit))
+        let next = now + s
+        guard onlyExtend, let current, current.isFinite, current > now else { return next }
+        return max(current, next)
+    }
+
     /// true / false / nil (unknown). Negation of unknown stays unknown.
     package static func holds(_ entry: AwakeCriterionEntry, facts: CriterionFacts) -> Bool? {
         guard let v = value(entry.criterion, facts: facts) else { return nil }

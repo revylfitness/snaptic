@@ -646,12 +646,17 @@ extension AwakeTrigger {
     }
 
     /// "None", "30 seconds", "1 minute", "2 minutes", "1 hour".
-    package static func delayTitle(_ seconds: Int) -> String {
+    /// `titleCase`: the pop-up option form ("1 Minute", §4.2 options are menu items, ux m3).
+    package static func delayTitle(_ seconds: Int, titleCase: Bool = false) -> String {
         let s = AwakeMath.clamp(seconds, delayRange)
         if s == 0 { return L("None") }
-        if s % 3_600 == 0 { return AwakeCountdown.unit(s / 3_600, L("hour"), L("hours")) }
-        if s % 60 == 0 { return AwakeCountdown.unit(s / 60, L("minute"), L("minutes")) }
-        return AwakeCountdown.unit(s, L("second"), L("seconds"))
+        if s % 3_600 == 0 {
+            return AwakeCountdown.unit(s / 3_600, titleCase ? L("Hour") : L("hour"), titleCase ? L("Hours") : L("hours"))
+        }
+        if s % 60 == 0 {
+            return AwakeCountdown.unit(s / 60, titleCase ? L("Minute") : L("minute"), titleCase ? L("Minutes") : L("minutes"))
+        }
+        return AwakeCountdown.unit(s, titleCase ? L("Second") : L("second"), titleCase ? L("Seconds") : L("seconds"))
     }
 
     /// A new rule from the editor's + : one condition, or the default display condition.

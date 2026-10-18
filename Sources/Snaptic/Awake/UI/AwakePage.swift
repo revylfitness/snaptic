@@ -11,6 +11,8 @@ import SnapticKit
     let runtime: AwakeRuntimeState
     /// Custom… and Add Time… from the status row; its starts are `.settings` (UI starts, R5-8).
     let custom = CustomSessionWindow(source: .settings)
+    /// A rule the Awake menu asked to open (AwakeRuleLink); the page opens its editor and clears it.
+    @Published var pendingRule: StableID?
     private let contextProvider: @MainActor () -> AwakeContext?
 
     init(config: ConfigStore<AwakeConfig>, history: ConfigStore<AwakeHistory>, runtime: AwakeRuntimeState,
@@ -103,6 +105,21 @@ struct AwakePage: View, ControlDeclaring {
     }
 }
 
+/// The Awake menus' way into the rules (§5.3): "Edit Rules…" reveals the Start automatically list, a rule row also
+/// opens that rule's editor (the page consumes `AwakePageEnvironment.pendingRule` when it appears or while it shows).
+@MainActor enum AwakeRuleLink {
+    /// Opens Settings on Awake, scrolls to the rules and, for `rule`, opens its editor.
+    static func open(rule: StableID?, host: AwakeHost) {
+        let module = SettingsShell.shared.host?.modules.first { $0.id == .awake } as? AwakeModule
+        module?.pageEnvironment.pendingRule = rule
+        host.openSettings(SettingsRoute(SettingsRootID.awake))
+        let anchor = AwakePageControls.rulesAnchor
+        SettingsShell.shared.reveal(SettingsSearchEntry(id: anchor, title: L("Start automatically"),
+                                                        root: SettingsRootID.awake, anchor: anchor,
+                                                        sheet: rule == nil ? nil : TriggerEditorSheetControls.sheet))
+    }
+}
+
 /// A rule the editor works on.
 enum AwakeRuleEditTarget: Identifiable, Equatable {
     case new(StableID)
@@ -147,7 +164,7 @@ private struct AwakeRootContent: View {
                 .disabled(blocked)
             if blocked {
                 Section {
-                    StatusRow(L("Turned off by a defaults setting."), style: .warning)
+                    StatusRow(L("Turned off for this Mac by an administrator or a Terminal command."), symbol: "lock.fill")
                 }
             }
             if !enabled {
@@ -202,9 +219,14 @@ private struct AwakeRootContent: View {
         .sheet(isPresented: shell.sheetBinding(AwakePageControls.shortcutsSheet)) {
             AwakeShortcutsSheet(env: env)
         }
+        .onReceive(env.$pendingRule) { id in
+            guard let id else { return }
+            env.pendingRule = nil
+            if triggers.value.triggers.contains(where: { $0.id == id }) { editing = .existing(id) }
+        }
         .sheet(isPresented: shell.sheetBinding(TriggerEditorSheetControls.sheet)) {
-            if let editing {
-                TriggerEditorSheet(env: env, target: editing)
+            if let target = editing ?? env.pendingRule.map(AwakeRuleEditTarget.existing) {
+                TriggerEditorSheet(env: env, target: target)
             } else {
                 Color.clear.frame(width: 1, height: 1).onAppear { shell.openSheet = nil }
             }

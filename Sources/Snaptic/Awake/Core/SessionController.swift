@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SnapticKit
 
 // Manual sessions, the hold stack, guards and arbitration (owner: G; PLAN 0.3 §2.4–§2.6, §2.10, §2.12, N17, R5-1,
@@ -35,6 +36,7 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
     private var effective: Set<AwakeFeature> = []
     private var restored = false
     private let ends = EventFanout<(AwakeEndedItem, AwakeEndReason)>()
+    private let expiredAway = EventFanout<(AwakeEndedItem, Double)>()
     private let guardNotices = EventFanout<AwakeGuardNotice>()
 
     /// Ends with the manual session (its toasts, its watchers, untilIdle sampling).
@@ -62,6 +64,11 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
     private var tickTimer: Timer?
     private var verifyTimer: Timer?
     private var lastCLINotice: Double?
+    /// keepOnWhileActive governs: IdleSampler is watched so the plan follows the idle limit (F6).
+    private var idleWatch: Lifetime?
+    /// The side of the idle limit the last plan used (true = user active, display kept on).
+    private var idleActiveSide: Bool?
+    private var commandLineSink: AnyCancellable?
     /// Start Anyway's toast lives until the next start, Turn Off or module stop (R5-1).
     private var startAnywayLifetime: Lifetime?
     private var turnOffToastLifetime: Lifetime?
@@ -131,13 +138,14 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         }
 
         let resolved: AwakeSessionOptions
+        let followsDefaults: Bool
         if let options {
             resolved = clamped(options)
-            usesDefaultOptions = false
+            followsDefaults = false
         } else {
             resolved = ctx.config.value.sessions.effectiveOptions(for: kind, preset: preset,
                                                                   effective: ctx.runtime.effectiveFeatures)
-            usesDefaultOptions = preset?.options == nil
+            followsDefaults = preset?.options == nil
         }
         let gateEvent: AwakeActivityGate.Event
         switch source {
@@ -161,6 +169,8 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
                                        id: StableID())
         session.overrideGuards = override
         manual = session
+        // After finishManual(.replaced), which resets it for the old session (F7).
+        usesDefaultOptions = followsDefaults
         let life = (lifetime ?? ctx.host.lifetime).child()
         sessionLifetime = life
         activityGate = activityGate.applying(gateEvent)
@@ -232,6 +242,17 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
 
     func endHold(_ id: StableID, _ reason: AwakeEndReason) {
         guard removeHold(id, reason) else { return }
+        arbitrate()
+    }
+
+    /// A hold whose holding reply the server refused (held-pool limit, R5-5): it never took effect, so it leaves no
+    /// history entry, no end toast and no final line (the client already got the refusal).
+    func withdrawHold(_ id: StableID) {
+        guard let index = holds.firstIndex(where: { $0.id == id }) else { return }
+        holds.remove(at: index)
+        holdLifetimes.removeValue(forKey: id)?.end()
+        holderNames.removeValue(forKey: id)
+        EventLog.shared.record(AwakeLogEvent.holdRefused)
         arbitrate()
     }
 
@@ -430,14 +451,22 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
                 if AwakeEndText.isInterruption(reason) { ctx.runtime.lastEnd = AwakeLastEnd(reason: reason, at: Date()) }
             } else {
                 manual = m
-                usesDefaultOptions = false
+                usesDefaultOptions = Self.followsDefaults(m, sessions: ctx.config.value.sessions,
+                                                          effective: ctx.runtime.effectiveFeatures)
                 let life = lifetime.child()
                 sessionLifetime = life
                 watch(m, life: life)
             }
         }
+        // Ran out while Snaptic wasn't running: history records them at their end (F5b). Read from the store once,
+        // here, before the first write; a manual session already recorded at quit (resume off) is skipped.
+        let away = ctx.state.value.expiredWhileAway(now: now)
+        if let m = away.manual, behavior.resumeAfterRestart { expiredAway.fire((.session(m.session), m.endWall)) }
+        for h in away.holds { expiredAway.fire((.hold(h.hold), h.endWall)) }
+        // R5-14(a): holds need the Awake feature and the host's command line (General) on.
+        let commandLineOn = ctx.runtime.isEffective(.commandLine) && ctx.host.signals.commandLineEnabled
         for hold in snapshot.holds {
-            guard effective.contains(.sessions), ctx.runtime.isEffective(.commandLine) else {
+            guard effective.contains(.sessions), commandLineOn else {
                 ends.fire((.hold(hold), .commandLineOff))
                 continue
             }
@@ -460,6 +489,16 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         arbitrate()
     }
 
+    /// Whether a restored session uses the default options: its preset says "Use default", or (no preset: a CLI or
+    /// launch start without explicit options) its options are the defaults for its kind (F7).
+    static func followsDefaults(_ m: AwakeSession, sessions: AwakeSessionsConfig, effective: Set<AwakeFeature>) -> Bool {
+        if let id = m.presetID {
+            let preset = sessions.preset(id) ?? (sessions.defaultPreset.id == id ? sessions.defaultPreset : nil)
+            return preset.map { $0.options == nil } ?? false
+        }
+        return m.options == sessions.effectiveOptions(for: m.kind, preset: nil, effective: effective)
+    }
+
     /// Advanced "Start at launch": a preset started once per process (`HostSignals.launchSessionStarted`).
     private func startAtLaunchIfNeeded() {
         guard let ctx = context, !ctx.host.signals.launchSessionStarted else { return }
@@ -473,6 +512,11 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
     /// Every manual-session and hold end, after the end and before arbitration.
     func observeEnds(_ lifetime: Lifetime, _ handler: @escaping @MainActor (AwakeEndedItem, AwakeEndReason) -> Void) {
         ends.add(lifetime) { handler($0.0, $0.1) }
+    }
+
+    /// A restored manual session or `--pid` hold that ran out while Snaptic wasn't running, with its end (wall).
+    func observeExpiredWhileAway(_ lifetime: Lifetime, _ handler: @escaping @MainActor (AwakeEndedItem, Double) -> Void) {
+        expiredAway.add(lifetime) { handler($0.0, $0.1) }
     }
 
     /// Guard warnings and the unreadable-battery notice (GuardsController's toasts).
@@ -562,10 +606,15 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         now = AwakeModule.clockNow()
         let governing = AwakeArbiter.governing(manual: manual, top: ctx.triggers.top, holds: holds)
         var idle: Double?
-        if governing.options?.display == .keepOnWhileActive { idle = ctx.idle.realIdleSeconds() }
+        if let options = governing.options, options.display == .keepOnWhileActive {
+            idle = ctx.idle.realIdleSeconds()
+            idleActiveSide = idle.map { $0 < Double(options.displayIdleMinutes) * 60 }
+        } else {
+            idleActiveSide = nil
+        }
         let input = AwakeArbiterInput(governing: governing, screenLocked: facts.locked, consoleActive: facts.onConsole,
                                       realIdleSeconds: idle, keepDisplayOnWhileLocked: behavior.keepDisplayOnWhileLocked,
-                                      driveAliveWriting: ctx.runtime.isEffective(.driveAlive) && !ctx.driveAlive.volumes.isEmpty,
+                                      driveAliveWriting: ctx.runtime.isEffective(.driveAlive) && ctx.driveAlive.isWriting,
                                       guardsHold: guardMemory.blocksTriggers(at: now.continuous),
                                       sessionEnd: AwakeArbiter.sessionEnd(governing, now: now))
         let plan = AwakeArbiter.plan(input)
@@ -575,7 +624,11 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         }
         if plan.type != .off, guardMemory.assertionFailures > 0 { guardMemory = guardMemory.clearingAssertionHold() }
 
-        // The gate's governing events (R5-7).
+        // The gate's governing events (R5-7). A start after a long quiet gap resets the cap even when no arbitration
+        // ran during the gap (F3).
+        if !lastGoverning.isActive && governing.isActive {
+            activityGate = activityGate.applying(.governingStarted(now: now.continuous))
+        }
         if case .manual = lastGoverning {
             switch governing {
             case .trigger, .holds: activityGate = activityGate.applying(.takeover)
@@ -588,6 +641,7 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         publish(governing, now: now)
         let flipped = governing.isActive != lastGoverning.isActive
         lastGoverning = governing
+        updateIdleWatch(governing)
         if flipped {
             ctx.host.requestStatusPlan()
             if !governing.isActive, NSWorkspace.shared.isVoiceOverEnabled {
@@ -629,7 +683,8 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         case .manual:
             finishManual(.assertionFailed, arbitrateAfter: false)
         case .trigger:
-            let first = guardMemory.assertionHoldUntil == nil
+            // One toast per hold: the first failure, or the first after the previous hold ran out (F4).
+            let first = guardMemory.assertionHoldUntil.map { now.continuous >= $0 } ?? true
             guardMemory = guardMemory.recordingAssertionFailure(now: now.continuous)
             if first { ctx.host.toasts.show(L("Snaptic couldn't keep your Mac awake. Try again, or restart Snaptic.")) }
             ctx.triggers.requestStep()
@@ -769,9 +824,33 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.arbitrate() }
         }
-        timer.tolerance = min(delay * 0.1, 30)
+        // A hold's cap is its end: at most 1 s late (N2); countdown ticks may drift more.
+        let holdEnds = holds.contains { abs($0.remaining(now: now) - delay) < 1 }
+        timer.tolerance = holdEnds ? min(delay * 0.1, 1) : min(delay * 0.1, 30)
         RunLoop.main.add(timer, forMode: .common)
         tickTimer = timer
+    }
+
+    /// While keepOnWhileActive governs, every IdleSampler read (5 s) re-plans when the idle limit was crossed (F6).
+    private func updateIdleWatch(_ governing: AwakeGoverning) {
+        guard let ctx = context, let life = lifetime else { return }
+        guard governing.options?.display == .keepOnWhileActive else {
+            idleWatch?.end()
+            idleWatch = nil
+            return
+        }
+        guard idleWatch == nil else { return }
+        let watch = life.child()
+        idleWatch = watch
+        ctx.idle.requestFastSampling(watch)
+        ctx.idle.observe(watch) { [weak self] in self?.idleSampled() }
+    }
+
+    private func idleSampled() {
+        guard let ctx = context, let options = lastGoverning.options, options.display == .keepOnWhileActive,
+              let idle = ctx.idle.realIdleSeconds() else { return }
+        let active = idle < Double(options.displayIdleMinutes) * 60
+        if active != idleActiveSide { arbitrate() }
     }
 
     private func scheduleVerify(_ active: Bool) {
@@ -832,6 +911,8 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         ctx.host.toasts.show(text, actions: [
             ToastAction(title: L("Start Anyway")) { [weak self] in
                 guard let self else { return }
+                // R5-8: the guard toast's re-start of a Settings start checks the focus guard too (security N-1).
+                if source == .settings, !SettingsShell.shared.mayStart() { return }
                 _ = self.start(kind, options: options, presetID: presetID, source: source, overrideGuards: true,
                                preset: presetID.flatMap { self.context?.config.value.sessions.preset($0) })
             },
@@ -881,6 +962,13 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         context.system.observeEvents(lifetime) { [weak self] event in self?.systemEvent(event) }
         context.assertions.onTimeout = { [weak self] in self?.verifyAssertion() }
         lifetime.onEnd { [weak context] in context?.assertions.onTimeout = nil }
+        // R5-14(a): General › Command-line control turned off ends every hold, connection and `--pid` alike.
+        commandLineSink = context.host.signals.$commandLineEnabled
+            .removeDuplicates()
+            .dropFirst()
+            .filter { !$0 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.endAllHolds(.commandLineOff) } }
     }
 
     func effectiveFeaturesDidChange(_ effective: Set<AwakeFeature>) {
@@ -890,8 +978,10 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
 
     func configDidChange(from old: AwakeConfig, to new: AwakeConfig) {
         if old.guards != new.guards { evaluateGuards() }
-        if usesDefaultOptions, old.sessions.defaultOptions.display != new.sessions.defaultOptions.display {
+        if usesDefaultOptions, old.sessions.defaultOptions.display != new.sessions.defaultOptions.display
+            || old.sessions.defaultOptions.displayIdleMinutes != new.sessions.defaultOptions.displayIdleMinutes {
             manual?.options.display = new.sessions.defaultOptions.display
+            manual?.options.displayIdleMinutes = new.sessions.defaultOptions.displayIdleMinutes
         }
         arbitrate()
     }
@@ -906,6 +996,10 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         verifyTimer = nil
         startAnywayLifetime?.end()
         turnOffToastLifetime?.end()
+        commandLineSink = nil
+        idleWatch?.end()
+        idleWatch = nil
+        idleActiveSide = nil
         let session = manual
         let stack = holds
         manual = nil
