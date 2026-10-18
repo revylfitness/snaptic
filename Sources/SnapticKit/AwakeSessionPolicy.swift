@@ -140,6 +140,16 @@ package struct AwakeReminders: Equatable, Sendable {
     }
 }
 
+/// Whether the Keep Awake (toggle) shortcut really works right now (fix round 2 shared decision, parity Q2, code M1):
+/// `AwakeRuntimeState.keepAwakeRegistered`, which the menu bar's Don't Show fallback reads. False whenever
+/// `shortcuts` isn't effective (setting, Safe Mode, `Awake.disable.shortcuts`, the module stopped), no combo is set,
+/// or registering it failed.
+package enum AwakeShortcutRegistration {
+    package static func keepAwakeRegistered(shortcutsEffective: Bool, hasCombo: Bool, registered: Bool) -> Bool {
+        shortcutsEffective && hasCombo && registered
+    }
+}
+
 /// Persisted in the snapshot so a reminder shown before a relaunch isn't shown again (awake-correctness N1).
 extension AwakeReminders: Codable {
     private enum CodingKeys: String, CodingKey { case fiveFor, fiveEnd, eightFor }
