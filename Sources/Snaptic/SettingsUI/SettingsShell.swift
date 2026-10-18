@@ -36,6 +36,8 @@ import SnapticKit
     @Published var selectedResult: String?
 
     private(set) weak var host: ModuleHost?
+    /// Whether the Settings window shows a sheet now (set by `SettingsWindowHost`).
+    var windowHasSheet: (@MainActor () -> Bool)?
     private var focusGuard = SettingsFocusGuard()
     private var pendingHighlight: PendingHighlight?
     private var highlightWork: DispatchWorkItem?
@@ -102,8 +104,15 @@ import SnapticKit
         return ids
     }
 
+    /// A sidebar item's title, without building the roots (search result rows ask once per row).
     func rootTitle(_ id: String) -> String {
-        roots().first { $0.id == id }?.title ?? id
+        switch id {
+        case SettingsRootID.general: return L("General")
+        case SettingsRootID.menuBar: return L("Menu Bar")
+        case SettingsRootID.permissions: return L("Permissions")
+        case SettingsRootID.about: return L("About")
+        default: return host?.modules.first { $0.id.rawValue == id }?.title ?? id
+        }
     }
 
     /// Module on/off as a binding (the page header master switch). A module turned off by `Modules.disable.<id>`
@@ -264,15 +273,16 @@ import SnapticKit
         }
     }
 
-    /// A sheet that no view presents (its page isn't showing, or doesn't bind `sheetBinding`) never appears: after
-    /// a while the reveal stops waiting, closes the request and highlights on the page instead.
+    /// A sheet that doesn't report its appearance (it isn't an `AdvancedSheet`) is highlighted into after a while;
+    /// one that no view presents (its page doesn't bind `sheetBinding`) never appears, so the request is withdrawn
+    /// and the highlight goes to the page.
     private func watchSheet(_ sheet: String, token: Int) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, self.revealToken == token, let pending = self.pendingHighlight,
                       pending.token == token else { return }
                 self.pendingHighlight = nil
-                if self.openSheet == sheet { self.openSheet = nil }
+                if self.openSheet == sheet, self.windowHasSheet?() == false { self.openSheet = nil }
                 self.showHighlight(pending.anchor, fallbacks: pending.fallbacks, token: token)
             }
         }
