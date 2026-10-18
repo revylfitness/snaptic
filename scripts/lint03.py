@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""PLAN 0.3 §6.3 lints (lead): L1–L14 with the ratchet, L15 control-table pairing, L16, L17.
+"""PLAN 0.3 §6.3 lints (lead): L1–L14 with the ratchet, L15 control-table pairing, L16, L17, and TEAMS rule 2
+(closures run by the main queue, a main-queue observer, a timer or KVO wrap `MainActor.assumeIsolated`).
 
 Run by scripts/lint.sh (which passes LINT_MODE=check|write and LINT_STRICT=0|1). Comments are stripped before
 matching (string literals are kept); counts are occurrences, not lines.
@@ -40,32 +41,97 @@ def strip_comments(text):
                         out.append("\n")
                     i += 1
             continue
-        if c == "#" or c == '"':
-            j = i
-            while j < n and text[j] == "#":
-                j += 1
-            if j < n and text[j] == '"':
-                hashes = j - i
-                triple = text.startswith('"""', j)
-                quote = '"""' if triple else '"'
-                close = quote + "#" * hashes
-                k = j + len(quote)
-                while k < n:
-                    if hashes == 0 and text[k] == "\\":
-                        k += 2
-                        continue
-                    if text.startswith(close, k):
-                        k += len(close)
-                        break
-                    if not triple and text[k] == "\n":
-                        break
-                    k += 1
-                out.append(text[i:k])
-                i = k
-                continue
+        if starts_string(text, i):
+            k = string_end(text, i)
+            out.append(text[i:k])
+            i = k
+            continue
         out.append(c)
         i += 1
     return "".join(out)
+
+
+def starts_string(text, i):
+    """Whether a string literal (`"`, `\"\"\"`, `#"`, `##"` …) starts at `text[i]`."""
+    j = i
+    while j < len(text) and text[j] == "#":
+        j += 1
+    return j < len(text) and text[j] == '"'
+
+
+def string_end(text, i):
+    """The index just past the string literal starting at `text[i]`. An interpolation (a backslash, the raw
+    string's hashes, then a parenthesis) is skipped as code, so a quote inside it doesn't end the string."""
+    n = len(text)
+    j = i
+    while j < n and text[j] == "#":
+        j += 1
+    hashes = j - i
+    triple = text.startswith('"' * 3, j)
+    quote = '"' * 3 if triple else '"'
+    close = quote + "#" * hashes
+    escape = "\\" + "#" * hashes
+    k = j + len(quote)
+    while k < n:
+        if text.startswith(escape, k):
+            k += len(escape)
+            if k < n and text[k] == "(":
+                k = code_end(text, k + 1)
+            else:
+                k += 1
+            continue
+        if text.startswith(close, k):
+            return k + len(close)
+        if not triple and text[k] == "\n":
+            return k
+        k += 1
+    return n
+
+
+def code_end(text, k):
+    """The index just past the `)` that closes code starting at `text[k]` (strings and nested brackets skipped)."""
+    n = len(text)
+    depth = 0
+    while k < n:
+        c = text[k]
+        if starts_string(text, k):
+            k = string_end(text, k)
+            continue
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            if depth == 0:
+                return k + 1
+            depth -= 1
+        k += 1
+    return n
+
+
+def matching_close(text, k):
+    """`text[k]` is `(` or `{`: the index of the bracket that closes it (strings skipped), or -1."""
+    end = code_end(text, k + 1)
+    return end - 1 if end <= len(text) and text[end - 1:end] in (")", "}", "]") else -1
+
+
+def self_check():
+    """Pins the comment stripper on the cases a naive scan gets wrong (review code F6.7)."""
+    bs, q = "\\", '"'
+    cases = [
+        # A quote inside an interpolation doesn't end the string; the comment after it is still removed.
+        (f'let a = {q}{bs}(b ? {q}x{q} : {q}y{q}) // no{q} // c\nx', f'let a = {q}{bs}(b ? {q}x{q} : {q}y{q}) // no{q} \nx'),
+        (f'f({q}{bs}(g({q}//{q})){q}) // c', f'f({q}{bs}(g({q}//{q})){q}) '),
+        # Raw strings: a lone backslash is literal; backslash-hash-paren interpolates.
+        (f'#{q}a {bs}({q}# // c', f'#{q}a {bs}({q}# '),
+        (f'#{q}{bs}#(v ? {q}q{q} : {q}r{q}){q}# /* c */ y', f'#{q}{bs}#(v ? {q}q{q} : {q}r{q}){q}#  y'),
+        (f'{q*3}\nline {q}quoted{q} // kept\n{q*3} // c', f'{q*3}\nline {q}quoted{q} // kept\n{q*3} '),
+        (f'{q}esc {bs}{q} // still string{q} // c', f'{q}esc {bs}{q} // still string{q} '),
+    ]
+    problems = []
+    for source, expected in cases:
+        got = strip_comments(source)
+        if got != expected:
+            problems.append(f"self-check: strip_comments({source!r}) = {got!r}, expected {expected!r}")
+    return problems
 
 
 def swift_files(root):
@@ -129,7 +195,7 @@ def ratcheted_counts():
         add("L4", p, count(r'UNUserNotificationCenter|import\s+CoreWLAN|import\s+IOBluetooth|CLLocationManager|"pmset"|"sudo"', t))
         # L9 only AwakeLogEvent cases reach the .awake category (through EventLog's overload).
         if p != "Sources/Snaptic/Core/EventLog.swift":
-            add("L9", p, count(r"record\(\s*\.awake|EventCategory\.awake", t))
+            add("L9", p, count(r"record\(\s*\.awake\b|EventCategory\.awake\b", t))
     for p in APP:
         t = TEXT[p]
         # L5 raw sliders, steppers and caption captions only in SettingsUI.
@@ -146,7 +212,8 @@ def ratcheted_counts():
             add("L7", p, count(r"State\(initialValue:", t))
         # L10 Awake observers on main; no singletons or passUnretained in Awake.
         if under(p, "Awake/"):
-            add("L10", p, count(r"queue:\s*nil|addObserver\(self,\s*selector:|static let shared|passUnretained\(self\)", t))
+            add("L10", p, count(r"queue:\s*nil|addObserver\(self,\s*selector:|passUnretained\(self\)|"
+                                r"\b(?:static|class)\s+(?:let|var)\s+(?:shared|sharedInstance|instance)\b", t))
             lines = t.split("\n")
             for i, line in enumerate(lines):
                 for _ in re.finditer(r"\.publisher\(for:", line):
@@ -169,7 +236,8 @@ def ratcheted_counts():
         # L14 .common run-loop modes in menus and Awake.
         if under(p, "Awake/") or is_menu_file(p):
             add("L14", p, count(r"scheduledTimer\(|RunLoop\.main\.perform(?!\(inModes:)|receive\(on:\s*RunLoop\.main|"
-                                r"scheduler:\s*RunLoop\.main", t))
+                                r"scheduler:\s*RunLoop\.main|forMode:\s*(?:\.default|RunLoop\.Mode\.default)\b|"
+                                r"\bin:\s*(?:\.default|RunLoop\.Mode\.default)\b|\.defaultRunLoopMode\b", t))
     return found
 
 
@@ -191,6 +259,73 @@ def unratcheted_problems():
         if awake and "uniqueKeysWithValues" in TEXT[p]:
             problems.append(f"{p}: L17 uniqueKeysWithValues is banned in Awake (use uniquingKeysWith: {{ first, _ in first }})")
     problems += l15()
+    problems += rule2()
+    return problems
+
+
+# TEAMS rule 2: these calls run their closure on the main thread but not on the main actor (the closure is
+# @Sendable), so its body wraps `MainActor.assumeIsolated`. `asyncAfter` counts only on the main queue and
+# observers only with `queue: .main`; a `DispatchWorkItem` passed as `execute:` is looked up in the same file.
+RULE2_CALL = re.compile(r"\.asyncAfter\(|\baddObserver\(\s*forName:|(?<![\w.])Timer\(|\bscheduledTimer\(|\.observe\(\s*\\")
+RULE2_TOP = re.compile(r"^(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|package|internal|fileprivate|private|final)\s+)*"
+                       r"(?:class|struct|enum|extension|actor)\s+([\w.]+)", re.M)
+# Types whose observers deliberately touch no main-actor state (path, top-level type): reason.
+RULE2_EXEMPT = {
+    ("Sources/Snaptic/Switcher/WindowManager.swift", "FocusSession"):
+        "@unchecked Sendable; its workspace observers only hop to the session's own AX thread",
+}
+
+
+def rule2_closure(t, m):
+    """The closure the call at `m` runs (trailing, a labeled literal, or a `DispatchWorkItem` named by
+    `execute:`), its argument text, or (None, args) when none is found."""
+    po = t.index("(", m.start() + 1)
+    pc = matching_close(t, po)
+    if pc < 0:
+        return None, ""
+    args = t[po:pc + 1]
+
+    def block(at):
+        end = matching_close(t, at)
+        return t[at:end + 1] if end >= 0 else None
+
+    labeled = re.search(r"(?:execute|block|using|handler|changeHandler):\s*\{", args)
+    if labeled:
+        return block(po + labeled.end() - 1), args
+    named = re.search(r"execute:\s*(\w+)\s*\)$", args)
+    if named:
+        defs = list(re.finditer(r"\b(?:let|var)\s+" + named.group(1) + r"\s*=\s*DispatchWorkItem\s*(?:\([^)]*\))?\s*\{",
+                                t[:m.start()]))
+        return (block(defs[-1].end() - 1) if defs else None), args
+    trailing = re.match(r"\s*\{", t[pc + 1:])
+    if trailing:
+        return block(pc + 1 + trailing.end() - 1), args
+    return None, args
+
+
+def rule2():
+    problems = []
+    for p in APP:
+        t = TEXT[p]
+        tops = [(m.start(), m.group(1)) for m in RULE2_TOP.finditer(t)]
+        for m in RULE2_CALL.finditer(t):
+            call = m.group(0)
+            if call == ".asyncAfter(" and not re.search(r"(?:DispatchQueue)?\.main$", t[:m.start()]):
+                continue
+            body, args = rule2_closure(t, m)
+            if call.startswith("addObserver") and not re.search(r"queue:\s*(?:\.main|OperationQueue\.main)\b", args):
+                continue
+            if call.endswith("Timer(") and body is None and "selector:" in args:
+                continue
+            enclosing = next((name for at, name in reversed(tops) if at < m.start()), "")
+            if (p, enclosing) in RULE2_EXEMPT:
+                continue
+            line = t.count("\n", 0, m.start()) + 1
+            if body is None:
+                problems.append(f"{p}:{line}: rule 2 can't find the closure {call.strip()} runs "
+                                "(pass a literal or a local DispatchWorkItem)")
+            elif "assumeIsolated" not in body:
+                problems.append(f"{p}:{line}: rule 2 the closure {call.strip()} runs must wrap MainActor.assumeIsolated")
     return problems
 
 
@@ -277,6 +412,9 @@ def main():
     strict = os.environ.get("LINT_STRICT", "0") == "1"
     found = ratcheted_counts()
     bad = 0
+    for problem in self_check():
+        print("lint: " + problem, file=sys.stderr)
+        bad = 1
     if mode == "write":
         write_ratchet(found)
     else:

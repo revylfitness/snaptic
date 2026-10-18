@@ -387,4 +387,21 @@ extension ModulesConfig {
         ledger.record(.newModuleCards)
         return c
     }
+
+    /// §2.13 (R5-2 step 4): a 0.1/0.2 upgrader gets Awake **off** with its "New: Awake" card, once. Runs iff
+    /// `awakeUpgrade.v1` is absent, then records it whatever it decided. It inserts only when module settings
+    /// existed before this launch (`modulesExisted`; a 0.2 store never holds an Awake entry) and hold no Awake
+    /// entry. A fresh install records the marker on its first launch (`modulesExisted == false`), so its later
+    /// launches, and General › Reset (which keeps the ledger), keep the per-id default (Awake on). A 0.1 user
+    /// without module settings gets the same entry from `upgradeDefaults()`. Pure; ModuleHost runs it.
+    package func insertingAwakeForUpgrader(modulesExisted: Bool, ledger: inout MigrationLedger) -> ModulesConfig {
+        guard !ledger.has(.awakeUpgrade) else { return self }
+        ledger.record(.awakeUpgrade)
+        guard modulesExisted, modules[.awake] == nil else { return self }
+        var c = self
+        c.modules[.awake] = Self.awakeUpgradePreferences
+        // C7: upgraders see "New: Awake" on General (hidden by H's card rules once M1 migrated or Awake is on).
+        if !c.newModuleCards.contains(.awake) { c.newModuleCards.append(.awake) }
+        return c
+    }
 }

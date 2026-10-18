@@ -357,8 +357,7 @@ import SnapticKit
 
     /// Persistent-domain Bool keys `Displays.disable.<feature>`, read once per start.
     private static func readKillSwitches() -> Set<DisplayFeature> {
-        guard let values = UserDefaults.standard.persistentDomain(
-            forName: ConfigStore<DisplaysConfig>.persistentDomainName) else { return [] }
-        return Set(DisplayFeature.allCases.filter { (values["Displays.disable.\($0.rawValue)"] as? Bool) == true })
+        KillSwitches.read(UserDefaults.standard.persistentDomain(forName: ConfigStore<DisplaysConfig>.persistentDomainName),
+                          prefix: "Displays")
     }
 }

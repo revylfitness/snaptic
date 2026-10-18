@@ -3,8 +3,18 @@ import Foundation
 // Shared identifiers. Lead-owned: these are the names every team uses, so they
 // live in one place and change only through the lead (PLAN §13, R5.1).
 
-/// Thrown by stubs that haven't been implemented yet (step 0b convention).
-package enum StubError: Error, Equatable, Sendable { case notBuilt }
+/// Hidden kill switches (N14): `<prefix>.disable.<id>` set to true in Snaptic's persistent domain turns that id off
+/// (`Modules`, `Displays` and `Awake` prefixes). Any other value (missing, false, a string) leaves it alone.
+package enum KillSwitches {
+    package static func key(prefix: String, id: String) -> String { prefix + ".disable." + id }
+
+    package static func read<ID: CaseIterable & RawRepresentable & Hashable>(
+        _ domain: [String: Any]?, prefix: String, as _: ID.Type = ID.self
+    ) -> Set<ID> where ID.RawValue == String {
+        guard let domain else { return [] }
+        return Set(ID.allCases.filter { (domain[key(prefix: prefix, id: $0.rawValue)] as? Bool) == true })
+    }
+}
 
 /// Start order = declaration order (0.3: windowSwitcher, displays, awake; PLAN 0.3 §2.2).
 package enum ModuleID: String, Codable, CaseIterable, Sendable { case windowSwitcher, displays, awake }

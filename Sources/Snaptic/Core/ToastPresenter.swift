@@ -236,16 +236,8 @@ struct ToastClickGuard: Equatable, Sendable {
         return facts
     }
 
-    private static func onlineDisplays() -> [CGDirectDisplayID] {
-        var count: UInt32 = 0
-        guard CGGetOnlineDisplayList(0, nil, &count) == .success, count > 0 else { return [] }
-        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
-        guard CGGetOnlineDisplayList(count, &ids, &count) == .success else { return [] }
-        return Array(ids.prefix(Int(count)))
-    }
-
     private static func anyDisplayMirrored() -> Bool {
-        onlineDisplays().contains { CGDisplayIsInMirrorSet($0) != 0 }
+        CGDirectDisplayID.online().contains { CGDisplayIsInMirrorSet($0) != 0 }
     }
 
     /// The frontmost app has an on-screen, normal-level window covering a whole display (bounds and owner PID only,
@@ -261,7 +253,7 @@ struct ToastClickGuard: Equatable, Sendable {
             return bounds
         }
         guard !windows.isEmpty else { return false }
-        let displays = onlineDisplays().map { id -> ScreenRect in
+        let displays = CGDirectDisplayID.online().map { id -> ScreenRect in
             let r = CGDisplayBounds(id)
             return ScreenRect(x: r.origin.x, y: r.origin.y, width: r.width, height: r.height)
         }
