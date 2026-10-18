@@ -33,6 +33,15 @@ final class ConfigSwitcherFeaturesTests: XCTestCase {
         XCTAssertEqual(c.disabled, [.hoverButtons, .actionQuit])
     }
 
+    /// Kit's LossyArray bounds the attempts, not the successes (code review F3): elements after
+    /// `LossyArray.maxElements` are never read.
+    func testDecodeAttemptsAreBounded() throws {
+        let junk = Array(repeating: "1", count: LossyArray<String>.maxElements).joined(separator: ",")
+        let c = try decode("[\"hoverButtons\"," + junk + ",\"search\"]")
+        XCTAssertFalse(c.isEnabled(.hoverButtons))
+        XCTAssertTrue(c.isEnabled(.search), "an element past the attempt bound was read")
+    }
+
     func testNotAnArrayFallsBackInAContainer() throws {
         struct Holder: Decodable {
             var features: SwitcherFeaturesConfig

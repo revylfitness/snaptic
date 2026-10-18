@@ -55,6 +55,9 @@ private struct AutomationsContent: View {
     /// The open editor sheet's target; presented through the shell (`sheetBinding`), so a search reveal or a page
     /// change closes it like every other Settings sheet. Kept until `onDismiss` has run.
     @State private var opened: AutomationEditTarget?
+    /// A row's Delete (context menu, VoiceOver) asks first, with the editor's Delete Hook…/Delete Action… alert
+    /// (ux m10): one mis-click must not remove an action and its shortcut.
+    @State private var pendingDelete: AutomationDeletion?
     @ObservedObject private var shell: SettingsShell
 
     init(env: DisplaysPageEnvironment) {
@@ -78,6 +81,12 @@ private struct AutomationsContent: View {
                               restoreControl: ControlID("displays.automations.restore"))
         }
         .modifier(DisplaysFeatureOffAlert(switcher: switcher))
+        .alert(pendingDelete?.question ?? "", isPresented: deleteAsked, presenting: pendingDelete) { deletion in
+            Button(L("Delete"), role: .destructive) { deletion.perform(env.config) }
+            Button(L("Cancel"), role: .cancel) {}
+        } message: { deletion in
+            Text(deletion.message)
+        }
         .sheet(isPresented: sheetPresented, onDismiss: dropUntouchedNewItem) {
             if let target = opened {
                 switch target.kind {
@@ -196,7 +205,7 @@ private struct AutomationsContent: View {
     }
 
     private func delete(hook: HookSpec) {
-        env.config.value.automation.hooks.removeAll { $0.id == hook.id }
+        pendingDelete = .hook(hook)
     }
 
     // MARK: Custom actions
@@ -273,7 +282,11 @@ private struct AutomationsContent: View {
     }
 
     private func delete(action: CustomActionSpec) {
-        env.config.value.automation.actions.removeAll { $0.id == action.id }
+        pendingDelete = .action(action)
+    }
+
+    private var deleteAsked: Binding<Bool> {
+        Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })
     }
 
     // MARK: Shared
@@ -353,6 +366,36 @@ private struct AutomationsContent: View {
                     value.automation[keyPath: list][index] = sanitize(item)
                     store.value = value
                 })
+    }
+}
+
+/// Deleting one hook or action, asked first (the list row's Delete and the editor's Delete Hook…/Delete Action…
+/// share the question and message).
+struct AutomationDeletion: Identifiable {
+    let kind: AutomationEditTarget.Kind
+    let id: StableID
+    let question: String
+    let message: String
+
+    static func hook(_ hook: HookSpec) -> AutomationDeletion {
+        let name = hook.name.isEmpty ? L("this hook") : L("“\(hook.name)”")
+        return AutomationDeletion(kind: .hook, id: hook.id, question: L("Delete \(name)?"),
+                                  message: L("Its program stays where it is; Snaptic only stops running it."))
+    }
+
+    static func action(_ action: CustomActionSpec) -> AutomationDeletion {
+        let name = action.name.isEmpty ? L("this action") : L("“\(action.name)”")
+        return AutomationDeletion(kind: .action, id: action.id, question: L("Delete \(name)?"),
+                                  message: L("Its menu item and shortcut go away; the program stays where it is."))
+    }
+
+    /// Removes the item (a no-op when it is already gone).
+    @MainActor func perform(_ store: ConfigStore<DisplaysConfig>) {
+        let id = self.id
+        switch kind {
+        case .hook: store.value.automation.hooks.removeAll { $0.id == id }
+        case .action: store.value.automation.actions.removeAll { $0.id == id }
+        }
     }
 }
 

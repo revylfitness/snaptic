@@ -72,12 +72,10 @@ struct HookEditorSheet: View, ControlDeclaring {
     /// Footer leading: Delete Hook… with the standard confirmation.
     private func deleteHook(_ hook: HookSpec) -> RestoreDefaults {
         let store = env.config
-        let id = hookID
-        let name = hook.name.isEmpty ? L("this hook") : L("“\(hook.name)”")
-        return RestoreDefaults(title: L("Delete Hook…"), question: L("Delete \(name)?"),
-                               message: L("Its program stays where it is; Snaptic only stops running it."),
+        let deletion = AutomationDeletion.hook(hook)
+        return RestoreDefaults(title: L("Delete Hook…"), question: deletion.question, message: deletion.message,
                                button: L("Delete"), destructive: true) {
-            store.value.automation.hooks.removeAll { $0.id == id }
+            deletion.perform(store)
         }
     }
 }

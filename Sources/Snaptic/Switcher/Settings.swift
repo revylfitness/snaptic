@@ -43,14 +43,6 @@ enum ModifierKey: String, Codable, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var label: String {
-        switch self {
-        case .option: return "⌥ Option"
-        case .command: return "⌘ Command"
-        case .control: return "⌃ Control"
-        }
-    }
-
     var symbol: String {
         switch self {
         case .option: return "⌥"
@@ -72,55 +64,24 @@ enum SwitcherScope: String, Codable, CaseIterable, Identifiable {
     case allWindows, activeApp, currentScreen
 
     var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .allWindows: return "All windows"
-        case .activeApp: return "Active app only"
-        case .currentScreen: return "This screen only"
-        }
-    }
 }
 
 enum SwitcherStyle: String, Codable, CaseIterable, Identifiable {
     case thumbnails, icons, titles
 
     var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .thumbnails: return "Thumbnails"
-        case .icons: return "App icons"
-        case .titles: return "Titles list"
-        }
-    }
 }
 
 enum SpacesFilter: String, Codable, CaseIterable, Identifiable {
     case all, current, others
 
     var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .all: return "All Spaces"
-        case .current: return "Current Space only"
-        case .others: return "Other Spaces only"
-        }
-    }
 }
 
 enum ScreenChoice: String, Codable, CaseIterable, Identifiable {
     case activeWindow, mouse
 
     var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .activeWindow: return "Screen with the active window"
-        case .mouse: return "Screen with the mouse pointer"
-        }
-    }
 }
 
 struct KeyChoice: Identifiable, Hashable {
@@ -132,9 +93,9 @@ struct KeyChoice: Identifiable, Hashable {
 enum Keys {
     static let choices: [KeyChoice] = {
         var list = [
-            KeyChoice(code: KeyCode.tab, label: "Tab"),
-            KeyChoice(code: KeyCode.backtick, label: "Key above Tab"),
-            KeyChoice(code: KeyCode.space, label: "Space"),
+            KeyChoice(code: KeyCode.tab, label: L("Tab")),
+            KeyChoice(code: KeyCode.backtick, label: L("Key above Tab")),
+            KeyChoice(code: KeyCode.space, label: L("Space")),
         ]
         let letters: [(String, Int)] = [
             ("A", 0), ("B", 11), ("C", 8), ("D", 2), ("E", 14), ("F", 3), ("G", 5), ("H", 4),
@@ -165,14 +126,14 @@ enum Keys {
     }
 
     static func label(for code: Int) -> String {
-        choices.first { $0.code == code }?.label ?? "Key \(code)"
+        choices.first { $0.code == code }?.label ?? L("Key \(code)")
     }
 
     static func shortLabel(for code: Int) -> String {
         switch code {
         case KeyCode.tab: return "⇥"
         case KeyCode.backtick: return PrivateAPIs.isISOKeyboard ? "§" : "`"
-        case KeyCode.space: return "Space"
+        case KeyCode.space: return L("Space")
         default: return label(for: code)
         }
     }
@@ -212,24 +173,6 @@ extension Shortcut {
         if let v = try? c.decode(Bool.self, forKey: .includeWindowlessApps) { includeWindowlessApps = v }
         if let v = try? c.decode(SpacesFilter.self, forKey: .spaces) { spaces = v }
         if let v = try? c.decode(Bool.self, forKey: .oneWindowPerApp) { oneWindowPerApp = v }
-    }
-}
-
-/// Decodes an array, skipping elements that fail instead of failing the whole array.
-private struct LossyShortcutList: Decodable {
-    var items: [Shortcut] = []
-
-    private struct Skip: Decodable {}
-
-    init(from decoder: Decoder) throws {
-        var container = try decoder.unkeyedContainer()
-        while !container.isAtEnd {
-            if let item = try? container.decode(Shortcut.self) {
-                items.append(item)
-            } else if (try? container.decode(Skip.self)) == nil {
-                break   // can't advance past this element; stop rather than loop forever
-            }
-        }
     }
 }
 
@@ -327,7 +270,8 @@ struct Config: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = Config()
-        shortcuts = (try? c.decode(LossyShortcutList.self, forKey: .shortcuts))?.items ?? d.shortcuts
+        // Element by element (a bad shortcut is skipped), at most LossyArray.maxElements attempts.
+        shortcuts = c.lossyArray(.shortcuts, d.shortcuts)
         releaseToSwitch = (try? c.decode(Bool.self, forKey: .releaseToSwitch)) ?? d.releaseToSwitch
         previewSelected = (try? c.decode(Bool.self, forKey: .previewSelected)) ?? d.previewSelected
         showOtherSpaces = (try? c.decode(Bool.self, forKey: .showOtherSpaces)) ?? d.showOtherSpaces

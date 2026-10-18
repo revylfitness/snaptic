@@ -329,7 +329,7 @@ final class SwitcherController {
             item.title = ""            // shows the app name instead
         } else if item.hasPrivateMarker {
             item.isPrivate = true
-            item.title = "Private window"
+            item.title = L("Private window")
         } else if item.title.isEmpty, Config.isBrowser(item.bundleID) {
             item.isPrivate = true
         }

@@ -122,9 +122,13 @@ import SnapticKit
             if !tapIsRunning { item.toolTip = L("Waiting for Accessibility access") }
             items.append(item)
         } else {
-            let hint = settings.config.shortcuts.isEmpty
-                ? L("No shortcuts set") : L("Only ⌘ shortcuts are set, and ⌘ shortcuts are turned off")
-            items.append(MenuKit.status(hint, control: ControlID("menu.switcher.noShortcut")))
+            // Menu items are Title Case (§5.1, ux m2); the detail is in the tooltip.
+            let none = settings.config.shortcuts.isEmpty
+            let item = MenuKit.status(none ? L("No Shortcut Set") : L("⌘ Shortcuts Are Turned Off"),
+                                      control: ControlID("menu.switcher.noShortcut"))
+            item.toolTip = none ? L("Set a shortcut in Window Switcher settings.")
+                                : L("Only ⌘ shortcuts are set, and ⌘ shortcuts are turned off.")
+            items.append(item)
         }
         items.append(MenuKit.action(L("Gather Windows on This Display"), control: ControlID("menu.switcher.gather")) {
             [weak self] in
