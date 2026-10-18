@@ -126,8 +126,8 @@ private struct PIPPageContent: View, ControlDeclaring {
                     }
                 } else {
                     PIPPermissionSection(permissions: context.permissions)
-                    PIPListsSection(env: env, capture: context.capture, onEdit: { editor = .edit($0) },
-                                    onNew: { editor = $0 })
+                    PIPListsSection(env: env, capture: context.capture, onEdit: { open(.edit($0)) },
+                                    onNew: { open($0) })
                     PIPLUTSection(env: env, switcher: switcher)
                 }
             } else {
@@ -142,10 +142,24 @@ private struct PIPPageContent: View, ControlDeclaring {
         .sheet(isPresented: shell.sheetBinding(PIPPageControls.advancedSheet)) {
             PIPAdvancedSheet(env: env, switcher: switcher)
         }
-        .sheet(item: $editor) { request in
-            PIPEditorSheet(env: env, request: request)
+        .sheet(isPresented: shell.sheetBinding(PIPEditorSheetControls.sheet)) {
+            if let editor {
+                PIPEditorSheet(env: env, request: editor)
+                    .id(editor.id)
+            } else {
+                // Nothing chosen to edit (the sheet id alone): close at once.
+                Color.clear
+                    .frame(width: 1, height: 1)
+                    .onAppear { shell.openSheet = nil }
+            }
         }
         .modifier(DisplaysFeatureOffAlert(switcher: switcher))
+    }
+
+    /// Shows the editor through the shell's sheet state, like every Settings sheet.
+    private func open(_ request: PIPEditorRequest) {
+        editor = request
+        shell.openSheet = PIPEditorSheetControls.sheet
     }
 
     /// Why Picture in Picture isn't running although it's on: unavailable on this Mac, paused for another app,

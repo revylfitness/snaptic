@@ -7,6 +7,8 @@ import Foundation
 
 package enum PIPEditorSheetControls: ControlTable {
     package static let surface = "displays.pip.editor"
+    /// `SettingsShell.openSheet` id of the sheet (the page sets which configuration it shows first).
+    package static let sheet = "displays.pip.editor"
 
     private static let item: [ControlCondition] = [.displayFeature(.pip), .perItem("pip")]
     private static let filters: [ControlCondition] = item + [.displayFeature(.pipFilters)]
