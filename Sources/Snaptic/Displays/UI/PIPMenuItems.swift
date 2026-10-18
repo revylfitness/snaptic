@@ -98,8 +98,8 @@ fileprivate extension DisplayMenuItemID {
             })
         }
         items.append(.separator())
-        items.append(DisplayMenuBlock.actionItem(L("Picture in Picture Settings…"), symbol: "gearshape") {
-            DisplayMenuBlock.openSettings(page: "displays.pip")
+        items.append(DisplayMenuBlock.actionItem(L("Picture in Picture Settings…"), symbol: "gearshape") { [weak ctx] in
+            ctx?.openSettings("displays.pip")
         })
         return [(.pipTools, DisplayMenuBlock.submenuItem(L("Picture in Picture"), symbol: "pip", items))]
     }
