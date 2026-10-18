@@ -41,7 +41,7 @@ struct ModuleSwitchRow: View {
             .accessibilityElement(children: .combine)
             Spacer(minLength: 8)
             if blocked {
-                InfoButton(L("Turning It Back On"),
+                InfoButton(L("How to turn it back on"),
                            message: DefaultsLock.details(domain: ConfigStore<ModulesConfig>.persistentDomainName,
                                                          key: ModuleHost.disableKey(id)))
             }

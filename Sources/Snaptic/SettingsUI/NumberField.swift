@@ -48,7 +48,8 @@ enum SettingsFormat {
 /// and snaps to `step`; Esc reverts; ↑/↓ move one step. Focus selects all. Invalid text beeps and reverts.
 /// The field follows its value whenever the user hasn't typed (also while focused), and a commit writes only what the
 /// user typed since the last sync (`TypedFieldState`): blur never writes stale text over a slider drag, a stepper
-/// click or a change made elsewhere.
+/// click or a change made elsewhere. The row bumps `discardToken` when its own slider, stepper or Reset sets the value:
+/// text typed without Return is then dropped (review round 2 ui F1).
 struct NumberField: View {
     let accessibilityTitle: String
     let value: Binding<Double>
@@ -58,15 +59,18 @@ struct NumberField: View {
     let width: CGFloat?
     /// Named positions ("1512 × 982"): values are indices, typed text matches a label.
     let labels: [String]?
+    /// Changed by the owning row when its own control sets the value (`TypedFieldState.discardTyping`).
+    let discardToken: Int
 
     @State private var edit = TypedFieldState()
     @FocusState private var focused: Bool
 
     /// `width` nil = derived from `SliderMath.widestText(range:step:format:)` (design m7).
     init(_ accessibilityTitle: String, value: Binding<Double>, in range: ClosedRange<Double>, step: Double?,
-         format: ValueFormat, width: CGFloat? = nil, labels: [String]? = nil) {
+         format: ValueFormat, width: CGFloat? = nil, labels: [String]? = nil, discardToken: Int = 0) {
         self.accessibilityTitle = accessibilityTitle
         self.labels = labels
+        self.discardToken = discardToken
         self.value = value
         self.range = range
         self.step = step
@@ -96,6 +100,9 @@ struct NumberField: View {
             .onAppear { edit.revert(display: display) }
             .onChange(of: display) { _, newValue in
                 edit.sync(display: newValue)
+            }
+            .onChange(of: discardToken) { _, _ in
+                edit.discardTyping(display: display)
             }
             .onChange(of: focused) { _, isFocused in
                 if isFocused {
@@ -138,7 +145,20 @@ struct NumberField: View {
         switch result {
         case .none: break
         case .invalid: NSSound.beep()
-        case .write(let v): if v != value.wrappedValue { value.wrappedValue = v }
+        case .write(let v):
+            if v != value.wrappedValue { value.wrappedValue = v }
+            settleNextTurn()
+        }
+    }
+
+    /// The binding may store something else than what was written (clamped back to the old value: the display doesn't
+    /// change, so `onChange(of: display)` never fires); show the stored value once the write has landed.
+    private func settleNextTurn() {
+        let value = value, format = format, labels = labels, edit = $edit
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                edit.wrappedValue.settle(display: SettingsFormat.text(value.wrappedValue, format, labels: labels))
+            }
         }
     }
 
@@ -149,5 +169,6 @@ struct NumberField: View {
                            step: { SliderMath.nudged($0, direction: direction, range: range, step: step) },
                            format: { shown($0) })
         if v != value.wrappedValue { value.wrappedValue = v }
+        settleNextTurn()
     }
 }

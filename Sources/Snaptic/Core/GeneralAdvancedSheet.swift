@@ -37,7 +37,7 @@ struct GeneralAdvancedSheet: View, ControlDeclaring {
                     StatusRow(host.safeMode.reason ?? L("Snaptic is running in Safe Mode."), style: .warning)
                     ButtonRow(L("Leave Safe Mode…"), help: L("Restarts Snaptic with all of your settings."),
                               control: ControlID("general.advanced.safeMode")) {
-                        confirmingSafeMode = true
+                        SafeModeLeave.confirm(relauncher: host.relauncher)
                     }
                 } else {
                     ButtonRow(L("Restart in Safe Mode…"),
@@ -57,19 +57,11 @@ struct GeneralAdvancedSheet: View, ControlDeclaring {
                     .foregroundStyle(.secondary)
             }
         }
-        .alert(host.safeMode.isActive ? L("Leave Safe Mode?") : L("Restart in Safe Mode?"),
-               isPresented: $confirmingSafeMode) {
-            Button(L("Restart")) {
-                if host.safeMode.isActive {
-                    host.relauncher.relaunch(reason: "leave safe mode")
-                } else {
-                    host.relauncher.relaunch(reason: "enter safe mode", safeMode: true)
-                }
-            }
+        .alert(L("Restart in Safe Mode?"), isPresented: $confirmingSafeMode) {
+            Button(L("Restart")) { host.relauncher.relaunch(reason: "enter safe mode", safeMode: true) }
             Button(L("Cancel"), role: .cancel) {}
         } message: {
-            Text(host.safeMode.isActive ? L("Snaptic restarts with all of your settings.")
-                 : L("Snaptic quits and opens again in Safe Mode. Your settings stay as they are."))
+            Text(L("Snaptic quits and opens again in Safe Mode. Your settings stay as they are."))
         }
     }
 

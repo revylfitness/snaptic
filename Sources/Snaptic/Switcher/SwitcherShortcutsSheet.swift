@@ -64,10 +64,11 @@ struct SwitcherShortcutsSheet: View, ControlDeclaring {
     }
 }
 
-/// One additional shortcut: its keys and options, a note when it can't act, and Delete Shortcut.
+/// One additional shortcut: its keys and options, a note when it can't act, and Delete Shortcut… (asks first).
 private struct ExtraShortcutSection: View {
     @ObservedObject var settings: AppSettings
     let id: UUID
+    @State private var confirmingDelete = false
 
     private var thumbnailsOn: Bool { settings.config.isOn(.thumbnails) }
 
@@ -96,8 +97,14 @@ private struct ExtraShortcutSection: View {
                           isOn: SwitcherBinding.windowless(settings, id: id))
             ToggleSetting(L("One entry per app"), help: L("Lists each app once, with its most recent window."),
                           isOn: SwitcherBinding.shortcut(settings, id: id, \.oneWindowPerApp))
-            ButtonRow(L("Delete Shortcut"), control: ControlID("switcher.shortcuts.delete")) {
-                settings.config.shortcuts.removeAll { $0.id == id }
+            ButtonRow(L("Delete Shortcut…"), role: .destructive, control: ControlID("switcher.shortcuts.delete")) {
+                confirmingDelete = true
+            }
+            .alert(L("Delete “\(title)”?"), isPresented: $confirmingDelete) {
+                Button(L("Delete"), role: .destructive) { settings.config.shortcuts.removeAll { $0.id == id } }
+                Button(L("Cancel"), role: .cancel) {}
+            } message: {
+                Text(L("This shortcut and its options are removed."))
             }
         } header: {
             Text(title)

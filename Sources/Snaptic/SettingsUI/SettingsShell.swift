@@ -186,9 +186,12 @@ import SnapticKit
 
     /// Sets the root now and pushes the route on the next main-queue turn (macOS 14 drops a push made in the same
     /// transaction as the root change). A route nothing shows is not pushed; a route that names a row
-    /// (`SettingsIndex.anchorEntry`, e.g. "awake.page.rules") reveals that row instead.
+    /// (`SettingsIndex.anchorEntry`, e.g. "awake.page.rules") reveals that row instead. Any open sheet is closed
+    /// first: its page leaves the hierarchy, and SwiftUI may not write `false` through `sheetBinding`, which would
+    /// re-open the sheet on the next visit (review round 2 ui F4). Callers that want a sheet set it after.
     func go(to location: SettingsLocation) {
         searchText = ""
+        openSheet = nil
         root = location.root
         paths[location.root] = []
         guard let route = location.route else { return }
