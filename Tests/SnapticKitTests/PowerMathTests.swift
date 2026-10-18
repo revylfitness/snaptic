@@ -26,6 +26,11 @@ final class PowerMathTests: XCTestCase {
         XCTAssertEqual(PowerMath.lastRecovery(h), 120)
     }
 
+    func testAReadingThatReportsChargingIsNeverAnEvent() {
+        let h = history([r(50, at: 0), r(49, at: 60, charging: true, current: -10)])
+        XCTAssertFalse(PowerMath.falling(h, now: 60))
+    }
+
     func testAPercentRiseClearsIt() {
         let h = history([r(50, at: 0), r(49, at: 60), r(50, at: 120)])
         XCTAssertFalse(PowerMath.falling(h, now: 120))
