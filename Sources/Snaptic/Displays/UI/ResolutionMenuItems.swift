@@ -105,7 +105,7 @@ import SnapticKit
         if context?.config.value.resolution.sliderLabel == .percent, let def = c.defaultMode(key), def.pointWidth > 0 {
             format = .percent(of: Double(def.pointWidth))
         }
-        var rowRef = WeakSliderRow()
+        let rowRef = WeakSliderRow()
         let row = MenuSliderRow(title: L("Resolution"), symbol: "rectangle.arrowtriangle.2.outward",
                                 value: Double(current.pointWidth),
                                 range: Double(first.pointWidth)...Double(last.pointWidth), format: format,
@@ -167,6 +167,6 @@ import SnapticKit
 }
 
 /// Weak holder: the slider's own closure must not keep the row alive.
-private struct WeakSliderRow {
+@MainActor private final class WeakSliderRow {
     weak var row: MenuSliderRow?
 }
