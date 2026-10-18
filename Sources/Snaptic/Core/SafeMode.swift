@@ -22,7 +22,7 @@ enum SafeMode {
         L("Protection, layouts and remembered resolutions"),
         L("Associations and hooks"),
         L("Automatic DDC writes"),
-        L("XDR and sleep prevention"),
+        L("XDR"),
         L("Automatic display reconnection planning"),
     ]
 

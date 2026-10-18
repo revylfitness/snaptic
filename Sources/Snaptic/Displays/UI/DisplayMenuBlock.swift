@@ -259,28 +259,15 @@ import SnapticKit
     }
 
     /// Status badges (0.2 wording, for the 0.2 pages until the step-3 exit).
-    static func badges(for display: DisplayInfo, paused: Bool, keptAwake: Bool = false) -> [String] {
+    static func badges(for display: DisplayInfo, paused: Bool) -> [String] {
         var badges: [String] = []
         if display.isMain { badges.append(L("Main")) }
         if display.transport == .snapticVirtual || display.transport == .foreignVirtual { badges.append(L("Virtual")) }
         if display.mirrorOf != nil { badges.append(L("Mirroring")) }
         if display.isSmartHiDPIPair { badges.append(L("Smart HiDPI")) }
         if !display.isOnline || !display.isActive { badges.append(L("Disconnected")) }
-        if keptAwake { badges.append(L("Kept Awake")) }
         if paused { badges.append(L("Paused")) }
         return badges
-    }
-
-    /// Badges from the live state: other-app pause, and "Kept Awake" while D's PowerController holds the sleep
-    /// assertion for this display.
-    static func badges(for display: DisplayInfo, context: DisplaysContext) -> [String] {
-        badges(for: display, paused: !context.otherApps.pausedDisplayFeatures.isEmpty,
-               keptAwake: isKeptAwake(display, context: context))
-    }
-
-    static func isKeptAwake(_ display: DisplayInfo, context: DisplaysContext) -> Bool {
-        context.runtime.sleepPreventionActive && display.isOnline
-            && (context.config.value.perDisplay[display.key]?.management.preventSleep ?? false)
     }
 
     /// The user's icon (Display Details) when it is a symbol this macOS has, else by transport.

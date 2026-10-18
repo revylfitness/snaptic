@@ -32,6 +32,9 @@ package enum ControlLegacy {
             "shortcuts.*.id",
             // ModulesConfig: onboarding progress and one-time cards
             "onboarding", "onboardingPermissions", "showNewDisplaysCard", "newModuleCards",
+            // DisplaysConfig: 0.2's per-display sleep prevention, ignored since 0.3 and kept only for 0.2 downgrades
+            // until 0.4 (§2.13; its control moved to Awake through migration M1)
+            "perDisplay.*.management.preventSleep",
         ]
     }
 

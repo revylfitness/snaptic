@@ -6,7 +6,7 @@ final class KitBackupTests: XCTestCase {
     private func object(_ data: Data) -> [String: Any] { (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:] }
 
     private var displays: [String: Any] {
-        ["features": ["brightness": true, "disconnect": true, "dimToBlack": true, "sleepPrevention": true, "hooks": true],
+        ["features": ["brightness": true, "disconnect": true, "dimToBlack": true, "hooks": true],
          "automation": ["hooks": [["id": "x"]]],
          "ddc": ["unlocks": ["a": 1], "step": 4],
          "layouts": ["presets": [["name": "Office", "trustStamp": "abc"]]],
@@ -21,7 +21,7 @@ final class KitBackupTests: XCTestCase {
         let doc = try XCTUnwrap(KitBackup.makeDocument(sections: ["displays": json(displays), "modules": json(modules)],
                                                          created: "2026-10-17T00:00:00Z", appVersion: "0.2.0"))
         let text = String(decoding: doc, as: UTF8.self)
-        for banned in ["automation", "disconnect", "dimToBlack", "sleepPrevention", "unlocks", "trustStamp", "saltHint",
+        for banned in ["automation", "disconnect", "dimToBlack", "unlocks", "trustStamp", "saltHint",
                        "commandLine", "onboarding", "\"hooks\""] {
             XCTAssertFalse(text.contains(banned), banned)
         }
@@ -164,22 +164,20 @@ final class KitBackupTests: XCTestCase {
     private let keyA = String(repeating: "a", count: 32)
     private let keyB = String(repeating: "b", count: 32)
 
-    private func safetyDisplays(preventSleep: Bool, ignore: Bool, withoutDDC: Bool, gamma: Bool,
-                                prefixes: [String]) -> [String: Any] {
+    private func safetyDisplays(ignore: Bool, withoutDDC: Bool, gamma: Bool, prefixes: [String]) -> [String: Any] {
         ["management": ["autoDisconnectWithoutDDC": withoutDDC, "snapArrangement": true],
-         "perDisplay": [keyA: ["management": ["preventSleep": preventSleep, "ignoreForAutoDisconnect": ignore,
-                                              "powerSwitch": "none"]],
-                        keyB: ["management": ["preventSleep": preventSleep], "brightness": ["minHardware": 0.1]]],
+         "perDisplay": [keyA: ["management": ["ignoreForAutoDisconnect": ignore, "powerSwitch": "none"]],
+                        keyB: ["management": ["ignoreForAutoDisconnect": ignore], "brightness": ["minHardware": 0.1]]],
          "color": ["allowGammaWithCustomProfile": gamma, "shortcutStep": 0.1],
          "resolution": ["allowBelow720p": true, "sliderSnapping": true],
          "pip": ["protectedBundlePrefixes": prefixes, "pauseWhenOccluded": true]]
     }
 
     func testSafetySwitchesNeverLeaveOrEnter() throws {
-        let unsafe = safetyDisplays(preventSleep: true, ignore: true, withoutDDC: true, gamma: true, prefixes: ["com.x"])
+        let unsafe = safetyDisplays(ignore: true, withoutDDC: true, gamma: true, prefixes: ["com.x"])
         let doc = try XCTUnwrap(KitBackup.makeDocument(sections: ["displays": json(unsafe)], created: "t", appVersion: "1"))
         let text = String(decoding: doc, as: UTF8.self)
-        for banned in ["preventSleep", "ignoreForAutoDisconnect", "autoDisconnectWithoutDDC", "allowGammaWithCustomProfile",
+        for banned in ["ignoreForAutoDisconnect", "autoDisconnectWithoutDDC", "allowGammaWithCustomProfile",
                        "allowBelow720p"] {
             XCTAssertFalse(text.contains(banned), banned)
         }
@@ -190,8 +188,7 @@ final class KitBackupTests: XCTestCase {
         // A hand-made file that carries them anyway: stripped, and the current values stay.
         let file: [String: Any] = ["format": KitBackup.format, "version": 1, "sections": ["displays": unsafe]]
         let parsed = try KitBackup.parseDocument(json(file)).get()
-        let current = json(safetyDisplays(preventSleep: false, ignore: false, withoutDDC: false, gamma: false,
-                                          prefixes: ["com.x"]))
+        let current = json(safetyDisplays(ignore: false, withoutDDC: false, gamma: false, prefixes: ["com.x"]))
         let merged = object(try XCTUnwrap(KitBackup.merge(current: current, imported: parsed["displays"]!,
                                                           section: "displays")))
         let management = merged["management"] as? [String: Any]
@@ -199,23 +196,22 @@ final class KitBackupTests: XCTestCase {
         let perDisplay = merged["perDisplay"] as? [String: [String: Any]]
         for key in [keyA, keyB] {
             let m = perDisplay?[key]?["management"] as? [String: Any]
-            XCTAssertEqual(m?["preventSleep"] as? Bool, false, key)
+            XCTAssertEqual(m?["ignoreForAutoDisconnect"] as? Bool, false, key)
         }
-        XCTAssertEqual((perDisplay?[keyA]?["management"] as? [String: Any])?["ignoreForAutoDisconnect"] as? Bool, false)
         XCTAssertEqual((merged["color"] as? [String: Any])?["allowGammaWithCustomProfile"] as? Bool, false)
     }
 
     func testWildcardRemovalReachesEveryDisplayOnly() {
-        let input: [String: Any] = ["perDisplay": [keyA: ["management": ["preventSleep": true, "powerSwitch": "x"]],
+        let input: [String: Any] = ["perDisplay": [keyA: ["management": ["ignoreForAutoDisconnect": true, "powerSwitch": "x"]],
                                                    keyB: "not an object"],
-                                    "management": ["preventSleep": true]]
+                                    "management": ["ignoreForAutoDisconnect": true]]
         let out = KitBackup.strip(input, section: "displays") as? [String: Any]
         let a = ((out?["perDisplay"] as? [String: Any])?[keyA] as? [String: Any])?["management"] as? [String: Any]
-        XCTAssertNil(a?["preventSleep"])
+        XCTAssertNil(a?["ignoreForAutoDisconnect"])
         XCTAssertEqual(a?["powerSwitch"] as? String, "x")
         XCTAssertEqual((out?["perDisplay"] as? [String: Any])?[keyB] as? String, "not an object")
         // Only the listed path: a same-named key elsewhere stays.
-        XCTAssertEqual((out?["management"] as? [String: Any])?["preventSleep"] as? Bool, true)
+        XCTAssertEqual((out?["management"] as? [String: Any])?["ignoreForAutoDisconnect"] as? Bool, true)
     }
 
     func testProtectedPrefixesOnlyGrow() throws {

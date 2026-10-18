@@ -157,9 +157,10 @@ final class KitControlTests: XCTestCase {
                        "autodisconnectbuiltin")
         XCTAssertEqual(KitControl.protectedSetting(verb: "module", arguments: ["cli"]), "cli")
         XCTAssertNil(KitControl.protectedSetting(verb: "set", arguments: ["brightness", "50"]))
-        XCTAssertEqual(KitControl.protectedSetting(verb: "feature disable", arguments: ["sleep-prevention"]), "sleepprevention")
-        XCTAssertEqual(KitControl.protectedSetting(verb: "set", arguments: ["prevent_sleep", "on"]), "preventsleep")
-        XCTAssertEqual(KitControl.protectedSetting(verb: "toggle", arguments: ["SleepPrevention"]), "sleepprevention")
+        // The 0.2 sleep-prevention words went with the feature (R5-14).
+        XCTAssertNil(KitControl.protectedSetting(verb: "feature disable", arguments: ["sleep-prevention"]))
+        XCTAssertNil(KitControl.protectedSetting(verb: "set", arguments: ["prevent_sleep", "on"]))
+        XCTAssertNil(KitControl.protectedSetting(verb: "toggle", arguments: ["SleepPrevention"]))
         XCTAssertNil(KitControl.protectedSetting(verb: "disconnect", arguments: ["main"]))   // an action, not a setting
         // The host's `feature disable` verb: protected features stay untouchable even off.
         XCTAssertEqual(KitControl.protectedSetting(verb: "feature disable", arguments: ["disconnect"]), "disconnect")
@@ -359,8 +360,8 @@ final class KitControlTests: XCTestCase {
         for word in ["awake", "nudge", "pointernudge", "drivealive", "activity", "guards", "batteryguard", "thermalguard"] {
             XCTAssertTrue(KitControl.protectedSettings.contains(word), word)
         }
-        // The 0.2 words stay until the step-3 merge removes Displays' sleep prevention (R5-14).
-        XCTAssertTrue(KitControl.protectedSettings.isSuperset(of: ["sleepprevention", "preventsleep"]))
+        // The 0.2 words went with Displays' sleep prevention (R5-14).
+        XCTAssertTrue(KitControl.protectedSettings.isDisjoint(with: ["sleepprevention", "preventsleep"]))
         XCTAssertEqual(KitControl.protectedSetting(verb: "set", arguments: ["pointer-nudge", "on"]), "pointernudge")
         XCTAssertEqual(KitControl.protectedSetting(verb: "feature", arguments: ["enable", "drive_alive"]), "drivealive")
         XCTAssertEqual(KitControl.protectedSetting(verb: "set", arguments: ["awake", "on"]), "awake")
@@ -370,6 +371,27 @@ final class KitControlTests: XCTestCase {
         XCTAssertNil(KitControl.protectedSetting(verb: "module", arguments: ["disable", "Awake"]))
         XCTAssertEqual(KitControl.protectedSetting(verb: "module disable", arguments: ["cli"]), "cli")
         XCTAssertNil(KitControl.protectedSetting(verb: "awake", arguments: ["hold"]), "awake verbs aren't setting verbs")
+    }
+
+    // MARK: Retired verbs (R5-12)
+
+    func testPreventSleepIsRetiredWithItsPointer() {
+        XCTAssertEqual(KitControl.retiredVerbs, ["prevent-sleep": "Moved to Awake: use “snaptic awake …”."])
+        for words in [["prevent-sleep"], ["prevent-sleep", "off"], ["PREVENT-SLEEP", "on"], ["Prevent-Sleep", "x", "y"]] {
+            let retired = KitControl.retiredVerb(words)
+            XCTAssertEqual(retired?.verb, "prevent-sleep", "\(words)")
+            XCTAssertEqual(retired?.message, "Moved to Awake: use “snaptic awake …”.")
+        }
+        for words in [[], ["prevent"], ["prevent", "sleep"], ["prevent-sleeps"], ["awake", "prevent-sleep"], ["help"],
+                      ["help", "prevent-sleep"]] {
+            XCTAssertNil(KitControl.retiredVerb(words), "\(words)")
+        }
+        // No retired verb is a live verb word or an Awake verb.
+        for verb in KitControl.retiredVerbs.keys {
+            XCTAssertTrue(verb.split(separator: " ").allSatisfy { KitControl.isVerbWord(String($0)) }, verb)
+            XCTAssertNil(KitControl.verbRule(verb), verb)
+        }
+        XCTAssertEqual(ControlExit.usage, 2)
     }
 
     func testLineReaderKeepsBytesAfterTheNewline() {

@@ -3,6 +3,7 @@ import SnapticKit
 
 /// CLI verbs registered by the host, modules and controllers (PLAN §11, §4.10(3)).
 /// Dispatch enforces the rules before any handler runs:
+/// - retired 0.2 verbs (`KitControl.retiredVerbs`) get their pointer with exit 2 before lookup and are never listed;
 /// - only `cliAllowed` verbs are reachable;
 /// - protected settings (hooks, actions, CLI, disconnect, auto-disconnect, dim to black,
 ///   unlocks, allow flags, trust) are never touchable;
@@ -95,6 +96,11 @@ import SnapticKit
                   skipConfirmationAllowed: Bool) async -> ControlResponse {
         let words = request.verb.split(separator: " ").map(String.init) + request.arguments
         if words.first == "help" { return help(Array(words.dropFirst()), json: request.json) }
+        // R5-12: a retired 0.2 verb gets its pointer before lookup, whatever is registered.
+        if let retired = KitControl.retiredVerb(words) {
+            EventLog.shared.record(.control, "CLI \(retired.verb) refused: retired")
+            return .failure(ControlExit.usage, retired.message)
+        }
 
         let reachable = entries.filter(\.cliAllowed)
         guard let match = KitControl.match(words, verbs: reachable.map(\.verb)),
@@ -128,7 +134,9 @@ import SnapticKit
     }
 
     private func help(_ topic: [String], json: Bool) -> ControlResponse {
-        let reachable = entries.filter(\.cliAllowed).sorted { $0.verb < $1.verb }
+        // Retired verbs are never listed (R5-12), even if something registered one.
+        let reachable = entries.filter { $0.cliAllowed && KitControl.retiredVerb([$0.verb]) == nil }
+            .sorted { $0.verb < $1.verb }
         let shown: [Entry]
         if topic.isEmpty {
             shown = reachable

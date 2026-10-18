@@ -67,7 +67,8 @@ package struct PerDisplayManagement: ConfigModel {
     package var powerSwitch: HeaderPowerSwitch
     /// Never auto-disconnect this (built-in) display.
     package var ignoreForAutoDisconnect: Bool
-    /// Prevent display sleep while this display is connected (`sleepPrevention`).
+    /// 0.2's "prevent display sleep while connected". Ignored since 0.3 (migration M1 moved it to Awake, §2.13); kept
+    /// decoded and encoded until 0.4 so a 0.2 downgrade still reads it.
     package var preventSleep: Bool
 
     package init() {

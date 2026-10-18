@@ -162,9 +162,9 @@ final class AwakeMigrationTests: XCTestCase {
     }
 
     func testRealDisplaysConfigJSONMigrates() throws {
-        // A config written by the 0.2 model itself, not a hand-made fixture.
+        // A config written by the model itself (preventSleep is still encoded until 0.4), plus the 0.2 feature flag,
+        // which 0.3's `DisplayFeature` no longer has (§2.13): written as 0.2 wrote it.
         var displays = DisplaysConfig()
-        displays.features[.sleepPrevention] = true
         let k = try XCTUnwrap(DisplayKey(rawValue: key(42)))
         var per = PerDisplayConfig()
         per.management.preventSleep = true
@@ -172,10 +172,36 @@ final class AwakeMigrationTests: XCTestCase {
         per.identity.customName = "Studio Display"
         displays.perDisplay[k] = per
         displays.keys.shortcuts[DisplayActionID(rawValue: "d.sleepPreventionToggle")] = combo
-        let r = migrate(try JSONEncoder().encode(displays))
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(displays)) as? [String: Any])
+        var features = object["features"] as? [String: Any] ?? [:]
+        features["sleepPrevention"] = true
+        object["features"] = features
+        let r = migrate(try JSONSerialization.data(withJSONObject: object))
         XCTAssertTrue(r.enableModule)
         XCTAssertEqual(r.migratedDisplayNames, ["Studio Display"])
         XCTAssertEqual(r.pauseRulesShortcut, combo)
+    }
+
+    /// A 0.2 settings file with sleep prevention on, decoded by 0.3's `DisplaysConfig` and saved again (as the host
+    /// does at launch): every input of M1 survives, so M1 (and the toast's re-computation on later launches) gives
+    /// the same result from the re-saved JSON as from the 0.2 original.
+    func testZeroTwoFileStillMigratesAfterADisplaysSave() throws {
+        let original = raw(flagged: [1, 2], customNames: [2: "Studio"], shortcut: true)
+        let resaved = try JSONEncoder().encode(JSONDecoder().decode(DisplaysConfig.self, from: original))
+        let before = migrate(original)
+        let after = migrate(resaved)
+        XCTAssertTrue(before.enableModule)
+        XCTAssertEqual(before.triggers.count, 1)
+        XCTAssertEqual(before.pauseRulesShortcut, combo)
+        XCTAssertEqual(after, before)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: resaved) as? [String: Any])
+        XCTAssertEqual((object["features"] as? [String: Any])?["sleepPrevention"] as? Bool, true,
+                       "an unknown feature key is written back unchanged")
+        let shortcuts = (object["keys"] as? [String: Any])?["shortcuts"] as? [String: Any]
+        XCTAssertNotNil(shortcuts?[AwakeMigration.legacyToggleAction], "the 0.2 combo stays for downgrades")
+        let perDisplay = object["perDisplay"] as? [String: [String: Any]]
+        XCTAssertEqual((perDisplay?[key(1)]?["management"] as? [String: Any])?["preventSleep"] as? Bool, true)
+        XCTAssertEqual((perDisplay?[key(999)]?["management"] as? [String: Any])?["preventSleep"] as? Bool, false)
     }
 
     func testFuzzNeverTraps() {

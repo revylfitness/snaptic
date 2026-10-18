@@ -98,7 +98,6 @@ Grouped like the settings pages. **On** = on by default once Displays is on; **O
 - On: set the main display, arrange (canvas, plus a Position/Align form), mirror and stop mirroring.
 - Rotation (Opt-in, Beta); Underscan and HDR on/off (Experimental).
 - Disconnect displays (Opt-in, Beta; Experimental on Intel): turn a display off without unplugging it. Disconnect built-in display automatically (Opt-in) when an external one connects; refused unless the external monitor answers DDC with power on (or is an Apple display), and unavailable on iMacs and some base M3 models.
-- Prevent display sleep (Opt-in).
 
 **Protection & Layouts**
 - Protect arrangement (Opt-in): puts the arrangement back when something else changes it (for example the macOS 27.2 arrangement-restore bug).
@@ -127,7 +126,7 @@ Display changes can leave you without a usable screen. Snaptic is built so that 
 - **A separate safety helper.** Before a risky change, Snaptic arms a small helper process. If Snaptic hangs, crashes or is killed, the helper reverts the change on its own, re-enables displays Snaptic turned off, and restores color. If the helper isn't running, risky changes are refused; anything already applied is badged "Unprotected — restart Snaptic".
 - **Never the last screen.** Changes that would leave no visible display are refused. Dimming to black, disconnecting and mirroring always keep at least one display you can see.
 - **Restore All Displays: ⌃⌥⌘⎋** (⌃⌥⌘⇧⎋ if the first is taken; also in the menu and as `snaptic panic`). It undoes resolution changes from the last minute, reconnects displays Snaptic turned off, removes dimming and overlays, resets color tables, stops virtual screens and streams, and pauses automation (layouts, protection, hooks, re-creation) until you choose Resume. Rotation and HDR aren't touched; they always go through the confirm panel. The shortcut can't be turned off while a display is disconnected, mirrored to a virtual screen or dimmed to black.
-- **Safe Mode: hold ⇧ while Snaptic starts** (or start it with `--safe-mode`). It also starts automatically after two launches in a row that ended within a minute. Safe Mode skips brightness and color restore, virtual screens and Smart HiDPI, protection, layouts, remembered resolutions, hooks, automatic DDC writes, XDR, sleep prevention and reconnection planning. It still undoes unfinished display changes from the last run, and the switcher and your shortcuts keep working. "Leave Safe Mode" relaunches normally.
+- **Safe Mode: hold ⇧ while Snaptic starts** (or start it with `--safe-mode`). It also starts automatically after two launches in a row that ended within a minute. Safe Mode skips brightness and color restore, virtual screens and Smart HiDPI, protection, layouts, remembered resolutions, hooks, automatic DDC writes, XDR and reconnection planning. It still undoes unfinished display changes from the last run, and the switcher and your shortcuts keep working. "Leave Safe Mode" relaunches normally.
 - **Journals.** Before a risky change Snaptic writes what it would take to undo it. If the Mac or Snaptic goes down mid-change, the next launch puts things back (and says so).
 
 ## Permissions
@@ -191,7 +190,6 @@ Without installing: `/Applications/Snaptic.app/Contents/MacOS/Snaptic cli help`.
 | `rotate <display> 0\|90\|180\|270` | Rotation | Confirms |
 | `disconnect <display>` | Disconnect displays | Confirms |
 | `connect all\|<display>`, `reconnect-all` | Disconnect displays | |
-| `prevent-sleep off` | Prevent display sleep | Off only |
 | `protect off`, `toggle protection` | Protect arrangement | Off only |
 | `layout list\|apply <name\|number>\|capture <name>` | Display layouts | Apply confirms trial content |
 | `virtual list\|connect <name>\|disconnect <name>` | Virtual screens | |
@@ -201,7 +199,9 @@ Without installing: `/Applications/Snaptic.app/Contents/MacOS/Snaptic cli help`.
 
 Verbs are case-insensitive, so `toggle nightShift` and `toggle smartHiDPI` work too.
 
-**Never from the command line:** turning on anything off-only, and changing hooks, actions, command-line settings, sleep prevention, disconnect, auto-disconnect, dim to black, DDC unlocks, "allow without asking" choices or layout trust. Accessibility-using actions (Gather windows) are never command-line actions.
+`prevent-sleep` is retired: display sleep prevention moved to Awake, and the verb answers “Moved to Awake: use “snaptic awake …”.” with exit code 2.
+
+**Never from the command line:** turning on anything off-only, and changing hooks, actions, command-line settings, disconnect, auto-disconnect, dim to black, DDC unlocks, "allow without asking" choices or layout trust. Accessibility-using actions (Gather windows) are never command-line actions.
 
 **Exit codes**
 
@@ -281,7 +281,7 @@ A stably signed build inherits its permissions automatically, so only rebuild fr
 - *OSD broadcast* (opt-in) posts a system-wide notification `app.snaptic.osd` with only the kind (brightness, volume, …), the value and the maximum, at most 10 per second, and nothing while the screen is locked.
 - *Hooks and custom actions* (opt-in) run programs you chose, with a minimal environment (`SNAPTIC_EVENT`, `SNAPTIC_DISPLAY_NAME`, `SNAPTIC_DISPLAY_KEY`), without Snaptic's permissions, stopped after 30 seconds. Programs must be absolute paths owned by you or root and not writable by others. Never in Safe Mode or while automation is paused.
 
-**On disk.** Settings (in Snaptic's preferences), and under `~/Library/Application Support/Snaptic/` (0700): the single-instance lock, the command-line socket, undo journals for display changes, and copies of imported LUTs. Backup export leaves out hooks, actions, command-line settings, the salt, DDC unlocks, "allow without asking" choices, layout trust, and sensitive switches (disconnect, auto-disconnect, dim to black, sleep prevention); import strips them even if present.
+**On disk.** Settings (in Snaptic's preferences), and under `~/Library/Application Support/Snaptic/` (0700): the single-instance lock, the command-line socket, undo journals for display changes, and copies of imported LUTs. Backup export leaves out hooks, actions, command-line settings, the salt, DDC unlocks, "allow without asking" choices, layout trust, and sensitive switches (disconnect, auto-disconnect, dim to black); import strips them even if present.
 
 **Command line.** Only your user account can connect, through a private socket (directory 0700, socket 0600); Snaptic never listens on the network. Requests are size-, rate- and time-limited. See [Command line](#command-line) for what it can never change.
 
@@ -312,7 +312,7 @@ defaults write app.snaptic.Snaptic Displays.disable.symbol.MPDisplay -bool true 
 defaults delete app.snaptic.Snaptic Displays.disable.xdr                # undo
 ```
 
-Feature ids: `resolution`, `hiddenModes`, `scaleMatch`, `brightness`, `brightnessApple`, `brightnessDDC`, `brightnessGamma`, `brightnessOverlay`, `brightnessRestore`, `dimToBlack`, `dimOnLock`, `nits`, `xdr`, `sync`, `autoBrightness`, `color`, `colorProfiles`, `nightShift`, `applePresets`, `ddcControls`, `ddcInput`, `ddcPower`, `ddcCustom`, `brightnessKeys`, `volumeKeys`, `shortcuts`, `osd`, `osdBroadcast`, `mainDisplay`, `arrangement`, `mirroring`, `rotation`, `underscan`, `hdrToggle`, `disconnect`, `autoDisconnectBuiltin`, `sleepPrevention`, `protection`, `layouts`, `virtualScreens`, `smartHiDPI`, `hdrVirtual`, `pip`, `pipFilters`, `menuBarOverlays`, `hooks`, `customActions`. Kill switches only turn things off, restart Displays (or Snaptic) to apply them, and Diagnostics lists the ones that are set.
+Feature ids: `resolution`, `hiddenModes`, `scaleMatch`, `brightness`, `brightnessApple`, `brightnessDDC`, `brightnessGamma`, `brightnessOverlay`, `brightnessRestore`, `dimToBlack`, `dimOnLock`, `nits`, `xdr`, `sync`, `autoBrightness`, `color`, `colorProfiles`, `nightShift`, `applePresets`, `ddcControls`, `ddcInput`, `ddcPower`, `ddcCustom`, `brightnessKeys`, `volumeKeys`, `shortcuts`, `osd`, `osdBroadcast`, `mainDisplay`, `arrangement`, `mirroring`, `rotation`, `underscan`, `hdrToggle`, `disconnect`, `autoDisconnectBuiltin`, `protection`, `layouts`, `virtualScreens`, `smartHiDPI`, `hdrVirtual`, `pip`, `pipFilters`, `menuBarOverlays`, `hooks`, `customActions`. Kill switches only turn things off, restart Displays (or Snaptic) to apply them, and Diagnostics lists the ones that are set.
 
 ## Troubleshooting
 
