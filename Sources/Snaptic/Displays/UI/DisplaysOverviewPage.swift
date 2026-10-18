@@ -545,10 +545,10 @@ struct DisplaySliderRow: View {
     func toggleMute() { ddcController?.toggleMute(.display(key)) }
 
     /// C confirms first (switching input can leave this Mac without a picture).
-    func setInput(_ entry: DDCInputEntry) { ddcController?.setInput(entry, on: key) }
+    func setInput(_ entry: DDCInputEntry) { _ = ddcController?.setInput(entry, on: key) }
 
     /// C confirms standby and refuses it for the only display you can see.
-    func setPower(_ on: Bool) { ddcController?.setPower(on, on: key) }
+    func setPower(_ on: Bool) { _ = ddcController?.setPower(on, on: key) }
 
     // MARK: System modes (onboarding only)
 
