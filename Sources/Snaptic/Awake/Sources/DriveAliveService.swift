@@ -229,10 +229,10 @@ private enum DriveAliveIO {
     static let maxExistingBytes: Int64 = 64
 
     static func write(root: String, bsdName: String, uuid: VolumeUUIDKey) -> DriveAliveError? {
-        let opened = openRoot(root: root, bsdName: bsdName, uuid: uuid)
-        guard case .success(let dir) = opened else {
-            if case .failure(let e) = opened { return e }
-            return .ioError
+        let dir: Root
+        switch openRoot(root: root, bsdName: bsdName, uuid: uuid) {
+        case .opened(let opened): dir = opened
+        case .failed(let error): return error
         }
         defer { close(dir.fd) }
         let fd = openat(dir.fd, DriveAlivePolicy.fileName, O_WRONLY | O_CREAT | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK,
@@ -251,10 +251,10 @@ private enum DriveAliveIO {
     }
 
     static func remove(root: String, bsdName: String, uuid: VolumeUUIDKey) -> DriveAliveError? {
-        let opened = openRoot(root: root, bsdName: bsdName, uuid: uuid)
-        guard case .success(let dir) = opened else {
-            if case .failure(let e) = opened { return e }
-            return .ioError
+        let dir: Root
+        switch openRoot(root: root, bsdName: bsdName, uuid: uuid) {
+        case .opened(let opened): dir = opened
+        case .failed(let error): return error
         }
         defer { close(dir.fd) }
         var st = stat()
@@ -275,17 +275,22 @@ private enum DriveAliveIO {
         let device: dev_t
     }
 
+    private enum Opened {
+        case opened(Root)
+        case failed(DriveAliveError)
+    }
+
     /// Steps 1–3 of §2.9: the directory fd of the volume root, only when the live mount is still the one judged
     /// eligible.
-    private static func openRoot(root: String, bsdName: String, uuid: VolumeUUIDKey) -> Result<Root, DriveAliveError> {
-        guard root.hasPrefix("/"), root != "/", DriveAlivePolicy.isValidBSDName(bsdName) else { return .failure(.mountChanged) }
+    private static func openRoot(root: String, bsdName: String, uuid: VolumeUUIDKey) -> Opened {
+        guard root.hasPrefix("/"), root != "/", DriveAlivePolicy.isValidBSDName(bsdName) else { return .failed(.mountChanged) }
         let fd = open(root, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-        guard fd >= 0 else { return .failure(openError(errno)) }
+        guard fd >= 0 else { return .failed(openError(errno)) }
         var fs = statfs()
         var st = stat()
         guard fstatfs(fd, &fs) == 0, fstat(fd, &st) == 0 else {
             close(fd)
-            return .failure(.mountChanged)
+            return .failed(.mountChanged)
         }
         let flags = UInt32(fs.f_flags)
         let matches = cString(fs.f_mntonname) == root
@@ -297,9 +302,9 @@ private enum DriveAliveIO {
             && volumeUUID(fd) == uuid
         guard matches else {
             close(fd)
-            return .failure(.mountChanged)
+            return .failed(.mountChanged)
         }
-        return .success(Root(fd: fd, device: st.st_dev))
+        return .opened(Root(fd: fd, device: st.st_dev))
     }
 
     /// A regular file we own with one link on the root's device.
