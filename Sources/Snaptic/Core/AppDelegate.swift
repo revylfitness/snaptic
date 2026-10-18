@@ -89,8 +89,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if safeMode.isActive {
             toasts.show(L("Snaptic started in Safe Mode. Display automation is paused."),
-                        action: ToastAction(title: L("Leave")) { [weak self] in
-                            self?.relauncher.relaunch(reason: "leave safe mode")
+                        action: ToastAction(title: L("Leave…")) { [weak self] in
+                            // The same question as every other "Leave Safe Mode…" (review round 3 ui N3).
+                            guard let self else { return }
+                            SafeModeLeave.confirm(relauncher: self.relauncher)
                         })
         }
         // Nothing in the menu bar (everything hidden): show Settings. A first launch gets

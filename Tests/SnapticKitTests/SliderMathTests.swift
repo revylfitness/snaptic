@@ -350,6 +350,97 @@ final class SliderMathTests: XCTestCase {
         XCTAssertEqual(f.text, "900", "a settle never drops new typing")
     }
 
+    /// Round 3 ui F3: every write changes `settleTick` (the field settles in the render after it, reading the binding
+    /// then); a commit that writes nothing doesn't.
+    func testTypedFieldSettleTickChangesOnlyOnWrites() {
+        var f = TypedFieldState(display: "2 nits")
+        let parse: (String) -> Double? = { Double($0) }
+        let show: (Double) -> String = { "\(Int($0)) nits" }
+        XCTAssertEqual(f.commit(display: "2 nits", parse: parse, format: show), .none)
+        XCTAssertEqual(f.settleTick, 0)
+        f.edit("abc")
+        XCTAssertEqual(f.commit(display: "2 nits", parse: parse, format: show), .invalid)
+        XCTAssertEqual(f.settleTick, 0)
+        f.edit("5")
+        XCTAssertEqual(f.commit(display: "2 nits", parse: parse, format: show), .write(5))
+        XCTAssertEqual(f.settleTick, 1)
+        _ = f.nudge(value: 5, parse: parse, step: { $0 + 1 }, format: show)
+        XCTAssertEqual(f.settleTick, 2)
+    }
+
+    /// Round 3 ui F3: Tab commits 5 over 2. The render after the write reads the binding as it is then: stored 5 →
+    /// "5 nits" stays; clamped back to 2 → "2 nits"; a store that publishes a turn later first shows the old value,
+    /// then its own render (a new display) syncs to 5, and the field never stays on the old value.
+    func testTypedFieldSettleReadsTheRenderAfterTheWrite() {
+        let parse: (String) -> Double? = { Double($0) }
+        let show: (Double) -> String = { "\(Int($0)) nits" }
+
+        var stored = TypedFieldState(display: "2 nits")
+        stored.edit("5")
+        _ = stored.commit(display: "2 nits", parse: parse, format: show)
+        stored.settle(display: "5 nits")
+        XCTAssertEqual(stored.text, "5 nits")
+
+        var clamped = TypedFieldState(display: "2 nits")
+        clamped.edit("5")
+        _ = clamped.commit(display: "2 nits", parse: parse, format: show)
+        clamped.settle(display: "2 nits")
+        XCTAssertEqual(clamped.text, "2 nits")
+
+        var late = TypedFieldState(display: "2 nits")
+        late.edit("5")
+        _ = late.commit(display: "2 nits", parse: parse, format: show)
+        late.settle(display: "2 nits")
+        late.sync(display: "5 nits")
+        XCTAssertEqual(late.text, "5 nits")
+        XCTAssertFalse(late.isDirty)
+    }
+
+    /// Round 3 ui F1/F2: the focused field's commit runs once; focus moving to another field before the first one's
+    /// blur arrives keeps the new field's registration; a resign of a field that isn't registered changes nothing.
+    func testFocusedCommitSlot() {
+        var slot = FocusedCommitSlot<Int, String>()
+        XCTAssertNil(slot.take())
+        slot.register(1, "width")
+        slot.register(1, "width, typed")
+        XCTAssertEqual(slot.owner, 1)
+        // Focus moves to the height field; its focus arrives before the width field's blur.
+        slot.register(2, "height")
+        slot.resign(1)
+        XCTAssertEqual(slot.owner, 2)
+        XCTAssertEqual(slot.take(), "height")
+        XCTAssertNil(slot.owner)
+        XCTAssertNil(slot.take(), "a commit runs once")
+        slot.register(3, "diagonal")
+        slot.resign(3)
+        XCTAssertNil(slot.take())
+    }
+
+    /// Any order of registrations, resigns and takes: `take` returns the commit of the last field registered that
+    /// hasn't resigned or been taken since.
+    func testSeededFocusedCommitSlot() {
+        var g = SeededGenerator(seed: 0xF0C5)
+        for _ in 0..<2000 {
+            var slot = FocusedCommitSlot<Int, Int>()
+            var model: Int?
+            for _ in 0..<Int(g.next() % 10) {
+                let id = Int(g.next() % 3)
+                switch g.next() % 3 {
+                case 0:
+                    slot.register(id, id)
+                    model = id
+                case 1:
+                    slot.resign(id)
+                    if model == id { model = nil }
+                default:
+                    XCTAssertEqual(slot.take(), model)
+                    model = nil
+                }
+                XCTAssertEqual(slot.owner, model)
+            }
+        }
+    }
+
     /// Any sequence of syncs and edits: a commit writes only when the last thing before it was typing that changed the
     /// text, and the field is never dirty after a commit.
     func testSeededTypedFieldCommitsOnlyTypedText() {

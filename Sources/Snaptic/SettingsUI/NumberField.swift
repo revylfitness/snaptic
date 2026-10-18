@@ -64,6 +64,8 @@ struct NumberField: View {
 
     @State private var edit = TypedFieldState()
     @FocusState private var focused: Bool
+    /// This field's registration in `FocusedField` while it has focus.
+    @State private var fieldID = UUID()
 
     /// `width` nil = derived from `SliderMath.widestText(range:step:format:)` (design m7).
     init(_ accessibilityTitle: String, value: Binding<Double>, in range: ClosedRange<Double>, step: Double?,
@@ -98,8 +100,17 @@ struct NumberField: View {
                 return .handled
             }
             .onAppear { edit.revert(display: display) }
+            .onDisappear { FocusedField.resign(fieldID) }
             .onChange(of: display) { _, newValue in
                 edit.sync(display: newValue)
+                registerIfFocused()
+            }
+            .onChange(of: edit.text) { _, _ in
+                registerIfFocused()
+            }
+            .onChange(of: edit.settleTick) { _, _ in
+                // The render after a write: `display` reads the binding as it is now (review round 3 ui F3).
+                edit.settle(display: display)
             }
             .onChange(of: discardToken) { _, _ in
                 edit.discardTyping(display: display)
@@ -107,12 +118,14 @@ struct NumberField: View {
             .onChange(of: focused) { _, isFocused in
                 if isFocused {
                     edit.sync(display: display)
+                    registerIfFocused()
                     DispatchQueue.main.async {
                         MainActor.assumeIsolated {
                             _ = NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
                         }
                     }
                 } else {
+                    FocusedField.resign(fieldID)
                     commit()
                 }
             }
@@ -146,20 +159,19 @@ struct NumberField: View {
         case .none: break
         case .invalid: NSSound.beep()
         case .write(let v):
+            // The binding may store something else than what was written (clamped back to the old value: the
+            // display doesn't change, so `onChange(of: display)` never fires); the write bumped `settleTick`, and the
+            // render that follows shows the stored value.
             if v != value.wrappedValue { value.wrappedValue = v }
-            settleNextTurn()
         }
     }
 
-    /// The binding may store something else than what was written (clamped back to the old value: the display doesn't
-    /// change, so `onChange(of: display)` never fires); show the stored value once the write has landed.
-    private func settleNextTurn() {
-        let value = value, format = format, labels = labels, edit = $edit
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated {
-                edit.wrappedValue.settle(display: SettingsFormat.text(value.wrappedValue, format, labels: labels))
-            }
-        }
+    /// While focused, `FocusedField.commit()` (a sheet's Done, a row's "+") writes this field's typed text first.
+    /// Re-registered as the text and the value change, so the commit uses this render's binding.
+    private func registerIfFocused() {
+        guard focused else { return }
+        let field = self
+        FocusedField.register(fieldID) { field.commit() }
     }
 
     private func nudge(_ direction: Int) {
@@ -169,6 +181,28 @@ struct NumberField: View {
                            step: { SliderMath.nudged($0, direction: direction, range: range, step: step) },
                            format: { shown($0) })
         if v != value.wrappedValue { value.wrappedValue = v }
-        settleNextTurn()
+    }
+}
+
+/// The typed field that has focus, for buttons that read values (review round 3 ui F1/F2). A click on a button doesn't
+/// take focus from a text field (Full Keyboard Access off, the macOS default), so the field's own commit on blur would
+/// come after the button's action, or never for a sheet that saves a draft. Every Done, Save, Add or "+" that reads
+/// what fields hold calls `commit()` first.
+@MainActor enum FocusedField {
+    private static var slot = FocusedCommitSlot<UUID, @MainActor () -> Void>()
+
+    static func register(_ id: UUID, _ commit: @escaping @MainActor () -> Void) {
+        slot.register(id, commit)
+    }
+
+    static func resign(_ id: UUID) {
+        slot.resign(id)
+    }
+
+    /// Writes the text typed in the focused number field now (its binding holds it when this returns), then ends
+    /// editing in the key window so other text fields finish too and the blur commit finds nothing left to write.
+    static func commit() {
+        slot.take()?()
+        _ = NSApp.keyWindow?.makeFirstResponder(nil)
     }
 }

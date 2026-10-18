@@ -295,6 +295,8 @@ private struct VirtualDisplayDetailsContent: View {
                             step: 2, format: .points)
                 Spacer(minLength: 8)
                 Button {
+                    // The size being typed is written first: the click leaves the field focused (review round 3 ui F1).
+                    FocusedField.commit()
                     if let d = draft { draft = VirtualSpecEdit.addingSize(d, width: Int(newWidth), height: Int(newHeight)) }
                 } label: {
                     Image(systemName: "plus")
@@ -390,6 +392,8 @@ private struct VirtualDisplayDetailsContent: View {
 
     /// Done (or closing the sheet) applies the edits; a connected display reconnects when its shape changed.
     private func save() {
+        // Done already committed; this covers the sheet closing another way with a field still being typed in.
+        FocusedField.commit()
         guard let draft, let controller, let stored, draft != stored else { return }
         controller.update(draft)
     }

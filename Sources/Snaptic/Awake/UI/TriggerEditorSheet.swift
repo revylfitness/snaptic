@@ -60,6 +60,8 @@ struct TriggerEditorSheet: View, ControlDeclaring {
                     .keyboardShortcut(.cancelAction)
                     .modifier(SettingsAnchor(ControlID("awake.rule.cancel")))
                 Button(L("Done")) {
+                    // A number typed without Return (battery %, idle minutes…) goes into the draft first (ui F2).
+                    FocusedField.commit()
                     save()
                     dismiss()
                 }

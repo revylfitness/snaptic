@@ -415,6 +415,10 @@ package struct TypedFieldState: Equatable, Sendable {
     package private(set) var text: String
     /// The text last synced from the value (what `text` was before the user typed).
     package private(set) var synced: String
+    /// Changes with every write (`commit` → `.write`, `nudge`). The field settles when it changes, in the render that
+    /// follows the write, so it reads the binding after the write instead of a getter captured when it committed
+    /// (review round 3 ui F3).
+    package private(set) var settleTick: Int = 0
 
     package init(display: String = "") {
         text = display
@@ -448,9 +452,10 @@ package struct TypedFieldState: Equatable, Sendable {
         revert(display: display)
     }
 
-    /// The turn after a write: show what the binding really stored. A value clamped back to the old one (e.g. a
-    /// custom nits minimum already at its cap) doesn't change the display, so without this the field would keep the
-    /// typed number (review round 2 ui N2). Text typed in between is kept (`sync`).
+    /// After a write (`settleTick` changed), with the display of the render that follows it: show what the binding
+    /// really stored. A value clamped back to the old one (e.g. a custom nits minimum already at its cap) doesn't
+    /// change the display, so without this the field would keep the typed number (review round 2 ui N2). Text typed
+    /// in between is kept (`sync`). A store that publishes later re-renders with a new display, which `sync`s.
     package mutating func settle(display: String) {
         sync(display: display)
     }
@@ -477,6 +482,7 @@ package struct TypedFieldState: Equatable, Sendable {
             return .invalid
         }
         revert(display: format(v))
+        settleTick &+= 1
         return .write(v)
     }
 
@@ -486,6 +492,40 @@ package struct TypedFieldState: Equatable, Sendable {
         let base = (isDirty ? parse(text) : nil) ?? value
         let v = step(base)
         revert(display: format(v))
+        settleTick &+= 1
         return v
+    }
+}
+
+/// Which typed field may still hold text that hasn't been written (review round 3 ui F1/F2). A button that reads
+/// values (a sheet's Done, the virtual display editor's "+") commits that field first: a click doesn't take focus
+/// from the field, so its blur commit would come after the button's action. Fields register when they gain focus
+/// (and again as they change, so the commit is always the latest one); a field that loses focus resigns only its
+/// own registration, because the next field's focus can arrive first.
+package struct FocusedCommitSlot<Owner: Equatable, Commit> {
+    package private(set) var owner: Owner?
+    private var commit: Commit?
+
+    package init() {}
+
+    package mutating func register(_ id: Owner, _ commit: Commit) {
+        owner = id
+        self.commit = commit
+    }
+
+    /// The field `id` lost focus or went away.
+    package mutating func resign(_ id: Owner) {
+        guard owner == id else { return }
+        owner = nil
+        commit = nil
+    }
+
+    /// The pending commit, once: the slot is empty afterwards.
+    package mutating func take() -> Commit? {
+        defer {
+            owner = nil
+            commit = nil
+        }
+        return commit
     }
 }
