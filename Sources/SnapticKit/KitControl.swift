@@ -159,7 +159,7 @@ package enum KitControl {
         ControlVerbRule("awake status", .read),
         ControlVerbRule("awake start", .low, sessionLimited: true),
         ControlVerbRule("awake hold", .low, holds: true, sessionLimited: true),
-        ControlVerbRule("awake preset", .low),
+        ControlVerbRule("awake preset", .low, sessionLimited: true),
         ControlVerbRule("awake extend", .low, sessionLimited: true),
         ControlVerbRule("awake stop", .low, offOnly: true, sessionLimited: true),
         ControlVerbRule("awake pause", .low, offOnly: true),

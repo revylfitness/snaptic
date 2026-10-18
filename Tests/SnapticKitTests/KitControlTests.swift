@@ -477,7 +477,7 @@ final class KitControlTests: XCTestCase {
         XCTAssertEqual(rules.filter(\.holds).map(\.verb), ["awake hold"])
         XCTAssertEqual(Set(rules.filter(\.offOnly).map(\.verb)), ["awake stop", "awake pause"])
         XCTAssertEqual(Set(rules.filter(\.sessionLimited).map(\.verb)),
-                       ["awake start", "awake hold", "awake stop", "awake extend"])
+                       ["awake start", "awake hold", "awake preset", "awake stop", "awake extend"])
         XCTAssertEqual(KitControl.verbRule("awake status")?.policy, .read)
         XCTAssertNil(KitControl.verbRule("awake"))
         XCTAssertNil(KitControl.verbRule("brightness"))

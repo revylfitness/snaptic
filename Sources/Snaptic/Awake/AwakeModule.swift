@@ -44,6 +44,9 @@ import SnapticKit
     private var sinks: [AnyCancellable] = []
     /// Kept across starts so the item (G's) can stay while its own menu is open.
     private var indicator: IndicatorController?
+    /// G's Settings pages read the stores and runtime, and the context while the module runs (one per app run).
+    private(set) lazy var pageEnvironment = AwakePageEnvironment(config: config, history: historyStore, runtime: runtime,
+                                                                 context: { [weak self] in self?.context })
 
     /// The host owns the stores for the app's lifetime.
     init(config: ConfigStore<AwakeConfig>, state: ConfigStore<AwakeRuntimeSnapshot>, history: ConfigStore<AwakeHistory>) {
@@ -140,6 +143,8 @@ import SnapticKit
         switch route.id {
         case DrivesPageControls.surface:   // "awake.drives"
             return AnyView(DrivesPage(config: config, runtime: runtime, live: { [weak self] in self?.context }))
+        case AwakeHistoryPageControls.surface:   // "awake.history"
+            return AwakePage.historyPage(env: pageEnvironment)
         default:
             return nil
         }
@@ -149,10 +154,14 @@ import SnapticKit
     func diagnosticsLines() -> [String] { AwakeDiagnostics().lines(context) }
 
     func settingsPages() -> [SettingsPage] {
-        [SettingsPage(id: "awake", title: L("Awake"), symbol: "cup.and.saucer.fill") { AnyView(AwakePage()) }]
+        let env = pageEnvironment
+        return [SettingsPage(id: "awake", title: L("Awake"), symbol: "cup.and.saucer.fill") { AnyView(AwakePage(env: env)) }]
     }
 
     var tint: SettingsTint { .orange }
+    var highlights: [FeatureHighlight] { AwakePage.highlights }
+    func settingsRoot() -> SettingsRoot { AwakePage.settingsRoot(env: pageEnvironment) }
+    func settingsIndex() -> [SettingsSearchEntry] { AwakePage.searchEntries() }
 
     // MARK: StatusItemProvider (G's IndicatorController owns the item)
 
