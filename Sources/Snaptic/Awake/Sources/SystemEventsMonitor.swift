@@ -125,6 +125,7 @@ enum SystemEvent: Equatable, Sendable {
         lastEvent = nil
         lidClosed = nil
         lidWillSleep = nil
+        publishLid()
         context = nil
     }
 
@@ -168,10 +169,18 @@ enum SystemEvent: Equatable, Sendable {
         guard rootDomain != 0 else {
             lidClosed = nil
             lidWillSleep = nil
+            publishLid()
             return
         }
         lidClosed = Self.boolProperty(rootDomain, "AppleClamshellState")
         lidWillSleep = lidClosed == nil ? nil : Self.boolProperty(rootDomain, "AppleClamshellCausesSleep")
+        publishLid()
+    }
+
+    /// The runtime's "closing the lid will sleep" fact (nil = no lid), for the Awake menu's lid notice (§2.12).
+    private func publishLid() {
+        guard let runtime = context?.runtime, runtime.lidWillSleep != lidWillSleep else { return }
+        runtime.lidWillSleep = lidWillSleep
     }
 
     private static func boolProperty(_ entry: io_registry_entry_t, _ key: String) -> Bool? {
