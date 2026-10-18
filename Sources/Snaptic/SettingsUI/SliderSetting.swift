@@ -38,6 +38,8 @@ struct SliderSetting: View {
     let labels: [String]?
 
     @State private var drag: Double?
+    /// Bumped when the row's own slider or Reset sets the value: the field drops text typed without Return (ui F1).
+    @State private var discardTyping = 0
     @StateObject private var throttle = SliderThrottle()
 
     init(_ title: String, help: String? = nil, value: Binding<Double>, in range: ClosedRange<Double>,
@@ -162,8 +164,12 @@ struct SliderSetting: View {
         .accessibilityValue(SettingsFormat.spoken(shown, format, labels: labels))
         .accessibilityAdjustableAction { direction in
             switch direction {
-            case .increment: write(SliderMath.nudged(shown, direction: 1, range: range, step: snapStep))
-            case .decrement: write(SliderMath.nudged(shown, direction: -1, range: range, step: snapStep))
+            case .increment:
+                discardTyping &+= 1
+                write(SliderMath.nudged(shown, direction: 1, range: range, step: snapStep))
+            case .decrement:
+                discardTyping &+= 1
+                write(SliderMath.nudged(shown, direction: -1, range: range, step: snapStep))
             @unknown default: break
             }
         }
@@ -171,7 +177,7 @@ struct SliderSetting: View {
 
     private var field: some View {
         NumberField(title, value: Binding(get: { shown }, set: { write($0) }), in: range, step: snapStep, format: format,
-                    labels: labels)
+                    labels: labels, discardToken: discardTyping)
     }
 
     private var reset: some View {
@@ -211,6 +217,7 @@ struct SliderSetting: View {
 
     private func editing(_ began: Bool) {
         if began {
+            discardTyping &+= 1
             throttle.cancel()
             drag = value.wrappedValue
             phase?(.began)
@@ -227,6 +234,7 @@ struct SliderSetting: View {
         let v = SliderMath.clampSnap(raw, range: range, step: snapStep)
         guard drag != nil else {
             // Keyboard, VoiceOver or a click without a drag: commit at once.
+            discardTyping &+= 1
             write(v)
             return
         }
@@ -253,6 +261,7 @@ struct SliderSetting: View {
 
     private func resetToDefault() {
         guard let d = defaultValue else { return }
+        discardTyping &+= 1
         throttle.cancel()
         drag = nil
         write(d)

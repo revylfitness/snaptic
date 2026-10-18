@@ -95,7 +95,7 @@ struct DefaultsLockRow: View {
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
             StatusRow(DefaultsLock.text, symbol: "lock.fill")
-            InfoButton(L("Turning It Back On"),
+            InfoButton(L("How to turn it back on"),
                        message: DefaultsLock.details(domain: ConfigStore<ModulesConfig>.persistentDomainName, key: key))
         }
     }

@@ -2,7 +2,7 @@ import SwiftUI
 import SnapticKit
 
 /// (i) popover for per-item details or a reference ("Exit codes"): 280 pt wide, title and message; never opens a
-/// sheet.
+/// sheet. The tooltip is the title itself (sentence case, review round 2 ux Nit 1), not "About <title>".
 struct InfoButton: View {
     let title: String
     let message: String
@@ -21,7 +21,7 @@ struct InfoButton: View {
                 .foregroundStyle(.secondary)
         }
         .buttonStyle(.borderless)
-        .help(L("About \(title)"))
+        .help(title)
         .accessibilityLabel(title)
         .accessibilityHint(L("Shows details"))
         .popover(isPresented: $shown, arrowEdge: .trailing) {
