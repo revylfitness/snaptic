@@ -108,7 +108,7 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
     private func start(_ kind: AwakeSessionKind, options: AwakeSessionOptions?, presetID: StableID?,
                        source: AwakeSessionSource, overrideGuards: Bool,
                        preset: AwakePreset?) -> Result<AwakeSession, AwakeRefusal> {
-        guard let ctx = context, lifetime != nil, effective.contains(.sessions) else {
+        guard let ctx = context, lifetime != nil, restored, effective.contains(.sessions) else {
             return .failure(.unavailable(.featureOff))
         }
         let now = AwakeModule.clockNow()
@@ -135,7 +135,8 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
             resolved = clamped(options)
             usesDefaultOptions = false
         } else {
-            resolved = ctx.config.value.sessions.effectiveOptions(for: kind, preset: preset, effective: effective)
+            resolved = ctx.config.value.sessions.effectiveOptions(for: kind, preset: preset,
+                                                                  effective: ctx.runtime.effectiveFeatures)
             usesDefaultOptions = preset?.options == nil
         }
         let gateEvent: AwakeActivityGate.Event
@@ -163,6 +164,7 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         let life = (lifetime ?? ctx.host.lifetime).child()
         sessionLifetime = life
         activityGate = activityGate.applying(gateEvent)
+        reminders = AwakeReminders()
         if ui { guardMemory = guardMemory.clearingAssertionHold() }
         quietFor = nil
         quietSince = nil
@@ -180,9 +182,10 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
     /// Options passed in explicitly (CLI `--display-may-sleep`, Settings' Custom panel) clamped like a preset's.
     private func clamped(_ options: AwakeSessionOptions) -> AwakeSessionOptions {
         var o = options.sanitized()
-        if !effective.contains(.activity) {
+        let all = context?.runtime.effectiveFeatures ?? []
+        if !all.contains(.activity) {
             o.activity = .off
-        } else if o.activity == .nudge, !effective.contains(.pointerNudge) {
+        } else if o.activity == .nudge, !all.contains(.pointerNudge) {
             o.activity = .declare
         }
         return o
@@ -193,7 +196,7 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
     /// CLI `awake hold`: the binding was resolved server-side by AwakeAutomation; ProcessWatch is armed here and a
     /// failed arm refuses `.invalid`.
     func addHold(_ binding: HoldBinding, capSeconds: Int) -> Result<AwakeHold, AwakeRefusal> {
-        guard let ctx = context, let lifetime, effective.contains(.sessions) else {
+        guard let ctx = context, let lifetime, restored, effective.contains(.sessions) else {
             return .failure(.unavailable(.featureOff))
         }
         guard holds.count < AwakeHold.maxHolds else {
@@ -453,6 +456,7 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
             }
         }
         startAtLaunchIfNeeded()
+        evaluateGuards()
         arbitrate()
     }
 
@@ -481,7 +485,7 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
     /// One evaluation with live facts: on every power change (critical heat and the hard floor are evaluated here,
     /// whatever any feature says) and on GuardsController's re-check timer.
     func evaluateGuards() {
-        guard let ctx = context, lifetime != nil, let facts = ctx.power.facts else { return }
+        guard let ctx = context, lifetime != nil, restored, let facts = ctx.power.facts else { return }
         let now = AwakeModule.clockNow()
         let governing = AwakeArbiter.governing(manual: manual, top: ctx.triggers.top, holds: holds)
         let (verdict, memory) = AwakeGuards.evaluate(facts, previous: lastPower, config: ctx.config.value.guards,
@@ -517,7 +521,8 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
     /// the runtime state, the tick, reminders, the snapshot and the dynamic needs. Re-entrant calls run once more
     /// after the current one.
     func arbitrate() {
-        guard context != nil, lifetime != nil else { return }
+        // §2.1: nothing arbitrates before restore(_:) ran (AwakeModule calls it right after the first apply).
+        guard context != nil, lifetime != nil, restored else { return }
         if arbitrating {
             arbitrateAgain = true
             return
@@ -868,6 +873,7 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
     func availability(of feature: AwakeFeature, context: AwakeContext) -> FeatureAvailability { .available }
 
     func start(_ context: AwakeContext, lifetime: Lifetime, effective: Set<AwakeFeature>) {
+        guard self.lifetime == nil else { return }   // idempotent
         self.context = context
         self.lifetime = lifetime
         self.effective = effective

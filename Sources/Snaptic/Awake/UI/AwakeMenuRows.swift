@@ -237,7 +237,7 @@ import SnapticKit
         var input = AwakeDetailInput(governing: rt.governing, now: now)
         switch rt.governing {
         case .manual(let s):
-            input.endClock = AwakeClock.endWall(s, now: now).map(AwakeFormat.clock)
+            input.endClock = AwakeClock.endWall(s, now: now).map { AwakeFormat.clock($0) }
             if case .whileApp(let bundleID, _) = s.kind { input.appName = AwakeFormat.appName(bundleID) }
             if let next = ctx.triggers.top { input.nextRuleName = triggers.first { $0.id == next.id }?.displayName(AwakeFormat.text) }
             input.quietFor = ctx.sessions.quietFor

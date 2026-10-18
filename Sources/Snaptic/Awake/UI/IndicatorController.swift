@@ -109,7 +109,7 @@ import SnapticKit
         var endClock: String?
         var appName: String?
         if case .manual(let s) = governing {
-            endClock = AwakeClock.endWall(s, now: now).map(AwakeFormat.clock)
+            endClock = AwakeClock.endWall(s, now: now).map { AwakeFormat.clock($0) }
             if case .whileApp(let b, _) = s.kind { appName = AwakeFormat.appName(b) }
         }
         let title = AwakeIndicatorText.title(style: config.style, governing: governing, remaining: rt?.remaining,
@@ -155,6 +155,7 @@ import SnapticKit
     func availability(of feature: AwakeFeature, context: AwakeContext) -> FeatureAvailability { .available }
 
     func start(_ context: AwakeContext, lifetime: Lifetime, effective: Set<AwakeFeature>) {
+        guard sinks.isEmpty else { return }   // idempotent
         self.context = context
         rows.attach(context)
         let rt = context.runtime

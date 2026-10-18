@@ -52,6 +52,7 @@ import SnapticKit
     func availability(of feature: AwakeFeature, context: AwakeContext) -> FeatureAvailability { .available }
 
     func start(_ context: AwakeContext, lifetime: Lifetime, effective: Set<AwakeFeature>) {
+        guard self.lifetime == nil else { return }   // idempotent
         self.context = context
         self.lifetime = lifetime
         context.sessions.observeGuardNotices(lifetime) { [weak self] n in self?.notice(n) }
