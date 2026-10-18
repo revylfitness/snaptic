@@ -48,8 +48,6 @@ enum DisplayModes {
 
     // MARK: Hidden (CGS) modes
 
-    typealias CGSCurrentFn = @convention(c) (UInt32, UnsafeMutablePointer<Int32>) -> Void
-
     /// CGS modes, or nil when any record fails the sanity check (which disables the path).
     @MainActor static func hiddenList(_ id: CGDirectDisplayID, api: PrivateDisplayAPI) -> [DisplayModeDescriptor]? {
         guard let count = api.pointer(.cgsGetNumberOfDisplayModes), let describe = api.pointer(.cgsGetDisplayModeDescription),
@@ -63,11 +61,5 @@ enum DisplayModes {
             out.append(r.descriptor)
         }
         return out
-    }
-
-    @MainActor static func currentHiddenMode(_ id: CGDirectDisplayID, api: PrivateDisplayAPI) -> Int32? {
-        guard let fn = api.pointer(.cgsGetCurrentDisplayMode) else { return nil }
-        let n = SNCGSModes.currentMode(display: id, currentFunction: fn)
-        return n >= 0 ? n : nil
     }
 }
