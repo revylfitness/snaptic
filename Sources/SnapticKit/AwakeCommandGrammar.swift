@@ -188,15 +188,14 @@ package enum AwakeCommandGrammar {
     /// "active\t<manual|automatic|holds>\t<kind>\t<display policy>\t<ISO end or ->\t<remaining s or ->\t<hold count>".
     package static func statusLine(_ s: AwakeStatusFacts) -> String {
         guard s.active else { return "inactive" }
-        let fields = [
-            "active",
-            s.source?.rawValue ?? "-",
-            s.kind?.rawValue ?? "-",
-            s.display?.rawValue ?? "-",
-            s.endUnix.flatMap(isoUTC) ?? "-",
-            s.remaining.flatMap(wholeSeconds).map { "\($0)" } ?? "-",
-            "\(s.holdPIDs.count)",
-        ]
+        var fields: [String] = ["active"]
+        fields.append(s.source?.rawValue ?? "-")
+        fields.append(s.kind?.rawValue ?? "-")
+        fields.append(s.display?.rawValue ?? "-")
+        fields.append(s.endUnix.flatMap(isoUTC) ?? "-")
+        let remaining: Int? = s.remaining.flatMap(wholeSeconds)
+        fields.append(remaining.map { String($0) } ?? "-")
+        fields.append(String(s.holdPIDs.count))
         return fields.joined(separator: "\t")
     }
 
@@ -205,17 +204,19 @@ package enum AwakeCommandGrammar {
         func str(_ v: String?) -> String { v.map { "\"" + $0 + "\"" } ?? "null" }
         func num(_ v: Int?) -> String { v.map { "\($0)" } ?? "null" }
         let pids = s.holdPIDs.map { "\($0)" }.joined(separator: ",")
-        let parts = [
-            "\"active\":\(s.active ? "true" : "false")",
-            "\"source\":" + str(s.active ? s.source?.rawValue : nil),
-            "\"kind\":" + str(s.active ? s.kind?.rawValue : nil),
-            "\"display\":" + str(s.active ? s.display?.rawValue : nil),
-            "\"end\":" + str(s.active ? s.endUnix.flatMap(isoUTC) : nil),
-            "\"remaining\":" + num(s.active ? s.remaining.flatMap(wholeSeconds) : nil),
-            "\"rule\":" + num(s.active ? s.triggerNumber : nil),
-            "\"holds\":\(s.holdPIDs.count)",
-            "\"pids\":[" + pids + "]",
-        ]
+        let shown = s.active
+        var parts: [String] = []
+        parts.append("\"active\":" + (shown ? "true" : "false"))
+        parts.append("\"source\":" + str(shown ? s.source?.rawValue : nil))
+        parts.append("\"kind\":" + str(shown ? s.kind?.rawValue : nil))
+        parts.append("\"display\":" + str(shown ? s.display?.rawValue : nil))
+        let end: String? = shown ? s.endUnix.flatMap(isoUTC) : nil
+        parts.append("\"end\":" + str(end))
+        let remaining: Int? = shown ? s.remaining.flatMap(wholeSeconds) : nil
+        parts.append("\"remaining\":" + num(remaining))
+        parts.append("\"rule\":" + num(shown ? s.triggerNumber : nil))
+        parts.append("\"holds\":" + String(s.holdPIDs.count))
+        parts.append("\"pids\":[" + pids + "]")
         return "{" + parts.joined(separator: ",") + "}"
     }
 
@@ -256,7 +257,8 @@ package enum AwakeCommandGrammar {
         let year = yoe + era * 400 + (month <= 2 ? 1 : 0)
         func two(_ n: Int) -> String { n < 10 ? "0\(n)" : "\(n)" }
         func four(_ n: Int) -> String { String(repeating: "0", count: max(0, 4 - "\(n)".count)) + "\(n)" }
-        return four(year) + "-" + two(month) + "-" + two(day) + "T" + two(rem / 3_600) + ":" + two(rem % 3_600 / 60) + ":"
-            + two(rem % 60) + "Z"
+        let date = four(year) + "-" + two(month) + "-" + two(day)
+        let time = two(rem / 3_600) + ":" + two(rem % 3_600 / 60) + ":" + two(rem % 60)
+        return date + "T" + time + "Z"
     }
 }

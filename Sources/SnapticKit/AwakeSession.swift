@@ -147,11 +147,11 @@ package enum TaskQuiet {
         guard let top = s.topProcessPercent, let fresh = s.newProcesses, let total = s.totalCPUPercent,
               let disk = s.diskKBps, let net = s.networkKBps else { return true }
         guard top.isFinite, total.isFinite, disk.isFinite, net.isFinite else { return true }
-        return top >= Double(spec.topProcessPercent)
-            || fresh >= spec.newProcesses
-            || total >= Double(spec.totalCPUPercent)
-            || disk >= Double(spec.diskKBps)
-            || net >= Double(spec.networkKBps)
+        if top >= Double(spec.topProcessPercent) { return true }
+        if fresh >= spec.newProcesses { return true }
+        if total >= Double(spec.totalCPUPercent) { return true }
+        if disk >= Double(spec.diskKBps) { return true }
+        return net >= Double(spec.networkKBps)
     }
 
     /// quietSince: continuous instant of the first quiet sample in the current run (nil while busy). `started`: R5-4.

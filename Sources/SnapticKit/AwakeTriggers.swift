@@ -158,10 +158,17 @@ package enum AwakeCriterion: Equatable, Sendable {
         guard parts.count == 2, (2...45).contains(parts[0].utf8.count), (1...3).contains(parts[1].utf8.count) else {
             return false
         }
-        guard parts[0].utf8.allSatisfy({ (0x30...0x39).contains($0) || (0x61...0x66).contains($0)
-                                          || (0x41...0x46).contains($0) || $0 == 0x2E || $0 == 0x3A }) else { return false }
+        guard parts[0].utf8.allSatisfy(isAddressByte) else { return false }
         guard parts[1].utf8.allSatisfy({ (0x30...0x39).contains($0) }), let prefix = Int(parts[1]) else { return false }
         return (0...128).contains(prefix)
+    }
+
+    /// Hex digits, "." and ":".
+    private static func isAddressByte(_ b: UInt8) -> Bool {
+        switch b {
+        case 0x30...0x39, 0x41...0x46, 0x61...0x66, 0x2E, 0x3A: return true
+        default: return false
+        }
     }
 }
 
