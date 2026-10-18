@@ -439,8 +439,6 @@ final class DisplaysMenuPlanTests: XCTestCase {
         for legacy in ids {
             let found = homes[legacy] ?? []
             if removed.contains(legacy) {
-                // Fix round 1: G's f1 drops this home, the lead's f1 adds the removal; they land in either order.
-                if legacy.rawValue == "l.menu.d.sleepPrevention" { continue }
                 XCTAssertTrue(found.isEmpty, "\(legacy.rawValue) is removed but has \(found.map(\.id.rawValue))")
                 continue
             }
