@@ -96,7 +96,7 @@ struct SwitcherAdvancedSheet: View, ControlDeclaring {
             }
             if passthroughOn {
                 AppListEditor(L("Apps that keep the shortcut"),
-                              help: L("Useful for virtual machines and remote desktops. An entry like com.parallels also covers every app whose identifier starts with it."),
+                              help: L("Useful for virtual machines and remote desktops."),
                               bundleIDs: SwitcherBinding.config(settings, \.passthroughBundleIDs),
                               anchor: ControlID("switcher.advanced.passthroughApps"))
             }
@@ -140,12 +140,27 @@ struct SwitcherAdvancedSheet: View, ControlDeclaring {
 /// App names and pickers for app lists (AppListEditor; Awake's app sessions use AppChoice).
 @MainActor
 enum AppNames {
+    /// The app's name as Finder shows it; for an app that isn't installed, the name of a well-known one (the
+    /// default lists), else the identifier itself.
     static func name(for bundleID: String) -> String {
         if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
             return FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
         }
-        return bundleID
+        return knownNames[bundleID] ?? bundleID
     }
+
+    /// Names for the entries of the switcher's default lists (some are identifier prefixes, never installed as is).
+    static let knownNames: [String: String] = [
+        "com.parallels": "Parallels Desktop", "com.vmware.fusion": "VMware Fusion", "com.utmapp.UTM": "UTM",
+        "org.virtualbox.app.VirtualBoxVM": "VirtualBox", "com.microsoft.rdc": "Microsoft Remote Desktop",
+        "com.citrix.receiver": "Citrix Workspace", "com.omnissa.horizon": "Omnissa Horizon Client",
+        "com.vmware.horizon": "VMware Horizon Client", "com.apple.ScreenSharing": "Screen Sharing",
+        "com.teamviewer.TeamViewer": "TeamViewer", "com.p5sys.jump.mac.viewer": "Jump Desktop",
+        "com.1password.1password": "1Password", "com.agilebits.onepassword7": "1Password 7",
+        "com.bitwarden.desktop": "Bitwarden", "com.apple.Passwords": "Passwords", "com.apple.keychainaccess": "Keychain Access",
+        "in.sinew.Enpass-Desktop": "Enpass", "com.dashlane.dashlanephonefinal": "Dashlane", "com.lastpass.LastPass": "LastPass",
+        "org.torproject.torbrowser": "Tor Browser",
+    ]
 
     static func runningApps() -> [AppChoice] {
         let own = Bundle.main.bundleIdentifier

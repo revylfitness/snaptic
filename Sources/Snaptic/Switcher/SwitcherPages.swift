@@ -175,8 +175,6 @@ private struct SwitcherPageContent: View {
                                   anchor: ControlID("switcher.page.thumbnailSize"), subordinate: true)
                 }
             }
-        } header: {
-            Text(L("Shortcut"))
         } footer: {
             if !thumbnailsOn {
                 Text(L("To show thumbnails, turn on Window thumbnails in Advanced."))
@@ -247,22 +245,22 @@ struct ShortcutKeysPicker: View {
 
     /// A field of the primary shortcut.
     static func primary<V: Equatable>(_ settings: AppSettings, _ path: WritableKeyPath<Shortcut, V>) -> Binding<V> {
-        shortcut(settings, id: nil, path)
+        Self.shortcut(settings, id: nil, path)
     }
 
     /// A field of the shortcut with `id` (nil = the primary one). A shortcut that went away reads as a default one
     /// and ignores writes.
     static func shortcut<V: Equatable>(_ settings: AppSettings, id: UUID?, _ path: WritableKeyPath<Shortcut, V>) -> Binding<V> {
-        Binding(get: { primaryOr(settings, id: id, path) },
+        Binding(get: { Self.primaryOr(settings, id: id, path) },
                 set: { value in
-                    guard let index = index(settings, id: id), settings.config.shortcuts[index][keyPath: path] != value
+                    guard let index = Self.index(settings, id: id), settings.config.shortcuts[index][keyPath: path] != value
                     else { return }
                     settings.config.shortcuts[index][keyPath: path] = value
                 })
     }
 
     static func primaryOr<V>(_ settings: AppSettings, id: UUID?, _ path: KeyPath<Shortcut, V>) -> V {
-        guard let index = index(settings, id: id) else { return Shortcut()[keyPath: path] }
+        guard let index = Self.index(settings, id: id) else { return Shortcut()[keyPath: path] }
         return settings.config.shortcuts[index][keyPath: path]
     }
 
@@ -273,9 +271,9 @@ struct ShortcutKeysPicker: View {
 
     /// Changing the modifier keeps the key when it is allowed with it, and moves it to Tab when it isn't.
     static func modifier(_ settings: AppSettings, id: UUID?) -> Binding<ModifierKey> {
-        Binding(get: { primaryOr(settings, id: id, \.modifier) },
+        Binding(get: { Self.primaryOr(settings, id: id, \.modifier) },
                 set: { value in
-                    guard let index = index(settings, id: id) else { return }
+                    guard let index = Self.index(settings, id: id) else { return }
                     var shortcut = settings.config.shortcuts[index]
                     guard shortcut.modifier != value else { return }
                     shortcut.modifier = value
@@ -287,26 +285,26 @@ struct ShortcutKeysPicker: View {
     /// Style as the switcher shows it: Thumbnails reads as Icons while window thumbnails are off.
     static func style(_ settings: AppSettings, id: UUID?) -> Binding<SwitcherStyle> {
         Binding(get: {
-            let raw = primaryOr(settings, id: id, \.style).rawValue
+            let raw = Self.primaryOr(settings, id: id, \.style).rawValue
             let shown = SwitcherPageRules.effectiveStyle(raw, thumbnailsOn: settings.config.isOn(.thumbnails))
             return SwitcherStyle(rawValue: shown) ?? .icons
         }, set: { value in
             let enabled = SwitcherPageRules.styleChoiceEnabled(value.rawValue, thumbnailsOn: settings.config.isOn(.thumbnails))
             guard enabled else { return }
-            shortcut(settings, id: id, \.style).wrappedValue = value
+            Self.shortcut(settings, id: id, \.style).wrappedValue = value
         })
     }
 
     /// Spaces as the switcher uses them: the current Space only while Windows on other Spaces is off.
     static func spaces(_ settings: AppSettings, id: UUID?) -> Binding<SpacesFilter> {
         Binding(get: {
-            let raw = primaryOr(settings, id: id, \.spaces).rawValue
+            let raw = Self.primaryOr(settings, id: id, \.spaces).rawValue
             let shown = SwitcherPageRules.effectiveSpace(raw, otherSpacesOn: settings.config.isOn(.otherSpaces))
             return SpacesFilter(rawValue: shown) ?? .current
         }, set: { value in
             let enabled = SwitcherPageRules.spaceChoiceEnabled(value.rawValue, otherSpacesOn: settings.config.isOn(.otherSpaces))
             guard enabled else { return }
-            shortcut(settings, id: id, \.spaces).wrappedValue = value
+            Self.shortcut(settings, id: id, \.spaces).wrappedValue = value
         })
     }
 
@@ -348,7 +346,7 @@ struct ShortcutKeysPicker: View {
     /// Why a shortcut doesn't act, if it doesn't: another shortcut before it uses the same keys, or it uses ⌘
     /// while ⌘⇥ stays with macOS.
     static func note(_ settings: AppSettings, id: UUID?) -> String? {
-        guard let index = index(settings, id: id) else { return nil }
+        guard let index = Self.index(settings, id: id) else { return nil }
         let shortcuts = settings.config.shortcuts
         let shortcut = shortcuts[index]
         if shortcuts[..<index].contains(where: { $0.sameKeys(as: shortcut) }) {
