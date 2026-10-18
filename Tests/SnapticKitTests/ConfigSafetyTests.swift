@@ -56,6 +56,112 @@ final class ConfigSafetyTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(KeptModes.self, from: Data(json.utf8)).modes.count, 1)
     }
 
+    // MARK: M6 (0.3 §4.6): the shortcut row edits the 0.2 fields with their 0.2 meanings, no data migration
+
+    private let custom = HotkeyCombo(keyCode: 15, carbonModifiers: HotkeyRules.control | HotkeyRules.command)   // ⌃⌘R
+
+    func testM6NilKeepsTheDefaultAndItsFallback() {
+        let c = SafetyConfig()
+        XCTAssertNil(c.panicHotkey)
+        XCTAssertTrue(c.panicHotkeyEnabled)
+        XCTAssertEqual(c.panicShortcutState, .standard)
+        XCTAssertEqual(c.panicShortcutShown, SafetyConfig.defaultPanicHotkey)
+        XCTAssertEqual(c.panicHotkeys(longArmed: false), [SafetyConfig.defaultPanicHotkey, SafetyConfig.fallbackPanicHotkey])
+        XCTAssertEqual(c.panicHotkeys(longArmed: true), c.panicHotkeys(longArmed: false))
+        // A stored combo equal to the default is the default (with its fallback), not a custom shortcut.
+        var same = c
+        same.panicHotkey = SafetyConfig.defaultPanicHotkey
+        XCTAssertEqual(same.panicShortcutState, .standard)
+        XCTAssertEqual(same.panicHotkeys(longArmed: false), c.panicHotkeys(longArmed: false))
+    }
+
+    func testM6FalseDisablesEveryShortcut() {
+        var c = SafetyConfig()
+        c.panicHotkeyEnabled = false
+        XCTAssertEqual(c.panicShortcutState, .off)
+        XCTAssertNil(c.panicShortcutShown)
+        XCTAssertEqual(c.panicHotkeys(longArmed: false), [], "no default, no fallback")
+        c.panicHotkey = custom
+        XCTAssertEqual(c.panicShortcutState, .off, "a stored custom combo doesn't turn it back on")
+        XCTAssertEqual(c.panicHotkeys(longArmed: false), [])
+        // While a long-armed state exists the shortcut stays registered, whatever the setting (0.2 §4.7).
+        XCTAssertEqual(c.panicHotkeys(longArmed: true),
+                       [custom, SafetyConfig.defaultPanicHotkey, SafetyConfig.fallbackPanicHotkey])
+    }
+
+    func testM6RecordingClearingAndUseDefault() {
+        let base = SafetyConfig()
+        let recorded = base.settingPanicShortcut(custom)
+        XCTAssertEqual(recorded.panicHotkey, custom)
+        XCTAssertTrue(recorded.panicHotkeyEnabled)
+        XCTAssertEqual(recorded.panicShortcutState, .custom(custom))
+        XCTAssertEqual(recorded.panicShortcutShown, custom)
+        XCTAssertEqual(recorded.panicHotkeys(longArmed: false),
+                       [custom, SafetyConfig.defaultPanicHotkey, SafetyConfig.fallbackPanicHotkey], "custom is tried first")
+
+        // Recording the default stores nil (so the fallback stays behind it).
+        XCTAssertNil(recorded.settingPanicShortcut(SafetyConfig.defaultPanicHotkey).panicHotkey)
+        XCTAssertEqual(recorded.settingPanicShortcut(SafetyConfig.defaultPanicHotkey).panicShortcutState, .standard)
+
+        // Clear = the 0.2 switch off: the custom combo stays stored, untouched.
+        let cleared = recorded.settingPanicShortcut(nil)
+        XCTAssertFalse(cleared.panicHotkeyEnabled)
+        XCTAssertEqual(cleared.panicHotkey, custom)
+        XCTAssertEqual(cleared.panicShortcutState, .off)
+
+        // Recording again after Clear turns it back on.
+        XCTAssertEqual(cleared.settingPanicShortcut(custom).panicShortcutState, .custom(custom))
+
+        // Use Default: nil and on, from either state.
+        for start in [recorded, cleared] {
+            let d = start.usingDefaultPanicShortcut()
+            XCTAssertNil(d.panicHotkey)
+            XCTAssertTrue(d.panicHotkeyEnabled)
+            XCTAssertEqual(d.panicShortcutState, .standard)
+        }
+
+        // A combo macOS can't register changes nothing.
+        XCTAssertEqual(base.settingPanicShortcut(HotkeyCombo(keyCode: 15, carbonModifiers: 0)), base)
+        XCTAssertEqual(base.settingPanicShortcut(HotkeyCombo(keyCode: 15, carbonModifiers: HotkeyRules.option)), base)
+        XCTAssertEqual(base.settingPanicShortcut(HotkeyCombo(keyCode: 200, carbonModifiers: HotkeyRules.command)), base)
+        // Stray modifier bits are dropped, so the stored combo compares equal to a registered one.
+        let noisy = HotkeyCombo(keyCode: 15, carbonModifiers: custom.carbonModifiers | 0x0080)
+        XCTAssertEqual(base.settingPanicShortcut(noisy).panicHotkey, custom)
+    }
+
+    func testM6WritesOnlyThe02FieldsAndRoundTrips() throws {
+        let states = [SafetyConfig(), SafetyConfig().settingPanicShortcut(custom),
+                      SafetyConfig().settingPanicShortcut(custom).settingPanicShortcut(nil),
+                      SafetyConfig().settingPanicShortcut(nil)]
+        let keys: Set<String> = ["confirmResolution", "confirmSeconds", "panicHotkeyEnabled", "panicHotkey",
+                                 "announceRecovery", "preConfirmAllowed", "keptModes"]
+        for c in states {
+            let data = try JSONEncoder().encode(c)
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            XCTAssertTrue(Set(object.keys).isSubset(of: keys), "no new keys: \(object.keys.sorted())")
+            let back = try JSONDecoder().decode(SafetyConfig.self, from: data).sanitized()
+            XCTAssertEqual(back, c)
+            XCTAssertEqual(back.panicShortcutState, c.panicShortcutState)
+        }
+        // 0.2 files mean the same in 0.3.
+        let off = try JSONDecoder().decode(SafetyConfig.self, from: Data(#"{"panicHotkeyEnabled":false}"#.utf8))
+        XCTAssertEqual(off.panicShortcutState, .off)
+        let json = #"{"panicHotkey":{"keyCode":15,"carbonModifiers":\#(custom.carbonModifiers)}}"#
+        let mine = try JSONDecoder().decode(SafetyConfig.self, from: Data(json.utf8))
+        XCTAssertEqual(mine.panicShortcutState, .custom(custom))
+    }
+
+    func testAllowedWithoutAskingDescriptions() {
+        XCTAssertEqual(PreConfirmAllowList.describe("60:0011"), "Input source: HDMI 1")
+        XCTAssertEqual(PreConfirmAllowList.describe("d6:0004"), "Power mode: Off")
+        XCTAssertEqual(PreConfirmAllowList.describe("d6:0002"), "Power mode: Standby")
+        XCTAssertEqual(PreConfirmAllowList.describe("10:0032"), "Brightness: 50")
+        XCTAssertNil(PreConfirmAllowList.describe("zz:1"))
+        XCTAssertNil(PreConfirmAllowList.describe("60:11"))
+        let list = PreConfirmAllowList(entries: ["60:0011", "bad", "60:000f"])
+        XCTAssertEqual(list.descriptions, ["Input source: HDMI 1", "Input source: DisplayPort 1"])
+    }
+
     func testCustomPanicHotkeyComesFirst() {
         var c = SafetyConfig()
         c.panicHotkey = HotkeyCombo(keyCode: 12, carbonModifiers: 0x1100)
