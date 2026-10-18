@@ -88,6 +88,19 @@ final class KitHookPolicyTests: XCTestCase {
         XCTAssertFalse(KitHookPolicy.isInside("/usr/bin/true", bundle: ""))
     }
 
+    func testInsideFoldedIgnoresCaseNormalizationAndSlashes() {
+        let bundle = "/Applications/Snaptic.app"
+        XCTAssertTrue(KitHookPolicy.isInsideFolded("/applications/SNAPTIC.APP/Contents/MacOS/Snaptic", bundle: bundle))
+        XCTAssertTrue(KitHookPolicy.isInsideFolded("//Applications//Snaptic.app/", bundle: bundle + "/"))
+        XCTAssertFalse(KitHookPolicy.isInsideFolded("/Applications/Snaptic.appx/tool", bundle: bundle))
+        XCTAssertFalse(KitHookPolicy.isInsideFolded("/usr/bin/true", bundle: ""))
+        XCTAssertFalse(KitHookPolicy.isInsideFolded("/usr/bin/true", bundle: "/"))
+        // "é" precomposed vs. "e" + combining acute.
+        XCTAssertTrue(KitHookPolicy.isInsideFolded("/Users/Ren\u{00E9}/Snaptic.app/x", bundle: "/Users/Rene\u{0301}/Snaptic.app"))
+        XCTAssertEqual(KitHookPolicy.folded("/A//B/"), "/a/b")
+        XCTAssertEqual(KitHookPolicy.folded("/"), "/")
+    }
+
     func testEnvironmentIsMinimalAndClean() {
         let key = DisplayKey(rawValue: String(repeating: "0f", count: 16))!
         let env = KitHookPolicy.environment(event: .connect, displayName: "Studio\u{202E}Display", displayKey: key)
@@ -110,7 +123,8 @@ final class KitHookPolicyTests: XCTestCase {
     func testEveryRefusalHasAMessage() {
         let all: [HookRefusal] = [.notAbsolute, .tooLong, .badCharacters, .dotComponent, .missing("/x"), .symlink("/x"),
                                   .badOwner("/x"), .writableByOthers("/x"), .notDirectory("/x"), .notRegularFile,
-                                  .notExecutable, .insideSnaptic, .snapticIdentity, .tooManyArguments, .argumentTooLong]
+                                  .notExecutable, .insideSnaptic, .snapticIdentity, .identityUnreadable, .tooManyArguments,
+                                  .argumentTooLong]
         for r in all { XCTAssertFalse(r.message.isEmpty) }
     }
 }

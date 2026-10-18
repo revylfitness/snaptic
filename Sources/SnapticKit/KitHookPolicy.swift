@@ -38,6 +38,8 @@ package enum HookRefusal: Error, Equatable, Sendable {
     case notExecutable
     case insideSnaptic
     case snapticIdentity
+    /// The code signature (ours or the started program's) couldn't be read: fail closed.
+    case identityUnreadable
     case tooManyArguments
     case argumentTooLong
 
@@ -56,6 +58,7 @@ package enum HookRefusal: Error, Equatable, Sendable {
         case .notExecutable: return L("Isn't executable (chmod +x).")
         case .insideSnaptic: return L("Snaptic's own files can't be run as hooks or actions.")
         case .snapticIdentity: return L("Programs signed as Snaptic can't be run as hooks or actions.")
+        case .identityUnreadable: return L("Snaptic couldn't check the program's code signature, so it didn't run it.")
         case .tooManyArguments: return L("At most 8 arguments.")
         case .argumentTooLong: return L("An argument is too long.")
         }
@@ -126,6 +129,33 @@ package enum KitHookPolicy {
         guard !bundle.isEmpty else { return false }
         let base = bundle.hasSuffix("/") ? String(bundle.dropLast()) : bundle
         return path == base || path.hasPrefix(base + "/")
+    }
+
+    /// `isInside` for paths that went through realpath, compared the way the default
+    /// (case- and normalization-insensitive) APFS volume does: "/applications/SNAPTIC.app/…"
+    /// is inside "/Applications/Snaptic.app". Repeated slashes are ignored.
+    package static func isInsideFolded(_ path: String, bundle: String) -> Bool {
+        let b = folded(bundle)
+        guard !b.isEmpty, b != "/" else { return false }
+        return isInside(folded(path), bundle: b)
+    }
+
+    /// Lowercased, NFC, with runs of "/" collapsed and no trailing "/".
+    package static func folded(_ path: String) -> String {
+        let lowered = path.precomposedStringWithCanonicalMapping.lowercased()
+        var out = ""
+        var lastSlash = false
+        for ch in lowered {
+            if ch == "/" {
+                if lastSlash { continue }
+                lastSlash = true
+            } else {
+                lastSlash = false
+            }
+            out.append(ch)
+        }
+        if out.count > 1 && out.hasSuffix("/") { out.removeLast() }
+        return out
     }
 
     /// The whole environment a hook gets: a fixed PATH and the event facts. Nothing

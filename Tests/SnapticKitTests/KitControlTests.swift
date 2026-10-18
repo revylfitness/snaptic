@@ -99,6 +99,9 @@ final class KitControlTests: XCTestCase {
                        "autodisconnectbuiltin")
         XCTAssertEqual(KitControl.protectedSetting(verb: "module", arguments: ["cli"]), "cli")
         XCTAssertNil(KitControl.protectedSetting(verb: "set", arguments: ["brightness", "50"]))
+        XCTAssertEqual(KitControl.protectedSetting(verb: "feature disable", arguments: ["sleep-prevention"]), "sleepprevention")
+        XCTAssertEqual(KitControl.protectedSetting(verb: "set", arguments: ["prevent_sleep", "on"]), "preventsleep")
+        XCTAssertEqual(KitControl.protectedSetting(verb: "toggle", arguments: ["SleepPrevention"]), "sleepprevention")
         XCTAssertNil(KitControl.protectedSetting(verb: "disconnect", arguments: ["main"]))   // an action, not a setting
         // The host's `feature disable` verb: protected features stay untouchable even off.
         XCTAssertEqual(KitControl.protectedSetting(verb: "feature disable", arguments: ["disconnect"]), "disconnect")

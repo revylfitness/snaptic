@@ -32,7 +32,7 @@ package enum KitBackup {
     package static let sections = [switcherSection, modulesSection, displaysSection]
 
     /// Removed from exports and from imports: hooks, actions, CLI settings, onboarding
-    /// progress, and the sensitive Displays toggles.
+    /// progress, and the sensitive Displays toggles. "*" matches any one key (a display).
     package static let removedPaths: [[String]] = [
         [modulesSection, "commandLine"],
         [modulesSection, "onboarding"],
@@ -44,13 +44,46 @@ package enum KitBackup {
         [displaysSection, "features", "sleepPrevention"],
         [displaysSection, "features", "hooks"],
         [displaysSection, "features", "customActions"],
+        // Safety switches a file must never flip (FIXES-R1 A2).
+        [displaysSection, "management", "autoDisconnectWithoutDDC"],
+        [displaysSection, "perDisplay", "*", "management", "preventSleep"],
+        [displaysSection, "perDisplay", "*", "management", "ignoreForAutoDisconnect"],
+        [displaysSection, "color", "allowGammaWithCustomProfile"],
+    ]
+
+    /// Lists an import may only add to, never shrink: the result is current ∪ imported
+    /// (current entries first), so a backup can't unprotect an app from captures.
+    package static let unionPaths: [[String]] = [
+        [displaysSection, "pip", "protectedBundlePrefixes"],
+    ]
+
+    /// Changes the import preview lists first and in full ("*" = any one key; a pattern
+    /// matches the path and everything under it).
+    package static let safetyPaths: [[String]] = [
+        [modulesSection],
+        [displaysSection, "features"],
+        [displaysSection, "safety"],
+        [displaysSection, "management"],
+        [displaysSection, "perDisplay", "*", "management"],
+        [displaysSection, "ddc"],
+        [displaysSection, "perDisplay", "*", "ddc"],
+        [displaysSection, "color"],
+        [displaysSection, "perDisplay", "*", "color"],
+        [displaysSection, "resolution"],
+        [displaysSection, "perDisplay", "*", "resolution"],
+        [displaysSection, "brightness", "dimOnLockLevel"],
+        [displaysSection, "perDisplay", "*", "brightness", "minHardware"],
+        [displaysSection, "layouts"],
+        [displaysSection, "virtualScreens"],
+        [displaysSection, "pip", "protectedBundlePrefixes"],
     ]
 
     /// Keys removed at any depth (case-insensitive substrings): the DisplayKey salt, DDC
-    /// unlocks, "Allow without asking" flags, preset trust and anything secret. Teams name
-    /// such fields with one of these words.
+    /// unlocks, every "allow…" flag ("Allow without asking", gamma with a custom profile,
+    /// modes below 720p), preset trust and anything secret. Teams name such fields with one
+    /// of these words.
     package static let sensitiveKeyFragments = [
-        "salt", "trust", "unlock", "allowwithoutasking", "preconfirmallow", "secret", "token",
+        "salt", "trust", "unlock", "allow", "secret", "token",
     ]
 
     package static func isSensitive(_ key: String) -> Bool {
@@ -97,14 +130,40 @@ package enum KitBackup {
     }
 
     /// `imported` laid over `current`: objects merge key by key, anything else (numbers,
-    /// strings, arrays) is replaced. Fields the import doesn't carry keep their current
-    /// value, which is how stripped fields survive an import.
-    package static func merge(current: Data, imported: Data) -> Data? {
+    /// strings, arrays) is replaced, except `unionPaths` of `section`, which only grow.
+    /// Fields the import doesn't carry keep their current value, which is how stripped
+    /// fields survive an import.
+    package static func merge(current: Data, imported: Data, section: String? = nil) -> Data? {
         guard let base = try? JSONSerialization.jsonObject(with: current),
               let overlay = try? JSONSerialization.jsonObject(with: imported) else { return nil }
-        let merged = deepMerge(base, overlay)
+        var merged = deepMerge(base, overlay)
+        if let section {
+            for path in unionPaths where path.first == section {
+                merged = unite(Array(path.dropFirst()), current: base, merged: merged)
+            }
+        }
         guard JSONSerialization.isValidJSONObject(merged) else { return nil }
         return try? JSONSerialization.data(withJSONObject: merged, options: [.sortedKeys])
+    }
+
+    /// The preview's lines for one section: safety-related changes (all of them) and the
+    /// rest (at most `limit`), each sorted, as dotted paths below the section.
+    package static func previewChanges(section: String, from old: Data, to new: Data,
+                                       limit: Int = 50) -> (safety: [String], other: [String]) {
+        let all = changedPaths(from: old, to: new, limit: Int.max)
+        let safety = all.filter { isSafetyRelated(section: section, path: $0) }
+        let other = all.filter { !isSafetyRelated(section: section, path: $0) }
+        return (safety, Array(other.prefix(limit)))
+    }
+
+    /// Whether a dotted path inside `section` falls under `safetyPaths`.
+    package static func isSafetyRelated(section: String, path: String) -> Bool {
+        // A whole section replaced: safety-related if anything in it is.
+        if path == "(all)" { return safetyPaths.contains { $0.first == section } }
+        let parts = [section] + path.split(separator: ".").map(String.init)
+        return safetyPaths.contains { pattern in
+            pattern.count <= parts.count && zip(pattern, parts).allSatisfy { $0 == "*" || $0 == $1 }
+        }
     }
 
     /// Dotted paths of leaves that differ between two JSON documents, sorted, at most `limit`.
@@ -138,10 +197,36 @@ package enum KitBackup {
 
     private static func remove(_ path: [String], from object: Any) -> Any {
         guard let first = path.first, var dict = object as? [String: Any] else { return object }
-        if path.count == 1 {
+        if first == "*" {
+            if path.count == 1 { return [String: Any]() }
+            for (key, child) in dict { dict[key] = remove(Array(path.dropFirst()), from: child) }
+        } else if path.count == 1 {
             dict[first] = nil
         } else if let child = dict[first] {
             dict[first] = remove(Array(path.dropFirst()), from: child)
+        }
+        return dict
+    }
+
+    /// At `path`, `merged` gets current's array plus the merged array's new entries.
+    private static func unite(_ path: [String], current: Any?, merged: Any) -> Any {
+        guard let first = path.first else {
+            guard let had = current as? [Any] else { return merged }
+            guard let now = merged as? [Any] else { return had }
+            var seen = Set(had.compactMap { canonical($0) })
+            var out = had
+            for item in now {
+                guard let key = canonical(item) else { continue }
+                if seen.insert(key).inserted { out.append(item) }
+            }
+            return out
+        }
+        guard var dict = merged as? [String: Any] else { return merged }
+        let currentChild = (current as? [String: Any])?[first]
+        if let child = dict[first] {
+            dict[first] = unite(Array(path.dropFirst()), current: currentChild, merged: child)
+        } else if let currentChild {
+            dict[first] = currentChild
         }
         return dict
     }

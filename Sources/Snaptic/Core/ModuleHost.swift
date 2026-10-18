@@ -281,7 +281,8 @@ import SnapticKit
             .ok(self?.safeMode.isActive == true ? "on" : "off")
         }
         commands.register("list", policy: .read, offOnly: false, cliAllowed: true,
-                          summary: L("List the displays (key, name, state)"), lifetime: lifetime) { [weak self] request in
+                          summary: L("List the displays (number, key, name, size, state)"),
+                          lifetime: lifetime) { [weak self] request in
             self?.listDisplays(json: request.json) ?? .failure(ControlExit.unavailable, "")
         }
         commands.register("features", policy: .read, offOnly: false, cliAllowed: true,
@@ -295,29 +296,34 @@ import SnapticKit
         }
     }
 
-    /// `snaptic list`: names, keys and states only (no serials, EDID or window data).
+    /// `snaptic list`: numbers, names, keys and states only (no serials, EDID or window
+    /// data). The number is the one bare CLI selectors and Identify use: the order of
+    /// `DisplaySelectorResolver.ordered` (menu order, hidden displays included).
     private func listDisplays(json: Bool) -> ControlResponse {
-        guard isRunning(.displays) else {
+        guard isRunning(.displays), let ctx = displays.pageEnvironment.context else {
             return .failure(ControlExit.unavailable, L("The Displays module is off."))
         }
-        let list = self.displays.runtime.displays.sorted { ($0.isMain ? 0 : 1, $0.name) < ($1.isMain ? 0 : 1, $1.name) }
+        let list = DisplaySelectorResolver.ordered(ctx)
+        let hidden = Set(ctx.config.value.menu.hiddenDisplays)
         if json {
-            let rows: [[String: Any]] = list.map { d in
-                ["key": d.key.rawValue, "name": d.name, "main": d.isMain, "builtin": d.isBuiltin, "online": d.isOnline,
-                 "active": d.isActive, "width": Int(d.bounds.width), "height": Int(d.bounds.height)]
+            let rows: [[String: Any]] = list.enumerated().map { index, d in
+                ["number": index + 1, "key": d.key.rawValue, "name": d.name, "main": d.isMain, "builtin": d.isBuiltin,
+                 "online": d.isOnline, "active": d.isActive, "hiddenInMenu": hidden.contains(d.key),
+                 "width": Int(d.bounds.width), "height": Int(d.bounds.height)]
             }
             let data = (try? JSONSerialization.data(withJSONObject: rows, options: [.sortedKeys])) ?? Data("[]".utf8)
             return .ok(String(decoding: data, as: UTF8.self))
         }
         guard !list.isEmpty else { return .ok(L("No displays.")) }
-        return .ok(list.map { d -> String in
+        return .ok(list.enumerated().map { index, d -> String in
             var flags: [String] = []
             if d.isMain { flags.append("main") }
             if d.isBuiltin { flags.append("built-in") }
             if !d.isActive { flags.append("off") }
             if d.mirrorOf != nil { flags.append("mirroring") }
+            if hidden.contains(d.key) { flags.append("hidden") }
             let size = String(Int(d.bounds.width)) + "x" + String(Int(d.bounds.height))
-            return [d.key.rawValue, d.name, size, flags.joined(separator: ",")].joined(separator: "\t")
+            return [String(index + 1), d.key.rawValue, d.name, size, flags.joined(separator: ",")].joined(separator: "\t")
         }.joined(separator: "\n"))
     }
 

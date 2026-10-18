@@ -47,18 +47,26 @@ import SnapticKit
             status = .failed(L("Snaptic couldn't create a private folder for its socket."))
             return
         }
-        let listener = ControlListener(path: path) { [weak self] request, reply in
+        let listener = ControlListener(path: path) { [weak self] request, cancellation, reply in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self else {
                         reply(.failure(ControlExit.unavailable, L("Snaptic is quitting.")))
                         return
                     }
+                    guard !cancellation.isCancelled else {
+                        reply(.failure(ControlExit.cancelled, ""))
+                        return
+                    }
                     let allowed = self.skipConfirmationAllowed()
                     let registry = self.registry
-                    Task { @MainActor in
-                        reply(await registry.dispatch(request, skipConfirmationAllowed: allowed))
+                    // The reply (which frees the connection's slot) is sent when the handler
+                    // returns, also after the client went away and cancelled the task.
+                    let task = Task { @MainActor in
+                        let response = await registry.dispatch(request, skipConfirmationAllowed: allowed)
+                        reply(Task.isCancelled ? .failure(ControlExit.cancelled, L("Cancelled.")) : response)
                     }
+                    cancellation.attach(task)
                 }
             }
         }
@@ -94,12 +102,43 @@ import SnapticKit
     }
 }
 
+/// Lets a connection cancel its request's handler task when the client goes away (the
+/// task is created later, on main). Thread-safe.
+final class ControlCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+    private var task: Task<Void, Never>?
+
+    var isCancelled: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return cancelled
+    }
+
+    func attach(_ task: Task<Void, Never>) {
+        lock.lock()
+        let already = cancelled
+        if !already { self.task = task }
+        lock.unlock()
+        if already { task.cancel() }
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        let task = self.task
+        self.task = nil
+        lock.unlock()
+        task?.cancel()
+    }
+}
+
 /// The listening socket and its connections; everything here runs on one serial queue.
 private final class ControlListener: @unchecked Sendable {
     typealias Reply = @Sendable (ControlResponse) -> Void
+    typealias Handler = @Sendable (ControlRequest, ControlCancellation, @escaping Reply) -> Void
 
     private let path: String
-    private let handle: @Sendable (ControlRequest, @escaping Reply) -> Void
+    private let handle: Handler
     private let queue = DispatchQueue(label: "app.snaptic.control")
     private var source: DispatchSourceRead?
     private var listenFD: Int32 = -1
@@ -107,7 +146,7 @@ private final class ControlListener: @unchecked Sendable {
     private var rate = ControlRateWindow(limit: KitControl.maxRequestsPerSecond, window: 1)
     private var connections: [ObjectIdentifier: ControlConnection] = [:]
 
-    init(path: String, handle: @escaping @Sendable (ControlRequest, @escaping Reply) -> Void) {
+    init(path: String, handle: @escaping Handler) {
         self.path = path
         self.handle = handle
     }
@@ -165,8 +204,7 @@ private final class ControlListener: @unchecked Sendable {
         queue.async { [self] in
             source?.cancel()
             source = nil
-            for connection in connections.values { connection.finish() }
-            connections = [:]
+            for connection in connections.values { connection.abandon() }
         }
     }
 
@@ -207,18 +245,24 @@ private final class ControlListener: @unchecked Sendable {
 }
 
 /// One client: read one line (≤ 64 KB, within 2 s), answer once, close. Queue only.
+/// The connection's slot stays taken until its handler has returned, even if the client
+/// hung up first (that cancels the handler's task), so a client can't start more than 4
+/// handlers by connecting and leaving.
 private final class ControlConnection: @unchecked Sendable {
     private let fd: Int32
     private let queue: DispatchQueue
-    private let handle: @Sendable (ControlRequest, @escaping @Sendable (ControlResponse) -> Void) -> Void
+    private let handle: ControlListener.Handler
     private var source: DispatchSourceRead?
     private var buffer = Data()
     private var gotRequest = false
+    /// The socket is closed (replied, timed out, client gone or server stopped).
     private var finished = false
+    /// A handler runs and hasn't replied yet.
+    private var inFlight = false
+    private var cancellation: ControlCancellation?
     private var onFinish: (() -> Void)?
 
-    init(fd: Int32, queue: DispatchQueue,
-         handle: @escaping @Sendable (ControlRequest, @escaping @Sendable (ControlResponse) -> Void) -> Void) {
+    init(fd: Int32, queue: DispatchQueue, handle: @escaping ControlListener.Handler) {
         self.fd = fd
         self.queue = queue
         self.handle = handle
@@ -244,7 +288,12 @@ private final class ControlConnection: @unchecked Sendable {
         var chunk = [UInt8](repeating: 0, count: 8_192)
         let n = chunk.withUnsafeMutableBytes { raw in read(fd, raw.baseAddress, raw.count) }
         if n < 0 && (errno == EAGAIN || errno == EINTR) { return }
-        guard n > 0 else { finish(); return }   // EOF or error: the client is gone
+        guard n > 0 else {
+            // EOF or error: the client is gone; a running handler is cancelled.
+            cancellation?.cancel()
+            finish()
+            return
+        }
         guard !gotRequest else { return }       // one request per connection; extra bytes are ignored
         buffer.append(contentsOf: chunk[0..<n])
         if let newline = buffer.firstIndex(of: 0x0A) {
@@ -254,9 +303,17 @@ private final class ControlConnection: @unchecked Sendable {
             case .failure(let response):
                 reply(response)
             case .success(let request):
-                handle(request) { [weak self] response in
-                    guard let self else { return }
-                    self.queue.async { self.reply(response) }
+                let token = ControlCancellation()
+                cancellation = token
+                inFlight = true
+                handle(request, token) { [self] response in
+                    // Strong: the slot is only released by this reply.
+                    queue.async { [self] in
+                        inFlight = false
+                        cancellation = nil
+                        reply(response)
+                        releaseIfDone()
+                    }
                 }
             }
         } else if buffer.count > KitControl.maxMessageBytes {
@@ -269,6 +326,14 @@ private final class ControlConnection: @unchecked Sendable {
         guard !finished else { return }
         Self.sendOnce(fd, response)
         finish()
+    }
+
+    /// Frees the slot once the socket is closed and no handler is running.
+    private func releaseIfDone() {
+        guard finished, !inFlight else { return }
+        let done = onFinish
+        onFinish = nil
+        done?()
     }
 
     /// Writes one reply line, waiting at most 2 s for the client to take it.
@@ -290,7 +355,8 @@ private final class ControlConnection: @unchecked Sendable {
         }
     }
 
-    /// Idempotent: closes the socket and frees the slot.
+    /// Idempotent: closes the socket; the slot is freed now, or when a running handler
+    /// returns.
     func finish() {
         guard !finished else { return }
         finished = true
@@ -300,8 +366,12 @@ private final class ControlConnection: @unchecked Sendable {
             close(fd)
         }
         source = nil
-        let done = onFinish
-        onFinish = nil
-        done?()
+        releaseIfDone()
+    }
+
+    /// Server stop: the handler is cancelled and the slot freed when it returns.
+    func abandon() {
+        cancellation?.cancel()
+        finish()
     }
 }

@@ -1,94 +1,216 @@
 import Foundation
 
-/// The only way to write to a helper's stdin (R3C §5.1). Owns a CLOEXEC duplicate of
-/// the descriptor, never blocks the caller, coalesces heartbeats, and reports a broken
-/// pipe once, on main.
+/// The only way to write to a helper's stdin (R3C §5.1). Owns a CLOEXEC, non-blocking
+/// duplicate of the descriptor, never blocks the caller, coalesces heartbeats, and reports
+/// a broken pipe once, on main. A reader that stops reading can't make Snaptic buffer
+/// without bound: more than `maxQueuedBytes` waiting counts as a broken pipe.
 final class HelperPipeWriter: @unchecked Sendable {
+    /// Bytes that may wait for a slow reader before the pipe counts as broken.
+    static let maxQueuedBytes = 1 << 20
+
+    private struct Chunk {
+        let data: Data
+        let isHeartbeat: Bool
+    }
+
     private let fd: Int32
     private let queue = DispatchQueue(label: "app.snaptic.helper-writer")
+    /// Guards everything below. Writes are non-blocking, so holding it across one is short.
     private let lock = NSLock()
     /// False once close() is called: new sends are refused, queued ones still go out.
     private var accepting = true
     private var closed = false
     private var broken = false
-    private var heartbeatQueued = false
+    private var chunks: [Chunk] = []
+    /// Bytes of `chunks[0]` already written.
+    private var offset = 0
+    private var queuedBytes = 0
+    /// Fires while the pipe is full and something waits; suspended otherwise.
+    private var writeSource: DispatchSourceWrite?
+    private var sourceRunning = false
+    private var drainWaiters: [DispatchSemaphore] = []
     private let onBroken: @Sendable () -> Void
 
-    /// Takes its own duplicate; the caller closes the original right away.
+    /// Takes its own duplicate; the caller closes the original right away. The duplicate
+    /// shares the open file description, so the original becomes non-blocking too.
     init?(duplicating original: Int32, onBroken: @escaping @Sendable () -> Void) {
         let d = fcntl(original, F_DUPFD_CLOEXEC, 3)
         guard d >= 0 else { return nil }
         _ = fcntl(d, F_SETNOSIGPIPE, 1)
+        let flags = fcntl(d, F_GETFL)
+        guard flags >= 0, fcntl(d, F_SETFL, flags | O_NONBLOCK) == 0 else {
+            _ = Darwin.close(d)
+            return nil
+        }
         fd = d
         self.onBroken = onBroken
     }
 
+    /// Bytes waiting to be written (diagnostics, tests).
+    var pendingBytes: Int {
+        lock.lock(); defer { lock.unlock() }
+        return queuedBytes
+    }
+
+    var isBroken: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return broken
+    }
+
     func send(_ line: Data, isHeartbeat: Bool = false) {
+        var payload = line
+        if payload.last != 0x0A { payload.append(0x0A) }
         lock.lock()
-        if !accepting || broken || (isHeartbeat && heartbeatQueued) {
+        if !accepting || broken {
             lock.unlock()
             return
         }
-        if isHeartbeat { heartbeatQueued = true }
-        lock.unlock()
-
-        queue.async { [self] in
-            if isHeartbeat {
-                lock.lock(); heartbeatQueued = false; lock.unlock()
-            }
-            lock.lock()
-            let skip = broken
+        // A heartbeat that hasn't started going out yet says the same as a new one.
+        if isHeartbeat && chunks.indices.contains(where: { chunks[$0].isHeartbeat && !($0 == 0 && offset > 0) }) {
             lock.unlock()
-            if skip { return }
-            var payload = line
-            if payload.last != 0x0A { payload.append(0x0A) }
-            let ok = payload.withUnsafeBytes { raw -> Bool in
-                guard let base = raw.baseAddress else { return true }
-                var offset = 0
-                while offset < raw.count {
-                    let n = Darwin.write(fd, base + offset, raw.count - offset)
-                    if n > 0 {
-                        offset += n
-                    } else if n < 0 && errno == EINTR {
-                        continue
-                    } else {
-                        return false
-                    }
-                }
-                return true
-            }
-            if !ok {
-                lock.lock()
-                let first = !broken
-                broken = true
-                lock.unlock()
-                if first { DispatchQueue.main.async(execute: onBroken) }
-            }
+            return
         }
+        if queuedBytes + payload.count > Self.maxQueuedBytes {
+            let first = markBrokenLocked()
+            lock.unlock()
+            if first { DispatchQueue.main.async(execute: onBroken) }
+            return
+        }
+        chunks.append(Chunk(data: payload, isHeartbeat: isHeartbeat))
+        queuedBytes += payload.count
+        lock.unlock()
+        queue.async { [self] in pump() }
     }
 
-    /// Idempotent. Pending writes drain first (serial queue), then the descriptor closes.
+    /// Idempotent. Pending writes drain first, then the descriptor closes.
     func close() {
         lock.lock()
         let first = accepting
         accepting = false
         lock.unlock()
-        if first {
-            queue.async { [self] in
-                lock.lock(); closed = true; lock.unlock()
-                _ = Darwin.close(fd)
-            }
-        }
+        if first { queue.async { [self] in pump() } }
     }
 
-    /// Waits for queued writes (quit path).
+    /// Waits for queued writes (quit path). True when nothing is left to write (also when
+    /// the pipe broke and the rest was dropped).
     @discardableResult
     func flush(timeout: DispatchTimeInterval) -> Bool {
         let done = DispatchSemaphore(value: 0)
-        queue.async { done.signal() }
+        lock.lock()
+        if chunks.isEmpty || broken || closed {
+            lock.unlock()
+            return true
+        }
+        drainWaiters.append(done)
+        lock.unlock()
+        queue.async { [self] in pump() }
         return done.wait(timeout: .now() + timeout) == .success
     }
 
-    // A queued block retains self, so deinit runs only after every queued write.
-    deinit { if !closed { _ = Darwin.close(fd) } }
+    // MARK: Queue
+
+    private enum Drain { case drained, wouldBlock, failed }
+
+    /// Writes what it can without blocking; waits for writability when the pipe is full.
+    private func pump() {
+        lock.lock()
+        guard !closed else { lock.unlock(); return }
+        var notifyBroken = false
+        switch drainLocked() {
+        case .drained:
+            pauseSourceLocked()
+        case .wouldBlock:
+            resumeSourceLocked()
+        case .failed:
+            notifyBroken = markBrokenLocked()
+            pauseSourceLocked()
+        }
+        var waiters: [DispatchSemaphore] = []
+        if chunks.isEmpty {
+            waiters = drainWaiters
+            drainWaiters = []
+            if !accepting { closeLocked() }
+        }
+        lock.unlock()
+        waiters.forEach { $0.signal() }
+        if notifyBroken { DispatchQueue.main.async(execute: onBroken) }
+    }
+
+    private func drainLocked() -> Drain {
+        while let first = chunks.first {
+            let total = first.data.count
+            let n = first.data.withUnsafeBytes { raw -> Int in
+                guard let base = raw.baseAddress else { return 0 }
+                return Darwin.write(fd, base + offset, total - offset)
+            }
+            if n > 0 {
+                offset += n
+                queuedBytes -= n
+                if offset >= total {
+                    chunks.removeFirst()
+                    offset = 0
+                }
+            } else if n < 0 && errno == EINTR {
+                continue
+            } else if n < 0 && errno == EAGAIN {
+                return .wouldBlock
+            } else {
+                return .failed
+            }
+        }
+        return .drained
+    }
+
+    /// True the first time. Drops whatever was still queued.
+    private func markBrokenLocked() -> Bool {
+        let first = !broken
+        broken = true
+        chunks = []
+        offset = 0
+        queuedBytes = 0
+        return first
+    }
+
+    private func resumeSourceLocked() {
+        if writeSource == nil {
+            let source = DispatchSource.makeWriteSource(fileDescriptor: fd, queue: queue)
+            source.setEventHandler { [weak self] in self?.pump() }
+            // The source owns the descriptor once it exists: it closes after cancellation.
+            let descriptor = fd
+            source.setCancelHandler { _ = Darwin.close(descriptor) }
+            writeSource = source
+        }
+        if !sourceRunning, let writeSource {
+            sourceRunning = true
+            writeSource.resume()
+        }
+    }
+
+    private func pauseSourceLocked() {
+        if sourceRunning, let writeSource {
+            sourceRunning = false
+            writeSource.suspend()
+        }
+    }
+
+    private func closeLocked() {
+        guard !closed else { return }
+        closed = true
+        if let source = writeSource {
+            writeSource = nil
+            // A suspended source never runs its cancel handler.
+            if !sourceRunning { source.resume() }
+            sourceRunning = false
+            source.cancel()
+        } else {
+            _ = Darwin.close(fd)
+        }
+    }
+
+    // A queued block retains self, so deinit runs only after every queued block.
+    deinit {
+        lock.lock()
+        closeLocked()
+        lock.unlock()
+    }
 }

@@ -158,6 +158,31 @@ static NSString *SNIdentifierOfStaticCode(SecStaticCodeRef staticCode) {
     return identifier;
 }
 
++ (nullable NSString *)signingIdentifierForPID:(pid_t)pid error:(NSError **)error {
+    if (pid <= 0) {
+        if (error) { *error = SNProcessError(errSecParam, @"Bad pid"); }
+        return nil;
+    }
+    NSDictionary *attributes = @{(__bridge NSString *)kSecGuestAttributePid: @(pid)};
+    SecCodeRef guest = NULL;
+    OSStatus status = SecCodeCopyGuestWithAttributes(NULL, (__bridge CFDictionaryRef)attributes, kSecCSDefaultFlags, &guest);
+    if (status != errSecSuccess || guest == NULL) {
+        if (guest != NULL) { CFRelease(guest); }
+        if (error) { *error = SNProcessError(status, @"SecCodeCopyGuestWithAttributes failed"); }
+        return nil;
+    }
+    CFDictionaryRef infoRef = NULL;
+    status = SecCodeCopySigningInformation(guest, kSecCSSigningInformation, &infoRef);
+    CFRelease(guest);
+    if (status != errSecSuccess || infoRef == NULL) {
+        if (error) { *error = SNProcessError(status, @"SecCodeCopySigningInformation failed"); }
+        return nil;
+    }
+    NSDictionary *info = (NSDictionary *)CFBridgingRelease(infoRef);
+    id identifier = info[(__bridge NSString *)kSecCodeInfoIdentifier];
+    return [identifier isKindOfClass:[NSString class]] ? identifier : @"";
+}
+
 + (nullable NSString *)signingIdentifierOfSelf {
     SecCodeRef me = NULL;
     if (SecCodeCopySelf(kSecCSDefaultFlags, &me) != errSecSuccess || me == NULL) { return nil; }

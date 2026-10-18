@@ -24,6 +24,8 @@ struct ToastAction {
         let message: String
         let action: ToastAction?
         let lifetime: Lifetime?
+        /// The lifetime's end handler for this toast, removed once the toast is gone.
+        var endToken: UInt64?
         let queuedAt: Date
     }
 
@@ -48,21 +50,27 @@ struct ToastAction {
         remember(text)
         guard !Self.isSuppressed else { return }
         if current?.message == text || queue.contains(where: { $0.message == text }) { return }
-        if queue.count >= Self.maxQueued { queue.removeFirst() }
+        if queue.count >= Self.maxQueued { release(queue.removeFirst()) }
         serial &+= 1
-        let pending = Pending(id: serial, message: text, action: action, lifetime: lifetime, queuedAt: Date())
-        queue.append(pending)
+        var pending = Pending(id: serial, message: text, action: action, lifetime: lifetime, endToken: nil, queuedAt: Date())
         if let lifetime {
             let id = pending.id
-            lifetime.onEnd { [weak self] in self?.lifetimeEnded(id) }
+            pending.endToken = lifetime.addEndHandler { [weak self] in self?.lifetimeEnded(id) }
         }
+        queue.append(pending)
         pump()
     }
 
     /// Removes every toast (quit, Safe Mode relaunch).
     func dismissAll() {
+        queue.forEach(release)
         queue = []
         dismissCurrent(pumpNext: false)
+    }
+
+    /// A toast that won't show (again): its lifetime forgets it.
+    private func release(_ toast: Pending) {
+        toast.lifetime?.removeEndHandler(toast.endToken)
     }
 
     // MARK: Queue
@@ -70,6 +78,8 @@ struct ToastAction {
     private func pump() {
         guard current == nil else { return }
         let now = Date()
+        let stale = queue.filter { now.timeIntervalSince($0.queuedAt) >= Self.expiry || ($0.lifetime?.isEnded ?? false) }
+        stale.forEach(release)
         queue.removeAll { now.timeIntervalSince($0.queuedAt) >= Self.expiry || ($0.lifetime?.isEnded ?? false) }
         guard !queue.isEmpty else { return }
         let next = queue.removeFirst()
@@ -107,6 +117,7 @@ struct ToastAction {
     private func dismissCurrent(pumpNext: Bool) {
         dismissTimer?.invalidate()
         dismissTimer = nil
+        if let current { release(current) }
         current = nil
         model.actionEnabled = false
         panel?.orderOut(nil)
@@ -119,6 +130,7 @@ struct ToastAction {
     }
 
     private func lifetimeEnded(_ id: UInt64) {
+        // The handler already ran; nothing to remove.
         queue.removeAll { $0.id == id }
         if current?.id == id { dismissCurrent(pumpNext: true) }
     }

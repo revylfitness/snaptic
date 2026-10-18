@@ -95,27 +95,15 @@ jobs:
           swift test --skip-build 2>&1 | tee test.log
 
       # Helpers must not inherit pipe ends (PLAN §14.1): both children exit once we die.
-      # Disabled until the step-1 hang is diagnosed (FIXES-R1 A0); re-enable by removing `if: false`.
-      - name: Self-test diagnosis (A0 experiment)
-        timeout-minutes: 2
-        run: |
-          perl -e 'print "::error title=diag::SIGPIPE at step entry: ".($SIG{PIPE} || "DEFAULT")."\n"'
-          start=$(date +%s)
-          perl -e 'alarm 8; exec @ARGV' sh -c 'LC_ALL=C tr -dc A-Za-z0-9 </dev/urandom | head -c 40 >/dev/null' || st=$?
-          echo "::error title=diag::tr|head as inherited: status ${st:-0} after $(( $(date +%s) - start ))s"
-          pkill -9 -x tr || true
-          start=$(date +%s)
-          perl -e '$SIG{PIPE}="DEFAULT"; alarm 8; exec @ARGV' sh -c 'LC_ALL=C tr -dc A-Za-z0-9 </dev/urandom | head -c 40 >/dev/null' || st2=$?
-          echo "::error title=diag::tr|head with SIGPIPE default: status ${st2:-0} after $(( $(date +%s) - start ))s"
-          pkill -9 -x tr || true
-
+      # The runner starts steps with SIGPIPE ignored, and macOS `tr` then never stops
+      # writing into the closed pipe of the script's `tr </dev/urandom | head` token
+      # line (that was the FIXES-R1 A0 hang). perl restores the default before exec.
       - name: Helper self-test (debug)
         timeout-minutes: 2
         run: |
           set -o pipefail
-          perl -e '$SIG{PIPE}="DEFAULT"; exec @ARGV or die "exec: $!"' ./scripts/selftest-helpers.sh .build/debug/Snaptic 2>&1 | tee selftest.log || st=$?
-          sed 's/^/::error title=diag-out::/' selftest.log
-          exit ${st:-0}
+          perl -e '$SIG{PIPE} = "DEFAULT"; exec @ARGV or die "exec: $!"' \
+            ./scripts/selftest-helpers.sh .build/debug/Snaptic 2>&1 | tee selftest.log
 
       - name: Warnings summary
         if: always()
@@ -147,11 +135,11 @@ jobs:
         timeout-minutes: 3
         run: |
           set -o pipefail
-          perl -e '$SIG{PIPE}="DEFAULT"; exec @ARGV or die "exec: $!"' ./scripts/selftest-helpers.sh build/Snaptic.app/Contents/MacOS/Snaptic 2>&1 | tee -a selftest.log
+          sigdefault() { perl -e '$SIG{PIPE} = "DEFAULT"; exec @ARGV or die "exec: $!"' "$@"; }
+          sigdefault ./scripts/selftest-helpers.sh build/Snaptic.app/Contents/MacOS/Snaptic 2>&1 | tee -a selftest.log
           if /usr/bin/arch -x86_64 /usr/bin/true 2>/dev/null; then
-            SELFTEST_ARCH=x86_64 perl -e '$SIG{PIPE}="DEFAULT"; exec @ARGV or die "exec: $!"' ./scripts/selftest-helpers.sh build/Snaptic.app/Contents/MacOS/Snaptic 2>&1 | tee -a selftest.log
+            SELFTEST_ARCH=x86_64 sigdefault ./scripts/selftest-helpers.sh build/Snaptic.app/Contents/MacOS/Snaptic 2>&1 | tee -a selftest.log
           fi
-          sed 's/^/::error title=diag-uni::/' selftest.log
 
       - name: Report errors as annotations
         if: failure()
