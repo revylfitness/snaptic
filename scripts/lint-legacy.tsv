@@ -4,12 +4,7 @@ L6	Sources/Snaptic/Core/AppDelegate.swift	3	permanent
 L1	Sources/Snaptic/Displays/Management/PowerController.swift	2	step
 L6	Sources/Snaptic/Displays/PIP/PIPWindow.swift	2	permanent
 L5	Sources/Snaptic/Displays/UI/ArrangementCanvas.swift	1	permanent
-L5	Sources/Snaptic/Displays/UI/ArrangementPage.swift	1	step
 L5	Sources/Snaptic/Displays/UI/DiagnosticsPage.swift	3	step
 L5	Sources/Snaptic/Displays/UI/DisplayIdentityPage.swift	2	step
 L5	Sources/Snaptic/Displays/UI/DisplaysOverviewPage.swift	13	step
 L5	Sources/Snaptic/Displays/UI/FeaturesPage.swift	6	step
-L5	Sources/Snaptic/Displays/UI/ManagementPageParts.swift	3	step
-L5	Sources/Snaptic/Displays/UI/ProtectionLayoutsPage.swift	5	step
-L5	Sources/Snaptic/Displays/UI/ResolutionPage.swift	1	step
-L7	Sources/Snaptic/Displays/UI/VirtualScreensPage.swift	3	step

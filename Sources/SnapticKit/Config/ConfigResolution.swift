@@ -21,6 +21,8 @@ package struct ResolutionConfig: ConfigModel {
     package var persistedChoice: Bool
     /// UI-size match tolerance (fraction).
     package var scaleMatchTolerance: Double
+    /// The tolerance's range (Settings slider and `sanitized()`): 1–50%.
+    package static let scaleMatchToleranceRange: ClosedRange<Double> = 0.01...0.5
     /// Reference display for "Match UI size" (nil = main).
     package var scaleMatchReference: DisplayKey?
 
@@ -55,7 +57,9 @@ package struct ResolutionConfig: ConfigModel {
 
     package func sanitized() -> ResolutionConfig {
         var c = self
-        c.scaleMatchTolerance = scaleMatchTolerance.isFinite ? min(0.5, max(0.01, scaleMatchTolerance)) : 0.10
+        c.scaleMatchTolerance = scaleMatchTolerance.isFinite
+            ? min(Self.scaleMatchToleranceRange.upperBound, max(Self.scaleMatchToleranceRange.lowerBound, scaleMatchTolerance))
+            : 0.10
         return c
     }
 }

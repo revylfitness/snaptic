@@ -95,29 +95,32 @@ import SnapticKit
 
     // MARK: Slider
 
-    /// The slider's value is the point width; it moves freely and lands on the nearest stop (same HiDPI class and
-    /// refresh as the current mode) when released, then applies `applyDelay` after the last release or scroll step.
+    /// A discrete slider over the stops (same HiDPI class and refresh as the current mode, smallest first): its value
+    /// is a stop index, so every position is a real mode and the label shows it ("1512 × 982", or the percent of the
+    /// default with "Show values as: Percent"). It commits on release only, then applies `applyDelay` later.
     private func sliderRow(_ c: ResolutionController, key: DisplayKey, current: ModeRef?) -> MenuSliderRow? {
         let stops = c.sliderModes(for: key)
-        guard stops.count >= 2, let current, stops.contains(current), let first = stops.first, let last = stops.last,
-              last.pointWidth > first.pointWidth else { return nil }
-        var format = ValueFormat.plain(digits: 0)
-        if context?.config.value.resolution.sliderLabel == .percent, let def = c.defaultMode(key), def.pointWidth > 0 {
-            format = .percent(of: Double(def.pointWidth))
-        }
+        guard stops.count >= 2, let current, let index = stops.firstIndex(of: current) else { return nil }
+        let texts = stops.map { c.sliderValueText($0, key: key) }
         let rowRef = WeakSliderRow()
         let row = MenuSliderRow(title: L("Resolution"), symbol: "rectangle.arrowtriangle.2.outward",
-                                value: Double(current.pointWidth),
-                                range: Double(first.pointWidth)...Double(last.pointWidth), format: format,
+                                value: Double(index), range: 0...Double(stops.count - 1), format: .plain(digits: 0),
+                                discrete: true,
+                                valueText: { position in
+                                    ResolutionSliderStops.index(position, count: texts.count).map { texts[$0] } ?? "—"
+                                },
+                                widestValueText: ResolutionSliderStops.widest(texts),
                                 control: ControlID("menu.display.d.resolutionSlider")) { [weak self] value, phase in
             guard phase == .ended else { return }
-            self?.sliderReleased(key, width: value, row: rowRef.row)
+            self?.sliderReleased(key, position: value, stops: stops, row: rowRef.row)
         }
         rowRef.row = row
         if let runtime = context?.runtime {
+            let widths = stops.map(\.pointWidth)
             row.bind(to: runtime.$displays
                 .map { displays -> Double? in
-                    (displays.first { $0.key == key }?.currentMode?.ref.pointWidth).map { Double($0) }
+                    guard let width = displays.first(where: { $0.key == key })?.currentMode?.ref.pointWidth else { return nil }
+                    return ResolutionSliderStops.nearestIndex(width: width, in: widths).map { Double($0) }
                 }
                 .removeDuplicates()
                 .eraseToAnyPublisher())
@@ -125,18 +128,16 @@ import SnapticKit
         return row
     }
 
-    /// Snaps the slider to the nearest stop (and to a favorite, the current, default or native mode next to it unless
-    /// ⌥ is held), then applies after `applyDelay`. A change that may need confirming closes the menu first (W8b), so
-    /// Return and Esc reach the confirm panel instead of the menu's tracking loop.
-    private func sliderReleased(_ key: DisplayKey, width: Double, row: MenuSliderRow?) {
-        guard let c = controller else { return }
-        let stops = c.sliderModes(for: key)
-        guard stops.count >= 2, width.isFinite else { return }
-        let nearest = stops.indices.min { abs(Double(stops[$0].pointWidth) - width) < abs(Double(stops[$1].pointWidth) - width) } ?? 0
+    /// Snaps the released stop to a favorite, the current, default or native mode next to it (unless ⌥ is held),
+    /// then applies after `applyDelay`. A change that may need confirming closes the menu first (W8b), so Return and
+    /// Esc reach the confirm panel instead of the menu's tracking loop.
+    private func sliderReleased(_ key: DisplayKey, position: Double, stops: [ModeRef], row: MenuSliderRow?) {
+        guard let c = controller, let nearest = ResolutionSliderStops.index(position, count: stops.count) else { return }
         let bypass = NSEvent.modifierFlags.contains(.option)
         let index = c.snappedStop(nearest, in: stops, key: key, bypass: bypass)
+        guard stops.indices.contains(index) else { return }
         let target = stops[index]
-        row?.setValue(Double(target.pointWidth))
+        row?.setValue(Double(index))
         sliderApply?.cancel()
         let work = DispatchWorkItem { [weak self, weak row] in
             MainActor.assumeIsolated {

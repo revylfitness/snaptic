@@ -386,3 +386,34 @@ package enum LayoutPresetModel {
         return layout
     }
 }
+
+/// Reordering a stored list from a list UI (Saved Layouts, Virtual Displays): the UI hands back the ids in their new
+/// order; anything the UI didn't know about (added meanwhile, from an import or the CLI) keeps its relative order after
+/// them, and ids that no longer exist or repeat are ignored. Nothing is lost or duplicated.
+package enum ListReorder {
+    package static func reordered<T, ID: Hashable>(_ items: [T], id: (T) -> ID, order: [ID]) -> [T] {
+        var byID: [ID: [T]] = [:]
+        for item in items { byID[id(item), default: []].append(item) }
+        var used = Set<ID>()
+        var result: [T] = []
+        result.reserveCapacity(items.count)
+        for key in order where used.insert(key).inserted {
+            result += byID[key] ?? []
+        }
+        for item in items where !used.contains(id(item)) {
+            result.append(item)
+        }
+        return result
+    }
+
+    /// The order after moving `id` by `delta` places (clamped to the ends); unknown ids leave it unchanged.
+    package static func moving<ID: Equatable>(_ id: ID, by delta: Int, in order: [ID]) -> [ID] {
+        guard let i = order.firstIndex(of: id) else { return order }
+        let j = min(order.count - 1, max(0, i + delta))
+        guard i != j else { return order }
+        var list = order
+        let element = list.remove(at: i)
+        list.insert(element, at: j)
+        return list
+    }
+}

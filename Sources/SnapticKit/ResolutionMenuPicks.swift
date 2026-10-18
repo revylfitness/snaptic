@@ -131,3 +131,44 @@ package enum ResolutionMenuPicks {
         return picked.sorted()
     }
 }
+
+/// The discrete resolution slider (menu row and Settings, PLAN 0.3 §4.3 / §5.2): its value is an index into the
+/// stops (smallest first), so every position is a real mode and the value text is that mode ("1512 × 982").
+package enum ResolutionSliderStops {
+    /// The stop whose width is closest to `width` (the lower one on a tie), or nil with no stops.
+    package static func nearestIndex(width: Int, in widths: [Int]) -> Int? {
+        guard !widths.isEmpty else { return nil }
+        var best = 0
+        var bestDistance = UInt.max
+        for (i, w) in widths.enumerated() {
+            // The exact distance: a wrapped difference of two Ints, read as UInt, never overflows.
+            let distance = UInt(bitPattern: w >= width ? w &- width : width &- w)
+            if i == 0 || distance < bestDistance {
+                best = i
+                bestDistance = distance
+            }
+        }
+        return best
+    }
+
+    /// A slider position (any Double, also NaN or out of range) as a valid stop index, or nil with no stops.
+    package static func index(_ position: Double, count: Int) -> Int? {
+        guard count > 0 else { return nil }
+        guard position.isFinite else { return 0 }
+        let rounded = position.rounded()
+        if rounded <= 0 { return 0 }
+        if rounded >= Double(count - 1) { return count - 1 }
+        return Int(rounded)
+    }
+
+    /// The longest text (by characters; the first one on a tie), to size a value label so every stop fits.
+    package static func widest(_ texts: [String]) -> String? {
+        var best: String?
+        var bestCount = -1
+        for t in texts where t.count > bestCount {
+            best = t
+            bestCount = t.count
+        }
+        return best
+    }
+}
