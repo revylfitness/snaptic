@@ -71,14 +71,19 @@ private struct CustomizeMenuContent: View {
                 let rows = matchingRows(group)
                 let actions = group == .section ? matchingActions : []
                 if filter.isEmpty || !rows.isEmpty || !actions.isEmpty {
+                    let open = isExpanded(group.rawValue, hasMatch: !rows.isEmpty || !actions.isEmpty)
                     Section {
-                        let open = isExpanded(group.rawValue, hasMatch: !rows.isEmpty || !actions.isEmpty)
                         DisclosureGroup(isExpanded: open) {
                             itemRows(rows, actions: actions, group: group)
                         } label: {
                             Text(group.title)
                         }
                         .modifier(SettingsRevealExpansion(Self.anchors(in: group), isExpanded: open))
+                    } footer: {
+                        // One explanation for the group's Show / In Display Submenu / Hide pop-ups (ux m14).
+                        if open.wrappedValue && rows.contains(where: \.offersSubmenuChoice) {
+                            Text(L("Show places an item right under the display's name; In Display Submenu keeps it in the display's submenu."))
+                        }
                     }
                 }
             }
@@ -312,7 +317,7 @@ private struct CustomizeMenuContent: View {
                 .toggleStyle(.checkbox)
                 .disabled(true)
         } else if info.offersSubmenuChoice {
-            PickerSetting(info.title, help: L("Show puts it right under the display's name."),
+            PickerSetting(info.title,
                           selection: visibilityBinding(info.id, default: fallback),
                           options: [PickerOption(MenuItemVisibility.visible, L("Show")),
                                     PickerOption(MenuItemVisibility.inSubmenu, L("In Display Submenu")),

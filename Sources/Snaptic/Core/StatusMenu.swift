@@ -76,10 +76,54 @@ import SnapticKit
                 .removeDuplicates()
                 .dropFirst()
                 .receive(on: DispatchQueue.main)
-                .sink { [weak self] _ in MainActor.assumeIsolated { self?.applyPlan() } }
+                .sink { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        self?.applyAwakePresenceFallback()
+                        self?.applyPlan()
+                    }
+                }
+                .store(in: &sinks)
+            // Awake set to Don't Show by a path that skips the Menu Bar page's check (backup import, outside write).
+            host.modulesStore.$value
+                .map { $0.isEnabled(.awake) && $0.presence(.awake) == .hidden }
+                .removeDuplicates()
+                .dropFirst()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in MainActor.assumeIsolated { self?.applyAwakePresenceFallback() } }
+                .store(in: &sinks)
+            // Menus are built when they open, so any change to what they show only marks them dirty (rebuilds are
+            // lazy): every Awake runtime change (keeps the display on, holds, preset, rules paused…), Awake's
+            // settings (sessions, rules, default preset) and Displays' settings (Customize Displays Menu, hidden
+            // displays, order, style; also the menu's own Show All Displays).
+            host.awake.runtime.objectWillChange
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in MainActor.assumeIsolated { self?.requestRebuild() } }
+                .store(in: &sinks)
+            host.awakeStore.$value
+                .removeDuplicates()
+                .dropFirst()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in MainActor.assumeIsolated { self?.requestRebuild() } }
+                .store(in: &sinks)
+            host.displaysStore.$value
+                .removeDuplicates()
+                .dropFirst()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in MainActor.assumeIsolated { self?.requestRebuild() } }
                 .store(in: &sinks)
         }
+        applyAwakePresenceFallback()
         applyPlan()
+    }
+
+    /// The Don't Show fallback (§5.2, parity minor 11): Awake hidden while the Keep Awake shortcut is unset would
+    /// leave no way to it in the menu bar, so it goes back to Show When Active and a toast says why.
+    private func applyAwakePresenceFallback() {
+        guard let host else { return }
+        let bound = MenuLayout.awakeShortcutBound(host.awakeStore.value.shortcuts)
+        guard let presence = host.modulesStore.value.awakePresenceFallback(awakeShortcutBound: bound) else { return }
+        host.modulesStore.value.setPresence(presence, for: .awake)
+        host.toasts.show(MenuLayout.awakeFallbackNotice)
     }
 
     /// False when no status item shows (a relaunch then opens Settings). Provider items count (code B3). From
@@ -133,7 +177,8 @@ import SnapticKit
         if plan.showShared {
             let slot = shared ?? makeSlot(module: nil, autosaveName: Self.sharedAutosaveName)
             shared = slot
-            setIcon(slot, symbol: MenuPlacement.sharedSymbol(in: config), label: L("Snaptic"),
+            let ownIcons = plan.ownIcon.map { host.module($0) }
+            setIcon(slot, symbol: MenuPlacement.sharedSymbol(in: config, ownIcons: ownIcons), label: L("Snaptic"),
                     active: plan.sharedActiveGlyph)
         } else if let slot = shared {
             NSStatusBar.system.removeStatusItem(slot.item)
@@ -310,7 +355,7 @@ import SnapticKit
 
     private func safeModeRows(_ host: ModuleHost) -> [NSMenuItem] {
         [
-            MenuKit.status(L("Safe Mode is on"), control: ControlID("menu.snaptic.safeMode")),
+            MenuKit.status(L("Safe Mode Is On"), control: ControlID("menu.snaptic.safeMode")),
             MenuKit.action(L("Leave Safe Mode…"), control: ControlID("menu.snaptic.leaveSafeMode")) { [weak host] in
                 host?.relauncher.relaunch(reason: "leave safe mode")
             },
@@ -352,7 +397,7 @@ import SnapticKit
         let module = host.module(id)
         // The module's sidebar root (its id): "Displays Settings…" opens Settings › Displays.
         let page = id.rawValue
-        var items = [MenuKit.settings(module.title + L(" Settings…"), control: ControlID("menu.snaptic.moduleSettings")) { [weak host] in
+        var items = [MenuKit.settings(L("\(module.title) Settings…"), control: ControlID("menu.snaptic.moduleSettings")) { [weak host] in
             host?.openSettings(page: page)
         }]
         guard plan.sharedFooterInOwnMenus else { return items }
@@ -377,7 +422,7 @@ import SnapticKit
         guard !recent.isEmpty else { return nil }
         var rows = recent.reversed().map { MenuKit.status($0, control: ControlID("menu.snaptic.notice")) }
         rows.append(MenuKit.separator())
-        rows.append(MenuKit.action(L("Clear"), control: ControlID("menu.snaptic.clearNotices")) { [weak host] in
+        rows.append(MenuKit.action(L("Clear Menu"), control: ControlID("menu.snaptic.clearNotices")) { [weak host] in
             host?.toasts.clearRecent()
         })
         return MenuKit.submenu(L("Recent Notices"), control: ControlID("menu.snaptic.recentNotices"), rows)

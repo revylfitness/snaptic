@@ -4,7 +4,7 @@ import SnapticKit
 /// The Displays section of a menu (PLAN 0.3 §5.2), called from `DisplaysModule.menuSection()` on every rebuild:
 ///
 /// ```
-/// [!] status rows (only while true): module state, "Display automation is paused" + Resume Display Automation,
+/// [!] status rows (only while true): module state, "Display Automation Is Paused" + Resume Display Automation,
 ///     other display apps, "Unprotected" + Restart Snaptic
 /// [▭] one device row per display (+ its sliders), disconnected displays dimmed at the end
 /// [↺] Restore All Displays            only while a change awaits confirmation
@@ -47,7 +47,7 @@ import SnapticKit
                                         control: ControlID("menu.displays.status")))
         }
         if ctx.panic.isLatched {
-            items.append(MenuKit.status(L("Display automation is paused"), symbol: "pause.circle",
+            items.append(MenuKit.status(L("Display Automation Is Paused"), symbol: "pause.circle",
                                         control: ControlID("menu.displays.paused")))
             if resume.isEmpty {
                 let panic = ctx.panic
@@ -59,14 +59,14 @@ import SnapticKit
         }
         let paused = ctx.otherApps.pausedDisplayFeatures
         if !paused.isEmpty {
-            let item = MenuKit.status(Self.pauseReasons(paused, monitor: ctx.otherApps).first ?? L("Some features are paused"),
+            let item = MenuKit.status(Self.pauseReasons(paused, monitor: ctx.otherApps).first ?? L("Some Features Are Paused"),
                                       symbol: "pause.circle", control: ControlID("menu.displays.status"))
             item.toolTip = paused.map(DisplaysUIText.title).sorted().joined(separator: ", ")
             items.append(item)
         }
         if let reason = DisplaysLive.unprotectedReason(ctx) {
-            let title = ctx.helpers.unavailable != nil ? L("Unprotected: Snaptic's helpers can't run")
-                : L("Unprotected: the safety helper isn't running")
+            let title = ctx.helpers.unavailable != nil ? L("Unprotected: Snaptic’s Helpers Can’t Run")
+                : L("Unprotected: Safety Helper Isn’t Running")
             let item = MenuKit.status(title, symbol: "exclamationmark.shield", control: ControlID("menu.displays.status"))
             item.toolTip = reason
             items.append(item)
@@ -96,14 +96,14 @@ import SnapticKit
 
     private func displayRows(_ ctx: DisplaysContext) -> [NSMenuItem] {
         guard !ctx.runtime.displays.isEmpty else {
-            return [MenuKit.status(L("No displays detected"), symbol: "display.trianglebadge.exclamationmark",
+            return [MenuKit.status(L("No Displays Detected"), symbol: "display.trianglebadge.exclamationmark",
                                    control: ControlID("menu.displays.noDisplays"))]
         }
         let shown = Self.orderedDisplays(ctx)
         guard !shown.isEmpty else {
             let config = ctx.config
             return [
-                MenuKit.status(L("All displays are hidden from the menu"), symbol: "eye.slash",
+                MenuKit.status(L("All Displays Are Hidden"), symbol: "eye.slash",
                                control: ControlID("menu.displays.allHidden")),
                 MenuKit.action(L("Show All Displays"), symbol: "eye", control: ControlID("menu.displays.showAll")) {
                     config.value.menu.hiddenDisplays = []

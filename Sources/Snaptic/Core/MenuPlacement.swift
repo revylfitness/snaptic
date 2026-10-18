@@ -6,7 +6,7 @@ import SnapticKit
 /// nowhere (then Settings, shortcuts and a relaunch still reach everything). Titles are the `MenuPresence` ones
 /// (Control Center wording).
 enum MenuPlacement {
-    static let defaultSharedSymbol = "rectangle.on.rectangle"
+    static let defaultSharedSymbol = MenuLayout.snapticSymbol
 
     /// The Menu Bar page's presence pop-up (C2, Control Center wording; one option order for every module).
     static func title(_ presence: MenuPresence) -> String {
@@ -37,8 +37,14 @@ enum MenuPlacement {
         return chosen.isEmpty ? module.symbolName : chosen
     }
 
-    static func sharedSymbol(in config: ModulesConfig) -> String {
-        config.sharedSymbol.isEmpty ? defaultSharedSymbol : config.sharedSymbol
+    /// The Snaptic item's glyph; `ownIcons`: the modules shown with an icon of their own (the default glyph steps
+    /// aside for one that already uses it, `MenuLayout.sharedSymbol`).
+    @MainActor static func sharedSymbol(in config: ModulesConfig, ownIcons: [any SnapticModule]) -> String {
+        MenuLayout.sharedSymbol(stored: config.sharedSymbol, ownIconSymbols: ownIconSymbols(ownIcons, in: config))
+    }
+
+    @MainActor static func ownIconSymbols(_ modules: [any SnapticModule], in config: ModulesConfig) -> [String] {
+        modules.map { symbol(for: $0, in: config) }
     }
 
     /// Any online display that isn't built in (cheap: CG display list only).
