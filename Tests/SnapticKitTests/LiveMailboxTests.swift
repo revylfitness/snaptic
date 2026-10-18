@@ -157,8 +157,10 @@ final class LiveMailboxTests: XCTestCase {
 
 final class ProfileMenuOrderTests: XCTestCase {
     func testCurrentPreviousThenRecentWithoutRepeats() {
+        // Only the three most recent count; repeats of current and previous are skipped.
         let rows = ProfileMenuOrder.rows(current: "a", previous: "b", recent: ["a", "c", "b", "d", "e"])
-        XCTAssertEqual(rows, ["a", "b", "c", "d"])
+        XCTAssertEqual(rows, ["a", "b", "c"])
+        XCTAssertEqual(ProfileMenuOrder.rows(current: "a", previous: "b", recent: ["c", "a", "d"]), ["a", "b", "c", "d"])
     }
 
     func testAtMostFiveRowsAndThreeRecent() {

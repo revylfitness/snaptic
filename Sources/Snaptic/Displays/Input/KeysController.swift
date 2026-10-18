@@ -475,6 +475,8 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
         let config = context.config.value.keys
         if effective.contains(.shortcuts) {
             for (id, combo) in config.shortcuts.values.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
+                // interim until step 3 removes sleepPrevention (M1 moved this shortcut to Awake)
+                if id == .dSleepPreventionToggle { continue }
                 let title = context.actions.action(id)?.title ?? id.rawValue
                 if let problem = PerDisplayEdit.registerHotkey(context, combo, owner: title, lifetime: life, action: { [weak self] in
                     guard let ctx = self?.context else { return }
