@@ -64,7 +64,7 @@ import SnapticShims
         self.effective = effective
         context.registerSession(self, lifetime: lifetime)
         context.ddc.controller = self
-        context.diagnostics.register(self, section: L("Hardware controls (DDC)"), lifetime: lifetime)
+        context.diagnostics.register(self, section: L("Hardware controls"), lifetime: lifetime)
         let items = DDCMenuItems(context: context, controller: self)
         menuItems = items
         context.menus.register(items, lifetime: lifetime)
@@ -555,19 +555,19 @@ import SnapticShims
 
     private func registerCommands(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("set volume", policy: .low, offOnly: false, cliAllowed: true,
-                              summary: L("Set DDC volume: set volume 40 [display] (or +5 / -5)"), lifetime: lifetime) {
+                              summary: L("Set hardware volume: set volume 40 [display] (or +5 / -5)"), lifetime: lifetime) {
             [weak self] request, _ in await self?.setLevelCommand(VCPPolicy.volume, request) ?? DisplayTargets.notRunning()
         }
         ctx.commands.register("set contrast", policy: .low, offOnly: false, cliAllowed: true,
-                              summary: L("Set DDC contrast: set contrast 70 [display]"), lifetime: lifetime) {
+                              summary: L("Set hardware contrast: set contrast 70 [display]"), lifetime: lifetime) {
             [weak self] request, _ in await self?.setLevelCommand(VCPPolicy.contrast, request) ?? DisplayTargets.notRunning()
         }
         ctx.commands.register("get volume", policy: .read, offOnly: false, cliAllowed: true,
-                              summary: L("Print DDC volume per display: get volume [display]"), lifetime: lifetime) {
+                              summary: L("Print hardware volume per display: get volume [display]"), lifetime: lifetime) {
             [weak self] request, _ in await self?.getLevelCommand(VCPPolicy.volume, request) ?? DisplayTargets.notRunning()
         }
         ctx.commands.register("get contrast", policy: .read, offOnly: false, cliAllowed: true,
-                              summary: L("Print DDC contrast per display: get contrast [display]"), lifetime: lifetime) {
+                              summary: L("Print hardware contrast per display: get contrast [display]"), lifetime: lifetime) {
             [weak self] request, _ in await self?.getLevelCommand(VCPPolicy.contrast, request) ?? DisplayTargets.notRunning()
         }
         ctx.commands.register("get input", policy: .read, offOnly: false, cliAllowed: true,
@@ -583,7 +583,7 @@ import SnapticShims
             guard let parsed else { return error ?? .failure(ControlExit.usage, usage) }
             guard self.effective.contains(.ddcInput) else { return .failure(ControlExit.unavailable, L("Input switching is off")) }
             guard let display = DisplayTargets.resolve(parsed.target, ctx).first(where: { ctx.ddc.isAvailable($0.key) }) else {
-                return .failure(ControlExit.notFound, L("No DDC display matches"))
+                return .failure(ControlExit.notFound, L("No display with hardware controls matches"))
             }
             let wanted = parsed.values[0].lowercased()
             let list = self.inputList(for: display.key, includeHidden: true)
@@ -596,7 +596,7 @@ import SnapticShims
             return outcome == .done ? .ok() : .failure(outcome.exitCode, Self.message(outcome))
         }
         ctx.commands.register("ddc", policy: .preConfirm, offOnly: false, cliAllowed: true,
-                              summary: L("Raw DDC: ddc get <code> | ddc set <code> <value> | ddc caps [display]"),
+                              summary: L("Raw hardware commands (DDC/CI): ddc get <code> | ddc set <code> <value> | ddc caps [display]"),
                               lifetime: lifetime) { [weak self] request, _ in
             guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
             let usage = L("Usage: ddc get <code> | ddc set <code> <value> | ddc caps [display]")
@@ -609,7 +609,7 @@ import SnapticShims
             let (parsed, error) = DisplayTargets.cliArguments(args, valueCount: valueCount, usage: usage, ctx)
             guard let parsed else { return error ?? .failure(ControlExit.usage, usage) }
             guard let display = DisplayTargets.resolve(parsed.target, ctx).first(where: { ctx.ddc.isAvailable($0.key) }) else {
-                return .failure(ControlExit.notFound, L("No DDC display matches. ") + DisplayTargets.usage)
+                return .failure(ControlExit.notFound, L("No display with hardware controls matches. ") + DisplayTargets.usage)
             }
             switch op {
             case "caps":
@@ -626,7 +626,7 @@ import SnapticShims
             case "get":
                 guard let code = VCPPolicy.parseCode(parsed.values[0]) else { return .failure(ControlExit.usage, L("Not a VCP code")) }
                 guard self.effective.contains(.ddcControls) || self.effective.contains(.ddcCustom) else {
-                    return .failure(ControlExit.unavailable, L("DDC controls are off"))
+                    return .failure(ControlExit.unavailable, L("Hardware controls are off"))
                 }
                 guard let r = await ctx.ddc.read(code, from: display.key) else {
                     return .failure(ControlExit.unavailable, L("No reply"))
@@ -675,7 +675,7 @@ import SnapticShims
     private static func message(_ outcome: WriteOutcome) -> String {
         switch outcome {
         case .done: return ""
-        case .refused: return L("Refused by the DDC safety policy")
+        case .refused: return L("Snaptic doesn’t send that command, or it’s locked for this display (Hardware Controls › Advanced)")
         case .declined: return L("Not confirmed")
         case .failed: return L("The display didn’t accept it or didn’t reply")
         }
@@ -686,9 +686,9 @@ import SnapticShims
         let usage = L("Usage: <percent|+n|-n> [display]. ") + DisplayTargets.usage
         let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 1, usage: usage, ctx)
         guard let parsed else { return error ?? .failure(ControlExit.usage, usage) }
-        guard effective.contains(.ddcControls) else { return .failure(ControlExit.unavailable, L("DDC controls are off")) }
+        guard effective.contains(.ddcControls) else { return .failure(ControlExit.unavailable, L("Hardware controls are off")) }
         let displays = DisplayTargets.resolve(parsed.target, ctx).filter { ctx.ddc.isAvailable($0.key) && isControlEnabled(code, for: $0.key) }
-        guard !displays.isEmpty else { return .failure(ControlExit.notFound, L("No DDC display with that control matches")) }
+        guard !displays.isEmpty else { return .failure(ControlExit.notFound, L("No display with hardware controls has that control")) }
         var written: [(display: DisplayInfo, text: [String], json: [String: Any])] = []
         for d in displays {
             let live = ctx.runtime.runtime(for: d.key)
@@ -702,7 +702,7 @@ import SnapticShims
             written.append((d, [], [code == VCPPolicy.volume ? "volume" : "contrast": Int((v * 100).rounded())]))
         }
         guard request.json, let ctx = context else { return .ok() }
-        return DisplayTargets.rows(written, json: true, none: L("No DDC display with that control matches"), ctx)
+        return DisplayTargets.rows(written, json: true, none: L("No display with hardware controls has that control"), ctx)
     }
 
     /// Reads the control fresh (falls back to the last value seen).
@@ -712,7 +712,7 @@ import SnapticShims
         let usage = L("Usage: get \(what) [display]. ") + DisplayTargets.usage
         let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 0, default: .all, usage: usage, ctx)
         guard let parsed else { return error ?? .failure(ControlExit.usage, usage) }
-        guard effective.contains(.ddcControls) else { return .failure(ControlExit.unavailable, L("DDC controls are off")) }
+        guard effective.contains(.ddcControls) else { return .failure(ControlExit.unavailable, L("Hardware controls are off")) }
         let displays = DisplayTargets.resolve(parsed.target, ctx).filter { ctx.ddc.isAvailable($0.key) && isControlEnabled(code, for: $0.key) }
         var rows: [(display: DisplayInfo, text: [String], json: [String: Any])] = []
         for d in displays {
@@ -728,7 +728,7 @@ import SnapticShims
             rows.append((d, text, json))
         }
         guard let ctx = context else { return DisplayTargets.notRunning() }
-        return DisplayTargets.rows(rows, json: request.json, none: L("No DDC display with that control matches"), ctx)
+        return DisplayTargets.rows(rows, json: request.json, none: L("No display with hardware controls has that control"), ctx)
     }
 
     private func getInputCommand(_ request: ControlRequest) async -> ControlResponse {
@@ -750,7 +750,7 @@ import SnapticShims
             rows.append((d, [name, hex, available.joined(separator: ", ")], ["input": name, "value": Int(value), "inputs": available]))
         }
         guard let ctx = context else { return DisplayTargets.notRunning() }
-        return DisplayTargets.rows(rows, json: request.json, none: L("No DDC display matches"), ctx)
+        return DisplayTargets.rows(rows, json: request.json, none: L("No display with hardware controls matches"), ctx)
     }
 
     // MARK: Diagnostics (DDC caps appear when ddc is active)

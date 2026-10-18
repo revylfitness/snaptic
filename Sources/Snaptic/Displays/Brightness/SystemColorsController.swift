@@ -143,7 +143,7 @@ import SnapticShims
     }
 
     private func registerNightShift(_ ctx: DisplaysContext, lifetime: Lifetime) {
-        ctx.actions.register(Action(id: Self.nightShiftAction, title: L("Toggle Night Shift"), feature: .nightShift,
+        ctx.actions.register(Action(id: Self.nightShiftAction, title: L("Night Shift On or Off"), feature: .nightShift,
                                     cliAllowed: true) { [weak self] _ in _ = self?.toggleNightShift() }, lifetime: lifetime)
         ctx.actions.register(Action(id: Self.nightShiftUpAction, title: L("Night Shift Warmer"), feature: .nightShift,
                                     cliAllowed: true) { [weak self] _ in self?.stepNightShift(1) }, lifetime: lifetime)
@@ -157,7 +157,7 @@ import SnapticShims
                 guard let self, self.context != nil else { return DisplayTargets.notRunning() }
                 guard request.arguments.isEmpty else { return .failure(ControlExit.usage, L("Usage: toggle night-shift")) }
                 guard self.effective.contains(.nightShift) else {
-                    return .failure(ControlExit.unavailable, L("Night Shift control is off"))
+                    return .failure(ControlExit.unavailable, L("Night Shift controls are off"))
                 }
                 guard let on = self.toggleNightShift() else {
                     return .failure(ControlExit.unavailable, L("Night Shift isn't available"))

@@ -21,7 +21,7 @@ import SnapticShims
         if self.lifetime != nil { stop() }
         self.context = context
         self.lifetime = lifetime
-        context.diagnostics.register(self, section: L("On-screen display"), lifetime: lifetime)
+        context.diagnostics.register(self, section: L("Brightness indicator"), lifetime: lifetime)
         context.registerSession(self, lifetime: lifetime)
         context.osd.controller = self
         apply(effective)

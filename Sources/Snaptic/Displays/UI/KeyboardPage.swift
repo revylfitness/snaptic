@@ -341,7 +341,7 @@ private struct KeyboardAdvancedSheet: View {
         let name = CDisplays.name(display)
         Section {
             ToggleSetting(L("Keys change this display"),
-                          help: L("Turn off to leave this display out of the brightness and volume keys."),
+                          help: L("The brightness and volume keys include this display."),
                           isOn: CBind.display(env.config, key, \.keys.keysEnabled),
                           anchor: ControlID("displays.keyboard.advanced.keysChangeDisplay"))
             if raw(.volumeKeys) {

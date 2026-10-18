@@ -32,11 +32,11 @@ import SnapticKit
         self.lifetime = lifetime
         heldByPanic = false
         context.registerPanic(self, lifetime: lifetime)
-        context.diagnostics.register(self, section: L("Menu-bar overlays"), lifetime: lifetime)
+        context.diagnostics.register(self, section: L("Menu bar overlays"), lifetime: lifetime)
         let items = ColorMenuItems(context: context, part: .menuBarOverlays, owner: self)
         menuItems = items
         context.menus.register(items, lifetime: lifetime)
-        context.actions.register(Action(id: Self.stripAction, title: L("Toggle Menu-Bar Strip"), feature: .menuBarOverlays,
+        context.actions.register(Action(id: Self.stripAction, title: L("Black Menu Bar Background On or Off"), feature: .menuBarOverlays,
                                         cliAllowed: false) { [weak self] target in self?.toggleStrip(target) }, lifetime: lifetime)
         context.registry.changes
             .receive(on: DispatchQueue.main)

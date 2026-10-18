@@ -334,7 +334,7 @@ struct VirtualFacts: Equatable {
     private func defaultName(_ e: LayoutEntry) -> String {
         switch e.transport {
         case .builtin: return L("Built-in Display")
-        case .snapticVirtual: return L("Virtual Screen")
+        case .snapticVirtual: return L("Virtual Display")
         case .airplay: return L("AirPlay Display")
         case .sidecar: return L("Sidecar")
         default: return L("Display")
@@ -392,7 +392,7 @@ struct VirtualFacts: Equatable {
             let vis = d.isStronglyVisible ? "strong" : (d.isWeaklyVisible ? "weak" : "none")
             let mode = d.currentMode.map { "\($0.sizeLabel)\($0.isHiDPI ? " HiDPI" : "") \(Int($0.refreshHz.rounded())) Hz" } ?? "?"
             rows.append(("Display \(i + 1)", "\(d.transport.rawValue), key \(d.key.rawValue.prefix(6))…, \(vis), \(mode)"
-                + (d.isSmartHiDPIPair ? ", Smart HiDPI" : "") + (d.isMain ? ", main" : "")))
+                + (d.isSmartHiDPIPair ? ", sharper text" : "") + (d.isMain ? ", main" : "")))
         }
         return rows
     }

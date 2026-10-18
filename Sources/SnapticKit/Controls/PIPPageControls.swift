@@ -1,7 +1,7 @@
 import Foundation
 
 // Displays › Picture in Picture (owner E; PLAN 0.3 §4.3 sub-page row "Picture in Picture (E)", §4.8 "PIP" rows):
-// the feature switch, the Screen Recording status row, the Running and Saved lists, New PIP… / New Stream…,
+// the feature switch, the Screen Recording status row, the Running and Saved lists, New Picture in Picture… / New Stream…,
 // Import Color Lookup Table… and the page's Advanced sheet (Filters, Never capture these apps, pause covered PIPs,
 // the ⌃⌥⌘P switch). The editor sheet has its own table (`PIPEditorSheetControls`).
 

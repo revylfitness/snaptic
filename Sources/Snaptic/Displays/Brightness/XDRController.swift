@@ -38,7 +38,7 @@ import SnapticKit
         self.context = context
         self.lifetime = lifetime
         context.registerPanic(self, lifetime: lifetime)
-        context.diagnostics.register(self, section: L("XDR"), lifetime: lifetime)
+        context.diagnostics.register(self, section: L("Extra brightness"), lifetime: lifetime)
         let items = ColorMenuItems(context: context, part: .xdr, owner: self)
         menuItems = items
         context.menus.register(items, lifetime: lifetime)
@@ -195,7 +195,7 @@ import SnapticKit
     }
 
     private func registerActions(_ ctx: DisplaysContext, lifetime: Lifetime) {
-        ctx.actions.register(Action(id: Self.toggleAction, title: L("Toggle Extra Brightness"), feature: .xdr,
+        ctx.actions.register(Action(id: Self.toggleAction, title: L("Extra Brightness On or Off"), feature: .xdr,
                                     cliAllowed: true) { [weak self] target in self?.toggle(target) }, lifetime: lifetime)
         ctx.actions.register(Action(id: Self.upAction, title: L("Extra Brightness Up"), feature: .xdr,
                                     cliAllowed: true) { [weak self] target in self?.step(target, up: true) }, lifetime: lifetime)

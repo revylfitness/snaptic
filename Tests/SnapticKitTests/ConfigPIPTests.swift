@@ -594,18 +594,27 @@ final class ConfigPIPTests: XCTestCase {
     // MARK: Settings text and limits (0.3 §4.3)
 
     func testDefaultNames() {
-        XCTAssertEqual(PIPSettingsText.defaultName(sourceName: nil, kind: .window, targetName: nil), "Window PIP")
+        XCTAssertEqual(PIPSettingsText.defaultName(sourceName: nil, kind: .window, targetName: nil),
+                       "Window Picture in Picture")
         XCTAssertEqual(PIPSettingsText.defaultName(sourceName: "Built-in Display", kind: .window, targetName: "DELL"),
-                       "Built-in Display PIP")
+                       "Built-in Display Picture in Picture")
         XCTAssertEqual(PIPSettingsText.defaultName(sourceName: "Built-in Display", kind: .fullScreen, targetName: "DELL"),
                        "Built-in Display → DELL")
         // A stream without a target yet is named like a window.
-        XCTAssertEqual(PIPSettingsText.defaultName(sourceName: "A", kind: .fullScreen, targetName: nil), "A PIP")
+        XCTAssertEqual(PIPSettingsText.defaultName(sourceName: "A", kind: .fullScreen, targetName: nil),
+                       "A Picture in Picture")
         // Names stay within the configuration's limit.
         let long = String(repeating: "x", count: 200)
         let name = PIPSettingsText.defaultName(sourceName: long, kind: .fullScreen, targetName: long)
         XCTAssertLessThanOrEqual(name.unicodeScalars.count, PIPConfiguration.maxNameScalars)
         XCTAssertEqual(PIPConfiguration.cleanName(name), name)
+        // New names use the 0.3 term only.
+        for kind in PIPKind.allCases {
+            for source in [nil, "DELL"] as [String?] {
+                let name = PIPSettingsText.defaultName(sourceName: source, kind: kind, targetName: nil)
+                XCTAssertNil(name.range(of: "PIP"), name)
+            }
+        }
     }
 
     func testSubtitleOrderAndParts() {
