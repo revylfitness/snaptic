@@ -124,6 +124,13 @@ struct AutomationPage: View {
 private struct CommandEditor: View {
     @Binding var command: CommandSpec
     @State private var argumentsText: String
+    /// The last finished path check: it walks the file system, so it runs off main.
+    @State private var checked: PathCheck?
+
+    private struct PathCheck {
+        let path: String
+        let refusal: HookRefusal?
+    }
 
     init(command: Binding<CommandSpec>) {
         _command = command
@@ -147,13 +154,29 @@ private struct CommandEditor: View {
                     command.arguments = argumentsText.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
                 }
             if !command.executable.isEmpty {
-                if let refusal = HelperSpawner.checkExecutable(command.executable) ?? KitHookPolicy.checkArguments(command.arguments) {
-                    Label(refusal.message, systemImage: "xmark.octagon").font(.caption).foregroundStyle(.red)
+                if let checked, checked.path == command.executable {
+                    if let refusal = checked.refusal ?? KitHookPolicy.checkArguments(command.arguments) {
+                        Label(refusal.message, systemImage: "xmark.octagon").font(.caption).foregroundStyle(.red)
+                    } else {
+                        Label(L("This program can run."), systemImage: "checkmark.circle").font(.caption).foregroundStyle(.green)
+                    }
                 } else {
-                    Label(L("This program can run."), systemImage: "checkmark.circle").font(.caption).foregroundStyle(.green)
+                    Label(L("Checking the program…"), systemImage: "hourglass").font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
+        // Re-checked when the path changes (after a short pause while typing); a newer
+        // path cancels the older check.
+        .task(id: command.executable) { await check(command.executable) }
+    }
+
+    private func check(_ path: String) async {
+        guard !path.isEmpty else { return }
+        if checked != nil { try? await Task.sleep(nanoseconds: 250_000_000) }
+        guard !Task.isCancelled else { return }
+        let refusal = await Task.detached(priority: .userInitiated) { HelperSpawner.checkExecutable(path) }.value
+        guard !Task.isCancelled else { return }
+        checked = PathCheck(path: path, refusal: refusal)
     }
 
     private func choose() {
