@@ -1,9 +1,11 @@
 import SwiftUI
 import SnapticKit
 
-// Stub (owner: H). Hand-written by the lead in step 0 from PLAN 0.3 §4.1 + R5-13 (kind S): plain controls with the
-// contract signatures; H replaces the bodies in step 1.
-
+/// A switch row: title (+ badge) and an optional one-sentence help that describes the on state. Row switches keep
+/// the grouped form's default (small) size; only the page header switch is `.regular` (design B2). A subordinate row
+/// is indented 20 pt and shown by the caller only while its parent is on; it is never a smaller control.
+/// Precondition missing → the switch is disabled, its help stays, and `disabledReason` + `fix` show as a note under
+/// the row. Hardware can't do it → the caller omits the row.
 struct ToggleSetting: View {
     let title: String
     let help: String?
@@ -27,11 +29,31 @@ struct ToggleSetting: View {
     }
 
     var body: some View {
+        Group {
+            if let disabledReason {
+                VStack(alignment: .leading, spacing: 4) {
+                    toggle.disabled(true)
+                    SettingsRowNote(disabledReason, fix: fix)
+                }
+            } else {
+                toggle
+            }
+        }
+        .padding(.leading, subordinate ? 20 : 0)
+        .modifier(OptionalSettingsAnchor(anchor))
+    }
+
+    private var toggle: some View {
         Toggle(isOn: isOn) {
-            Text(title)
+            titleText
             if let help { Text(help) }
         }
-        .disabled(disabledReason != nil)
-        .padding(.leading, subordinate ? 20 : 0)
+        .accessibilityLabel(title)
+        .accessibilityHint(help ?? "")
+    }
+
+    private var titleText: Text {
+        guard let badge else { return Text(title) }
+        return Text(title) + Text("  ") + badge.text
     }
 }

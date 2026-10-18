@@ -1,10 +1,9 @@
 import SwiftUI
 import SnapticKit
 
-// Stub (owner: H). Hand-written by the lead in step 0 from PLAN 0.3 §4.1 + R5-13 (kind S): plain controls with the
-// contract signatures; H replaces the bodies in step 1.
-
-/// Title + optional one-line help + trailing control.
+/// Title + optional one-line help (the grouped form renders the second `Text` as the subtitle) + trailing control.
+/// Reset: a glyph only for continuous values (`resetGlyph: true`); every row with `reset` also gets the context
+/// menu "Reset to Default" (design M6).
 struct SettingRow<Control: View>: View {
     let title: String
     let help: String?
@@ -30,31 +29,109 @@ struct SettingRow<Control: View>: View {
 
     var body: some View {
         LabeledContent {
-            control
+            HStack(spacing: 4) {
+                control
+                if resetGlyph {
+                    ResetButton(visible: reset != nil && !isDefault, label: resetLabel ?? L("Reset \(title) to Default")) {
+                        reset?()
+                    }
+                }
+            }
         } label: {
             Text(title)
             if let help { Text(help) }
         }
+        .modifier(ResetContextMenu(reset: reset, isDefault: isDefault))
+        .modifier(OptionalSettingsAnchor(anchor))
     }
 }
 
-/// arrow.counterclockwise, borderless, secondary; visible only while the value isn't the default.
+/// arrow.counterclockwise 11 pt, borderless, secondary; always reserves 16 pt; fades 0.15 s (instant with Reduce
+/// Motion). Tooltip "Reset to 50%", AX label "Reset Contrast to 50 percent". Hidden rows take no clicks, focus or
+/// VoiceOver.
 struct ResetButton: View {
     let visible: Bool
     let label: String
+    let tooltip: String
     let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(visible: Bool, label: String, action: @escaping () -> Void) {
+        self.init(visible: visible, label: label, tooltip: L("Reset to Default"), action: action)
+    }
+
+    init(visible: Bool, label: String, tooltip: String, action: @escaping () -> Void) {
         self.visible = visible
         self.label = label
+        self.tooltip = tooltip
         self.action = action
     }
 
     var body: some View {
-        Button(action: action) { Image(systemName: "arrow.counterclockwise") }
-            .buttonStyle(.borderless)
-            .opacity(visible ? 1 : 0)
-            .disabled(!visible)
-            .accessibilityLabel(label)
+        Button(action: action) {
+            Image(systemName: "arrow.counterclockwise")
+                .font(.system(size: 11, weight: .medium))
+                .frame(width: 16, height: 16)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+        .frame(width: 16, height: 16)
+        .help(tooltip)
+        .accessibilityLabel(label)
+        .opacity(visible ? 1 : 0)
+        .allowsHitTesting(visible)
+        .disabled(!visible)
+        .accessibilityHidden(!visible)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: visible)
+    }
+}
+
+/// "Reset to Default" in the row's context menu, disabled at the default; nothing without a reset action.
+struct ResetContextMenu: ViewModifier {
+    let reset: (() -> Void)?
+    let isDefault: Bool
+
+    func body(content: Content) -> some View {
+        if let reset {
+            content.contextMenu {
+                Button(L("Reset to Default")) { reset() }
+                    .disabled(isDefault)
+            }
+        } else {
+            content
+        }
+    }
+}
+
+/// Why a control is disabled, and the fix ("Needs Accessibility." [Open Accessibility Settings…]), as a footnote
+/// right under the row (§4.2 States).
+struct SettingsRowNote: View {
+    let text: String
+    let fix: StatusAction?
+
+    init(_ text: String, fix: StatusAction? = nil) {
+        self.text = text
+        self.fix = fix
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "exclamationmark.circle")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let fix {
+                Button(fix.title) { fix.action() }
+                    .buttonStyle(.link)
+                    .font(.callout)
+                    .modifier(OptionalSettingsAnchor(fix.control))
+            }
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .contain)
     }
 }

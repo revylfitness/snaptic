@@ -1,15 +1,15 @@
 import SwiftUI
 import SnapticKit
 
-// Stub (owner: H). Hand-written by the lead in step 0 from PLAN 0.3 §4.1 + R5-13 (kind S): plain controls with the
-// contract signatures; H replaces the bodies in step 1.
-
-/// 520 wide, ≤ 25 controls, Done = Return trailing; Restore Defaults… leading in its footer.
+/// 520 wide, ≤ 25 controls, grouped form; footer: Restore Defaults… leading (with its confirmation), Done = Return
+/// trailing; Esc closes. Never presents another sheet. Search results that live here open it (the page binds the
+/// sheet to `SettingsShell.sheetBinding(_:)`) and highlight their row once it has appeared.
 struct AdvancedSheet<Content: View>: View {
     let title: String
     let restoreDefaults: RestoreDefaults?
     let content: Content
     @Environment(\.dismiss) private var dismiss
+    @State private var confirming = false
 
     init(_ title: String, restoreDefaults: RestoreDefaults?, @ViewBuilder content: () -> Content) {
         self.title = title
@@ -19,16 +19,30 @@ struct AdvancedSheet<Content: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Form { content }.formStyle(.grouped)
-            HStack {
+            Text(title)
+                .font(.headline)
+                .padding(.top, 16)
+                .padding(.bottom, 4)
+                .accessibilityAddTraits(.isHeader)
+            SettingsAnchorScroller {
+                Form { content }
+                    .formStyle(.grouped)
+            }
+            Divider()
+            HStack(spacing: 8) {
                 if let restoreDefaults {
-                    Button(restoreDefaults.title) { restoreDefaults.action() }
+                    Button(restoreDefaults.title) { confirming = true }
                 }
-                Spacer()
-                Button(L("Done")) { dismiss() }.keyboardShortcut(.defaultAction)
+                Spacer(minLength: 8)
+                Button(L("Done")) { dismiss() }
+                    .keyboardShortcut(.defaultAction)
             }
             .padding(16)
         }
         .frame(width: 520)
+        .frame(minHeight: 320, idealHeight: 480, maxHeight: 720)
+        .modifier(RestoreDefaultsConfirmation(isPresented: $confirming, restore: restoreDefaults))
+        .onAppear { SettingsShell.shared.sheetDidAppear() }
+        .onExitCommand { dismiss() }
     }
 }

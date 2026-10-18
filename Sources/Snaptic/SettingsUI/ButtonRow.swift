@@ -1,10 +1,8 @@
 import SwiftUI
 import SnapticKit
 
-// Stub (owner: H). Hand-written by the lead in step 0 from PLAN 0.3 §4.1 + R5-13 (kind S): plain controls with the
-// contract signatures; H replaces the bodies in step 1.
-
-/// "Keyboard Shortcuts…", "Display Details…".
+/// An in-form push button on a row of its own, trailing ("Keyboard Shortcuts…", "Display Details…"), as in
+/// System Settings › Keyboard.
 struct ButtonRow: View {
     let title: String
     let symbol: String?
@@ -20,6 +18,18 @@ struct ButtonRow: View {
     }
 
     var body: some View {
-        Button(title) { action() }
+        HStack {
+            Spacer(minLength: 0)
+            Button {
+                action()
+            } label: {
+                if let symbol {
+                    Label(title, systemImage: symbol)
+                } else {
+                    Text(title)
+                }
+            }
+            .modifier(OptionalSettingsAnchor(control))
+        }
     }
 }

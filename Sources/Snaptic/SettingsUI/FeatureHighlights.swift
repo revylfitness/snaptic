@@ -1,25 +1,33 @@
 import SwiftUI
 import SnapticKit
 
-// Stub (owner: H). Hand-written by the lead in step 0 from PLAN 0.3 §4.1 + R5-13 (kind S): plain controls with the
-// contract signatures; H replaces the bodies in step 1.
-
-/// Shown under the header while a module or feature group is off: 2–3 "what this does" rows.
+/// Shown under the header while a module or feature group is off: 2–3 "what this does" rows, each a symbol, a
+/// bold title and one line (the Screen Time / Siri off state).
 struct FeatureHighlights: View {
     let rows: [FeatureHighlight]
 
     init(_ rows: [FeatureHighlight]) { self.rows = rows }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(rows) { row in
-                Label {
-                    VStack(alignment: .leading) {
-                        Text(row.title)
-                        Text(row.text).foregroundStyle(.secondary)
+        if !rows.isEmpty {
+            Section {
+                ForEach(rows) { row in
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: row.symbol)
+                            .font(.title2)
+                            .foregroundStyle(.tint)
+                            .frame(width: 28)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(row.title).fontWeight(.semibold)
+                            Text(row.text)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
                     }
-                } icon: {
-                    Image(systemName: row.symbol)
+                    .padding(.vertical, 2)
+                    .accessibilityElement(children: .combine)
                 }
             }
         }

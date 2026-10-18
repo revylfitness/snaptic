@@ -2,23 +2,29 @@ import AppKit
 import SwiftUI
 import SnapticKit
 
-/// The Settings window (PLAN §3.7): a NavigationSplitView, at least 820×600, whose sidebar
-/// lists the General pages and then each running module's pages. While it is open the app
-/// is `.regular` (Dock and ⌘⇥, R5.8); it goes back to `.accessory` on close.
+/// The Settings window (PLAN 0.3 §4.2): `SettingsShellView` over `SettingsShell.shared` — sidebar with search and
+/// the seven roots, a NavigationStack per root. Fixed width 715 pt, vertical resize only (min 520, default 720);
+/// minimize and zoom are off, as for System Settings. While it is open the app is `.regular` (Dock and ⌘⇥, 0.2
+/// R5.8); it goes back to `.accessory` when it closes and no other Snaptic window (onboarding) is open.
 @MainActor final class SettingsWindowHost: NSObject, NSWindowDelegate {
-    static let minimumSize = NSSize(width: 820, height: 600)
+    static let width: CGFloat = 715
+    static let minimumHeight: CGFloat = 520
+    static let defaultHeight: CGFloat = 720
+    static let autosaveName = "SnapticSettings03"
 
-    /// Posted by Displays UI with userInfo["page"] = a page id ("displays.features").
+    /// Posted by Displays UI with userInfo["page"] = a page id ("displays.color"); an open from Snaptic itself.
     static let openPageNotification = Notification.Name("SnapticOpenSettingsPage")
 
     private weak var host: ModuleHost?
     private var window: NSWindow?
     private var pageToken: NSObjectProtocol?
-    let navigation = SettingsNavigation()
+    private var eventMonitor: Any?
+    let shell = SettingsShell.shared
 
     init(host: ModuleHost) {
         self.host = host
         super.init()
+        shell.attach(host)
         pageToken = NotificationCenter.default.addObserver(forName: Self.openPageNotification, object: nil,
                                                            queue: .main) { [weak self] note in
             let page = note.userInfo?["page"] as? String
@@ -28,144 +34,109 @@ import SnapticKit
 
     /// Page ids are short and printable; anything else selects nothing.
     nonisolated static func validPageID(_ id: String) -> String? {
-        guard !id.isEmpty, id.utf8.count <= 64,
-              id.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.contains($0) || $0 == "." || $0 == "-" || $0 == "_" })
-        else { return nil }
-        return id
+        SettingsLocation.isValidID(id) ? id : nil
     }
 
     var isOpen: Bool { window?.isVisible ?? false }
 
-    func show(page: String? = nil) {
+    /// Opens (or brings forward) Settings at `page` (a root, a route or a 0.2 page id; nil = where it was).
+    /// `external`: the request came from outside Snaptic's own menus and hotkeys (the `open-settings` verb); a
+    /// reopen from the Dock or Finder is recognized by its Apple event. External opens arm the focus guard (R5-8).
+    func show(page: String? = nil, external: Bool = false) {
         guard let host else { return }
-        if let page { navigation.selection = page }
-        if window == nil {
-            let window = NSWindow(
-                contentRect: NSRect(origin: .zero, size: NSSize(width: 920, height: 660)),
-                styleMask: [.titled, .closable, .miniaturizable, .resizable],
-                backing: .buffered,
-                defer: false
-            )
-            window.title = L("Snaptic Settings")
-            window.isReleasedWhenClosed = false
-            window.minSize = Self.minimumSize
-            window.contentMinSize = Self.minimumSize
-            window.contentView = NSHostingView(rootView: SettingsRootView(host: host, navigation: navigation))
-            window.setFrameAutosaveName("SnapticSettings")
-            window.delegate = self
-            window.center()
-            self.window = window
-        }
+        let isExternal = external || NSAppleEventManager.shared().currentAppleEvent != nil
+        shell.open(page: page, external: isExternal)
+        let window = self.window ?? makeWindow(host: host)
         NSApp.setActivationPolicy(.regular)
         NSApp.activate()
-        window?.makeKeyAndOrderFront(nil)
+        window.makeKeyAndOrderFront(nil)
     }
 
     func close() {
         window?.close()
     }
 
+    private func makeWindow(host: ModuleHost) -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: NSSize(width: Self.width, height: Self.defaultHeight)),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = L("Settings")
+        window.isReleasedWhenClosed = false
+        window.toolbarStyle = .unified
+        window.collectionBehavior.insert(.fullScreenNone)
+        let content = NSHostingController(rootView: SettingsShellView(host: host, shell: shell))
+        content.sizingOptions = []
+        content.sceneBridgingOptions = [.title, .toolbars]
+        window.contentViewController = content
+        window.contentMinSize = NSSize(width: Self.width, height: Self.minimumHeight)
+        window.contentMaxSize = NSSize(width: Self.width, height: CGFloat.greatestFiniteMagnitude)
+        window.setContentSize(NSSize(width: Self.width, height: Self.defaultHeight))
+        window.standardWindowButton(.zoomButton)?.isEnabled = false
+        window.delegate = self
+        if !window.setFrameUsingName(Self.autosaveName) { window.center() }
+        window.setFrameAutosaveName(Self.autosaveName)
+        // Whatever a saved frame says, the width is fixed and the height at least the minimum.
+        let height = window.contentRect(forFrameRect: window.frame).height
+        window.setContentSize(NSSize(width: Self.width, height: max(Self.minimumHeight, height)))
+        self.window = window
+        installEventMonitor()
+        return window
+    }
+
+    /// R5-8: the first mouse-down in the window clears the pending external open. ⌘F focuses the search field
+    /// (System Settings precedent).
+    private func installEventMonitor() {
+        guard eventMonitor == nil else { return }
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .keyDown]) { [weak self] event in
+            let isMouseDown = event.type == .leftMouseDown
+            let isFind = Self.isFindShortcut(event)
+            let windowNumber = event.windowNumber
+            let consumed = MainActor.assumeIsolated { () -> Bool in
+                guard let self, let window = self.window, window.isVisible, window.windowNumber == windowNumber
+                else { return false }
+                if isMouseDown {
+                    self.shell.mouseDown()
+                    return false
+                }
+                return isFind && self.focusSearch(in: window)
+            }
+            return consumed ? nil : event
+        }
+    }
+
+    nonisolated private static func isFindShortcut(_ event: NSEvent) -> Bool {
+        event.type == .keyDown
+            && event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command
+            && event.charactersIgnoringModifiers?.lowercased() == "f"
+    }
+
+    /// Puts the cursor in the sidebar search field. False when there is none.
+    private func focusSearch(in window: NSWindow) -> Bool {
+        guard let root = window.contentView?.superview ?? window.contentView,
+              let field = Self.searchField(in: root, depth: 0) else { return false }
+        return window.makeFirstResponder(field)
+    }
+
+    private static func searchField(in view: NSView, depth: Int) -> NSSearchField? {
+        if let field = view as? NSSearchField { return field }
+        guard depth < 40 else { return nil }
+        for sub in view.subviews {
+            if let field = searchField(in: sub, depth: depth + 1) { return field }
+        }
+        return nil
+    }
+
     func windowWillClose(_ notification: Notification) {
         // Back to a menu-bar app. Deferred, so the window finishes closing first.
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                if !(self.window?.isVisible ?? false) { NSApp.setActivationPolicy(.accessory) }
+                let settingsOpen = self.window?.isVisible ?? false
+                let onboardingOpen = self.host?.onboarding.isShowing ?? false
+                if !settingsOpen && !onboardingOpen { NSApp.setActivationPolicy(.accessory) }
             }
         }
-    }
-}
-
-@MainActor final class SettingsNavigation: ObservableObject {
-    @Published var selection: String? = GeneralPages.modulesID
-}
-
-struct SettingsSection: Identifiable {
-    let id: String
-    let title: String
-    let pages: [SettingsPage]
-}
-
-private struct SettingsRootView: View {
-    @ObservedObject var host: ModuleHost
-    @ObservedObject var navigation: SettingsNavigation
-
-    private var sections: [SettingsSection] {
-        _ = host.revision
-        var result = [SettingsSection(id: "general", title: L("General"), pages: GeneralPages.pages(host: host))]
-        for module in host.modules where host.isRunning(module.id) {
-            let pages = module.settingsPages()
-            if !pages.isEmpty {
-                result.append(SettingsSection(id: module.id.rawValue, title: module.title, pages: pages))
-            }
-        }
-        return result
-    }
-
-    var body: some View {
-        let sections = self.sections
-        let selected = sections.lazy.flatMap(\.pages).first { $0.id == navigation.selection }
-        NavigationSplitView {
-            List(selection: $navigation.selection) {
-                ForEach(sections) { section in
-                    Section(section.title) {
-                        ForEach(section.pages) { page in
-                            Label(page.title, systemImage: page.symbol)
-                                .tag(page.id as String?)
-                        }
-                    }
-                }
-            }
-            .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 300)
-        } detail: {
-            VStack(spacing: 0) {
-                if host.safeMode.isActive {
-                    SafeModeBanner(host: host)
-                }
-                if let selected {
-                    selected.makeView()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                } else {
-                    Text(L("Choose a page in the sidebar."))
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-        }
-        .frame(minWidth: SettingsWindowHost.minimumSize.width, minHeight: SettingsWindowHost.minimumSize.height)
-        .onAppear { keepSelectionValid(sections) }
-        .onChange(of: sections.flatMap { $0.pages.map(\.id) }) { _, _ in keepSelectionValid(self.sections) }
-        .onChange(of: navigation.selection) { _, _ in keepSelectionValid(self.sections) }
-    }
-
-    /// The selected page went away (its module or feature stopped): show Display
-    /// Features, or General → Modules, instead of an empty pane (W18).
-    private func keepSelectionValid(_ sections: [SettingsSection]) {
-        let ids = sections.flatMap { $0.pages.map(\.id) }
-        let wanted = HostUIRules.settingsSelection(navigation.selection, available: ids)
-        if wanted != navigation.selection { navigation.selection = wanted }
-    }
-}
-
-/// Shown on every page while Safe Mode is on (PLAN §4.8).
-struct SafeModeBanner: View {
-    let host: ModuleHost
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "shield.lefthalf.filled")
-                .foregroundStyle(.orange)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(L("Safe Mode")).fontWeight(.semibold)
-                Text(host.safeMode.reason ?? L("Display automation is paused."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button(L("Leave Safe Mode")) { host.relauncher.relaunch(reason: "leave safe mode") }
-        }
-        .padding(12)
-        .background(Color.orange.opacity(0.12))
-        .accessibilityElement(children: .combine)
     }
 }
