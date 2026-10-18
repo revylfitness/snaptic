@@ -6,8 +6,9 @@
 # Starts `Snaptic --selftest-control-server <token-file>` (no modules, only a ControlServer with a test registry:
 # `selftest hold` (holds), `selftest slow` (3 s), `selftest echo`; pings every second) on a socket in a fresh 0700
 # directory, then drives real `Snaptic cli …` clients (token mode: SNAPTIC_SELFTEST_TOKEN, …_TOKEN_FILE, …_SOCKET)
-# and python3 raw-socket clients through the nine cases of R5-5. The server prints `held=<n> active=<n>` on every
-# pool change and `closed <eof|extra|ping|limit|server|pid>` per hold; the checks read that log.
+# and python3 raw-socket clients through the nine cases of R5-5, plus the retired `prevent-sleep` verb (R5-12, case 10).
+# The server prints `held=<n> active=<n>` on every pool change and `closed <eof|extra|ping|limit|server|pid>` per
+# hold; the checks read that log.
 set -uo pipefail
 
 BIN=${1:?usage: selftest-control-server.sh <Snaptic executable>}
@@ -332,6 +333,16 @@ say "case 7 done"
 [ "$(raw idle 5)" = open ] || fail "case 9: an idle hold was closed within 5 s"
 wait_pool "held=0 active=0" 20 || fail "case 9: a slot leaked ($(pool))"
 say "case 9 done"
+
+# 10. The retired 0.2 verb (R5-12): `prevent-sleep` answers exit 2 with its pointer, and help doesn't list it.
+cli prevent-sleep off >"$dir/retired.out" 2>&1
+status=$?
+[ "$status" -eq 2 ] || fail "case 10: prevent-sleep exited $status, not 2 ($(cat "$dir/retired.out"))"
+grep -q 'Moved to Awake: use “snaptic awake …”.' "$dir/retired.out" || fail "case 10: prevent-sleep's text is missing ($(cat "$dir/retired.out"))"
+cli help >"$dir/help.out" 2>&1 || fail "case 10: help failed ($(cat "$dir/help.out"))"
+grep -q 'selftest echo' "$dir/help.out" || fail "case 10: help doesn't list the test verbs"
+grep -q 'prevent-sleep' "$dir/help.out" && fail "case 10: help lists prevent-sleep"
+say "case 10 done"
 
 stop_server
 

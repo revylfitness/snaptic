@@ -122,7 +122,7 @@ package enum DisplayFeature: String, Codable, CaseIterable, Sendable {
     case disconnect, autoDisconnectBuiltin, protection, layouts
     case virtualScreens, smartHiDPI, hdrVirtual
     case pip, pipFilters
-    case menuBarOverlays, sleepPrevention
+    case menuBarOverlays
     case hooks, customActions
 }
 

@@ -323,17 +323,35 @@ package enum KitControl {
         return (best.verb, Array(words.dropFirst(best.count)))
     }
 
+    /// 0.2 verbs that are gone, with the answer the CLI gets (R5-12): `ControlCommandRegistry.dispatch` answers them
+    /// before lookup with exit 2 (usage), whatever modules run; help never lists them. Removed in 0.4.
+    package static let retiredVerbs: [String: String] = [
+        "prevent-sleep": "Moved to Awake: use “snaptic awake …”.",
+    ]
+
+    /// The retired verb `words` start with (verb words compare case-insensitively, like `match`), or nil.
+    package static func retiredVerb(_ words: [String]) -> (verb: String, message: String)? {
+        let lowered = words.map { $0.lowercased() }
+        var best: (verb: String, count: Int)?
+        for verb in retiredVerbs.keys {
+            let parts = verb.split(separator: " ").map(String.init)
+            guard !parts.isEmpty, parts.count <= lowered.count, Array(lowered.prefix(parts.count)) == parts else { continue }
+            if best == nil || parts.count > best!.count { best = (verb, parts.count) }
+        }
+        guard let best, let message = retiredVerbs[best.verb] else { return nil }
+        return (best.verb, L(message))
+    }
+
     // MARK: Policy
 
     /// Verbs that change settings; their arguments are checked against the protected list.
     package static let settingVerbs: Set<String> = ["set", "toggle", "features", "feature", "enable", "disable", "module"]
 
-    /// Never touchable from the CLI (PLAN §4.10(3); 0.3 §2.10 adds the Awake words in step 1; the step-3 merge that
-    /// removes Displays' sleep prevention drops "sleepprevention" and "preventsleep", R5-14).
+    /// Never touchable from the CLI (PLAN §4.10(3); 0.3 §2.10 adds the Awake words; the 0.2 "sleepprevention" and
+    /// "preventsleep" went with Displays' sleep prevention, R5-14).
     package static let protectedSettings: Set<String> = [
         "hooks", "customactions", "actions", "cli", "commandline", "disconnect", "autodisconnectbuiltin",
         "dimtoblack", "unlocks", "unlock", "allowwithoutasking", "allow", "trust",
-        "sleepprevention", "preventsleep",
         "awake", "nudge", "pointernudge", "drivealive", "activity", "guards", "batteryguard", "thermalguard",
     ]
 

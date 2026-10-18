@@ -69,7 +69,8 @@ enum SelfTest {
             + "\(tables.count) Switcher tables\n")
         for problem in problems { say("selftest: controls: " + problem + "\n") }
         let awake = runAwakeVerbCheck()
-        say("selftest-controls: \(KitControl.awakeVerbRules.count) Awake verbs, \(awakeCases.count) command lines\n")
+        say("selftest-controls: \(KitControl.awakeVerbRules.count) Awake verbs, \(awakeCases.count) command lines, "
+            + "\(KitControl.retiredVerbs.count) retired verbs\n")
         for problem in awake { say("selftest: awake verbs: " + problem + "\n") }
         exit(problems.isEmpty && awake.isEmpty ? 0 : 1)
     }
@@ -197,6 +198,35 @@ enum SelfTest {
         for rule in KitControl.awakeVerbRules where !help.output.contains(rule.verb) {
             problems.append("help doesn't list " + rule.verb)
         }
+        problems += await retiredVerbProblems(registry, peer: peer, lifetime: lifetime)
+        return problems
+    }
+
+    /// R5-12: every retired 0.2 verb answers exit 2 with its pointer before lookup (even when something registered
+    /// it, which reaches no handler), in any case, with or without arguments, and `help` never lists it.
+    @MainActor private static func retiredVerbProblems(_ registry: ControlCommandRegistry, peer: ControlPeer,
+                                                       lifetime: Lifetime) async -> [String] {
+        var problems: [String] = []
+        let log = AwakeProbeLog()
+        for verb in KitControl.retiredVerbs.keys.sorted() {
+            registry.register(verb, policy: .read, offOnly: false, cliAllowed: true, holds: false,
+                              summary: "Self-test retired " + verb, lifetime: lifetime) { _, _ in
+                log.calls.append((verb, false))
+                return .ok("reached")
+            }
+            let message = KitControl.retiredVerbs[verb] ?? ""
+            for words in [[verb], [verb, "off"], [verb.uppercased(), "on"], ["--json", verb, "off"]] {
+                let line = words.joined(separator: " ")
+                let response = await dispatch(words, registry: registry, peer: peer)
+                if response.exitCode != ControlExit.usage {
+                    problems.append("\(line): exit \(response.exitCode), expected \(ControlExit.usage)")
+                }
+                if response.output != L(message) { problems.append("\(line): answered “\(response.output)”") }
+            }
+            let help = await dispatch(["help"], registry: registry, peer: peer)
+            if help.exitCode != ControlExit.ok || help.output.contains(verb) { problems.append("help lists " + verb) }
+        }
+        if !log.calls.isEmpty { problems.append("a retired verb reached a handler \(log.calls.count) time(s)") }
         return problems
     }
 

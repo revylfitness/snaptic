@@ -3,8 +3,8 @@ import SnapticKit
 
 /// The 0.2 "Arrangement" page id (`displays.arrangement`), kept only while `DisplaysModule.settingsPages()` lists it
 /// and the root page's Arrange Displays… still pushes it (both go in the step-3 coordinated merge). It shows the 0.3
-/// pieces: Use as and the arrangement for each display, each display's Connection group, and 0.2's per-display
-/// display-sleep switches, which stay until `sleepPrevention` moves to Awake (§2.13, phase 3b).
+/// pieces: Use as and the arrangement for each display and each display's Connection group (0.2's display-sleep
+/// switches moved to Awake, §2.13).
 struct ArrangementPage: View {
     let env: DisplaysPageEnvironment
     @ObservedObject private var runtime: DisplaysRuntimeState
@@ -40,20 +40,6 @@ struct ArrangementPage: View {
                 }
                 ForEach(online, id: \.key) { display in
                     ConnectionSection(env: env, key: display.key)
-                }
-                if runtime.isEffective(.sleepPrevention) {
-                    Section {
-                        ForEach(online, id: \.key) { display in
-                            ToggleSetting(L("Keep the display awake while “\(display.name)” is connected"),
-                                          isOn: SettingsBinding.lossyEntry(env.config, \.perDisplay, display.key,
-                                                                           fallback: { PerDisplayConfig() },
-                                                                           \.management.preventSleep))
-                        }
-                    } header: {
-                        Text(L("Display sleep"))
-                    } footer: {
-                        Text(L("This also prevents the automatic screen lock. Awake replaces this setting."))
-                    }
                 }
             }
         }

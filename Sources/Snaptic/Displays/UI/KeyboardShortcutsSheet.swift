@@ -33,10 +33,10 @@ struct KeyboardShortcutsSheet: View, ControlDeclaring {
         _switcher = StateObject(wrappedValue: DisplaysFeatureSwitcher(env: env))
     }
 
-    /// Not in the list: Restore All Displays has its own row (its home is Confirm display changes), and the 0.2
-    /// sleep-prevention toggle moved to Awake.
-    private static let excluded: Set<DisplayActionID> = [PanicCoordinator.restoreActionID,
-                                                         DisplayActionID(rawValue: "d.sleepPreventionToggle")]
+    /// Not in the list: Restore All Displays has its own row (its home is Confirm display changes), and retired 0.2
+    /// actions (the sleep-prevention toggle moved to Awake).
+    private static let excluded: Set<DisplayActionID> = DisplayActionID.retiredActions
+        .union([PanicCoordinator.restoreActionID])
 
     var body: some View {
         let context = host.isRunning(.displays) ? env.context : nil

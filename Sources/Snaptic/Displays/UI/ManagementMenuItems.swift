@@ -3,7 +3,7 @@ import SnapticKit
 
 /// The menu items of D's management controllers (PLAN 0.3 §5.2, R5-13), built with MenuKit: Arrangement (Use as Main
 /// Display, Mirror “X”, Arrange Displays…), PanelProps (Rotation, High Dynamic Range, Underscan…), Power (Disconnect /
-/// Connect, Connect All Displays, Disconnect All But Main, and the 0.2 display-sleep item until step 3), Protection
+/// Connect, Connect All Displays, Disconnect All But Main; 0.2 display sleep moved to Awake, §2.13), Protection
 /// (Protect Arrangement) and SmartHiDPI (Sharper Text).
 ///
 /// Each controller registers its own instance in `start()` with only its own reference set, so an instance's items
@@ -23,7 +23,7 @@ import SnapticKit
 
     static var menuItemIDs: [DisplayMenuItemID] {
         [.dSetMain, .dMirrorMenu, .dArrange, .dRotationMenu, .dHDRToggle, .dUnderscanMenu, .dDisconnectItem, .dConnectAll,
-         .dDisconnectAllButMain, .dSleepPrevention, .dProtection, .dSmartHiDPI]
+         .dDisconnectAllButMain, .dProtection, .dSmartHiDPI]
     }
 
     // MARK: Descriptors (Customize Displays Menu rows)
@@ -61,21 +61,15 @@ import SnapticKit
                                                       defaultVisibility: .hidden))
             }
         }
-        if let w = power {
-            if w.effective.contains(.disconnect) {
-                list += [
-                    DisplayMenuItemDescriptor(id: .dDisconnectItem, title: PowerController.disconnectTitle, slot: .header,
-                                              defaultVisibility: .inSubmenu),
-                    DisplayMenuItemDescriptor(id: .dConnectAll, title: L("Connect All Displays"), slot: .tools,
-                                              defaultVisibility: .visible),
-                    DisplayMenuItemDescriptor(id: .dDisconnectAllButMain, title: L("Disconnect All But Main"), slot: .tools,
-                                              defaultVisibility: .visible),
-                ]
-            }
-            if w.effective.contains(.sleepPrevention) {
-                list.append(DisplayMenuItemDescriptor(id: .dSleepPrevention, title: L("Prevent Display Sleep"), slot: .display,
-                                                      defaultVisibility: .inSubmenu))
-            }
+        if let w = power, w.effective.contains(.disconnect) {
+            list += [
+                DisplayMenuItemDescriptor(id: .dDisconnectItem, title: PowerController.disconnectTitle, slot: .header,
+                                          defaultVisibility: .inSubmenu),
+                DisplayMenuItemDescriptor(id: .dConnectAll, title: L("Connect All Displays"), slot: .tools,
+                                          defaultVisibility: .visible),
+                DisplayMenuItemDescriptor(id: .dDisconnectAllButMain, title: L("Disconnect All But Main"), slot: .tools,
+                                          defaultVisibility: .visible),
+            ]
         }
         if let p = protection, p.effective.contains(.protection) {
             list.append(DisplayMenuItemDescriptor(id: .dProtection, title: L("Protect Arrangement"), slot: .tools,
@@ -171,7 +165,7 @@ import SnapticKit
     }
 
     private func powerItems(_ w: PowerController, _ display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] {
-        guard let ctx = context else { return [] }
+        guard context != nil else { return [] }
         let key = display.key
         var items: [(DisplayMenuItemID, NSMenuItem)] = []
         if w.effective.contains(.disconnect) {
@@ -190,14 +184,6 @@ import SnapticKit
                 item.toolTip = refusal ?? PowerController.disconnectNote
                 items.append((.dDisconnectItem, item))
             }
-        }
-        if w.effective.contains(.sleepPrevention), display.isOnline {
-            let on = ctx.config.value.perDisplay[key]?.management.preventSleep ?? false
-            let item = MenuKit.toggle(L("Prevent Display Sleep While Connected"), isOn: on,
-                                      control: ControlID("menu.display.dm.preventSleep")) { [weak w] in
-                w?.setPreventSleep(!on, for: key)
-            }
-            items.append((.dSleepPrevention, item))
         }
         return items
     }

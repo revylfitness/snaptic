@@ -80,7 +80,6 @@ package enum DisplaysUIText {
         case .pip: return L("Picture in picture")
         case .pipFilters: return L("PIP filters")
         case .menuBarOverlays: return L("Menu-bar overlays")
-        case .sleepPrevention: return L("Prevent display sleep")
         case .hooks: return L("Event hooks")
         case .customActions: return L("Custom actions")
         }
@@ -134,7 +133,6 @@ package enum DisplaysUIText {
         case .pip: return L("Show a display or window in a floating window.")
         case .pipFilters: return L("Filters and LUTs for picture in picture.")
         case .menuBarOverlays: return L("Menu-bar strip and rounded corners.")
-        case .sleepPrevention: return L("Keeps displays awake.")
         case .hooks: return L("Run a program when a display connects or sleeps.")
         case .customActions: return L("Your own programs in the menu and as shortcuts.")
         }

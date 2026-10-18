@@ -32,8 +32,6 @@ import SnapticKit
     @Published var moduleState: ModuleState = .stopped
     @Published var isPanicLatched = false
     @Published var lastPanicSummary: String?
-    /// True while Snaptic holds a sleep-prevention assertion (set by PowerController; menu badge).
-    @Published var sleepPreventionActive = false
     private var perDisplay: [DisplayKey: DisplayRuntime] = [:]
     private var revisions: [DisplayControllerID: ControllerRevision] = [:]
 
@@ -67,7 +65,6 @@ import SnapticKit
         availability = [:]
         perDisplay = [:]
         isPanicLatched = false
-        sleepPreventionActive = false
         lastPanicSummary = nil
     }
 }

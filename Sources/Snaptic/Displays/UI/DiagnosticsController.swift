@@ -123,7 +123,6 @@ struct DiagnosticsReport {
         rows.append(DiagnosticsRow("Unprotected", DisplaysLive.unprotectedReason(ctx) != nil ? "yes" : "no"))
         rows.append(DiagnosticsRow("Guard helper", ctx.guardClient.isAlive ? "running" : "not running"))
         rows.append(DiagnosticsText.scrub(label: "Helpers", value: ctx.helpers.unavailable.map { "unavailable: \($0)" } ?? "available"))
-        rows.append(DiagnosticsRow("Sleep prevention", runtime.sleepPreventionActive ? "active" : "off"))
         rows.append(DiagnosticsRow("Virtual hosts", "\(ctx.virtualHosts.liveDisplays.count)"))
         rows.append(DiagnosticsRow("Transactions", ctx.transactions.isBusy ? "busy" : "idle"))
         rows.append(DiagnosticsRow("Session", ctx.sessionGate.isOpen ? "open" : "paused"))

@@ -70,12 +70,10 @@ package enum KitBackup {
         [displaysSection, "features", "disconnect"],
         [displaysSection, "features", "autoDisconnectBuiltin"],
         [displaysSection, "features", "dimToBlack"],
-        [displaysSection, "features", "sleepPrevention"],
         [displaysSection, "features", "hooks"],
         [displaysSection, "features", "customActions"],
         // Safety switches a file must never flip (FIXES-R1 A2).
         [displaysSection, "management", "autoDisconnectWithoutDDC"],
-        [displaysSection, "perDisplay", "*", "management", "preventSleep"],
         [displaysSection, "perDisplay", "*", "management", "ignoreForAutoDisconnect"],
         [displaysSection, "color", "allowGammaWithCustomProfile"],
         // Awake (0.3 §2.14, §3.2, §3.6): Drive Alive (volumes, interval, "also without a session"), pointer
