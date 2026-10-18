@@ -27,7 +27,7 @@ enum ConfigFixtures {
         c.perDisplay[displayKey] = entry
         c.brightness.syncSource = displayKey
         c.resolution.scaleMatchReference = displayKey
-        c.keys.osdStyle = .compact
+        c.keys.osdStyle = .classic
         c.keys.osdPosition = .center
         c.keys.shortcuts[.fShowPanel] = combo
         c.safety.panicHotkey = combo

@@ -1,19 +1,27 @@
 # How team agents work (lead-owned)
 
-Read this, then `docs/design/PLAN.md` (the R5 amendments at the top win), then the
-sections and normative snippets your brief names (`R2C.md`, `R3C.md`, `R4C.md`).
+Read this, then `docs/design/0.3/PLAN.md` (0.3; the R5 amendments at the top win) and, for
+everything 0.3 doesn't touch, `docs/design/PLAN.md` (0.2), then the sections your brief names.
+`docs/design/0.3/STEP0-NOTES.md` lists where the step-0 code deviates from the plan text: the
+code on `feature/v03` is the contract (R5 rule carried forward).
 `docs/design/parity-catalog.md` describes the BetterDisplay features we match;
 `macos-display-apis.md` and `macos27.md` hold the platform research.
 
 ## Ground truth
 
-- The Swift on `feature/displays` is the contract. Contract files (lead-owned, do not
-  edit): `Sources/SnapticKit/{KitModules,FeatureGraph,LineSplitter}.swift`,
-  `Sources/SnapticKit/Config/{ConfigModel,ConfigDisplays}.swift`,
-  `Sources/Snaptic/Core/ModuleContracts.swift`, `Sources/Snaptic/Displays/{DisplaysModule,
+- The Swift on `feature/v03` is the contract. Contract files (lead-owned, do not
+  edit): `Sources/SnapticKit/{KitModules,FeatureGraph,LineSplitter,KitLossy,AwakeFeatureGraph}.swift`,
+  `Sources/SnapticKit/Controls/{ControlRegistry,ControlLegacy,ControlRemovals}.swift`,
+  `Sources/SnapticKit/Config/{ConfigModel,ConfigDisplays,ConfigModules,ConfigMigrations,ConfigAwake}.swift`,
+  `Sources/Snaptic/Core/{ModuleContracts,ModuleHost,ModuleContext,ToastPresenter,HostSignals,
+  ConfigSlice}.swift`, `Sources/Snaptic/Awake/{AwakeModule,AwakeContext,AwakeContracts,
+  AwakeRuntimeState}.swift`, `Sources/Snaptic/Displays/{DisplaysModule,
   DisplaysContext,DisplaysContracts,DisplaysRuntimeState,SharedExtensions}.swift`,
   `Sources/Snaptic/Displays/Registries/*`, `Sources/Snaptic/Displays/Platform/{CallbackTarget,
-  HelperPipeWriter}.swift`, `Package.swift`, `.github/**`, `scripts/**`.
+  HelperPipeWriter}.swift`, `Tests/SnapticKitTests/{KitModulesTests,KitLossyTests,ConfigModulesTests,
+  ConfigDisplaysTests,ConfigMigrationsTests,ConfigAwakeTests,AwakeFeatureGraphTests,
+  ControlRegistryTests}.swift`, `Tests/SnapticKitTests/Support/ConfigFixtures.swift`, `Package.swift`,
+  `Resources/Info.plist`, `.github/**`, `scripts/**` (exceptions below).
 - `scripts/stubs.tsv` lists every file and its owner. **Edit only files your team owns.**
   If you truly need a contract change, stop and write the exact diff you need in your
   final report; the lead applies it.
@@ -23,6 +31,21 @@ sections and normative snippets your brief names (`R2C.md`, `R3C.md`, `R4C.md`).
 - New files: you may add files under your own directories. Report each new path with
   owner and kind so the lead adds it to `scripts/stubs.tsv` (lint fails until then:
   add the line yourself in your branch, and say so in the report).
+- **Exceptions to "`scripts/**` and the contract files are the lead's"** (0.3):
+  - `scripts/stubs.tsv`: add rows for your own new files (above).
+  - `scripts/lint-legacy.tsv` (the ratchet): you may **lower or delete** rows for paths you
+    own, in your own branch. Never raise a count or add a row; a new violation is fixed, not
+    ratcheted. Rows are sorted by path, so parallel edits touch different lines. A row whose
+    count went down only warns until the step-3 exit; from then on CI runs `lint.sh --strict`
+    and only the three permanent rows remain.
+  - Control tables (PLAN 0.3 §4.8.2, R5-13): each `Sources/SnapticKit/Controls/<Type>Controls.swift`
+    belongs to the owner of `<Type>` (see `stubs.tsv`); fill `controls` as your views and
+    builders land. A table you add needs a `stubs.tsv` row for its file and **one appended
+    line** in `ControlRegistry.tables`; that line is the only edit you may make to
+    `ControlRegistry.swift`.
+- Lint (0.3 §6.3): `./scripts/lint.sh` runs the 0.2 rules plus L1–L17 (`scripts/lint03.py`).
+  Pass ids to views and MenuKit only as `ControlID("literal")`, and declare the table with
+  `typealias Controls = <Type>Controls` in that file (L15).
 
 ## Toolchain facts
 
@@ -42,17 +65,17 @@ sections and normative snippets your brief names (`R2C.md`, `R3C.md`, `R4C.md`).
 ## Git
 
 - Work in your own worktree: `git -C /home/claude/snaptic fetch -q origin && git -C
-  /home/claude/snaptic worktree add /home/claude/wt/<branch> -b feature/<branch> origin/feature/displays`.
+  /home/claude/snaptic worktree add /home/claude/wt/<branch> -b feature/<branch> origin/feature/v03`.
 - Branch names start with `feature/` so pushes build in CI. Commit often; every commit
   message ends with:
   ```
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
   Claude-Session: https://claude.ai/code/session_01UYoMQ4vFKCFBrwcdgSAmUg
   ```
-- Push your branch only. Never push to `feature/displays` or `main`, never force-push
+- Push your branch only. Never push to `feature/v03`, `feature/displays` or `main`, never force-push
   anything but your own branch, never push tags. If a push is refused by policy (403),
   report it; do not retry or route around it.
-- Rebase on `origin/feature/displays` before your final push if it moved.
+- Rebase on `origin/feature/v03` before your final push if it moved.
 
 ## Rules (PLAN §14.3, condensed)
 
@@ -65,7 +88,8 @@ sections and normative snippets your brief names (`R2C.md`, `R3C.md`, `R4C.md`).
    `@unchecked Sendable` with lifecycle in an extension. C callbacks use
    `CallbackTarget`; closures passed to `asyncAfter`, NotificationCenter, Timer, KVO wrap
    `MainActor.assumeIsolated`. Never `DispatchQueue.main.sync`. Main thread ≤ 50 ms.
-3. No `static let shared` in Displays. No `print`/`NSLog` (use `EventLog.shared.record`,
+3. No `static let shared` in Displays or Awake (Awake also: observers with `queue: .main`, timers added in
+   `.common` modes, lint L10/L14). No `print`/`NSLog` (use `EventLog.shared.record`,
    never with titles, app names, serials, EDID bytes or key codes).
 4. Never `FileHandle` writes, `readLine`, `waitUntilExit`, `waitpid(-1, …)`, `Process`.
    Helpers go through `HelperSpawner`; pipes through `HelperPipeWriter` + `LineSplitter`.
