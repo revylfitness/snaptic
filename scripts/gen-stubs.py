@@ -126,6 +126,99 @@ def k14(t, owner, extra):
     return header(owner, ["Foundation"]) + f"enum {t} {{}}\n"
 
 
+# 0.3 kinds (PLAN 0.3 §6.3).
+
+def k15(t, owner, extra, members=""):
+    """Awake service."""
+    return header(owner, ["AppKit", "SnapticKit"]) + (
+        f"@MainActor final class {t}: AwakeServiceLifecycle {{\n"
+        f"    weak var context: AwakeContext?\n\n"
+        f"    init() {{}}\n\n"
+        f"    func activate(_ context: AwakeContext, lifetime: Lifetime) {{ self.context = context }}\n"
+        f"    func deactivate() {{ context = nil }}\n{members}}}\n")
+
+
+def k16(t, owner, extra, members=""):
+    """Criterion source: K15 + kinds, no-op contribute, observe backed by one ChangeFanout per instance."""
+    kinds = ", ".join("." + k for k in extra.split(",") if k and k != "-")
+    return header(owner, ["AppKit", "SnapticKit"]) + (
+        f"@MainActor final class {t}: CriterionSource {{\n"
+        f"    static var kinds: Set<AwakeCriterionKind> {{ [{kinds}] }}\n"
+        f"    weak var context: AwakeContext?\n"
+        f"    private let changes = ChangeFanout()\n\n"
+        f"    init() {{}}\n\n"
+        f"    func activate(_ context: AwakeContext, lifetime: Lifetime) {{ self.context = context }}\n"
+        f"    func deactivate() {{ context = nil }}\n"
+        f"    func contribute(to facts: inout CriterionFacts) {{}}\n"
+        f"    func observe(_ lifetime: Lifetime, _ handler: @escaping @MainActor () -> Void) {{ changes.add(lifetime, handler) }}\n"
+        f"{members}}}\n")
+
+
+def k17(t, owner, extra, members=""):
+    """Awake controller."""
+    return header(owner, ["AppKit", "SnapticKit"]) + (
+        f"@MainActor final class {t}: AwakeFeatureController {{\n"
+        f"    static var id: AwakeControllerID {{ .{extra} }}\n"
+        f"    /// Weak: controllers never keep the context strongly.\n"
+        f"    weak var context: AwakeContext?\n\n"
+        f"    init() {{}}\n\n"
+        f"    func availability(of feature: AwakeFeature, context: AwakeContext) -> FeatureAvailability {{ .available }}\n"
+        f"    func start(_ context: AwakeContext, lifetime: Lifetime, effective: Set<AwakeFeature>) {{ self.context = context }}\n"
+        f"    func effectiveFeaturesDidChange(_ effective: Set<AwakeFeature>) {{}}\n"
+        f"    func configDidChange(from old: AwakeConfig, to new: AwakeConfig) {{}}\n"
+        f"    func stop() {{ context = nil }}\n{members}}}\n")
+
+
+def page_parts(t, extra):
+    title, _, table = extra.partition(";")
+    return title, (table or t) + "Controls"
+
+
+def k18(t, owner, extra):
+    """Settings page or page section: a View naming its control table."""
+    title, table = page_parts(t, extra)
+    return header(owner, ["SwiftUI", "SnapticKit"]) + (
+        f"struct {t}: View, ControlDeclaring {{\n"
+        f"    typealias Controls = {table}\n\n"
+        f"    var body: some View {{\n"
+        f"        SettingsPageScaffold(route: SettingsRoute(Controls.surface)) {{\n"
+        f"            Text(L(\"{title}\")).font(.headline)\n"
+        f"            Text({NB}).foregroundStyle(.secondary)\n"
+        f"        }}\n    }}\n}}\n")
+
+
+def k19(t, owner, extra):
+    """Sheet: K18 with dismiss and a Done button."""
+    title, table = page_parts(t, extra)
+    return header(owner, ["SwiftUI", "SnapticKit"]) + (
+        f"struct {t}: View, ControlDeclaring {{\n"
+        f"    typealias Controls = {table}\n"
+        f"    @Environment(\\.dismiss) private var dismiss\n\n"
+        f"    var body: some View {{\n"
+        f"        VStack(spacing: 0) {{\n"
+        f"            SettingsPageScaffold(route: SettingsRoute(Controls.surface)) {{\n"
+        f"                Text(L(\"{title}\")).font(.headline)\n"
+        f"                Text({NB}).foregroundStyle(.secondary)\n"
+        f"            }}\n"
+        f"            HStack {{\n"
+        f"                Spacer()\n"
+        f"                Button(L(\"Done\")) {{ dismiss() }}\n"
+        f"                    .keyboardShortcut(.defaultAction)\n"
+        f"            }}\n"
+        f"            .padding(16)\n"
+        f"        }}\n"
+        f"        .frame(width: 520)\n"
+        f"    }}\n}}\n")
+
+
+def k21(t, owner, extra):
+    """Kit control table (owner fills `controls`)."""
+    return header(owner, ["Foundation"]) + (
+        f"package enum {t}: ControlTable {{\n"
+        f"    package static let surface = \"{extra}\"\n"
+        f"    package static let controls: [ControlSpec] = []\n}}\n")
+
+
 # Stubs whose signatures other teams call before the owner builds them (r3 A.2 + R5).
 SPECIAL = {}
 
@@ -621,7 +714,8 @@ SPECIAL["DisplaysMenuBuilder"] = lambda o: header(o, ["AppKit", "SnapticKit"]) +
 '''
 
 KINDS = {"K1": k1, "K2": k2, "K3": k3, "K4": k4, "K5": k5, "K8": k8, "K9": k9, "K10": k10,
-         "K11": k11, "K12": k12, "K13": k13, "K14": k14}
+         "K11": k11, "K12": k12, "K13": k13, "K14": k14,
+         "K15": k15, "K16": k16, "K17": k17, "K18": k18, "K19": k19, "K21": k21}
 
 
 def main():
@@ -647,6 +741,10 @@ def main():
         if os.path.exists(full):
             continue
         if kind == "S":
+            if typ not in SPECIAL:
+                # 0.3 S stubs are written by hand into the tree (PLAN 0.3 §6.3); nothing to generate.
+                print(f"skipped {path}: hand-written S stub missing", file=sys.stderr)
+                continue
             text = SPECIAL[typ](owner)
         elif kind == "K6":
             text = k6(typ, owner, extra)

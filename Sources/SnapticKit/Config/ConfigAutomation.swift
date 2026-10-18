@@ -206,30 +206,3 @@ package struct AutomationConfig: ConfigModel {
         return actions.first { $0.cliName == wanted }
     }
 }
-
-/// An array decoded element by element; bad elements are skipped (for example a hook
-/// with an event this version doesn't know).
-package struct LossyArray<Element: Decodable>: Decodable {
-    package var items: [Element]
-
-    package init() { items = [] }
-
-    package init(from decoder: Decoder) throws {
-        var container = try decoder.unkeyedContainer()
-        var result: [Element] = []
-        var guardCount = 0
-        while !container.isAtEnd && guardCount < 1_024 {
-            guardCount += 1
-            if let item = try? container.decode(Element.self) {
-                result.append(item)
-            } else if (try? container.decode(SkipValue.self)) == nil {
-                break
-            }
-        }
-        items = result
-    }
-
-    private struct SkipValue: Decodable {
-        init(from decoder: Decoder) throws {}
-    }
-}

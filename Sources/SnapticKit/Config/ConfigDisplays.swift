@@ -142,3 +142,154 @@ package struct PerDisplayConfig: ConfigModel {
         return c
     }
 }
+
+// MARK: - 0.3: sections, restore scopes, migrations (lead; §4.5, §4.6, R5-2)
+
+/// One case per `DisplaysConfig` field, with `perDisplay` split per subsection (consistency m8; R5-2: no
+/// `migrations` case). Controllers declare the sections they observe (`observedSections`).
+package enum DisplaysConfigSection: String, CaseIterable, Sendable {
+    case features, brightness, ddc, keys, color, resolution, virtualScreens, management, layouts, pip, automation,
+         safety, identity, menu
+    case perDisplayBrightness, perDisplayDDC, perDisplayKeys, perDisplayColor, perDisplayResolution,
+         perDisplayManagement, perDisplayIdentity, perDisplayPIP
+
+    /// The per-display subsections.
+    package static let perDisplaySections: Set<DisplaysConfigSection> = [
+        .perDisplayBrightness, .perDisplayDDC, .perDisplayKeys, .perDisplayColor, .perDisplayResolution,
+        .perDisplayManagement, .perDisplayIdentity, .perDisplayPIP,
+    ]
+}
+
+/// Page Restore Defaults scopes (consistency M7). `.all` = Displays › Advanced; the others = that sub-page's
+/// Advanced sheet. `color(nil)` = every display, `color(key)` = "This display".
+package enum DisplaysRestoreScope: Equatable, Sendable {
+    case all, brightness, color(DisplayKey?), hardware, keyboard, layouts, virtualDisplays, pip, automations, confirm
+}
+
+extension DisplaysConfig {
+    /// The sections whose values differ. Non-empty whenever `old != new`.
+    package static func changedSections(old: DisplaysConfig, new: DisplaysConfig) -> Set<DisplaysConfigSection> {
+        var s = Set<DisplaysConfigSection>()
+        if old.features != new.features { s.insert(.features) }
+        if old.brightness != new.brightness { s.insert(.brightness) }
+        if old.ddc != new.ddc { s.insert(.ddc) }
+        if old.keys != new.keys { s.insert(.keys) }
+        if old.color != new.color { s.insert(.color) }
+        if old.resolution != new.resolution { s.insert(.resolution) }
+        if old.virtualScreens != new.virtualScreens { s.insert(.virtualScreens) }
+        if old.management != new.management { s.insert(.management) }
+        if old.layouts != new.layouts { s.insert(.layouts) }
+        if old.pip != new.pip { s.insert(.pip) }
+        if old.automation != new.automation { s.insert(.automation) }
+        if old.safety != new.safety { s.insert(.safety) }
+        if old.identity != new.identity { s.insert(.identity) }
+        if old.menu != new.menu { s.insert(.menu) }
+        if old.perDisplay != new.perDisplay {
+            let keys = Set(old.perDisplay.values.keys).union(new.perDisplay.values.keys)
+            for key in keys {
+                let a = old.perDisplay[key], b = new.perDisplay[key]
+                if a?.brightness != b?.brightness { s.insert(.perDisplayBrightness) }
+                if a?.ddc != b?.ddc { s.insert(.perDisplayDDC) }
+                if a?.keys != b?.keys { s.insert(.perDisplayKeys) }
+                if a?.color != b?.color { s.insert(.perDisplayColor) }
+                if a?.resolution != b?.resolution { s.insert(.perDisplayResolution) }
+                if a?.management != b?.management { s.insert(.perDisplayManagement) }
+                if a?.identity != b?.identity { s.insert(.perDisplayIdentity) }
+                if a?.pip != b?.pip { s.insert(.perDisplayPIP) }
+            }
+            // Only entries under unknown keys differ (kept for a newer Snaptic): every subsection may care.
+            if s.isDisjoint(with: DisplaysConfigSection.perDisplaySections) {
+                s.formUnion(DisplaysConfigSection.perDisplaySections)
+            }
+        }
+        return s
+    }
+
+    /// Page Restore Defaults (§4.6): only `scope` goes back to defaults. Display identities (names, fingerprints)
+    /// are never reset here, so remembered displays keep their keys.
+    package func restoringDefaults(scope: DisplaysRestoreScope) -> DisplaysConfig {
+        var c = self
+        func eachDisplay(_ change: (inout PerDisplayConfig) -> Void) {
+            var map = c.perDisplay
+            for key in map.values.keys {
+                guard var entry = map.values[key] else { continue }
+                change(&entry)
+                map.values[key] = entry
+            }
+            c.perDisplay = map
+        }
+        switch scope {
+        case .all:
+            let identities = perDisplay.values.mapValues(\.identity)
+            c = DisplaysConfig()
+            c.identity = identity
+            var map = LossyMap<DisplayKey, PerDisplayConfig>()
+            for (key, id) in identities {
+                var entry = PerDisplayConfig()
+                entry.identity = id
+                map[key] = entry
+            }
+            c.perDisplay = map
+        case .brightness:
+            c.brightness = BrightnessConfig()
+            eachDisplay { $0.brightness = PerDisplayBrightness() }
+        case .color(let key):
+            if let key {
+                if var entry = c.perDisplay[key] {
+                    entry.color = PerDisplayColor()
+                    c.perDisplay[key] = entry
+                }
+            } else {
+                c.color = ColorConfig()
+                eachDisplay { $0.color = PerDisplayColor() }
+            }
+        case .hardware:
+            c.ddc = DDCConfig()
+            eachDisplay { $0.ddc = PerDisplayDDC() }
+        case .keyboard:
+            c.keys = KeysConfig()
+            eachDisplay { $0.keys = PerDisplayKeys() }
+        case .layouts:
+            c.layouts = LayoutsConfig()
+        case .virtualDisplays:
+            c.virtualScreens = VirtualConfig()
+        case .pip:
+            c.pip = PIPConfig()
+            eachDisplay { $0.pip = PerDisplayPIP() }
+        case .automations:
+            c.automation = AutomationConfig()
+        case .confirm:
+            c.safety = SafetyConfig()
+        }
+        return c
+    }
+
+    /// M4, then M5, then M10 (R5-2), each only while its marker is absent; records each marker it ran. Pure;
+    /// ModuleHost runs it after loading the ledger. Legacy fields stay as they are (0.2 still reads them).
+    package func migrated(ledger: inout MigrationLedger) -> DisplaysConfig {
+        var c = self
+        if !ledger.has(.menuShortcuts) {
+            // M4: the panel and Identify shortcuts become ordinary Displays shortcuts, when those are unset.
+            if c.keys.shortcuts[.fShowPanel] == nil, let combo = c.menu.showPanelShortcut {
+                c.keys.shortcuts[.fShowPanel] = combo
+            }
+            if c.keys.shortcuts[.fIdentify] == nil, let combo = c.menu.identifyShortcut {
+                c.keys.shortcuts[.fIdentify] = combo
+            }
+            ledger.record(.menuShortcuts)
+        }
+        if !ledger.has(.showNits) {
+            // M5: once (r1 re-ran the OR on every decode, so a later "off" came back).
+            if c.keys.osdShowNits { c.brightness.showNits = true }
+            ledger.record(.showNits)
+        }
+        if !ledger.has(.powerSwitch) {
+            // M10: the header power switch becomes a top-level item under the display's row.
+            let switches = Set(c.perDisplay.values.values.map(\.management.powerSwitch))
+            if switches.contains(.disconnect) { c.menu.items[.dDisconnectItem] = .visible }
+            if switches.contains(.ddcStandby) { c.menu.items[.cDDCPower] = .visible }
+            ledger.record(.powerSwitch)
+        }
+        return c
+    }
+}

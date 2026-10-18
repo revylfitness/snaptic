@@ -75,6 +75,73 @@ extension KeyedDecodingContainer {
 
 extension LossyMap: Sendable where Key: Sendable, Value: Sendable {}
 
+/// An array decoded element by element (mirrors LossyMap; 0.3 N18, R5-3): a bad element is skipped and the rest
+/// kept; encodes every element. At most `maxElements` elements are read. Moved here from ConfigAutomation.swift
+/// (same name, same `items`).
+package struct LossyArray<Element: Codable & Equatable>: Codable, Equatable {
+    package var items: [Element]
+
+    package static var maxElements: Int { 1_024 }
+
+    package init(_ items: [Element] = []) { self.items = items }
+
+    /// Always decodes, whatever the element holds, so the container moves on (`nil` = a bad element).
+    private struct Attempt: Decodable {
+        let value: Element?
+        init(from decoder: Decoder) throws { value = try? Element(from: decoder) }
+    }
+
+    package init(from decoder: Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        var result: [Element] = []
+        var read = 0
+        while !container.isAtEnd && read < Self.maxElements {
+            read += 1
+            guard let attempt = try? container.decode(Attempt.self) else { break }
+            if let value = attempt.value { result.append(value) }
+        }
+        items = result
+    }
+
+    package func encode(to encoder: Encoder) throws {
+        var container = encoder.unkeyedContainer()
+        for item in items { try container.encode(item) }
+    }
+}
+
+extension LossyArray: Sendable where Element: Sendable {}
+
+extension Array where Element: Identifiable {
+    /// First element per id wins, order kept; never traps on duplicate ids (R5-3, security L3).
+    package func uniquedByID() -> [Element] {
+        var seen = Set<Element.ID>()
+        return filter { seen.insert($0.id).inserted }
+    }
+}
+
+extension Array where Element: Hashable {
+    /// First occurrence wins, order kept.
+    package func uniqued() -> [Element] {
+        var seen = Set<Element>()
+        return filter { seen.insert($0).inserted }
+    }
+}
+
+extension KeyedDecodingContainer {
+    /// `c.lossyArray(.presets, default)`: a missing or non-array value gives the fallback; an array decodes element by
+    /// element (never all-or-nothing).
+    package func lossyArray<T: Codable & Equatable>(_ key: Key, _ fallback: @autoclosure () -> [T]) -> [T] {
+        guard let decoded = (try? decodeIfPresent(LossyArray<T>.self, forKey: key)) ?? nil else { return fallback() }
+        return decoded.items
+    }
+
+    /// lossyArray, then uniquedByID: duplicate ids are dropped on decode (the first is kept).
+    package func lossyUniqueArray<T: Codable & Equatable & Identifiable>(_ key: Key,
+                                                                         _ fallback: @autoclosure () -> [T]) -> [T] {
+        lossyArray(key, fallback()).uniquedByID()
+    }
+}
+
 /// When a ConfigStore writes (FIXES-R2 W1): a pending change always; `force` also when
 /// nothing was ever written, so a value equal to the defaults still lands on disk.
 package enum ConfigSavePolicy {
