@@ -17,7 +17,8 @@ import SnapticShims
 ///
 /// `--selftest-controls <token-file>` (0.3 §4.8, token-gated): walks a Switcher `Config` with every optional set and
 /// one shortcut, in process, and exits 1 unless every key has a control (a legacy path, a Switcher table key or an
-/// internal key) and every legacy path still exists or was removed. Then (0.3 §2.10, §3.1) it sends every documented
+/// internal key) and every legacy path still exists or was removed, and that the Displays menu contributors'
+/// `menuItemIDs` cover every frozen 0.2 menu id (R5-13). Then (0.3 §2.10, §3.1) it sends every documented
 /// `snaptic awake …` command line, both `awake hold` forms included, through the client's parsing and the real
 /// `ControlCommandRegistry.dispatch` to probe handlers that parse with `AwakeCommandGrammar`, and checks the exit
 /// codes, `holding`, which handler got the connection's hold, the host's verb rules, the shared 1/s window and help.
@@ -68,11 +69,17 @@ enum SelfTest {
         say("selftest-controls: \(walked.count) paths, \(KitKeyPaths.leaves(walked).count) keys, "
             + "\(tables.count) Switcher tables\n")
         for problem in problems { say("selftest: controls: " + problem + "\n") }
+        // R5-13: the Displays menu contributors' static ids cover every frozen 0.2 menu id (review5 code N1).
+        let (menu, contributors) = MainActor.assumeIsolated {
+            (DisplaysModule.menuCoverageProblems(), DisplaysModule.menuContributorTypes.count)
+        }
+        say("selftest-controls: \(contributors) Displays menu contributors\n")
+        for problem in menu { say("selftest: menu items: " + problem + "\n") }
         let awake = runAwakeVerbCheck()
         say("selftest-controls: \(KitControl.awakeVerbRules.count) Awake verbs, \(awakeCases.count) command lines, "
             + "\(KitControl.retiredVerbs.count) retired verbs\n")
         for problem in awake { say("selftest: awake verbs: " + problem + "\n") }
-        exit(problems.isEmpty && awake.isEmpty ? 0 : 1)
+        exit(problems.isEmpty && menu.isEmpty && awake.isEmpty ? 0 : 1)
     }
 
     // MARK: Awake verbs (0.3 §2.10, §3.1)

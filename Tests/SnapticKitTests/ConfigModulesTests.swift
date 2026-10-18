@@ -385,14 +385,35 @@ final class ConfigModulesTests: XCTestCase {
 
     // MARK: Awake upgrader insertion (§2.13, marker awakeUpgrade.v1)
 
-    /// One launch as ModuleHost runs it: the stored value (or the first-run value), M3, then the Awake insertion;
-    /// what it returns is what gets saved, so it goes through JSON like the store.
+    /// One launch as ModuleHost runs it: the stored value (or the first-run value), M3, the Awake insertion, then
+    /// M1's marker (recorded on every launch whatever M1 found); what it returns is what gets saved, so it goes
+    /// through JSON like the store.
     private func launch(_ stored: ModulesConfig?, launchedBefore: Bool = true,
                         ledger: inout MigrationLedger) throws -> ModulesConfig {
         var c = stored ?? ModulesConfig.firstRun(launchedBefore: launchedBefore)
         c = c.migrated(ledger: &ledger)
         c = c.insertingAwakeForUpgrader(modulesExisted: stored != nil, ledger: &ledger)
+        ledger.record(.fromDisplays)
         return try roundTrip(c)
+    }
+
+    /// A tester who installed a 0.3 build from before `awakeUpgrade.v1` existed (review5 ui N1): its launches
+    /// recorded M3 and M1 but not this marker. The next build must not take it for a 0.2 upgrader.
+    func testPreMarkerZeroThreeInstallIsNotAnUpgrader() throws {
+        var ledger = MigrationLedger()
+        ledger.record(.newModuleCards)
+        ledger.record(.fromDisplays)
+        var stored = ModulesConfig.firstRun(launchedBefore: false)
+        stored.onboarding = .done
+        XCTAssertNil(stored.modules[.awake])
+        let c = try launch(stored, ledger: &ledger)
+        XCTAssertNil(c.modules[.awake])
+        XCTAssertTrue(c.isEnabled(.awake))
+        XCTAssertFalse(c.newModuleCards.contains(.awake))
+        XCTAssertTrue(ledger.has(.awakeUpgrade))
+        // A 0.2 store has no ledger at all, so the same stored value from 0.2 is still an upgrade.
+        var fresh = MigrationLedger()
+        XCTAssertFalse(try launch(stored, ledger: &fresh).isEnabled(.awake))
     }
 
     func testFreshInstallKeepsAwakeOnAcrossLaunches() throws {

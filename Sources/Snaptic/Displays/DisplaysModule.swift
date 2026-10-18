@@ -10,7 +10,7 @@ import SnapticKit
     let id: ModuleID = .displays
     let title = L("Displays")
     let symbolName = "display.2"
-    let summary = L("Brightness, resolution, DDC, virtual screens and more, for every display.")
+    let summary = L("Brightness, resolution, hardware controls, virtual displays, and more, for every display.")
     private(set) var state: ModuleState = .stopped
 
     /// Before start(), what the saved settings would turn on (for the host's launch request).
@@ -24,13 +24,22 @@ import SnapticKit
     private(set) lazy var pageEnvironment = DisplaysPageEnvironment(
         config: config, runtime: runtime, enableFeature: { [weak self] in self?.enable($0) })
 
-    /// Every menu contributor type (lead-owned list; `--selftest-controls` checks the union of their
-    /// `menuItemIDs` covers every frozen 0.2 menu id, R5-13). Add a type here when you add a contributor.
+    /// Every menu contributor type (lead-owned list; lint03 checks every `DisplayMenuContributor` conformer is here).
+    /// `--selftest-controls` checks the union of their `menuItemIDs` against the frozen 0.2 menu ids (R5-13,
+    /// `menuCoverageProblems()`). Add a type here when you add a contributor.
     static let menuContributorTypes: [any DisplayMenuContributor.Type] = [
         PanicCoordinator.self, AutomationMenuItems.self, OverviewMenuItems.self, VirtualMenuItems.self,
         LayoutsMenuItems.self, ManagementMenuItems.self, ResolutionMenuItems.self, DDCMenuItems.self,
         BrightnessMenuItems.self, ColorMenuItems.self, PIPMenuItems.self,
     ]
+
+    /// R5-13 (review5 code N1): every frozen 0.2 menu id that wasn't removed is declared by exactly one contributor,
+    /// and no contributor declares a removed one (Kit `ControlLegacy.menuCoverageProblems`, tested there).
+    static func menuCoverageProblems() -> [String] {
+        var contributed: [String: [String]] = [:]
+        for type in menuContributorTypes { contributed[String(describing: type)] = type.menuItemIDs.map(\.rawValue) }
+        return ControlLegacy.menuCoverageProblems(contributed: contributed, removed: Set(ControlRemovals.removed.keys))
+    }
 
     /// Every controller class; the order is the start order (stop runs in reverse).
     static let controllerTypes: [any DisplayFeatureController.Type] = [

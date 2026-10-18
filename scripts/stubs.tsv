@@ -320,6 +320,7 @@ Tests/SnapticKitTests/ConfigMigrationsTests.swift	lead	L	-	-
 Sources/SnapticKit/ToastPolicy.swift	lead	L	-	-
 Sources/SnapticKit/MigrationNotices.swift	lead	L	-	-
 Tests/SnapticKitTests/ToastPolicyTests.swift	lead	L	-	-
+Tests/SnapticKitTests/HelpAnchorsReadmeTests.swift	lead	L	-	-
 Tests/SnapticKitTests/MigrationNoticesTests.swift	lead	L	-	-
 Tests/SnapticKitTests/ConfigAwakeTests.swift	lead	L	-	-
 Tests/SnapticKitTests/Support/ConfigFixtures.swift	lead	L	-	-

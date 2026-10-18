@@ -125,8 +125,6 @@ package struct ModulesConfig: ConfigModel {
     /// Permissions chosen during onboarding that still have to be requested.
     package var onboardingPermissions: [Permission]
 
-    package static let maxSymbolLength = 64
-
     /// SF Symbols offered for status icons (General → Menu).
     package static let curatedSymbols = [
         "rectangle.on.rectangle", "rectangle.stack", "macwindow.on.rectangle", "square.grid.2x2",
@@ -393,11 +391,16 @@ extension ModulesConfig {
     /// existed before this launch (`modulesExisted`; a 0.2 store never holds an Awake entry) and hold no Awake
     /// entry. A fresh install records the marker on its first launch (`modulesExisted == false`), so its later
     /// launches, and General › Reset (which keeps the ledger), keep the per-id default (Awake on). A 0.1 user
-    /// without module settings gets the same entry from `upgradeDefaults()`. Pure; ModuleHost runs it.
+    /// without module settings gets the same entry from `upgradeDefaults()`. Pure; ModuleHost runs it, before M1.
+    ///
+    /// A ledger that already holds `fromDisplays.v1` (M1's marker, recorded on every 0.3 launch, after this step) means
+    /// a 0.3 build ran before: a 0.3 install, not a 0.1/0.2 upgrade. That covers testers of 0.3 builds from before
+    /// this marker existed (review5 ui N1), whose fresh install would otherwise read as an upgrade once.
     package func insertingAwakeForUpgrader(modulesExisted: Bool, ledger: inout MigrationLedger) -> ModulesConfig {
         guard !ledger.has(.awakeUpgrade) else { return self }
+        let zeroThreeRanBefore = ledger.has(.fromDisplays)
         ledger.record(.awakeUpgrade)
-        guard modulesExisted, modules[.awake] == nil else { return self }
+        guard modulesExisted, !zeroThreeRanBefore, modules[.awake] == nil else { return self }
         var c = self
         c.modules[.awake] = Self.awakeUpgradePreferences
         // C7: upgraders see "New: Awake" on General (hidden by H's card rules once M1 migrated or Awake is on).

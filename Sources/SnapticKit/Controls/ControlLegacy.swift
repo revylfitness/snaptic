@@ -25,6 +25,42 @@ package enum ControlLegacy {
         return map
     }
 
+    /// The frozen 0.2 Displays menu item ids as `DisplayMenuItemID` raw values: every `l.menu.<id>` except the
+    /// `l.menu.fixed.` rows (Snaptic's own menu, not contributed). A trailing `*` names a family (`a.custom.*`).
+    package static var displayMenuItemIDs: [String] {
+        rawIDs.filter { $0.hasPrefix("l.menu.") && !$0.hasPrefix("l.menu.fixed.") }.map { String($0.dropFirst(7)) }
+    }
+
+    /// R5-13 menu coverage for `--selftest-controls`: `contributed` maps each `DisplayMenuContributor` type name to
+    /// its static `menuItemIDs` (raw values). Problems: a frozen 0.2 menu id that isn't removed and no contributor
+    /// declares; an id two contributors declare; an id declared although `removed` gives it a removal reason; an
+    /// empty id. Families (`…*`) are produced per instance and can't be listed statically, so they are skipped.
+    /// Sorted, so the self-test prints them in a stable order.
+    package static func menuCoverageProblems(contributed: [String: [String]],
+                                             removed: Set<LegacyControlID>) -> [String] {
+        var problems: [String] = []
+        var owner: [String: String] = [:]
+        for (type, ids) in contributed.sorted(by: { $0.key < $1.key }) {
+            for id in ids {
+                if id.isEmpty { problems.append("\(type) declares an empty menu item id") }
+                if let first = owner[id], first != type {
+                    problems.append("menu item \(id) is declared by both \(first) and \(type)")
+                } else {
+                    owner[id] = type
+                }
+                if removed.contains(LegacyControlID(rawValue: "l.menu." + id)) {
+                    problems.append("\(type) declares \(id), which ControlRemovals lists as removed")
+                }
+            }
+        }
+        for id in displayMenuItemIDs where !id.hasSuffix("*") && owner[id] == nil
+            && !removed.contains(LegacyControlID(rawValue: "l.menu." + id)) {
+            problems.append("0.2 menu item \(id) has no contributor (add it to a contributor's menuItemIDs, or "
+                            + "list l.menu.\(id) in ControlRemovals)")
+        }
+        return problems.sorted()
+    }
+
     /// Config key paths that are state, not controls (the key cross-check skips them and their children).
     package static var internalKeys: Set<String> {
         [
