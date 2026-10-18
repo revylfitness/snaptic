@@ -48,6 +48,9 @@ package struct AwakeActivityGate: Equatable, Sendable {
         case acted(now: Double)
         /// R5-7: every arbitration with nothing governing.
         case nothingGoverned(now: Double)
+        /// R5-7: an inactive → active transition of governing: the cap resets when nothing governed for ≥ 900 s since
+        /// `lastEnded`, even when no arbitration ran during that gap.
+        case governingStarted(now: Double)
         case unchanged
     }
 
@@ -65,7 +68,8 @@ package struct AwakeActivityGate: Equatable, Sendable {
     /// confirmAsked → asking (only from askOnFirstUse); confirmAllowed → (true, allowed, nil) only from asking;
     /// confirmDeclined → declined (from askOnFirstUse, asking or allowed; notAllowed stays);
     /// otherStart, restore, resume, takeover, replaced, ended → (false, notAllowed, kept);
-    /// governingEnded → lastEnded = now; nothingGoverned → lastEnded = now when nil, else activitySince = nil when
+    /// governingEnded → lastEnded = now; governingStarted → activitySince = nil when now − lastEnded ≥ 900;
+    /// nothingGoverned → lastEnded = now when nil, else activitySince = nil when
     /// now − lastEnded ≥ 900 (R5-7); moduleStop → init(); acted → activitySince ?? now; unchanged → self.
     package func applying(_ event: Event) -> AwakeActivityGate {
         var g = self
@@ -105,6 +109,9 @@ package struct AwakeActivityGate: Equatable, Sendable {
             } else {
                 g.lastEnded = now
             }
+        case .governingStarted(let now):
+            guard now.isFinite, let last = lastEnded, now - last >= Self.capResetSeconds else { return self }
+            g.activitySince = nil
         case .unchanged:
             return self
         }

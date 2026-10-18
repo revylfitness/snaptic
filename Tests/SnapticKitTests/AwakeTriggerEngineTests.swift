@@ -436,4 +436,22 @@ final class AwakeTriggerEngineTests: XCTestCase {
             }
         }
     }
+
+    func testCommandLinePauseOnlyExtends() {
+        let now = 1_000_000.0
+        let day = 24 * 3_600.0
+        // Paused until tomorrow: a 1-minute CLI pause leaves it.
+        XCTAssertEqual(TriggerEngine.pausedUntil(current: now + 10 * 3_600, now: now, seconds: 60, limit: day, onlyExtend: true),
+                       now + 10 * 3_600)
+        // A longer CLI pause extends it, capped at the limit.
+        XCTAssertEqual(TriggerEngine.pausedUntil(current: now + 600, now: now, seconds: 3_600, limit: day, onlyExtend: true),
+                       now + 3_600)
+        XCTAssertEqual(TriggerEngine.pausedUntil(current: nil, now: now, seconds: 9 * day, limit: day, onlyExtend: true),
+                       now + day)
+        // An expired pause doesn't count; the UI may shorten (its own choice).
+        XCTAssertEqual(TriggerEngine.pausedUntil(current: now - 5, now: now, seconds: 60, limit: day, onlyExtend: true), now + 60)
+        XCTAssertEqual(TriggerEngine.pausedUntil(current: now + day, now: now, seconds: 3_600, limit: day, onlyExtend: false),
+                       now + 3_600)
+        XCTAssertEqual(TriggerEngine.pausedUntil(current: nil, now: now, seconds: .nan, limit: day, onlyExtend: true), now + 60)
+    }
 }

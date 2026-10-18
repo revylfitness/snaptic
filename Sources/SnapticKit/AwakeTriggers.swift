@@ -527,21 +527,42 @@ package struct AwakeTriggersConfig: ConfigModel {
     /// conditions could apply more often than the user chose.
     package func strippingHashes() -> AwakeTriggersConfig {
         var c = self
-        c.triggers = triggers.map { original -> AwakeTrigger in
-            var t = original
-            t.criteria = original.criteria.compactMap { e -> AwakeCriterionEntry? in
-                switch e.criterion {
-                case .display(.specific), .network(.router), .bluetooth(.audio), .bluetooth(.input):
-                    return nil
-                case .usbDevice(let vendor, let product, _, let name):
-                    return AwakeCriterionEntry(.usbDevice(vendor: vendor, product: product, serialHash: nil, name: name),
-                                               negated: e.negated)
-                default:
-                    return e
-                }
+        c.triggers = triggers.map(Self.strippingHashes)
+        return c
+    }
+
+    /// One rule without salted hashes (see `strippingHashes()`).
+    package static func strippingHashes(_ original: AwakeTrigger) -> AwakeTrigger {
+        var t = original
+        t.criteria = original.criteria.compactMap { e -> AwakeCriterionEntry? in
+            switch e.criterion {
+            case .display(.specific), .network(.router), .bluetooth(.audio), .bluetooth(.input):
+                return nil
+            case .usbDevice(let vendor, let product, _, let name):
+                return AwakeCriterionEntry(.usbDevice(vendor: vendor, product: product, serialHash: nil, name: name),
+                                           negated: e.negated)
+            default:
+                return e
             }
-            if t.criteria.isEmpty || t.criteria != original.criteria { t.enabled = false }
-            return t
+        }
+        if t.criteria.isEmpty || t.criteria != original.criteria { t.enabled = false }
+        return t
+    }
+
+    /// Backup import (security S-2): only what came from the file is stripped. A rule equal to this Mac's rule with
+    /// the same id, either as stored or as this Mac would export it, is this Mac's own and is kept untouched (its
+    /// salted hashes are valid here and it stays enabled); every other rule loses its salted hashes like an export.
+    /// Nothing the file carries can add a hash or turn a rule on: a kept rule is exactly the current one.
+    package func importing(over current: AwakeTriggersConfig) -> AwakeTriggersConfig {
+        var c = self
+        var own: [StableID: AwakeTrigger] = [:]
+        for t in current.triggers where own[t.id] == nil { own[t.id] = t }
+        c.triggers = triggers.map { t -> AwakeTrigger in
+            if let mine = own[t.id] {
+                let exported = Self.strippingHashes(mine).sanitized()
+                if mine == t || mine.sanitized() == t || exported == t { return mine }
+            }
+            return Self.strippingHashes(t).sanitized()
         }
         return c
     }

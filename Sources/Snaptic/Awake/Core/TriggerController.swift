@@ -65,10 +65,14 @@ struct AwakeRuleEnd: Equatable {
         step()
     }
 
-    /// Pause Rules for `seconds` (1 hour from the menu, ≤ 24 h from the CLI).
-    func pause(seconds: Double) {
-        let s = min(max(seconds, 60), Self.pauseLimit)
-        pausedUntil = Date().timeIntervalSince1970 + s
+    /// Pause Rules for `seconds` (1 hour from the menu, ≤ 24 h from the CLI). `onlyExtend` (the CLI, security S-3):
+    /// a running pause is never shortened.
+    func pause(seconds: Double, onlyExtend: Bool = false) {
+        let now = Date().timeIntervalSince1970
+        let next = TriggerEngine.pausedUntil(current: isPaused ? pausedUntil : nil, now: now, seconds: seconds,
+                                             limit: Self.pauseLimit, onlyExtend: onlyExtend)
+        guard next != pausedUntil else { return }
+        pausedUntil = next
         afterPauseChange()
     }
 
@@ -90,6 +94,15 @@ struct AwakeRuleEnd: Equatable {
         guard let t = top else { return }
         displayOverride = (t.id, display)
         top?.options.display = display
+    }
+
+    /// The governing rule session as it would end now (HistoryController records it when the module stops before
+    /// this controller does).
+    func currentRuleEnd(_ reason: AwakeEndReason) -> AwakeRuleEnd? {
+        guard let old = top else { return nil }
+        let now = AwakeModule.clockNow()
+        let startWall = now.wall - max(0, now.continuous - old.since)
+        return AwakeRuleEnd(triggerID: old.id, startWall: startWall, endWall: now.wall, reason: reason)
     }
 
     func observeRuleEnds(_ lifetime: Lifetime, _ handler: @escaping @MainActor (AwakeRuleEnd) -> Void) {
@@ -152,7 +165,9 @@ struct AwakeRuleEnd: Equatable {
             if next?.id == o.id { next?.options.display = o.display } else { displayOverride = nil }
         }
         if let old = top, old.id != next?.id {
-            let reason = pendingEndReason ?? .triggerEnded
+            // A guard that stopped every rule is the end's reason (not "the rule ended", awake-correctness N3).
+            let guardReason = next == nil && guardsHold ? ctx.sessions.guardMemory.holding : nil
+            let reason = pendingEndReason ?? guardReason ?? .triggerEnded
             let startWall = now.wall - max(0, now.continuous - old.since)
             ruleEnds.fire(AwakeRuleEnd(triggerID: old.id, startWall: startWall, endWall: now.wall, reason: reason))
             EventLog.shared.record(AwakeLogEvent.sessionEnded(reason))
@@ -180,6 +195,10 @@ struct AwakeRuleEnd: Equatable {
         if let d = deadline { waits.append(d - now.continuous) }
         if let b = Ticker.secondsToNextBoundary(TriggerEngine.scheduleBoundaries(triggers)) { waits.append(b + 1) }
         if let p = pausedUntil { waits.append(p - now.wall) }
+        // An assertion backoff (§2.4) holds rules until it runs out; nothing else would step them then (F4).
+        if let ctx = context, let hold = ctx.sessions.guardMemory.assertionHoldUntil, hold > now.continuous {
+            waits.append(hold - now.continuous + 0.5)
+        }
         guard let wait = waits.min() else {
             ticker.cancel()
             return
@@ -257,11 +276,8 @@ struct AwakeRuleEnd: Equatable {
         displayOverride = nil
         settleUntil = nil
         let hadTop = top != nil
-        if let old = top {
-            let now = AwakeModule.clockNow()
-            let startWall = now.wall - max(0, now.continuous - old.since)
-            ruleEnds.fire(AwakeRuleEnd(triggerID: old.id, startWall: startWall, endWall: now.wall,
-                                       reason: context?.host.signals.isTerminating == true ? .moduleStopped : .triggerEnded))
+        if let end = currentRuleEnd(context?.host.signals.isTerminating == true ? .moduleStopped : .triggerEnded) {
+            ruleEnds.fire(end)
         }
         top = nil
         if let rt = context?.runtime {

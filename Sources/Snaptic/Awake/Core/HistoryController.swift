@@ -45,11 +45,30 @@ import SnapticKit
         append(entry)
     }
 
+    /// Rule sessions never resume after a relaunch (the rule starts a new one), so every end is recorded, quitting
+    /// included.
     private func recordRule(_ end: AwakeRuleEnd) {
-        if skipsForResume(end.reason) { return }
         append(AwakeHistoryEntry(start: min(end.startWall, end.endWall), end: end.endWall, kind: .automatic,
                                  source: .rule, presetID: nil, triggerID: end.triggerID, bundleID: nil,
                                  endReason: end.reason))
+    }
+
+    /// A session or `--pid` hold kept for resume that ran out while Snaptic wasn't running (F5b): recorded at its
+    /// end instant.
+    private func recordExpired(_ item: AwakeEndedItem, _ endWall: Double) {
+        let entry: AwakeHistoryEntry
+        switch item {
+        case .session(let s):
+            var bundleID: String?
+            if case .whileApp(let b, _) = s.kind { bundleID = b }
+            entry = AwakeHistoryEntry(start: min(s.startedAt, endWall), end: endWall, kind: s.kind.historyKind,
+                                      source: s.source, presetID: s.presetID, triggerID: nil, bundleID: bundleID,
+                                      endReason: .timeUp)
+        case .hold(let h):
+            entry = AwakeHistoryEntry(start: min(h.startedAt, endWall), end: endWall, kind: .process,
+                                      source: .commandLine, presetID: nil, triggerID: nil, bundleID: nil, endReason: .timeUp)
+        }
+        append(entry)
     }
 
     /// Quitting: what resumes after the relaunch is recorded when it really ends.
@@ -74,6 +93,7 @@ import SnapticKit
         self.lifetime = lifetime
         context.sessions.observeEnds(lifetime) { [weak self] item, reason in self?.record(item, reason) }
         context.triggers.observeRuleEnds(lifetime) { [weak self] end in self?.recordRule(end) }
+        context.sessions.observeExpiredWhileAway(lifetime) { [weak self] item, endWall in self?.recordExpired(item, endWall) }
         let pruned = context.history.value.pruned(now: Date().timeIntervalSince1970, keepDays: AwakeHistory.keepDays)
         if pruned != context.history.value { context.history.value = pruned }
     }
@@ -90,6 +110,8 @@ import SnapticKit
         if ctx.runtime.isEffective(.history) {
             if let s = ctx.sessions.manual { record(.session(s), .moduleStopped) }
             for h in ctx.sessions.holds { record(.hold(h), .moduleStopped) }
+            // TriggerController stops after this one; its end of the governing rule would go unheard (F5a).
+            if let end = ctx.triggers.currentRuleEnd(.moduleStopped) { recordRule(end) }
         }
         lifetime = nil
         context = nil
