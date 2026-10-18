@@ -291,7 +291,8 @@ struct ShortcutKeysPicker: View {
     }
 
     /// Spaces as the switcher uses them: the current Space only while the other-Spaces feature is off. Choosing All
-    /// Spaces or Other Spaces turns that feature on (ux M3: this pop-up is the only control for it).
+    /// Spaces or Other Spaces turns that feature on (ux M3: this pop-up is the only control for it); every other
+    /// shortcut then keeps the Current Space it showed (`SwitcherPageRules.spacesChoice`, round 2 ui F2).
     static func spaces(_ settings: AppSettings, id: UUID?) -> Binding<SpacesFilter> {
         Binding(get: {
             let raw = Self.primaryOr(settings, id: id, \.spaces).rawValue
@@ -300,9 +301,14 @@ struct ShortcutKeysPicker: View {
         }, set: { value in
             guard let index = Self.index(settings, id: id) else { return }
             var c = settings.config
-            if SwitcherPageRules.spaceChoiceTurnsOnOtherSpaces(value.rawValue) {
+            let choice = SwitcherPageRules.spacesChoice(c.shortcuts.map(\.spaces.rawValue), changed: index,
+                                                        to: value.rawValue, otherSpacesOn: c.isOn(.otherSpaces))
+            if choice.turnsOn {
                 c.showOtherSpaces = true
                 c.disabledFeatures.set(.otherSpaces, enabled: true)
+            }
+            for (i, raw) in choice.spaces.enumerated() where i != index {
+                if let spaces = SpacesFilter(rawValue: raw) { c.shortcuts[i].spaces = spaces }
             }
             c.shortcuts[index].spaces = value
             if c != settings.config { settings.config = c }
@@ -310,7 +316,8 @@ struct ShortcutKeysPicker: View {
     }
 
     /// "Include apps with no open windows" of one shortcut: reads on only while the windowless feature is on too, and
-    /// turning it on turns the feature on (ux M3: this switch is the only control for it).
+    /// turning it on turns the feature on (ux M3: this switch is the only control for it); every other shortcut then
+    /// keeps reading as it did (`SwitcherPageRules.windowlessChoice`, round 2 ui F2).
     static func windowless(_ settings: AppSettings, id: UUID?) -> Binding<Bool> {
         Binding(get: {
             SwitcherPageRules.effectiveWindowless(Self.primaryOr(settings, id: id, \.includeWindowlessApps),
@@ -318,8 +325,10 @@ struct ShortcutKeysPicker: View {
         }, set: { on in
             guard let index = Self.index(settings, id: id) else { return }
             var c = settings.config
-            if SwitcherPageRules.windowlessChoiceTurnsOnFeature(on) { c.disabledFeatures.set(.windowlessApps, enabled: true) }
-            c.shortcuts[index].includeWindowlessApps = on
+            let choice = SwitcherPageRules.windowlessChoice(c.shortcuts.map(\.includeWindowlessApps), changed: index,
+                                                            to: on, featureOn: c.isOn(.windowlessApps))
+            if choice.turnsOn { c.disabledFeatures.set(.windowlessApps, enabled: true) }
+            for (i, value) in choice.values.enumerated() { c.shortcuts[i].includeWindowlessApps = value }
             if c != settings.config { settings.config = c }
         })
     }

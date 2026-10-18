@@ -14,6 +14,9 @@ struct StepperSetting: View {
     let format: ValueFormat
     let anchor: ControlID?
 
+    /// Bumped when the stepper or Reset sets the value: the field drops text typed without Return (ui F1).
+    @State private var discardTyping = 0
+
     init(_ title: String, help: String? = nil, value: Binding<Int>, in range: ClosedRange<Int>, step: Int = 1,
          defaultValue: Int?, format: ValueFormat, anchor: ControlID? = nil) {
         let lo = range.lowerBound, hi = range.upperBound
@@ -46,8 +49,8 @@ struct StepperSetting: View {
     var body: some View {
         LabeledContent {
             HStack(spacing: 4) {
-                NumberField(title, value: snapped, in: range, step: step, format: format)
-                Stepper(title, value: snapped, in: range, step: step)
+                NumberField(title, value: snapped, in: range, step: step, format: format, discardToken: discardTyping)
+                Stepper(title, value: stepped, in: range, step: step)
                     .labelsHidden()
                     .accessibilityLabel(title)
                     .accessibilityValue(SettingsFormat.spoken(value.wrappedValue, format))
@@ -70,6 +73,16 @@ struct StepperSetting: View {
                 })
     }
 
+    /// The stepper's own arrows: newer intent than typed-but-not-Returned text.
+    private var stepped: Binding<Double> {
+        let snapped = snapped
+        return Binding(get: { snapped.wrappedValue },
+                       set: { v in
+                           discardTyping &+= 1
+                           snapped.wrappedValue = v
+                       })
+    }
+
     private var atDefault: Bool {
         SliderMath.isDefault(value: value.wrappedValue, default: defaultValue, step: step)
     }
@@ -86,6 +99,7 @@ struct StepperSetting: View {
 
     private func resetToDefault() {
         guard let d = defaultValue else { return }
+        discardTyping &+= 1
         snapped.wrappedValue = d
     }
 }
