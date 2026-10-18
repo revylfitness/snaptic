@@ -256,7 +256,7 @@ private struct CustomizeMenuContent: View {
                           anchor: anchor)
                 .toggleStyle(.checkbox)
                 .disabled(true)
-        } else if info.customize == .threeWay {
+        } else if info.offersSubmenuChoice {
             PickerSetting(info.title, help: L("Show puts it right under the display's name."),
                           selection: visibilityBinding(info.id, default: fallback),
                           options: [PickerOption(MenuItemVisibility.visible, L("Show")),

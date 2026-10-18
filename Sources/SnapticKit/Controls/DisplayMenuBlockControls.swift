@@ -17,7 +17,7 @@ package enum DisplayMenuBlockControls: ControlTable {
     }
 
     private static func inSubmenu(_ legacy: String) -> MenuPlacementSpec {
-        MenuPlacementSpec(submenu, customize: .checkbox, legacy: DisplayMenuItemID(rawValue: legacy))
+        MenuPlacementSpec(submenu, customize: .threeWay, legacy: DisplayMenuItemID(rawValue: legacy))
     }
 
     private static func promotable(_ legacy: String) -> MenuPlacementSpec {

@@ -126,15 +126,22 @@ package struct DisplayMenuItemInfo: Equatable, Sendable, Identifiable {
         }
     }
 
-    /// The Customize sheet's control for this item (§4.3; lead r4): a Show / In Display Submenu / Hide pop-up where
-    /// the two "show" choices differ (Disconnect, Turn Display On or Off), a checkbox everywhere else (sliders are
-    /// never in a submenu; a toggle that already lives in the display submenu has nothing else to choose).
+    /// The Customize sheet's control for this item (§4.3; lead r4): per-display items in the display submenu are
+    /// three-way (Show / In Display Submenu / Hide), sliders and everything else are checkboxes.
     package var customize: MenuCustomize {
         switch location {
-        case .submenu(_, let promotable): return promotable ? .threeWay : .checkbox
+        case .submenu: return .threeWay
         case .slider, .sectionItem, .sectionMenu, .tools, .pausedStatus: return .checkbox
         case .removed: return .none
         }
+    }
+
+    /// Whether Show and In Display Submenu put the item in different places (Disconnect, Turn Display On or Off:
+    /// Show moves them under the device row). Where they don't, the sheet shows one checkbox instead of a pop-up
+    /// with two choices that do the same thing; a stored 0.2 "In submenu" still reads as shown.
+    package var offersSubmenuChoice: Bool {
+        if case .submenu(_, let promotable) = location { return promotable }
+        return false
     }
 
     package var customizeGroup: DisplayMenuCustomizeGroup? {

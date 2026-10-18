@@ -48,9 +48,32 @@ final class DisplaysMenuPlanTests: XCTestCase {
         XCTAssertEqual(rows.count, 46 - 6 - 1, "every kept item except the custom-action family has a fixed row")
     }
 
-    func testOnlyDisconnectAndTurnOffAreThreeWay() {
-        let threeWay = DisplaysMenuPlan.items.filter { $0.customize == .threeWay }.map(\.id.rawValue)
-        XCTAssertEqual(Set(threeWay), ["c.ddc.power", "d.disconnectItem"])
+    func testPerDisplaySubmenuItemsAreThreeWayAndOnlyTwoOfferADistinctPlace() {
+        for info in DisplaysMenuPlan.items {
+            if case .submenu = info.location {
+                XCTAssertEqual(info.customize, .threeWay, info.id.rawValue)
+            } else if info.location != .removed {
+                XCTAssertEqual(info.customize, .checkbox, info.id.rawValue)
+            }
+        }
+        let distinct = DisplaysMenuPlan.items.filter(\.offersSubmenuChoice).map(\.id.rawValue)
+        XCTAssertEqual(Set(distinct), ["c.ddc.power", "d.disconnectItem"])
+    }
+
+    /// Other teams' tables that also name a 0.2 menu id must agree with M's place for it (one home, no
+    /// contradiction): same location, customize kind and legacy id.
+    func testOtherTablesAgreeWithMsPlacement() {
+        let mine = menuSpecs
+        let others = ControlRegistry.tables.filter {
+            ![String(describing: DisplayMenuBlockControls.self), String(describing: DisplaysMenuBuilderControls.self),
+              String(describing: CustomizeMenuSheetControls.self)].contains(String(describing: $0))
+        }.flatMap(\.controls)
+        for spec in others {
+            guard let placement = spec.menu, let legacy = placement.legacyMenuID else { continue }
+            guard let home = mine.first(where: { $0.menu?.legacyMenuID == legacy })?.menu else { continue }
+            XCTAssertEqual(placement.customize, home.customize, "\(spec.id.rawValue) vs M for \(legacy.rawValue)")
+            XCTAssertEqual(placement.location, home.location, "\(spec.id.rawValue) vs M for \(legacy.rawValue)")
+        }
     }
 
     func testTopLevelItemsHaveSymbols() {
