@@ -567,9 +567,9 @@ import SnapticKit
             guard let self else { return .failure(ControlExit.unavailable, L("Resolution is off")) }
             return await self.handleMode(request)
         }
-        ctx.commands.register("match-ui", policy: .trial, offOnly: false, cliAllowed: true, summary: L("Match UI size across displays"),
+        ctx.commands.register("match-ui", policy: .trial, offOnly: false, cliAllowed: true, summary: L("Match text size across displays"),
                               lifetime: lifetime) { [weak self] request, _ in
-            guard let self, self.effective.contains(.scaleMatch) else { return .failure(ControlExit.unavailable, L("Match UI size is off")) }
+            guard let self, self.effective.contains(.scaleMatch) else { return .failure(ControlExit.unavailable, L("Match text size is off")) }
             let proposals = self.scaleMatchProposals()
             guard !proposals.isEmpty else { return .ok(L("Text already looks the same size on every display")) }
             // Awaited like `mode`: 0 kept, 6 declined or timed out.
