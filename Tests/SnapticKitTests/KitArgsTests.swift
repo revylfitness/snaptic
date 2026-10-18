@@ -132,4 +132,18 @@ final class KitArgsTests: XCTestCase {
         XCTAssertFalse(KitArgs.isTranslocated("/Applications/Snaptic.app"))
         XCTAssertFalse(KitArgs.isTranslocated("/Users/a/AppTranslocation/Snaptic.app"))
     }
+
+    func testNarrowPrefixesLetOrdinaryNSAndCFNamesThrough() {
+        let allowed = ["NSUnbufferedIO": "YES", "CFNETWORK_DIAGNOSTICS": "0", "NSDocumentRevisionsDebugMode": "YES",
+                       "CFBundleIdentifier": "x", "__CF_USER_TEXT_ENCODING": "0x1F5:0:0", "NSAppleEventsDebug": "x"]
+        XCTAssertEqual(KitArgs.deniedEnvironmentVariables(allowed), [])
+        let denied = ["CF_CHARSET_PATH": "/tmp", "CFFIXED_USER_HOME": "/tmp", "CFZombieLevel": "1",
+                      "NSZombieEnabled": "YES", "NSDeallocateZombies": "NO", "NSDebugEnabled": "YES",
+                      "NSObjCMessageLoggingEnabled": "YES", "NSAutoreleaseFreedObjectCheckEnabled": "YES",
+                      "DYLD_LIBRARY_PATH": "/tmp", "OBJC_PRINT_LOAD_METHODS": "YES", "MallocNanoZone": "0",
+                      "LIBDISPATCH_STRICT": "1", "SWIFT_DETERMINISTIC_HASHING": "1", "OS_ACTIVITY_DT_MODE": "1"]
+        XCTAssertEqual(KitArgs.deniedEnvironmentVariables(denied), denied.keys.sorted())
+        // Prefixes are case-sensitive, like the variables themselves.
+        XCTAssertEqual(KitArgs.deniedEnvironmentVariables(["dyld_x": "1", "nszombieenabled": "YES"]), [])
+    }
 }

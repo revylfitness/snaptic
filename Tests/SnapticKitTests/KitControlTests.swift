@@ -62,7 +62,7 @@ final class KitControlTests: XCTestCase {
         XCTAssertFalse(c.yes)
         XCTAssertTrue(try KitControl.parseCommandLine([]).get().help)
         XCTAssertTrue(try KitControl.parseCommandLine(["--help"]).get().help)
-        XCTAssertEqual(try KitControl.parseCommandLine(["rotate", "--yes", "main", "90"]).get().words, ["rotate", "main", "90"])
+        XCTAssertEqual(try KitControl.parseCommandLine(["--yes", "rotate", "main", "90"]).get().words, ["rotate", "main", "90"])
         XCTAssertEqual(try KitControl.parseCommandLine(["run", "--", "--json"]).get().words, ["run", "--json"])
         if case .success = KitControl.parseCommandLine(["--frobnicate"]) { XCTFail() }
     }
@@ -177,5 +177,77 @@ final class KitControlTests: XCTestCase {
                      ControlExit.unavailable, ControlExit.cancelled] {
             XCTAssertFalse(ControlExit.describe(code).isEmpty)
         }
+    }
+
+    // MARK: Client options vs. verb arguments
+
+    func testOnlyClientOptionsBeforeTheVerbAreRead() throws {
+        let c = try KitControl.parseCommandLine(["--json", "-y", "pip", "start", "--display", "2"]).get()
+        XCTAssertTrue(c.json)
+        XCTAssertTrue(c.yes)
+        XCTAssertFalse(c.help)
+        XCTAssertEqual(c.words, ["pip", "start", "--display", "2"])
+        // Client-looking options after the verb belong to the verb: passed through as typed.
+        let d = try KitControl.parseCommandLine(["rotate", "main", "90", "--yes", "--json", "-h"]).get()
+        XCTAssertFalse(d.yes)
+        XCTAssertFalse(d.json)
+        XCTAssertFalse(d.help)
+        XCTAssertEqual(d.words, ["rotate", "main", "90", "--yes", "--json", "-h"])
+        XCTAssertEqual(try KitControl.parseCommandLine(["set", "brightness", "main", "-10"]).get().words,
+                       ["set", "brightness", "main", "-10"])
+    }
+
+    func testSeparators() throws {
+        // `--` before the verb ends the client's options.
+        let a = try KitControl.parseCommandLine(["--json", "--", "list"]).get()
+        XCTAssertTrue(a.json)
+        XCTAssertEqual(a.words, ["list"])
+        // The old workaround (`pip start -- --display 2`) still works: one `--` after the verb is dropped.
+        XCTAssertEqual(try KitControl.parseCommandLine(["pip", "start", "--", "--display", "2"]).get().words,
+                       ["pip", "start", "--display", "2"])
+        XCTAssertEqual(try KitControl.parseCommandLine(["run", "--", "--"]).get().words, ["run", "--"])
+        XCTAssertTrue(try KitControl.parseCommandLine(["--"]).get().help)
+    }
+
+    func testUnknownOptionBeforeTheVerbIsAUsageError() {
+        for argv in [["--display", "2", "pip", "start"], ["-d", "pip"], ["--json", "--frobnicate", "list"]] {
+            if case .success = KitControl.parseCommandLine(argv) { XCTFail("\(argv)") }
+        }
+    }
+
+    func testSplitFuzz() {
+        var rng = SeededGenerator(seed: 0x5EED_C11)
+        let clientOptions: Set<String> = ["--json", "--yes", "-y", "--help", "-h"]
+        let pool = ["--json", "--yes", "-y", "--help", "-h", "--", "pip", "start", "--display", "2", "-10", "x"]
+        for _ in 0..<2_000 {
+            let argv = (0..<Int(rng.next() % 9)).map { _ in pool[Int(rng.next() % UInt64(pool.count))] }
+            // Reference model: skip the client's options, then one `--`; the rest is the
+            // command as typed, minus one bare `--` after the verb.
+            var i = 0
+            while i < argv.count, clientOptions.contains(argv[i]) { i += 1 }
+            let hadSeparator = i < argv.count && argv[i] == "--"
+            if hadSeparator { i += 1 }
+            var expected = Array(argv[i...])
+            if expected.count > 1, let sep = expected.dropFirst().firstIndex(of: "--") { expected.remove(at: sep) }
+            switch KitControl.parseCommandLine(argv) {
+            case .success(let c):
+                XCTAssertEqual(c.words, expected, "\(argv)")
+                XCTAssertEqual(c.json, argv[..<i].contains("--json"), "\(argv)")
+                XCTAssertEqual(c.yes, argv[..<i].contains("--yes") || argv[..<i].contains("-y"), "\(argv)")
+            case .failure:
+                // Only an unknown option before the verb is refused.
+                XCTAssertFalse(hadSeparator, "\(argv)")
+                XCTAssertTrue(i < argv.count && argv[i].hasPrefix("-") && argv[i] != "--", "\(argv)")
+            }
+        }
+    }
+
+    // MARK: Client timeout (N7)
+
+    func testClientWaitsForTheLongestConfirmationPanel() {
+        XCTAssertEqual(KitControl.confirmSeconds, Double(SafetyConfig.confirmSecondsRange.upperBound))
+        XCTAssertGreaterThanOrEqual(KitControl.clientTimeoutSeconds, 60 + 30)
+        XCTAssertGreaterThanOrEqual(KitControl.clientTimeoutSeconds,
+                                    Double(SafetyConfig.confirmSecondsRange.upperBound) + KitControl.applyMarginSeconds)
     }
 }

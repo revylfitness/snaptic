@@ -66,8 +66,10 @@ import SnapticKit
 
         let store = ConfigStore<ModulesConfig>(key: Self.modulesKey)
         if !modulesExisted {
-            store.value = launchedBefore ? ModulesConfig.upgradeDefaults() : ModulesConfig()
-            store.flush()
+            // A fresh value equals init(), so nothing would be pending: force the write, or
+            // a new user who quits at Welcome counts as an upgrader next launch (W1).
+            store.value = ModulesConfig.firstRun(launchedBefore: launchedBefore)
+            store.save(force: true)
         }
         modulesStore = store
         UserDefaults.standard.set(true, forKey: Self.didLaunchBeforeKey)
@@ -83,6 +85,7 @@ import SnapticKit
     /// Startup step 11–12: modules per settings, then the status items.
     func bootstrap() {
         permissions.relauncher = relauncher
+        permissions.launchedBefore = !isFirstLaunch
         // Onboarding asks for permissions itself, afterwards (PLAN §3.7).
         permissions.holdAutomaticGuides = modulesStore.value.needsOnboarding
         setUpOtherApps()
@@ -384,8 +387,9 @@ import SnapticKit
 
     // MARK: Permissions
 
-    /// One request per launch for what the running modules need.
-    private func requestLaunchPermissions() {
+    /// One request per launch for what the running modules need (also when onboarding
+    /// finishes).
+    func requestLaunchPermissions() {
         guard !launchPermissionsRequested else { return }
         launchPermissionsRequested = true
         requestPermissions(for: Array(runningModules))

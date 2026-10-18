@@ -23,6 +23,9 @@ enum PermissionStatus: Equatable { case granted, denied, unknown }
     /// While onboarding runs, automatic requests poll quietly instead of opening a guide:
     /// permissions are asked for afterwards, only for what was chosen (PLAN §3.7).
     var holdAutomaticGuides = false
+    /// Snaptic ran for this user before (set by the host). A missing Accessibility grant
+    /// then most likely means macOS still lists an older copy (W5).
+    var launchedBefore = false
 
     private var flows: [Permission: Flow] = [:]
     private var shownThisLaunch: Set<Permission> = []
@@ -101,6 +104,10 @@ enum PermissionStatus: Equatable { case granted, denied, unknown }
     private func flow(for permission: Permission) -> Flow {
         if let existing = flows[permission] { return existing }
         let flow = Flow(permission: permission)
+        if HostUIRules.showsReAddStepsAtOnce(permission, launchedBefore: launchedBefore,
+                                             granted: Self.isGranted(permission)) {
+            flow.model.reAddAtOnce = true
+        }
         flow.model.onOpenPane = { [weak self, weak flow] in
             guard let flow else { return }
             self?.openPane(flow)
@@ -340,6 +347,8 @@ private final class GuideWindowDelegate: NSObject, NSWindowDelegate {
     @Published var reasons: [String] = []
     @Published var paneOpenedAt: Date?
     @Published var showStaleHint = false
+    /// The remove-and-add-again steps show from the start (W5).
+    @Published var reAddAtOnce = false
     @Published var timedOut = false
     @Published var granted = false
     var onOpenPane: (@MainActor () -> Void)?
@@ -377,6 +386,11 @@ private struct PermissionGuideView: View {
                 if model.translocated {
                     warning(L("Snaptic is running from a temporary location macOS picked (App Translocation). Quit it, move Snaptic.app to the Applications folder, and open it from there before you grant access."))
                 }
+                if model.reAddAtOnce && !model.granted {
+                    Label(L("Snaptic ran on this Mac before. If it is already listed and switched on, macOS is holding on to an older copy: select Snaptic in the list, remove it with −, then add it again with + and switch it on."),
+                          systemImage: "arrow.triangle.2.circlepath")
+                        .font(.callout)
+                }
                 if model.granted {
                     Label(L("Access granted. Relaunch Snaptic so it takes effect."), systemImage: "checkmark.seal.fill")
                         .foregroundStyle(.green)
@@ -412,7 +426,7 @@ private struct PermissionGuideView: View {
                     warning(L("Snaptic is in a folder your account can change, so another program could replace it and inherit this permission. Prefer a signed release, or install with INSTALL=1 (owned by root)."))
                 }
 
-                if model.showStaleHint {
+                if model.showStaleHint && !model.reAddAtOnce {
                     Text(L("Already switched on but this window stays? Select Snaptic in the list, remove it with −, then add it again with +."))
                         .font(.callout)
                 }

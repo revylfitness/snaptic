@@ -33,7 +33,8 @@ import SnapticKit
     func gather(onto screen: NSScreen?, confirm: Bool, lifetime: Lifetime) {
         guard let screen = screen ?? Self.pointerScreen, !lifetime.isEnded else { return }
         guard permissions.state(.accessibility) == .granted else {
-            permissions.request(.accessibility, reason: L("Gather windows moves other apps' windows."), lifetime: lifetime)
+            // Asked for by the user (menu or shortcut): always show the guide.
+            permissions.presentGuide(.accessibility, reason: L("Gather windows moves other apps' windows."))
             return
         }
         let name = TextSanitizer.clean(screen.localizedName, maxScalars: 64)

@@ -67,10 +67,12 @@ struct FeaturesPage: View {
         env.enableFeature(feature)
         notice = added.isEmpty ? nil
             : L("Turning on \(DisplaysUIText.title(feature)) also turned on: \(added.map(DisplaysUIText.title).joined(separator: ", ")).")
+        // The user turned it on: always show the guide (not the once-per-launch request).
         let needs = FeatureGraph.permissions(feature)
         if let ctx = env.context {
-            for permission in needs where ctx.permissions.state(permission) != .granted {
-                ctx.permissions.request(permission, reason: DisplaysUIText.title(feature), lifetime: ctx.lifetime)
+            for permission in Permission.allCases where needs.contains(permission)
+                && ctx.permissions.state(permission) != .granted {
+                ctx.permissions.presentGuide(permission, reason: DisplaysUIText.title(feature))
             }
         }
     }
@@ -187,7 +189,7 @@ private struct FeatureRow: View {
                      : L("Needs \(DisplaysUIText.permissionName(permission, osMajor: osMajor))"))
                 if state != .granted, isOn, let ctx = env.context {
                     Button(L("Grant…")) {
-                        ctx.permissions.request(permission, reason: DisplaysUIText.title(feature), lifetime: ctx.lifetime)
+                        ctx.permissions.presentGuide(permission, reason: DisplaysUIText.title(feature))
                     }
                     .controlSize(.small)
                 }

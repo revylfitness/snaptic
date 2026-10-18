@@ -128,7 +128,6 @@ import SnapticKit
         switch error {
         case .conflict(let owner): return L("already used by \(owner)")
         case .systemRefused: return L("macOS refused the shortcut")
-        case .notBuilt: return L("global shortcuts aren't available yet")
         case .invalid(let reason): return reason
         case .ended: return L("the feature stopped before the shortcut was registered")
         }

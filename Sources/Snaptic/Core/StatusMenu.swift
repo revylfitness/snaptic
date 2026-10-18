@@ -60,9 +60,23 @@ import SnapticKit
         applyPlan()
     }
 
-    /// True when no status item is visible (a relaunch then opens Settings).
+    /// False when no status item shows (a relaunch then opens Settings). From macOS 27
+    /// `isVisible` isn't enough (the system can hide items itself), so the item's window
+    /// must be on screen too (W16).
     var hasVisibleItem: Bool {
-        (shared?.item.isVisible ?? false) || own.values.contains { $0.item.isVisible }
+        let items = [shared?.item].compactMap { $0 } + own.values.map(\.item)
+        let osMajor = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        return items.contains { item in
+            HostUIRules.statusItemShows(isVisible: item.isVisible, osMajor: osMajor,
+                                        windowOnScreen: Self.windowOnScreen(item))
+        }
+    }
+
+    private static func windowOnScreen(_ item: NSStatusItem) -> Bool? {
+        guard let window = item.button?.window else { return nil }
+        let frame = window.frame
+        guard frame.width > 0, frame.height > 0, window.occlusionState.contains(.visible) else { return false }
+        return NSScreen.screens.contains { $0.frame.intersects(frame) }
     }
 
     /// Creates, updates or removes status items to match the plan. Deferred while a menu

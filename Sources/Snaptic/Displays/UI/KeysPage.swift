@@ -53,9 +53,8 @@ struct KeysPage: View {
                 HStack {
                     if !granted {
                         Button(L("Grant Access…")) {
-                            ctx.permissions.request(.accessibility,
-                                                    reason: L("Snaptic needs this to use the brightness and volume keys with your displays."),
-                                                    lifetime: ctx.lifetime)
+                            ctx.permissions.presentGuide(.accessibility,
+                                                         reason: L("Snaptic needs this to use the brightness and volume keys with your displays."))
                         }
                     }
                     Button(L("Try Again")) {

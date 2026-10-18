@@ -165,7 +165,6 @@ enum PerDisplayEdit {
             switch error {
             case .conflict(let other): return L("already used by \(other)")
             case .systemRefused: return L("macOS refused the shortcut")
-            case .notBuilt: return L("global shortcuts aren't available yet")
             case .invalid(let reason): return reason
             case .ended: return L("the feature stopped")
             }

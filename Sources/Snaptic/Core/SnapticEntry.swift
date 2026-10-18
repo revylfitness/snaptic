@@ -33,11 +33,14 @@ enum SnapticEntry {
         let denied = KitArgs.deniedEnvironmentVariables(environment)
         if !denied.isEmpty {
             let names = denied.prefix(8).map { TextSanitizer.clean($0, maxScalars: 64) }.joined(separator: ", ")
-            refuse(L("Snaptic doesn't start with these environment variables set: ") + names)
+            refuse(L("Snaptic doesn't start with these environment variables set: ") + names
+                   + L(". Unset them, or open Snaptic from Finder."), showAlert: true)
         }
-        guard let home = AccountPaths.home else { refuse(L("Snaptic couldn't look up your account's home folder.")) }
+        guard let home = AccountPaths.home else {
+            refuse(L("Snaptic couldn't look up your account's home folder."), showAlert: true)
+        }
         guard KitArgs.homeMatches(environmentHome: environment["HOME"], accountHome: home) else {
-            refuse(L("HOME doesn't match your account's home folder, so Snaptic won't start."))
+            refuse(L("HOME doesn't match your account's home folder, so Snaptic won't start."), showAlert: true)
         }
         redirectStandardStreams()
 
@@ -52,11 +55,28 @@ enum SnapticEntry {
         }
     }
 
-    /// Explains on stderr (before it is redirected) and exits 64.
-    static func refuse(_ message: String) -> Never {
+    /// Explains on stderr (before it is redirected) and exits 64. App mode only, with
+    /// `showAlert`: also an alert when nobody reads stderr (opened from Finder, Dock or
+    /// `open`, so stdin isn't a terminal); otherwise Snaptic would just not appear (W14).
+    static func refuse(_ message: String, showAlert: Bool = false) -> Never {
         let line = "Snaptic: " + message + "\n"
         line.withCString { pointer in _ = Darwin.write(2, pointer, strlen(pointer)) }
+        if showAlert && isatty(STDIN_FILENO) == 0 { presentRefusal(message) }
         exit(KitArgs.exitUsage)
+    }
+
+    private static func presentRefusal(_ message: String) {
+        MainActor.assumeIsolated {
+            let app = NSApplication.shared
+            app.setActivationPolicy(.accessory)
+            app.activate()
+            let alert = NSAlert()
+            alert.alertStyle = .critical
+            alert.messageText = L("Snaptic can't start")
+            alert.informativeText = message
+            alert.addButton(withTitle: L("Quit"))
+            _ = alert.runModal()
+        }
     }
 
     /// stdout and stderr go to /dev/null in app mode (R5.7): nothing Snaptic or a

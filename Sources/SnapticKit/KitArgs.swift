@@ -49,10 +49,16 @@ package enum KitArgs {
     package static let safeModeFlag = "--safe-mode"
     package static let relaunchFlag = "--relaunch-from"
 
-    /// Environment variables with these prefixes change how Foundation, the Objective-C
-    /// runtime, malloc, libdispatch, Swift or dyld behave, so app mode refuses them.
+    /// Environment variables with these prefixes change how dyld, the Objective-C runtime,
+    /// malloc, libdispatch, Swift, logging, CoreFoundation's debug switches or Foundation's
+    /// zombie and debug switches behave, so app mode refuses them. Narrow on purpose:
+    /// ordinary `NS…`/`CF…` names (NSUnbufferedIO, CFNETWORK_…, __CF_USER_TEXT_ENCODING)
+    /// pass (W14).
     package static let deniedEnvironmentPrefixes = [
-        "CF", "NS", "OS_ACTIVITY", "OBJC_", "Malloc", "LIBDISPATCH", "SWIFT_", "DYLD",
+        "DYLD", "OBJC_", "Malloc", "LIBDISPATCH", "SWIFT_", "OS_ACTIVITY",
+        "CF_", "CFFIXED_", "CFZombie",
+        "NSZombie", "NSDeallocateZombies", "NSDebug", "NSObjCMessageLogging", "NSAutoreleaseFreedObjectCheck",
+        "NSEnableAutoreleasePool", "NSHangOnUncaughtException", "NSTraceEvents",
     ]
     package static let deniedEnvironmentNames: Set<String> = ["CFFIXED_USER_HOME"]
 

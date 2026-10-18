@@ -81,9 +81,13 @@ package enum KitControl {
     package static let maxConcurrentConnections = 4
     package static let maxRequestsPerSecond = 20
     package static let readTimeoutSeconds: Double = 2
-    /// The confirmation panel's own timeout; the client waits that long plus 15 s.
-    package static let confirmSeconds: Double = 15
-    package static var clientTimeoutSeconds: Double { confirmSeconds + 15 }
+    /// The longest confirmation panel a user can set (Settings → Displays → Safety).
+    package static var confirmSeconds: Double { Double(SafetyConfig.confirmSecondsRange.upperBound) }
+    /// Applying, settling and the guard's stages around the panel.
+    package static let applyMarginSeconds: Double = 30
+    /// How long the client waits for a reply: the longest panel plus the margin, so a
+    /// command that waits for "Keep this change?" is never cut off early (N7).
+    package static var clientTimeoutSeconds: Double { confirmSeconds + applyMarginSeconds }
     /// `sun_path` holds 104 bytes including the terminating NUL.
     package static let maxSocketPathBytes = 103
     package static let maxArguments = 32
@@ -160,7 +164,11 @@ package enum KitControl {
         package var help: Bool
     }
 
-    /// `snaptic [--json] [--yes] <verb words> [arguments]`. `--` ends option parsing.
+    /// `snaptic [--json] [--yes] [--help] [--] <verb words> [arguments]`. Only the client's
+    /// own options before the verb are read here; everything from the verb on goes to the
+    /// server as typed, so verb options such as `pip start --display 2` work. A `--`
+    /// before the verb ends the client's options; one bare `--` after the verb (the old
+    /// workaround) is dropped.
     package struct UsageError: Error, Equatable, Sendable {
         package let message: String
         package init(_ message: String) { self.message = message }
@@ -168,20 +176,31 @@ package enum KitControl {
 
     package static func parseCommandLine(_ arguments: [String]) -> Result<ParsedCommand, UsageError> {
         var command = ParsedCommand(words: [], json: false, yes: false, help: false)
-        var optionsDone = false
-        for argument in arguments {
-            if !optionsDone {
-                switch argument {
-                case "--json": command.json = true; continue
-                case "--yes", "-y": command.yes = true; continue
-                case "--help", "-h": command.help = true; continue
-                case "--": optionsDone = true; continue
-                default:
-                    // "-10" is a value; only "--something" is an (unknown) option.
-                    if argument.hasPrefix("--") {
-                        return .failure(UsageError(L("Unknown option: ") + TextSanitizer.clean(argument, maxScalars: 40)))
-                    }
+        var index = 0
+        options: while index < arguments.count {
+            let argument = arguments[index]
+            switch argument {
+            case "--json": command.json = true
+            case "--yes", "-y": command.yes = true
+            case "--help", "-h": command.help = true
+            case "--":
+                index += 1
+                break options
+            default:
+                // Before the verb, only the client's options exist.
+                if argument.hasPrefix("-") && argument.count > 1 {
+                    return .failure(UsageError(L("Unknown option: ") + TextSanitizer.clean(argument, maxScalars: 40)
+                                               + L(". Options for a command go after it.")))
                 }
+                break options
+            }
+            index += 1
+        }
+        var droppedSeparator = false
+        for argument in arguments[index...] {
+            if argument == "--" && !droppedSeparator && !command.words.isEmpty {
+                droppedSeparator = true
+                continue
             }
             command.words.append(argument)
         }

@@ -37,7 +37,8 @@ import SnapticKit
             window.minSize = NSSize(width: 560, height: 520)
             window.contentView = NSHostingView(rootView: OnboardingView(
                 host: host, store: host.modulesStore, permissions: host.permissions, model: model,
-                next: { [weak self] in self?.advance() }, finish: { [weak self] in self?.finish() }))
+                next: { [weak self] in self?.advance() }, finish: { [weak self] in self?.finish() },
+                finishLater: { [weak self] in self?.finishLater() }))
             window.delegate = self
             window.center()
             self.window = window
@@ -61,6 +62,15 @@ import SnapticKit
         host.modulesStore.value.onboardingPermissions = []
         host.permissions.holdAutomaticGuides = false
         EventLog.shared.record(.modules, "Onboarding finished")
+        window?.close()
+        // Bootstrap held the launch request back while onboarding ran (W15).
+        host.requestLaunchPermissions()
+    }
+
+    /// "Finish Later": closes this window (never whichever window is key, such as a
+    /// permission guide); the saved step stays and onboarding resumes next launch.
+    private func finishLater() {
+        host?.modulesStore.flush()
         window?.close()
     }
 
@@ -91,6 +101,7 @@ private struct OnboardingView: View {
     @ObservedObject var model: OnboardingModel
     let next: () -> Void
     let finish: () -> Void
+    let finishLater: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -219,7 +230,7 @@ private struct OnboardingView: View {
     private func footer(primary: String) -> some View {
         HStack {
             if model.step != .welcome {
-                Button(L("Finish Later")) { NSApp.keyWindow?.close() }
+                Button(L("Finish Later")) { finishLater() }
             }
             Spacer()
             Button(primary) { model.step == .done ? finish() : next() }

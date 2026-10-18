@@ -28,7 +28,6 @@ private let hotKeyHandler: EventHandlerUPP = { _, event, userData in
     enum RegisterError: Error, Equatable {
         case conflict(owner: String)
         case systemRefused(Int32)
-        case notBuilt
         /// The combo breaks a rule (`HotkeyRules.problem`); the text says which.
         case invalid(String)
         /// The lifetime had already ended.

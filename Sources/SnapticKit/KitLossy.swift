@@ -74,3 +74,11 @@ extension KeyedDecodingContainer {
 }
 
 extension LossyMap: Sendable where Key: Sendable, Value: Sendable {}
+
+/// When a ConfigStore writes (FIXES-R2 W1): a pending change always; `force` also when
+/// nothing was ever written, so a value equal to the defaults still lands on disk.
+package enum ConfigSavePolicy {
+    package static func shouldWrite(hasPendingChange: Bool, force: Bool, everWritten: Bool) -> Bool {
+        hasPendingChange || (force && !everWritten)
+    }
+}

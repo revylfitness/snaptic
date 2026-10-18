@@ -95,8 +95,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Nothing in the menu bar (everything hidden): show Settings. A first launch gets
         // onboarding instead (shown by the host).
-        if !host.modulesStore.value.needsOnboarding && !host.statusMenu.hasVisibleItem {
+        // From macOS 27 the item's window is checked, which needs a moment to be placed.
+        let osMajor = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        let check: @MainActor () -> Void = { [weak host] in
+            guard let host, !host.modulesStore.value.needsOnboarding, !host.statusMenu.hasVisibleItem else { return }
             host.openSettings()
+        }
+        if osMajor >= 27 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { MainActor.assumeIsolated { check() } }
+        } else {
+            check()
         }
     }
 

@@ -199,4 +199,64 @@ final class ConfigModulesTests: XCTestCase {
             XCTAssertTrue(Set(t.stop).isDisjoint(with: t.start))
         }
     }
+
+    // MARK: First run (FIXES-R2 W1)
+
+    func testFirstRunOfANewUserEqualsDefaultsSoTheWriteMustBeForced() throws {
+        let fresh = ModulesConfig.firstRun(launchedBefore: false)
+        // Equal to init(): no didSet change, nothing pending. Only a forced save writes it.
+        XCTAssertEqual(fresh, ModulesConfig())
+        XCTAssertFalse(ConfigSavePolicy.shouldWrite(hasPendingChange: false, force: false, everWritten: false))
+        XCTAssertTrue(ConfigSavePolicy.shouldWrite(hasPendingChange: false, force: true, everWritten: false))
+        // What is written keeps onboarding at Welcome on the next launch (a missing value
+        // would decode as .done, the upgrader path).
+        let stored = try roundTrip(fresh)
+        XCTAssertTrue(stored.needsOnboarding)
+        XCTAssertEqual(stored.resumeStep, .welcome)
+        XCTAssertFalse(stored.showNewDisplaysCard)
+        XCTAssertEqual(stored.enabledModules, ModuleID.allCases)
+    }
+
+    func testFirstRunOfAnEarlierUserIsTheUpgrade() {
+        let c = ModulesConfig.firstRun(launchedBefore: true)
+        XCTAssertEqual(c, ModulesConfig.upgradeDefaults())
+        XCTAssertFalse(c.needsOnboarding)
+        XCTAssertTrue(c.showNewDisplaysCard)
+        XCTAssertFalse(c.isEnabled(.displays))
+    }
+
+    func testSavePolicy() {
+        // A pending change is always written; force only matters before the first write.
+        for force in [false, true] {
+            for ever in [false, true] {
+                XCTAssertTrue(ConfigSavePolicy.shouldWrite(hasPendingChange: true, force: force, everWritten: ever))
+            }
+        }
+        XCTAssertFalse(ConfigSavePolicy.shouldWrite(hasPendingChange: false, force: true, everWritten: true))
+        XCTAssertFalse(ConfigSavePolicy.shouldWrite(hasPendingChange: false, force: false, everWritten: true))
+    }
+
+    // MARK: Icons that need an external display (W16)
+
+    func testIconsNeedExternalDisplay() {
+        var c = ModulesConfig()
+        XCTAssertFalse(c.iconsNeedExternalDisplay)       // shared item always shows
+        c.setPlacement(.hidden, for: .windowSwitcher)
+        c.setPlacement(.ownIcon, for: .displays)
+        XCTAssertFalse(c.iconsNeedExternalDisplay)       // own icon without the hide option
+        var p = c.preferences(.displays)
+        p.hideWithoutExternalDisplay = true
+        c.modules[.displays] = p
+        XCTAssertTrue(c.iconsNeedExternalDisplay)
+        c.setPlacement(.ownIcon, for: .windowSwitcher)
+        XCTAssertFalse(c.iconsNeedExternalDisplay)       // the switcher's icon still shows
+        c.setPlacement(.hidden, for: .windowSwitcher)
+        c.setEnabled(false, for: .windowSwitcher)
+        XCTAssertTrue(c.iconsNeedExternalDisplay)
+        c.setEnabled(false, for: .displays)
+        XCTAssertFalse(c.iconsNeedExternalDisplay)       // nothing enabled: the shared item shows
+        c.setEnabled(true, for: .displays)
+        c.setPlacement(.hidden, for: .displays)
+        XCTAssertFalse(c.iconsNeedExternalDisplay)       // everything hidden has its own notice
+    }
 }

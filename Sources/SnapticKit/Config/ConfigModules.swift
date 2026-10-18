@@ -148,6 +148,14 @@ package struct ModulesConfig: ConfigModel {
         return c
     }
 
+    /// What a launch without stored module settings starts from (PLAN §3.4): a new user
+    /// gets the fresh defaults (onboarding at Welcome), an earlier 0.1 user the upgrade
+    /// defaults. A fresh value equals `init()`, so the store must write it with
+    /// `save(force: true)`: otherwise a user who quits at Welcome is an "upgrader" next time.
+    package static func firstRun(launchedBefore: Bool) -> ModulesConfig {
+        launchedBefore ? upgradeDefaults() : ModulesConfig()
+    }
+
     // MARK: Queries
 
     package func preferences(_ id: ModuleID) -> ModulePreferences {
@@ -257,6 +265,19 @@ extension ModulesConfig {
         let allHidden = enabled.allSatisfy { placement($0) == .hidden }
         return StatusItemPlan(shared: shared, ownIcon: own, showShared: !shared.isEmpty, noModulesEnabled: false,
                               everythingHidden: allHidden)
+    }
+}
+
+extension ModulesConfig {
+    /// Every icon that could show is the Displays icon set to "Hide the icon when no
+    /// external display is connected": without an external display nothing shows in the
+    /// menu bar (General → Menu warns). "Everything hidden" has its own notice.
+    package var iconsNeedExternalDisplay: Bool {
+        let shown = enabledModules.filter { placement($0) != .hidden }
+        guard !shown.isEmpty else { return false }
+        return shown.allSatisfy { id in
+            id == .displays && placement(id) == .ownIcon && preferences(id).hideWithoutExternalDisplay
+        }
     }
 }
 

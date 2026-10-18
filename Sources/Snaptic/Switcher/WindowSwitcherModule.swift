@@ -238,7 +238,7 @@ import SnapticKit
         case .conflict(let owner): return L("Already used by ") + owner + "."
         case .systemRefused: return L("macOS refused this shortcut; another app may be using it.")
         case .invalid(let message): return message
-        case .notBuilt, .ended: return L("The shortcut couldn't be registered.")
+        case .ended: return L("The shortcut couldn't be registered.")
         }
     }
 

@@ -157,7 +157,7 @@ struct DisplaysOnboardingStep: View {
         } else if let ctx = env.context {
             for permission in Permission.allCases where permissions.contains(permission)
                 && ctx.permissions.state(permission) != .granted {
-                ctx.permissions.request(permission, reason: L("Display features you chose"), lifetime: ctx.lifetime)
+                ctx.permissions.presentGuide(permission, reason: L("Display features you chose"))
             }
         }
     }

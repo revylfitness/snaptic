@@ -132,6 +132,17 @@ private struct SettingsRootView: View {
             }
         }
         .frame(minWidth: SettingsWindowHost.minimumSize.width, minHeight: SettingsWindowHost.minimumSize.height)
+        .onAppear { keepSelectionValid(sections) }
+        .onChange(of: sections.flatMap { $0.pages.map(\.id) }) { _, _ in keepSelectionValid(self.sections) }
+        .onChange(of: navigation.selection) { _, _ in keepSelectionValid(self.sections) }
+    }
+
+    /// The selected page went away (its module or feature stopped): show Display
+    /// Features, or General → Modules, instead of an empty pane (W18).
+    private func keepSelectionValid(_ sections: [SettingsSection]) {
+        let ids = sections.flatMap { $0.pages.map(\.id) }
+        let wanted = HostUIRules.settingsSelection(navigation.selection, available: ids)
+        if wanted != navigation.selection { navigation.selection = wanted }
     }
 }
 

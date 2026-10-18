@@ -70,10 +70,16 @@ import SnapticKit
     }
 
     /// Writes any pending change now (quit, stop).
-    func flush() {
-        guard pendingSave != nil else { return }
+    func flush() { save(force: false) }
+
+    /// Writes now. `force`: also when nothing was ever written, even if the value equals
+    /// the defaults `init` filled in (a first run must leave its ModulesConfig behind).
+    func save(force: Bool) {
+        let hadPending = pendingSave != nil
         pendingSave?.cancel()
         pendingSave = nil
+        guard ConfigSavePolicy.shouldWrite(hasPendingChange: hadPending, force: force, everWritten: lastWritten != nil)
+        else { return }
         save()
     }
 

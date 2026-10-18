@@ -49,6 +49,7 @@ enum GeneralPages {
 private struct ModulesPage: View {
     @ObservedObject var host: ModuleHost
     @ObservedObject var store: ConfigStore<ModulesConfig>
+    @State private var settingUpDisplays = false
 
     var body: some View {
         Form {
@@ -58,11 +59,14 @@ private struct ModulesPage: View {
                         Label(L("New: Displays"), systemImage: "sparkles")
                             .font(.headline)
                         Text(host.displays.summary)
-                        Text(L("Brightness and volume for external monitors, resolutions, virtual screens, picture in picture and more. Everything is off until you choose it."))
+                        Text(L("Brightness and volume for external monitors, resolutions, arrangement, virtual screens, picture in picture and more. Turn it on, then pick what it should do with your displays; you can change every choice later on the Display Features page."))
                             .font(.callout)
                             .foregroundStyle(.secondary)
                         HStack {
-                            Button(L("Turn On Displays")) { host.setEnabled(true, .displays) }
+                            Button(L("Turn On Displays…")) {
+                                host.setEnabled(true, .displays)
+                                settingUpDisplays = true
+                            }
                                 .keyboardShortcut(.defaultAction)
                             Button(L("Not Now")) { store.value.showNewDisplaysCard = false }
                         }
@@ -82,6 +86,10 @@ private struct ModulesPage: View {
             }
         }
         .formStyle(.grouped)
+        // On the Form, not the card: the card goes away as soon as Displays is on.
+        .sheet(isPresented: $settingUpDisplays) {
+            DisplaysSetupSheet(host: host, store: store) { settingUpDisplays = false }
+        }
     }
 
     private func binding(_ id: ModuleID) -> Binding<Bool> {
@@ -132,6 +140,42 @@ private struct ModuleRow: View {
     }
 }
 
+/// The "New: Displays" card's setup: the onboarding chips (team F's
+/// DisplaysOnboardingStep), then a guide for each permission the choice needs (W6).
+private struct DisplaysSetupSheet: View {
+    let host: ModuleHost
+    @ObservedObject var store: ConfigStore<ModulesConfig>
+    let done: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            DisplaysOnboardingStep(env: host.displays.pageEnvironment, hideMenuIcon: hideIcon) { chosen in
+                done()
+                for permission in Permission.allCases where chosen.contains(permission)
+                    && host.permissions.state(permission) != .granted {
+                    host.permissions.presentGuide(permission, reason: L("Display features you chose"))
+                }
+            }
+            Divider()
+            HStack {
+                Text(L("Keeping the defaults leaves brightness, resolution and arrangement controls on."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(L("Keep Defaults")) { done() }
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding(16)
+        }
+        .frame(width: 600, height: 620)
+    }
+
+    private var hideIcon: Binding<Bool> {
+        Binding(get: { store.value.placement(.displays) == .hidden },
+                set: { store.value.setPlacement($0 ? .hidden : .shared, for: .displays) })
+    }
+}
+
 // MARK: - Menu
 
 private struct MenuPage: View {
@@ -146,6 +190,19 @@ private struct MenuPage: View {
                 Section {
                     Label(L("Every menu bar icon is hidden. Open Snaptic again from Finder or Launchpad to come back to Settings; shortcuts keep working."),
                           systemImage: "eye.slash")
+                }
+            } else if store.value.iconsNeedExternalDisplay {
+                Section {
+                    Label(L("While no external display is connected, no Snaptic icon shows in the menu bar. Open Snaptic again from Finder or Launchpad to come back to Settings."),
+                          systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
+            }
+            if PermissionFlow.isMacOS27OrLater {
+                Section {
+                    Text(L("macOS can hide menu bar icons itself (System Settings → Menu Bar). If Snaptic's icon doesn't show, allow it there; opening Snaptic again always shows Settings."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             ForEach(ModuleID.allCases, id: \.self) { id in
