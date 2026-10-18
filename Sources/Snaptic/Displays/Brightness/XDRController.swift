@@ -21,6 +21,8 @@ import SnapticKit
     private var lifetime: Lifetime?
     private var sinks: [AnyCancellable] = []
     private var menuItems: ColorMenuItems?
+    /// Displays whose brightness is above 100% (boosted), as last seen.
+    private var aboveSDR: Set<DisplayKey> = []
 
     init() {}
 
@@ -92,12 +94,22 @@ import SnapticKit
             .store(in: &sinks)
         context.brightness.changeEvents
             .filter { $0.source != .restore }
-            .sink { [weak self] _ in self?.context?.requestMenuRebuild() }
+            .sink { [weak self] change in self?.brightnessChanged(change) }
             .store(in: &sinks)
         applyAll()
     }
 
     func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) { applyAll() }
+
+    /// The Extra Brightness item and pages show whether a display is boosted: refresh them when that flips (the
+    /// slider itself follows `DisplayRuntime`).
+    private func brightnessChanged(_ change: BrightnessService.Change) {
+        let above = change.value > 1.0001
+        guard above != aboveSDR.contains(change.key) else { return }
+        if above { aboveSDR.insert(change.key) } else { aboveSDR.remove(change.key) }
+        context?.runtime.revision(.xdr).bump()
+        context?.requestMenuRebuild()
+    }
 
     func configDidChange(from old: DisplaysConfig, to new: DisplaysConfig) {
         if old.brightness.xdrMaxScale != new.brightness.xdrMaxScale || old.brightness.xdrMethod != new.brightness.xdrMethod
@@ -117,6 +129,7 @@ import SnapticKit
         }
         context?.edr.onCalibrated = nil
         menuItems = nil
+        aboveSDR.removeAll()
         lifetime = nil
         context = nil
     }

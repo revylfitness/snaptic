@@ -30,17 +30,16 @@ import SnapticKit
     func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] {
         guard let context, context.runtime.isEffective(.brightness) else { return [] }
         let key = display.key
-        let name = TextSanitizer.clean(display.name, maxScalars: 64)
         if context.brightness.isAwaitingFirstRead(key) {
             // W17b: until the monitor's first DDC read answers (the menu rebuilds then).
-            let row = MenuKit.status(L("Reading Brightness…"), symbol: "sun.max",
-                                     control: ControlID("menu.display.c.brightnessReading"))
-            row.setAccessibilityLabel(L("Reading brightness of \(name)"))
-            return [(Self.sliderItem, row)]
+            // It sits right under the display's row, which names the display.
+            return [(Self.sliderItem, MenuKit.status(L("Reading Brightness…"), symbol: "sun.max",
+                                                     control: ControlID("menu.display.c.brightnessReading")))]
         }
         let runtime = context.runtime.runtime(for: key)
         guard let value = runtime.brightnessPosition else { return [] }
         let range = runtime.brightnessRange
+        let name = TextSanitizer.clean(display.name, maxScalars: 64)
         let slider = MenuSliderRow(title: L("Brightness of \(name)"), symbol: range.upperBound > 1 ? "sun.max.circle" : "sun.max",
                                    value: value, range: range, format: .percent(of: 1),
                                    control: ControlID("menu.display.c.brightness")) { [weak self] newValue, phase in
