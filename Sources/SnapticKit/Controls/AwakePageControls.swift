@@ -22,6 +22,8 @@ package enum AwakePageControls: ControlTable {
         ControlSpec("awake.page.useAwake", .setting, keys: ["modules.*.enabled"],
                     search: SearchSpec("Use Awake", keywords: ["keep awake", "caffeinate", "prevent sleep", "turn on",
                                                                "turn off"], root: root)),
+        // Safe Mode row (ux N2, N5: the shared Leave Safe Mode confirmation).
+        ControlSpec("awake.page.leaveSafeMode", .statusAction, when: awake + [.state(.safeMode)]),
         // Status row (R5-9: every session kind starts from Settings alone; R5-10, R5-11).
         ControlSpec("awake.page.status.keepAwake", .statusAction, when: awake + [.state(.awakeIdle)],
                     search: SearchSpec("Keep Awake", keywords: ["start session", "keep awake now", "stay awake"],

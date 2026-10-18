@@ -334,4 +334,48 @@ final class AwakePresentationTests: XCTestCase {
         XCTAssertEqual(details.suffix(2), ["Closing the lid will put your Mac to sleep.", AwakeStatusText.lidRoute])
         XCTAssertFalse(AwakeDetail.lines(i).contains(AwakeStatusText.lidRoute), "the menu header stays at 2 lines")
     }
+
+    // MARK: Background stop and feature locks (round-2 F2, ux N2)
+
+    func testBackgroundTextNamesOnlyWhatIsInUse() {
+        XCTAssertNil(AwakeBackgroundText.unreadableToast(activity: false, drives: false))
+        XCTAssertEqual(AwakeBackgroundText.unreadableToast(activity: true, drives: true),
+                       "Snaptic can't read the battery level, so it stopped appearing active and keeping drives awake.")
+        XCTAssertEqual(AwakeBackgroundText.unreadableToast(activity: false, drives: true),
+                       "Snaptic can't read the battery level, so it stopped keeping drives awake.")
+        XCTAssertNil(AwakeBackgroundText.paused(nil, activity: true, drives: true))
+        XCTAssertNil(AwakeBackgroundText.paused(.heat, activity: false, drives: false))
+        XCTAssertEqual(AwakeBackgroundText.paused(.batteryUnreadable, activity: true, drives: false),
+                       "Appear active is paused: Snaptic can't read the battery level.")
+        XCTAssertEqual(AwakeBackgroundText.paused(.heat, activity: true, drives: true),
+                       "Appear active and Drive Alive are paused: your Mac is too hot.")
+    }
+
+    func testBackgroundPausedLineIsShownActiveAndIdle() {
+        let now = ClockNow(wall: 1_000, continuous: 100, bootSession: "B")
+        let s = AwakeClock.start(.indefinite, options: AwakeSessionOptions(), presetID: nil, source: .menu, now: now,
+                                 id: StableID())
+        let line = "Appear active is paused: the battery is low."
+        var i = AwakeDetailInput(governing: .manual(s), now: now, activity: .declare, backgroundPaused: line)
+        XCTAssertEqual(AwakeDetail.lines(i), ["Until turned off", line], "explains instead of “Appearing active”")
+        i.governing = .inactive
+        XCTAssertTrue(AwakeStatusText.details(i, pausedUntilClock: nil).contains(line), "Drive Alive runs idle too")
+    }
+
+    func testFeatureLocks() {
+        XCTAssertEqual(AwakeFeatureLock.of(.triggers, killSwitches: [], safeMode: true), .safeMode)
+        XCTAssertNil(AwakeFeatureLock.of(.shortcuts, killSwitches: [], safeMode: true), "Safe Mode keeps shortcuts")
+        XCTAssertEqual(AwakeFeatureLock.of(.activity, killSwitches: [.activity], safeMode: true), .killSwitch,
+                       "a kill switch outlasts Safe Mode: named first")
+        XCTAssertNil(AwakeFeatureLock.of(.sessions, killSwitches: [.sessions], safeMode: false), "unkillable")
+        XCTAssertEqual(AwakeFeatureLock.first([.pointerNudge, .activity], killSwitches: [.activity], safeMode: false)?.feature,
+                       .activity)
+        XCTAssertEqual(AwakeFeatureLock.killSwitch.text, DefaultsLock.text)
+        XCTAssertEqual(AwakeFeatureLock.safeMode.text, "Paused in Safe Mode.")
+        for f in AwakeFeatureGraph.safeModeRemoves {
+            XCTAssertEqual(AwakeFeatureLock.of(f, killSwitches: [], safeMode: true), .safeMode)
+        }
+        XCTAssertFalse(AwakeFeatureLock.safeModeStatus.contains("doesn"), "sessions still work in Safe Mode")
+    }
 }
+

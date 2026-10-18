@@ -95,7 +95,8 @@ package struct AwakeGuardsConfig: ConfigModel {
 
 /// Persisted in the snapshot (same boot only).
 package struct GuardMemory: Codable, Equatable, Sendable {
-    /// Consecutive reads with no percent on a latched battery; ≥ 2 = unreadable.
+    /// Consecutive evaluations with no percent on a latched battery (diagnostics; the stop and its toast follow the
+    /// first such read, `AwakeGuards.backgroundBlock`).
     package var unreadableReads: Int = 0
     /// Blocks trigger starts until cleared.
     package var holding: AwakeEndReason? = nil
@@ -187,6 +188,9 @@ package struct GuardMemory: Codable, Equatable, Sendable {
 }
 
 package enum AwakeGuardVerdict: Equatable, Sendable { case allow, end(AwakeEndReason), warn(AwakeEndReason) }
+
+/// Why activity and Drive Alive are stopped by the guards (`AwakeGuards.backgroundBlock`).
+package enum AwakeBackgroundBlock: Equatable, Sendable { case heat, batteryUnreadable, batteryLow }
 
 package enum AwakeGuards {
     /// Fixed floor (N10): not stored, not exported, no kill switch.
@@ -296,24 +300,31 @@ package enum AwakeGuards {
         return (.allow, m)
     }
 
-    /// Drive Alive and activity may run only if this is true (security M1): false at critical heat, on a latched
-    /// battery whose level can't be read (treated as 0%), and while discharging below the hard floor or the enabled
-    /// user floor.
-    package static func allowsBackgroundWork(_ now: PowerFacts, config: AwakeGuardsConfig, memory: GuardMemory) -> Bool {
+    /// Why Drive Alive and activity may not run now, or nil (security M1): critical heat, a latched battery whose
+    /// level can't be read (treated as 0%, from the first such read: the stop and its toast never wait for a
+    /// confirming read), and discharging below the hard floor or the enabled user floor.
+    package static func backgroundBlock(_ now: PowerFacts, config: AwakeGuardsConfig) -> AwakeBackgroundBlock? {
         let config = config.sanitized()
-        if now.thermal == .critical { return false }
-        guard now.batteryPresent else { return true }
-        guard let p = now.percent, memory.unreadableReads < 2 else { return false }
+        if now.thermal == .critical { return .heat }
+        guard now.batteryPresent else { return nil }
+        guard let p = now.percent else { return .batteryUnreadable }
         if now.discharging {
-            if p < hardFloorPercent { return false }
-            if config.batteryFloorEnabled && p < config.batteryFloor { return false }
+            if p < hardFloorPercent { return .batteryLow }
+            if config.batteryFloorEnabled && p < config.batteryFloor { return .batteryLow }
         }
-        return true
+        return nil
     }
 
-    /// The battery is latched and has been unreadable for two reads (one toast; activity and Drive Alive stop).
+    /// Drive Alive and activity may run only if this is true: `backgroundBlock` is nil. (`memory` is kept for the
+    /// callers; the decision needs only the live facts.)
+    package static func allowsBackgroundWork(_ now: PowerFacts, config: AwakeGuardsConfig, memory: GuardMemory) -> Bool {
+        backgroundBlock(now, config: config) == nil
+    }
+
+    /// The battery is latched and can't be read: the same read that stops activity and Drive Alive (awake-correctness
+    /// F2), so the one toast explains the stop at once. `memory.unreadableReads` still counts reads for diagnostics.
     package static func batteryUnreadable(_ now: PowerFacts, memory: GuardMemory) -> Bool {
-        now.batteryPresent && now.percent == nil && memory.unreadableReads >= 2
+        backgroundBlock(now, config: AwakeGuardsConfig()) == .batteryUnreadable
     }
 
     /// When a thermal hold can clear (continuous), for GuardsController's re-check timer; nil when none is pending.

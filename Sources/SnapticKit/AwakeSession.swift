@@ -630,6 +630,9 @@ package enum AwakeRefusal: Error, Equatable, Sendable {
     case uiSessionRunning
     case holdLimit
     case rateLimited
+    /// The session started but its own first arbitration ended it (off console longer than allowed, locked too
+    /// long, the assertion couldn't be created): the reply names that end (awake-correctness N2).
+    case endedAtStart(AwakeEndReason)
 
     /// 4 for every refusal (0.2 CLI table).
     package var exitCode: Int32 { 4 }
@@ -660,6 +663,15 @@ package enum AwakeRefusal: Error, Equatable, Sendable {
             return L("Snaptic is already holding for 8 commands.")
         case .rateLimited:
             return L("Too many requests. Try again in a second.")
+        case .endedAtStart(let reason):
+            switch reason {
+            case .userSwitch: return L("Awake ended at once: another user is using this Mac.")
+            case .lockedTooLong: return L("Awake ended at once: the screen has been locked too long.")
+            case .assertionFailed: return L("Snaptic couldn't keep your Mac awake. Try again, or restart Snaptic.")
+            default:
+                return L("Awake ended at once: ") + AwakeEndText.phrase(reason, floor: AwakeGuards.hardFloorPercent,
+                                                                       appName: nil, lockedHours: nil) + "."
+            }
         }
     }
 }

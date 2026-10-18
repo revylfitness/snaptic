@@ -5,7 +5,9 @@ import SnapticKit
 // in SnapticAwakeHistoryV1 (≤ 500, 90 days, short `.replaced` runs merged by Kit). It never reaches logs,
 // diagnostics, the CLI or exports. Controllers stop in reverse start order, so this one records what still runs when
 // the module stops — except what a relaunch will resume (quit with "Resume after restart", `--pid` holds), which is
-// recorded when it really ends.
+// recorded when it really ends: at its end after the relaunch, or by restore when it isn't carried on (ran out, the
+// Mac restarted, a guard...), never counting the time Snaptic wasn't running (round-2 F1). A resume after a gap
+// records the part before it as its own entry.
 
 @MainActor final class HistoryController: AwakeFeatureController {
     static var id: AwakeControllerID { .history }
@@ -35,11 +37,13 @@ import SnapticKit
             if skipsForResume(reason) && ctx.config.value.sessions.behavior.resumeAfterRestart { return }
             var bundleID: String?
             if case .whileApp(let b, _) = s.kind { bundleID = b }
-            entry = AwakeHistoryEntry(start: min(s.startedAt, now), end: now, kind: s.kind.historyKind, source: s.source,
+            let start = ctx.sessions.historyStart(s.id, startedAt: s.startedAt)
+            entry = AwakeHistoryEntry(start: min(start, now), end: now, kind: s.kind.historyKind, source: s.source,
                                       presetID: s.presetID, triggerID: nil, bundleID: bundleID, endReason: reason)
         case .hold(let h):
             if h.binding.isProcess && skipsForResume(reason) { return }
-            entry = AwakeHistoryEntry(start: min(h.startedAt, now), end: now, kind: .process, source: .commandLine,
+            let start = ctx.sessions.historyStart(h.id, startedAt: h.startedAt)
+            entry = AwakeHistoryEntry(start: min(start, now), end: now, kind: .process, source: .commandLine,
                                       presetID: nil, triggerID: nil, bundleID: nil, endReason: reason)
         }
         append(entry)
@@ -53,22 +57,22 @@ import SnapticKit
                                  endReason: end.reason))
     }
 
-    /// A session or `--pid` hold kept for resume that ran out while Snaptic wasn't running (F5b): recorded at its
-    /// end instant.
-    private func recordExpired(_ item: AwakeEndedItem, _ endWall: Double) {
-        let entry: AwakeHistoryEntry
-        switch item {
-        case .session(let s):
-            var bundleID: String?
-            if case .whileApp(let b, _) = s.kind { bundleID = b }
-            entry = AwakeHistoryEntry(start: min(s.startedAt, endWall), end: endWall, kind: s.kind.historyKind,
-                                      source: s.source, presetID: s.presetID, triggerID: nil, bundleID: bundleID,
-                                      endReason: .timeUp)
-        case .hold(let h):
-            entry = AwakeHistoryEntry(start: min(h.startedAt, endWall), end: endWall, kind: .process,
-                                      source: .commandLine, presetID: nil, triggerID: nil, bundleID: nil, endReason: .timeUp)
-        }
-        append(entry)
+    /// What restore owes for the snapshot (F1, F5b): recorded with the end it computed.
+    private func recordAway(_ end: AwakeAwayEnd) {
+        append(AwakeHistoryEntry(end))
+    }
+
+    /// A launch that discards the snapshot unread (`Modules.disable.awake`, ModuleHost): what it held still gets its
+    /// history entries, ending when Snaptic stopped (F1). Nothing when History is off.
+    static func recordDiscardedSnapshot(_ state: ConfigStore<AwakeRuntimeSnapshot>, history: ConfigStore<AwakeHistory>,
+                                        config: AwakeConfig) {
+        guard config.rawFeatures[.history] != false else { return }
+        let now = AwakeModule.clockNow()
+        let ends = state.value.discardedEnds(now: now, resume: config.sessions.behavior.resumeAfterRestart)
+        guard !ends.isEmpty else { return }
+        var h = history.value
+        for e in ends { h = h.appending(AwakeHistoryEntry(e), cap: AwakeHistory.maxEntries) }
+        history.value = h.pruned(now: now.wall, keepDays: AwakeHistory.keepDays)
     }
 
     /// Quitting: what resumes after the relaunch is recorded when it really ends.
@@ -93,7 +97,7 @@ import SnapticKit
         self.lifetime = lifetime
         context.sessions.observeEnds(lifetime) { [weak self] item, reason in self?.record(item, reason) }
         context.triggers.observeRuleEnds(lifetime) { [weak self] end in self?.recordRule(end) }
-        context.sessions.observeExpiredWhileAway(lifetime) { [weak self] item, endWall in self?.recordExpired(item, endWall) }
+        context.sessions.observeAwayEnds(lifetime) { [weak self] end in self?.recordAway(end) }
         let pruned = context.history.value.pruned(now: Date().timeIntervalSince1970, keepDays: AwakeHistory.keepDays)
         if pruned != context.history.value { context.history.value = pruned }
     }
