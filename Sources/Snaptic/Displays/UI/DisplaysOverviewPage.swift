@@ -1,9 +1,9 @@
 import SwiftUI
 import SnapticKit
 
-/// The 0.2 Overview page id ("displays.overview"), kept until the step-3 exit removes `settingsPages()`: it shows the
-/// Displays root page, which replaces it (PLAN 0.3 §4.3, §6.2 ✗). The 0.2 pages that still exist share the status
-/// section and badge below until they go too.
+/// The 0.2 Overview page id ("displays.overview"), kept until the step-3 exit removes `settingsPages()`: opening it
+/// goes back to the Displays root page, which replaces it (PLAN 0.3 §4.3, §6.2 ✗). The 0.2 pages that still exist
+/// share the status section and badge below until they go too.
 struct DisplaysOverviewPage: View {
     let env: DisplaysPageEnvironment
 
@@ -12,7 +12,12 @@ struct DisplaysOverviewPage: View {
     }
 
     var body: some View {
-        DisplaysPage(env: env)
+        Color.clear
+            .onAppear {
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated { SettingsShell.shared.go(to: SettingsLocation(root: SettingsRootID.displays)) }
+                }
+            }
     }
 }
 
