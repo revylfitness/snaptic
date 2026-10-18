@@ -57,14 +57,14 @@ import SnapticKit
         }
     }
 
-    /// Convenience: the target, or the CLI response to return.
-    static func resolveForCLI(_ text: String, _ ctx: DisplaysContext) -> Result<DisplayTarget, ControlResponse> {
+    /// Convenience for CLI handlers: either a target, or the response to return.
+    static func resolveForCLI(_ text: String, _ ctx: DisplaysContext) -> (target: DisplayTarget?, error: ControlResponse?) {
         switch resolve(text, ctx) {
-        case .target(let t): return .success(t)
-        case .notFound: return .failure(.failure(ControlExit.notFound, L("No display matches “\(text)”. Try `snaptic list`.")))
+        case .target(let t): return (t, nil)
+        case .notFound: return (nil, .failure(ControlExit.notFound, L("No display matches “\(text)”. Try `snaptic list`.")))
         case .ambiguous(let names):
-            return .failure(.failure(ControlExit.usage,
-                                     L("“\(text)” matches several displays: \(names.joined(separator: ", ")). Use its number or id:N.")))
+            return (nil, .failure(ControlExit.usage,
+                                  L("“\(text)” matches several displays: \(names.joined(separator: ", ")). Use its number or id:N.")))
         }
     }
 }
