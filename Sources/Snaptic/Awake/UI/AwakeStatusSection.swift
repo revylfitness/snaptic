@@ -137,7 +137,7 @@ struct AwakeStatusSection: View, ControlDeclaring {
     private func startItems(replacing: Bool) -> [ActionMenuItem] {
         let running: StableID?
         if replacing, case .manual(let s) = runtime.governing { running = s.presetID } else { running = nil }
-        var items: [ActionMenuItem] = sessions.value.presets.filter { $0.id != running }.map { preset in
+        var items: [ActionMenuItem] = sessions.value.presets.filter { $0.id != running }.map { (preset: AwakePreset) -> ActionMenuItem in
             let id = preset.id
             return ActionMenuItem(id: "preset." + id.rawValue, title: preset.title(AwakeFormat.text),
                                   control: ControlID("awake.page.status.keepAwakeMenu")) { [weak sessions = context.sessions] in
@@ -147,7 +147,7 @@ struct AwakeStatusSection: View, ControlDeclaring {
         }
         items.append(.separator("apps.separator"))
         let apps = AwakeFormat.runningApps(recent: sessions.value.recentApps)
-        var appItems = apps.map { app in
+        var appItems: [ActionMenuItem] = apps.map { (app: (bundleID: String, name: String)) -> ActionMenuItem in
             let bundleID = app.bundleID
             return ActionMenuItem(id: "app." + bundleID, title: app.name) { [weak sessions = context.sessions] in
                 guard SettingsShell.shared.mayStart() else { return }

@@ -358,3 +358,76 @@ extension AwakeConfig {
         return c
     }
 }
+
+// MARK: - Sessions sheet editing (§4.3 "Sessions sheet")
+
+/// The kind pop-up of the Sessions sheet.
+package enum AwakePresetKindChoice: String, CaseIterable, Sendable { case indefinite, duration, untilTime, untilIdle }
+
+extension AwakePresetKind {
+    package var choice: AwakePresetKindChoice {
+        switch self {
+        case .indefinite: return .indefinite
+        case .duration: return .duration
+        case .untilTime: return .untilTime
+        case .untilIdle: return .untilIdle
+        }
+    }
+
+    /// The kind after the pop-up changed: the same kind keeps its values; a duration and an "At most" cap carry over
+    /// into each other (a length becomes the next "At most" choice, 1–12 hours); anything else starts from 1 hour,
+    /// 5:00 PM or the default thresholds.
+    package func switched(to choice: AwakePresetKindChoice) -> AwakePresetKind {
+        guard choice != self.choice else { return self }
+        switch choice {
+        case .indefinite:
+            return .indefinite
+        case .duration:
+            if case .untilIdle(_, let cap?) = self { return AwakePresetKind.duration(seconds: cap).sanitized() }
+            return .duration(seconds: 3_600)
+        case .untilTime:
+            return .untilTime(hour: 17, minute: 0)
+        case .untilIdle:
+            if case .duration(let s) = self {
+                let hours = (max(0, s) + 3_599) / 3_600
+                let cap = (Self.atMostHours.first { $0 >= hours } ?? 12) * 3_600
+                return .untilIdle(UntilIdleSpec(), maxSeconds: cap)
+            }
+            return .untilIdle(UntilIdleSpec(), maxSeconds: nil)
+        }
+    }
+
+    /// The "At most" choices of task kinds (No limit, 1, 2, 4, 8, 12 hours; parity minor 6).
+    package static let atMostHours = [1, 2, 4, 8, 12]
+}
+
+extension AwakeSessionsConfig {
+    /// A new session for the + button: 1 hour with default options, or nil at the 12-session limit.
+    package func addingPreset(id: StableID) -> AwakeSessionsConfig? {
+        guard presets.count < Self.maxPresets, !presets.contains(where: { $0.id == id }) else { return nil }
+        var c = self
+        c.presets.append(AwakePreset(id: id, name: nil, kind: .duration(seconds: 3_600), options: nil))
+        return c
+    }
+
+    /// Without the session `id`; the last session is never removed. The default session and the session started at
+    /// launch fall back to their defaults when they named it.
+    package func removingPreset(_ id: StableID) -> AwakeSessionsConfig {
+        guard presets.count > 1, presets.contains(where: { $0.id == id }) else { return self }
+        var c = self
+        c.presets.removeAll { $0.id == id }
+        if c.defaultPresetID == id { c.defaultPresetID = nil }
+        if c.behavior.startAtLaunch == id { c.behavior.startAtLaunch = nil }
+        return c
+    }
+
+    /// The six default sessions again (Sessions sheet › Restore Default Sessions…): presets and the default session
+    /// only; the session started at launch is kept when it still exists.
+    package func restoringDefaultPresets() -> AwakeSessionsConfig {
+        var c = self
+        c.presets = Self.defaultPresets
+        c.defaultPresetID = nil
+        if let s = c.behavior.startAtLaunch, !c.presets.contains(where: { $0.id == s }) { c.behavior.startAtLaunch = nil }
+        return c
+    }
+}

@@ -55,7 +55,7 @@ package enum AwakeAdvancedSheetControls: ControlTable {
                                        sheet: sheet)),
         // Other apps (always present; read live while shown).
         ControlSpec("awake.advanced.otherApps", .list, when: awake,
-                    search: SearchSpec("Other apps keeping your Mac awake", keywords: ["assertions", "pmset",
+                    search: SearchSpec("Other apps keeping your Mac awake", keywords: ["assertions", "power assertions",
                                                                                        "sleep disabled", "insomnia",
                                                                                        "amphetamine"],
                                        root: root, sheet: sheet)),

@@ -243,4 +243,46 @@ final class AwakeTriggersTests: XCTestCase {
             _ = try? JSONDecoder().decode(AwakeTriggersConfig.self, from: Data(json.utf8))
         }
     }
+
+    // MARK: Rule editor
+
+    func testCriterionChoicesRoundTrip() {
+        for choice in AwakeCriterionChoice.allCases {
+            XCTAssertFalse(choice.title.isEmpty)
+            guard let c = choice.defaultCriterion else {
+                XCTAssertTrue([.app, .volume, .usb, .router].contains(choice), choice.rawValue)
+                continue
+            }
+            XCTAssertEqual(AwakeCriterionChoice(c), choice)
+            XCTAssertEqual(c.kind, choice.kind)
+            XCTAssertEqual(c.sanitized(), c, "\(choice.rawValue) starts valid")
+        }
+        XCTAssertEqual(AwakeCriterionChoice(.network(.router(hash: String(repeating: "a", count: 64), label: "Home"))), .router)
+        XCTAssertEqual(AwakeCriterionChoice.router.title, "Connected to this network")
+        XCTAssertFalse(AwakeCriterionChoice.power.allowsNegation)
+        XCTAssertTrue(AwakeCriterionChoice.app.allowsNegation)
+        XCTAssertTrue(AwakeCriterionChoice.bluetooth.isBeta)
+    }
+
+    func testEditorDelaysAndNewRules() {
+        XCTAssertEqual(AwakeTrigger.delayTitle(0), "None")
+        XCTAssertEqual(AwakeTrigger.delayTitle(30), "30 seconds")
+        XCTAssertEqual(AwakeTrigger.delayTitle(60), "1 minute")
+        XCTAssertEqual(AwakeTrigger.delayTitle(1_800), "30 minutes")
+        XCTAssertEqual(AwakeTrigger.delayTitle(3_600), "1 hour")
+        XCTAssertEqual(AwakeTrigger.delayTitle(90), "90 seconds")
+        XCTAssertEqual(AwakeTrigger.choices([0, 30, 60], including: 45), [0, 30, 45, 60])
+        XCTAssertEqual(AwakeTrigger.choices([0, 30, 60], including: 30), [0, 30, 60])
+        let id = StableID()
+        let rule = AwakeTrigger.new(id: id, criterion: nil)
+        XCTAssertEqual(rule.criteria, [AwakeCriterionEntry(.display(.anyExternal))])
+        XCTAssertTrue(rule.enabled)
+        var cpu = AwakeTrigger.new(id: id, criterion: .cpuAbove(percent: 70))
+        cpu.startDelaySeconds = 0
+        XCTAssertEqual(cpu.savedFromEditor(wasNew: true).startDelaySeconds, 60, "CPU rules wait a minute")
+        XCTAssertEqual(cpu.savedFromEditor(wasNew: false).startDelaySeconds, 0, "an edited rule keeps the choice")
+        var nudging = rule
+        nudging.options.activity = .nudge
+        XCTAssertEqual(nudging.savedFromEditor(wasNew: true).options.activity, .declare, "rules never move the pointer")
+    }
 }

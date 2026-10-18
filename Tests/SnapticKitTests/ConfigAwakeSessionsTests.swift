@@ -315,4 +315,71 @@ final class ConfigAwakeSessionsTests: XCTestCase {
         let back = try JSONDecoder().decode(AwakeConfig.self, from: JSONEncoder().encode(i))
         XCTAssertEqual(back.sanitized(), i)
     }
+
+    // MARK: Sessions sheet
+
+    func testKindSwitchingCarriesValuesOver() {
+        let hour = AwakePresetKind.duration(seconds: 3_600)
+        XCTAssertEqual(hour.choice, .duration)
+        XCTAssertEqual(hour.switched(to: .duration), hour, "the same kind keeps its values")
+        XCTAssertEqual(hour.switched(to: .untilIdle), .untilIdle(UntilIdleSpec(), maxSeconds: 3_600), "length → cap")
+        XCTAssertEqual(AwakePresetKind.duration(seconds: 1_800).switched(to: .untilIdle),
+                       .untilIdle(UntilIdleSpec(), maxSeconds: 3_600), "the next At most choice")
+        XCTAssertEqual(AwakePresetKind.duration(seconds: 3 * 3_600).switched(to: .untilIdle),
+                       .untilIdle(UntilIdleSpec(), maxSeconds: 4 * 3_600))
+        XCTAssertEqual(AwakePresetKind.duration(seconds: 86_400).switched(to: .untilIdle),
+                       .untilIdle(UntilIdleSpec(), maxSeconds: 12 * 3_600), "at most 12 hours")
+        XCTAssertEqual(AwakePresetKind.untilIdle(UntilIdleSpec(), maxSeconds: 7_200).switched(to: .duration),
+                       .duration(seconds: 7_200), "cap → length")
+        XCTAssertEqual(AwakePresetKind.untilIdle(UntilIdleSpec(), maxSeconds: nil).switched(to: .duration),
+                       .duration(seconds: 3_600))
+        XCTAssertEqual(hour.switched(to: .untilTime), .untilTime(hour: 17, minute: 0))
+        XCTAssertEqual(AwakePresetKind.indefinite.switched(to: .untilIdle), .untilIdle(UntilIdleSpec(), maxSeconds: nil))
+        XCTAssertEqual(hour.switched(to: .indefinite), .indefinite)
+        for from in [AwakePresetKind.indefinite, hour, .untilTime(hour: 9, minute: 30),
+                     .untilIdle(UntilIdleSpec(), maxSeconds: 600)] {
+            for to in AwakePresetKindChoice.allCases {
+                let k = from.switched(to: to)
+                XCTAssertEqual(k.choice, to)
+                XCTAssertEqual(k.sanitized(), k, "every switch lands in range")
+            }
+        }
+    }
+
+    func testAddAndRemoveSessions() {
+        var c = AwakeSessionsConfig()
+        let id = StableID()
+        c = c.addingPreset(id: id) ?? c
+        XCTAssertEqual(c.presets.count, 7)
+        XCTAssertEqual(c.presets.last?.kind, .duration(seconds: 3_600))
+        XCTAssertNil(c.addingPreset(id: id), "an existing id isn't added twice")
+        c.defaultPresetID = id
+        c.behavior.startAtLaunch = id
+        c = c.removingPreset(id)
+        XCTAssertEqual(c.presets.count, 6)
+        XCTAssertNil(c.defaultPresetID)
+        XCTAssertNil(c.behavior.startAtLaunch)
+        var full = AwakeSessionsConfig()
+        while let next = full.addingPreset(id: StableID()) { full = next }
+        XCTAssertEqual(full.presets.count, AwakeSessionsConfig.maxPresets)
+        var one = AwakeSessionsConfig()
+        one.presets = [one.presets[0]]
+        XCTAssertEqual(one.removingPreset(one.presets[0].id), one, "the last session stays")
+    }
+
+    func testRestoringDefaultSessions() {
+        var c = AwakeSessionsConfig()
+        let id = StableID()
+        c = c.addingPreset(id: id) ?? c
+        c.defaultPresetID = id
+        c.behavior.startAtLaunch = id
+        c.behavior.endOnSystemSleep = true
+        let r = c.restoringDefaultPresets()
+        XCTAssertEqual(r.presets, AwakeSessionsConfig.defaultPresets)
+        XCTAssertNil(r.defaultPresetID)
+        XCTAssertNil(r.behavior.startAtLaunch, "a removed session can't start at launch")
+        XCTAssertTrue(r.behavior.endOnSystemSleep, "other settings stay")
+        c.behavior.startAtLaunch = derived("1h")
+        XCTAssertEqual(c.restoringDefaultPresets().behavior.startAtLaunch, derived("1h"))
+    }
 }
