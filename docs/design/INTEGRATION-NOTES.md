@@ -20,3 +20,6 @@ Collected from team reports for the README, docs and the final review.
 - D hardware checks: single-mode HiDPI creation + 2× fallback; applySettings on a live virtual; virtuals after lock/sleep/FUS; EDID chromaticity on Apple silicon; AppleClamshellState; base-M3/iMac hazard list; host footprint.
 - D limitations: lid state read at plan time; no ICC fallback for primaries; "Disconnect on lock" ignores the screen saver; "Stream onto" associations only prompt.
 - F: FeaturesPage shows the Intel Experimental label for disconnect via PowerController.disconnectIsExperimental / disconnectNote; F's Resume buttons use B's exposed resume action id.
+- D: ArrangementController "Stop mirroring" passes `risk: .trial`; pass `.low` (classifier now rates un-mirror low).
+- A: HelperSpawner.spawn still verifies each child's signature on main; move that off main.
+- B decision: if Displays stops while a Keep is being written, the change stays for the session but is not persisted.
