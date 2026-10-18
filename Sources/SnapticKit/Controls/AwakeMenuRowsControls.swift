@@ -13,7 +13,10 @@ package enum AwakeMenuRowsControls: ControlTable {
     private static let rulesSubmenu = MenuPlacementSpec("Awake menu, Rules submenu", customize: .none)
 
     package static let controls: [ControlSpec] = [
-        ControlSpec("menu.awake.header", .menuSwitchHeader, menu: awakeMenu),
+        // The 0.2 Displays "Prevent Sleep" menu item's home (M1 moved the feature to Awake): the Keep Awake switch of
+        // the Awake menu and the compact section; whether it shows is the Menu Bar page's Awake presence.
+        ControlSpec("menu.awake.header", .menuSwitchHeader, replaces: ["l.menu.d.sleepPrevention"],
+                    menu: MenuPlacementSpec("Awake menu and the compact Awake section", customize: .checkbox)),
         ControlSpec("menu.awake.startDefault", .menuItem, when: [.state(.awakeIdle)], menu: awakeMenu),
         ControlSpec("menu.awake.turnOff", .menuItem, when: [.state(.awakeActive)], menu: awakeMenu),
         ControlSpec("menu.awake.add15", .menuItem, when: [.state(.awakeActive), .state(.timedOrCapped)], menu: awakeMenu),
