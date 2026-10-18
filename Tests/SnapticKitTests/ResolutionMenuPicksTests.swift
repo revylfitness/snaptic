@@ -121,4 +121,56 @@ final class ResolutionMenuPicksTests: XCTestCase {
             }
         }
     }
+
+    // MARK: Discrete slider stops
+
+    func testSliderNearestIndex() {
+        XCTAssertNil(ResolutionSliderStops.nearestIndex(width: 1000, in: []))
+        let widths = [1024, 1147, 1312, 1512, 1800]
+        XCTAssertEqual(ResolutionSliderStops.nearestIndex(width: 1512, in: widths), 3)
+        XCTAssertEqual(ResolutionSliderStops.nearestIndex(width: 1, in: widths), 0)
+        XCTAssertEqual(ResolutionSliderStops.nearestIndex(width: 9999, in: widths), 4)
+        XCTAssertEqual(ResolutionSliderStops.nearestIndex(width: 1300, in: widths), 2)
+        // A tie picks the lower stop.
+        XCTAssertEqual(ResolutionSliderStops.nearestIndex(width: 1100, in: [1000, 1200]), 0)
+        XCTAssertEqual(ResolutionSliderStops.nearestIndex(width: Int.min, in: [Int.max, 0]), 1)
+    }
+
+    func testSliderIndexClampsAnyPosition() {
+        XCTAssertNil(ResolutionSliderStops.index(2, count: 0))
+        XCTAssertEqual(ResolutionSliderStops.index(-3, count: 5), 0)
+        XCTAssertEqual(ResolutionSliderStops.index(1.4, count: 5), 1)
+        XCTAssertEqual(ResolutionSliderStops.index(1.6, count: 5), 2)
+        XCTAssertEqual(ResolutionSliderStops.index(99, count: 5), 4)
+        XCTAssertEqual(ResolutionSliderStops.index(.nan, count: 5), 0)
+        XCTAssertEqual(ResolutionSliderStops.index(.infinity, count: 5), 0)
+        XCTAssertEqual(ResolutionSliderStops.index(0.4, count: 1), 0)
+    }
+
+    func testSliderWidestText() {
+        XCTAssertNil(ResolutionSliderStops.widest([]))
+        XCTAssertEqual(ResolutionSliderStops.widest(["800 × 600", "1512 × 982", "2056 × 1336", "1800 × 1169"]), "2056 × 1336")
+        XCTAssertEqual(ResolutionSliderStops.widest(["ab", "cd"]), "ab")
+    }
+
+    func testSliderStopsFuzz() {
+        var rng = SeededGenerator(seed: 0x5D3)
+        for _ in 0..<500 {
+            let count = Int.random(in: 0...12, using: &rng)
+            let widths = (0..<count).map { _ in Int.random(in: 0...8000, using: &rng) }.sorted()
+            let target = Int.random(in: -100...9000, using: &rng)
+            if let i = ResolutionSliderStops.nearestIndex(width: target, in: widths) {
+                let best = widths.map { abs($0 - target) }.min()!
+                XCTAssertEqual(abs(widths[i] - target), best)
+            } else {
+                XCTAssertTrue(widths.isEmpty)
+            }
+            let position = Double.random(in: -5...20, using: &rng)
+            if let i = ResolutionSliderStops.index(position, count: count) {
+                XCTAssertTrue((0..<count).contains(i))
+            } else {
+                XCTAssertEqual(count, 0)
+            }
+        }
+    }
 }

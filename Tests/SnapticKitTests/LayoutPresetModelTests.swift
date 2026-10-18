@@ -192,3 +192,44 @@ private extension SavedLayout {
         return c
     }
 }
+
+final class ListReorderTests: XCTestCase {
+    private struct Item: Equatable { let id: String; let n: Int }
+
+    func testReorderFollowsTheGivenOrder() {
+        let items = [Item(id: "a", n: 1), Item(id: "b", n: 2), Item(id: "c", n: 3)]
+        XCTAssertEqual(ListReorder.reordered(items, id: \.id, order: ["c", "a", "b"]).map(\.id), ["c", "a", "b"])
+    }
+
+    func testUnknownMissingAndRepeatedIDs() {
+        let items = [Item(id: "a", n: 1), Item(id: "b", n: 2), Item(id: "c", n: 3)]
+        // "x" doesn't exist, "a" repeats, "b" wasn't listed: kept after the listed ones.
+        XCTAssertEqual(ListReorder.reordered(items, id: \.id, order: ["x", "c", "a", "a"]).map(\.id), ["c", "a", "b"])
+        XCTAssertEqual(ListReorder.reordered(items, id: \.id, order: []).map(\.id), ["a", "b", "c"])
+        XCTAssertEqual(ListReorder.reordered([Item](), id: \.id, order: ["a"]), [])
+    }
+
+    func testDuplicateIDsInTheStoreAreNeverDropped() {
+        let items = [Item(id: "a", n: 1), Item(id: "a", n: 2), Item(id: "b", n: 3)]
+        XCTAssertEqual(ListReorder.reordered(items, id: \.id, order: ["b", "a"]).map(\.n), [3, 1, 2])
+    }
+
+    func testMoving() {
+        XCTAssertEqual(ListReorder.moving("b", by: -1, in: ["a", "b", "c"]), ["b", "a", "c"])
+        XCTAssertEqual(ListReorder.moving("b", by: 5, in: ["a", "b", "c"]), ["a", "c", "b"])
+        XCTAssertEqual(ListReorder.moving("a", by: -1, in: ["a", "b"]), ["a", "b"])
+        XCTAssertEqual(ListReorder.moving("z", by: 1, in: ["a", "b"]), ["a", "b"])
+    }
+
+    func testReorderFuzzKeepsEveryItemOnce() {
+        var rng = SeededGenerator(seed: 0x1A70)
+        for _ in 0..<300 {
+            let count = Int.random(in: 0...10, using: &rng)
+            let items = (0..<count).map { Item(id: String(Int.random(in: 0...6, using: &rng)), n: $0) }
+            let order = (0..<Int.random(in: 0...12, using: &rng)).map { _ in String(Int.random(in: 0...8, using: &rng)) }
+            let result = ListReorder.reordered(items, id: \.id, order: order)
+            XCTAssertEqual(result.map(\.n).sorted(), items.map(\.n))
+        }
+    }
+}
+

@@ -423,11 +423,11 @@ import SnapticKit
         guard let ctx = context, let lifetime, effective.contains(.scaleMatch) else { return }
         let proposals = scaleMatchProposals()
         guard !proposals.isEmpty else {
-            ctx.toasts.show(L("UI sizes already match"), lifetime: lifetime)
+            ctx.toasts.show(L("Text already looks the same size on every display"), lifetime: lifetime)
             return
         }
         let summary = proposals.compactMap { p in info(p.key).map { "\($0.name): \(label(p.to, markers: false))" } }.joined(separator: "; ")
-        ctx.toasts.show(L("Match UI size: \(summary)"), action: ToastAction(title: L("Apply")) { [weak self] in
+        ctx.toasts.show(L("Match text size: \(summary)"), action: ToastAction(title: L("Apply")) { [weak self] in
             self?.applyScaleMatch(proposals)
         }, lifetime: lifetime)
     }
@@ -451,7 +451,7 @@ import SnapticKit
         var before: [DisplayKey: ModeRef] = [:]
         for p in proposals { if let d = info(p.key), let m = currentMode(d) { before[p.key] = m } }
         ctx.connectPlanner.beginUserChange()
-        let outcome = await ManagedTransactions.run(ctx, TransactionRequest(label: L("Match UI size"), risk: .trial, changes: changes,
+        let outcome = await ManagedTransactions.run(ctx, TransactionRequest(label: L("Match text size"), risk: .trial, changes: changes,
                                                                            skipConfirmation: skipConfirmation))
         let ok = outcome == .applied || outcome == .kept
         ctx.connectPlanner.endUserChange(changed: ok)
@@ -571,7 +571,7 @@ import SnapticKit
                               lifetime: lifetime) { [weak self] request in
             guard let self, self.effective.contains(.scaleMatch) else { return .failure(ControlExit.unavailable, L("Match UI size is off")) }
             let proposals = self.scaleMatchProposals()
-            guard !proposals.isEmpty else { return .ok(L("UI sizes already match")) }
+            guard !proposals.isEmpty else { return .ok(L("Text already looks the same size on every display")) }
             // Awaited like `mode`: 0 kept, 6 declined or timed out.
             let outcome = await self.applyScaleMatchAwaiting(proposals, skipConfirmation: request.skipConfirmation)
             guard outcome == .applied || outcome == .kept else { return ManagedTransactions.response(outcome) }

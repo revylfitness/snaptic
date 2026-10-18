@@ -339,3 +339,61 @@ package struct TolerantArray<Element: Decodable>: Decodable {
         init(from decoder: Decoder) throws {}
     }
 }
+
+/// Edits the virtual display editor makes to a draft (Settings › Virtual Displays › Details…). Every mode shares the
+/// spec's HiDPI flag and one refresh rate; `sanitized(soc:)` still runs when the draft is saved.
+package enum VirtualSpecEdit {
+    package static let defaultRefreshMilliHz = 60_000
+    /// The refresh rates the editor offers (millihertz); a stored rate outside the list is offered too.
+    package static let refreshChoices = [24_000, 30_000, 48_000, 50_000, 60_000, 75_000, 90_000, 100_000, 120_000, 144_000]
+
+    /// The draft's refresh rate: the first mode's, else 60 Hz.
+    package static func refreshMilliHz(_ spec: VirtualScreenSpec) -> Int {
+        spec.modes.first?.refreshMilliHz ?? defaultRefreshMilliHz
+    }
+
+    /// The choices for a draft, with its own rate included and sorted.
+    package static func refreshOptions(_ spec: VirtualScreenSpec) -> [Int] {
+        let current = refreshMilliHz(spec)
+        return refreshChoices.contains(current) ? refreshChoices : (refreshChoices + [current]).sorted()
+    }
+
+    package static func settingRefresh(_ spec: VirtualScreenSpec, milliHz: Int) -> VirtualScreenSpec {
+        let hz = min(VirtualScreenSpec.maxRefreshMilliHz, max(VirtualScreenSpec.minRefreshMilliHz, milliHz))
+        var s = spec
+        s.modes = s.modes.map { VirtualMode(width: $0.width, height: $0.height, hiDPI: $0.hiDPI, refreshMilliHz: hz) }
+        return s
+    }
+
+    package static func settingHiDPI(_ spec: VirtualScreenSpec, _ on: Bool) -> VirtualScreenSpec {
+        var s = spec
+        s.hiDPI = on
+        s.modes = s.modes.map { VirtualMode(width: $0.width, height: $0.height, hiDPI: on, refreshMilliHz: $0.refreshMilliHz) }
+        return s
+    }
+
+    /// Appends a size (points) unless it is already there or below the minimum; the spec's HiDPI and refresh apply.
+    package static func addingSize(_ spec: VirtualScreenSpec, width: Int, height: Int) -> VirtualScreenSpec {
+        guard width >= VirtualScreenSpec.minModeDimension, height >= VirtualScreenSpec.minModeDimension,
+              width <= VirtualScreenSpec.maxAspectComponent, height <= VirtualScreenSpec.maxAspectComponent,
+              !spec.modes.contains(where: { $0.width == width && $0.height == height }) else { return spec }
+        var s = spec
+        s.modes.append(VirtualMode(width: width, height: height, hiDPI: spec.hiDPI, refreshMilliHz: refreshMilliHz(spec)))
+        return s
+    }
+
+    package static func removingSize(_ spec: VirtualScreenSpec, at index: Int) -> VirtualScreenSpec {
+        guard spec.modes.indices.contains(index) else { return spec }
+        var s = spec
+        s.modes.remove(at: index)
+        return s
+    }
+
+    /// The standard ladder for the draft's aspect, HiDPI flag, orientation and refresh rate.
+    package static func fillingSizes(_ spec: VirtualScreenSpec, soc: SoCClass) -> VirtualScreenSpec {
+        var s = spec
+        s.modes = VirtualScreenSpec.ladder(aspectWidth: spec.aspectWidth, aspectHeight: spec.aspectHeight, hiDPI: spec.hiDPI,
+                                           soc: soc, portrait: spec.portrait, refreshMilliHz: refreshMilliHz(spec))
+        return s
+    }
+}

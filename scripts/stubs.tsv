@@ -317,7 +317,6 @@ Tests/SnapticKitTests/ArrangementMathTests.swift	D	L	-	-
 Sources/SnapticKit/ResolutionMenuPicks.swift	D	L	-	-
 Tests/SnapticKitTests/ResolutionMenuPicksTests.swift	D	L	-	-
 Sources/Snaptic/Displays/Management/ManagementSupport.swift	D	L	-	-
-Sources/Snaptic/Displays/UI/ManagementPageParts.swift	D	L	-	-
 Sources/Snaptic/Displays/Registries/DisplaySelectorResolver.swift	lead	L	-	-
 # 0.3 (PLAN 0.3 §6.2, R5): lead
 Sources/SnapticKit/AwakeFeatureGraph.swift	lead	L	-	-
@@ -561,6 +560,7 @@ Sources/Snaptic/Displays/UI/KeyboardShortcutsSheet.swift	C	L	-	-
 Sources/Snaptic/Displays/UI/MenuBarOverlaysSection.swift	C	L	-	-
 Sources/Snaptic/Displays/UI/ResolutionSections.swift	D	K18	ResolutionSections	Resolution
 Sources/Snaptic/Displays/UI/ResolutionOptionsSection.swift	D	K18	ResolutionOptionsSection	Resolution Options;ResolutionSections
+Sources/Snaptic/Displays/UI/ResolutionFiltersSection.swift	D	L	-	-
 Sources/Snaptic/Displays/UI/MatchTextSizeSection.swift	D	K18	MatchTextSizeSection	Match Text Size
 Sources/Snaptic/Displays/UI/ArrangeSheet.swift	D	K19	ArrangeSheet	Arrange Displays
 Sources/Snaptic/Displays/UI/SavedLayoutsPage.swift	D	K18	SavedLayoutsPage	Saved Layouts
