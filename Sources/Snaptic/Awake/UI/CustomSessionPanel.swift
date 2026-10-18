@@ -115,6 +115,8 @@ struct CustomSessionPanel: View, ControlDeclaring {
     }
 
     private func commit() {
+        // Hours or minutes typed without Return are written first (review round 3 ui F1/F2).
+        FocusedField.commit()
         switch (mode, kind) {
         case (.extend, _):
             onExtend(seconds)
