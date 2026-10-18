@@ -105,7 +105,6 @@ package enum DDCPacket {
 
     /// Spec delays: ≥ 40 ms between a request and its reply on slow displays; field default 10 ms.
     package static let defaultReplyDelayMs = 10
-    package static let slowReplyDelayMs = 40
     package static let mcdpReplyDelayMs = 50
     package static let defaultRetries = 4
     /// Pause between capability fragments.

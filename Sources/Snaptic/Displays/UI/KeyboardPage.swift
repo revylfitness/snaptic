@@ -80,7 +80,7 @@ private struct KeyboardPageContent: View {
                         shell.openSheet = KeyboardPageControls.shortcutsSheet
                     }
                 } header: {
-                    Text(L("Keyboard"))
+                    Text(L("Shortcuts"))
                 }
             } else {
                 CDisplaysOffSection(runtime: runtime, running: host.isRunning(.displays))
@@ -141,7 +141,8 @@ private struct KeyboardPageContent: View {
                           anchor: ControlID("displays.keyboard.brightnessKeys"),
                           disabledReason: switcher.unavailableReason([.brightnessKeys]))
             if raw(.brightnessKeys) {
-                PickerSetting(L("Change"), selection: SettingsBinding.store(env.config, \.keys.target),
+                PickerSetting(L("Change"), help: L("Which display the brightness keys adjust."),
+                              selection: SettingsBinding.store(env.config, \.keys.target),
                               options: KeyTarget.allCases.map { PickerOption($0, $0.title) }, style: .popUp,
                               defaultValue: KeysConfig().target, anchor: ControlID("displays.keyboard.brightnessTarget"),
                               subordinate: true)
@@ -212,7 +213,7 @@ private extension KeyboardPageContent {
                       PickerOption(IndicatorStyleChoice.classic, OSDStyle.classic.title),
                       PickerOption(IndicatorStyleChoice.rounded, OSDStyle.rounded.title)]
         if systemOffered {
-            styles.append(PickerOption(IndicatorStyleChoice.system, L("Use the system indicator"),
+            styles.append(PickerOption(IndicatorStyleChoice.system, L("Use the System Indicator"),
                                        help: L("macOS draws it where it can; Snaptic’s own shows otherwise.")))
         }
         return styles

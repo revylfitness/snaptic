@@ -29,6 +29,28 @@ final class ConfigDDCTests: XCTestCase {
         XCTAssertFalse(p.inputs[1].hidden)
     }
 
+    /// Review code F3: the per-display lists decode through Kit `LossyArray`: element-wise lossy (bad elements and
+    /// non-array values dropped, the rest kept), at most `LossyArray.maxElements` attempts, duplicates removed by
+    /// `sanitized()`.
+    func testListsAreLossyAndBoundedByAttempts() throws {
+        let json = #"{"unlockedCodes":["E1",7,"E1","E2"],"customControls":[{"code":"x"},{"name":"S","code":135,"kind":"range","value":0}],"inputs":"none"}"#
+        let p = try JSONDecoder().decode(PerDisplayDDC.self, from: Data(json.utf8))
+        XCTAssertEqual(p.inputs, [])
+        XCTAssertEqual(p.customControls.map(\.code), [135])
+        XCTAssertEqual(p.unlockedCodes.count, 3)
+        XCTAssertEqual(p.sanitized().unlockedCodes.count, Set(p.unlockedCodes).count)
+
+        let garbage = Array(repeating: #"{"name":"no value"}"#, count: LossyArray<DDCInputEntry>.maxElements)
+        let tooFar = #"{"inputs":["# + (garbage + [#"{"value":15,"name":"A"}"#]).joined(separator: ",") + "]}"
+        XCTAssertEqual(try JSONDecoder().decode(PerDisplayDDC.self, from: Data(tooFar.utf8)).inputs, [])
+        let inReach = #"{"inputs":["# + (garbage.dropLast() + [#"{"value":15,"name":"A"}"#]).joined(separator: ",") + "]}"
+        XCTAssertEqual(try JSONDecoder().decode(PerDisplayDDC.self, from: Data(inReach.utf8)).inputs.map(\.value), [15])
+
+        let slots = #"{"inputSlots":[{"value":15,"lgAlt":false},"x",{"value":"y"},{"value":17,"lgAlt":true}]}"#
+        let keys = try JSONDecoder().decode(KeysConfig.self, from: Data(slots.utf8))
+        XCTAssertEqual(keys.inputSlots.map(\.value), [15, 0x0F, 17], "a non-object slot is dropped, a bad field defaults")
+    }
+
     func testSanitize() {
         var p = PerDisplayDDC()
         p.replyDelayMs = 0

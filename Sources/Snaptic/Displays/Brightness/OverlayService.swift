@@ -104,12 +104,6 @@ import SnapticKit
         update(token, alpha: entry.alpha)
     }
 
-    func setColor(_ token: OverlayToken, _ color: NSColor) {
-        guard let entry = entries[token.id] else { return }
-        entry.color = color
-        applyAppearance(entry)
-    }
-
     /// Custom content (EDR layer, corner masks, identify label). Sized to the window.
     func setContentView(_ view: NSView, for token: OverlayToken) {
         guard let entry = entries[token.id] else { return }

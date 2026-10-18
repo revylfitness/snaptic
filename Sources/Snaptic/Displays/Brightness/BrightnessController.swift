@@ -134,12 +134,12 @@ enum Feedback {
     /// Brightness OSD for a display, with nits when that's on.
     @MainActor static func brightness(_ ctx: DisplaysContext, _ display: DisplayInfo) {
         guard let value = ctx.brightness.value(for: display.key) else { return }
-        var detail: String?
-        if ctx.runtime.isEffective(.nits), ctx.config.value.brightness.showNits, let nits = ctx.brightness.nits(for: display.key) {
-            detail = NitsModel.label(nits.value, estimate: nits.estimate)
-        }
+        let nitsEffective = ctx.runtime.isEffective(.nits)
+        let detail = NitsModel.indicatorDetail(showNits: ctx.config.value.brightness.showNits, nitsEffective: nitsEffective,
+                                               nits: nitsEffective ? ctx.brightness.nits(for: display.key) : nil,
+                                               extra: value > 1)
         if value > 1 {
-            show(ctx, .xdr, value: value, max: 1, display: display, detail: detail ?? L("Extra brightness"))
+            show(ctx, .xdr, value: value, max: 1, display: display, detail: detail)
         } else {
             show(ctx, .brightness, value: value, max: 1, display: display, detail: detail)
         }
@@ -207,7 +207,7 @@ enum PerDisplayEdit {
         case .brightnessApple:
             return context.privateAPI.availability(of: .dsGetBrightness)
         case .brightnessDDC:
-            return SNDDC.isAvailable() ? .available : .unavailable(L("DDC isn't available on this Mac"))
+            return SNDDC.isAvailable() ? .available : .unavailable(L("Hardware brightness isn’t available on this Mac"))
         case .brightnessGamma:
             if AffectedModels.gammaIsUnreliable(HostInfo.current) { return .unavailable(AffectedModels.reason(.gammaNoOp)) }
             return .available
@@ -321,8 +321,8 @@ enum PerDisplayEdit {
               let out = context.brightness.output(for: key), out.software < 0.7 else { return }
         askedDarker.insert(key)
         PerDisplayEdit.update(context, key) { $0.brightness.gammaWorks = true }
-        context.toasts.show(L("Snaptic dimmed this display with its color table. If it didn't get darker, switch to overlay dimming."),
-                            action: ToastAction(title: L("It didn't get darker")) { [weak self] in
+        context.toasts.show(L("Snaptic dimmed this display with its color table. If it didn’t get darker, switch to overlay dimming."),
+                            action: ToastAction(title: L("It Didn’t Get Darker")) { [weak self] in
                                 guard let self, let ctx = self.context else { return }
                                 PerDisplayEdit.update(ctx, key) { $0.brightness.gammaWorks = false }
                                 ctx.brightness.reevaluate(key)

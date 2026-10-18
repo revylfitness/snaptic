@@ -482,7 +482,7 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
                     guard let ctx = self?.context else { return }
                     // A registered action whose feature is off: the registry refuses it and shows its own toast.
                     guard ctx.actions.action(id) != nil else {
-                        ctx.toasts.show(L("“\(title)” isn't available right now."), lifetime: self?.lifetime)
+                        ctx.toasts.show(L("“\(title)” isn’t available right now."), lifetime: self?.lifetime)
                         return
                     }
                     ctx.actions.perform(id, on: DisplayTargets.keyTarget(ctx))

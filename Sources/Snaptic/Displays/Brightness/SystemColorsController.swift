@@ -28,10 +28,10 @@ import SnapticShims
     func availability(of feature: DisplayFeature, context: DisplaysContext) -> FeatureAvailability {
         switch feature {
         case .nightShift:
-            return SNNightShift.isAvailable() ? .available : .unavailable(L("Night Shift isn't available on this Mac"))
+            return SNNightShift.isAvailable() ? .available : .unavailable(L("Night Shift isn’t available on this Mac"))
         case .applePresets:
             return SNMonitorPanel.isAvailable() && context.privateAPI.monitorPanelSupports("presets") ? .available
-                : .unavailable(L("Apple display presets aren't available"))
+                : .unavailable(L("Apple display presets aren’t available"))
         case .autoBrightness:
             return context.privateAPI.availability(of: .dsHasAmbientLight)
         default:
@@ -90,7 +90,7 @@ import SnapticShims
             guard alert.runModal() == .alertFirstButtonReturn else { return }
         }
         if !context.colorSync.setProfile(profile?.url, for: key) {
-            context.toasts.show(L("macOS didn't accept that color profile."), lifetime: lifetime)
+            context.toasts.show(L("macOS didn’t accept that color profile."), lifetime: lifetime)
         }
         context.gamma.refreshSafeguard()
         context.runtime.revision(.systemColors).bump()
@@ -172,7 +172,7 @@ import SnapticShims
     func applyPreset(_ preset: AppleDisplayPreset, to key: DisplayKey) {
         guard let context else { return }
         if !context.monitorPanel.applyPreset(id: preset.id, for: key) {
-            context.toasts.show(L("The preset couldn't be selected."), lifetime: lifetime)
+            context.toasts.show(L("The preset couldn’t be selected."), lifetime: lifetime)
         }
         // A fixed-brightness preset disables Apple native brightness: let brightness re-check.
         context.brightness.reevaluate(key)
@@ -183,7 +183,7 @@ import SnapticShims
     func setAutoBrightness(_ on: Bool, for key: DisplayKey) {
         guard let context, effective.contains(.autoBrightness) else { return }
         if !context.appleBrightness.setAutoBrightness(on, of: key) {
-            context.toasts.show(L("Auto-brightness couldn't be changed."), lifetime: lifetime)
+            context.toasts.show(L("Automatic brightness couldn’t be changed."), lifetime: lifetime)
         }
         context.runtime.revision(.systemColors).bump()
         context.requestMenuRebuild()

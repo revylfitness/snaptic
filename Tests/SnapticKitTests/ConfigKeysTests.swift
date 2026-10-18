@@ -73,4 +73,37 @@ final class ConfigKeysTests: XCTestCase {
         XCTAssertNil(p.sanitized().audioDeviceName)
         XCTAssertEqual(try JSONDecoder().decode(PerDisplayKeys.self, from: Data(#"{"keysEnabled":false}"#.utf8)).keysEnabled, false)
     }
+
+    /// Review ux m3: pop-up options are menu items, so their titles are Title Case; no 0.2 "monitor" wording.
+    func testOptionTitlesAreTitleCase() {
+        let titles = OSDStyle.allCases.map(\.title) + OSDPosition.allCases.map(\.title) + OSDTarget.allCases.map(\.title)
+            + KeyPolicy.allCases.map(\.title) + KeyTarget.allCases.map(\.title) + VolumePolicy.allCases.map(\.title)
+            + BrightnessMethod.allCases.map(\.title) + BrightnessRestoreMode.allCases.map(\.title)
+            + XDRMethod.allCases.map(\.title)
+        for title in titles {
+            XCTAssertTrue(Self.isTitleCase(title), title)
+            XCTAssertFalse(title.lowercased().contains("monitor"), title)
+            XCTAssertFalse(title.contains("'"), title)
+        }
+        XCTAssertFalse(Self.isTitleCase("The display with the pointer"))
+        XCTAssertTrue(Self.isTitleCase("Only for Displays macOS Can’t Control"))
+    }
+
+    /// Apple title case: every word capitalized except short articles, conjunctions and prepositions after the
+    /// first; "macOS" and parenthesized abbreviations as written.
+    static func isTitleCase(_ text: String) -> Bool {
+        let small: Set<String> = ["a", "an", "the", "and", "or", "but", "for", "nor", "as", "at", "by", "in", "of",
+                                  "on", "to", "up", "via", "with"]
+        let words = text.split(separator: " ").map(String.init)
+        guard !words.isEmpty else { return false }
+        for (index, word) in words.enumerated() {
+            if word == "macOS" || word.hasPrefix("(") { continue }
+            guard let first = word.unicodeScalars.first else { return false }
+            let isUpper = CharacterSet.uppercaseLetters.contains(first) || CharacterSet.decimalDigits.contains(first)
+            if isUpper { continue }
+            if index > 0, index < words.count - 1, small.contains(word) { continue }
+            return false
+        }
+        return true
+    }
 }

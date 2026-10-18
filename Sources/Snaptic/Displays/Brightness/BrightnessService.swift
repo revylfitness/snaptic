@@ -106,7 +106,7 @@ enum HostInfo {
         context.appleBrightness.onChange = { [weak self] key in self?.hardwareInfoChanged(key) }
         context.gamma.observeGiveUp(lifetime: lifetime) { [weak self] key in
             guard let self, let context = self.context else { return }
-            context.toasts.show(L("Another app keeps changing this display's colors. Snaptic switched to overlay dimming."),
+            context.toasts.show(L("Another app keeps changing this display’s colors. Snaptic switched to overlay dimming."),
                                 lifetime: self.lifetime)
             self.reevaluate(key)
         }
@@ -385,13 +385,13 @@ enum HostInfo {
                 reason = display.isBuiltin ? L("Built-in display") : L("Apple display")
             } else if usable.contains(.ddc) {
                 hardware = .ddc
-                reason = L("The monitor answers DDC")
+                reason = L("The display answers hardware controls")
             } else {
                 reason = display.isBuiltin || display.transport == .wired
                     ? L("No hardware control; software dimming") : L("Software dimming for this connection")
             }
             if let override {
-                reason = L("The chosen method isn't available: ") + override.title
+                reason = L("The chosen method isn’t available: \(override.title)")
             }
         }
         if override == nil || override?.isHardware == true {

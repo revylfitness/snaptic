@@ -90,18 +90,14 @@ struct BrightnessSections: View, ControlDeclaring {
             PickerSetting(L("Restore brightness at login and wake"),
                           help: L("Brings back each display’s brightness after login, wake, and reconnecting."),
                           selection: restoreChoice,
-                          options: [
-                              PickerOption(BrightnessRestoreMode.brightness, L("Brightness and color")),
-                              PickerOption(BrightnessRestoreMode.adjustmentsOnly, L("Color adjustments only")),
-                              PickerOption(BrightnessRestoreMode.off, L("Off")),
-                          ],
+                          options: BrightnessRestoreMode.allCases.map { PickerOption($0, $0.title) },
                           style: .popUp, defaultValue: defaultRestore,
                           anchor: ControlID("displays.brightness.restore"))
             ToggleSetting(L("Smooth transitions"), help: L("Brightness fades to a new level instead of jumping."),
                           isOn: SettingsBinding.store(env.config, \.brightness.smoothTransitions),
                           anchor: ControlID("displays.brightness.smoothTransitions"))
             ToggleSetting(L("Show brightness in nits"),
-                          help: L("The menu, the indicator, and Settings show estimated nits next to the percent."),
+                          help: L("The brightness indicator and this page show estimated nits next to the percent."),
                           isOn: showNits, anchor: ControlID("displays.brightness.showNits"),
                           disabledReason: switcher.unavailableReason([.nits]))
         } footer: {
@@ -138,9 +134,9 @@ struct BrightnessSections: View, ControlDeclaring {
                 PickerSetting(L("Follow"),
                               selection: SettingsBinding.store(env.config, \.brightness.syncMode),
                               options: [
-                                  PickerOption(SyncMode.absolute, L("The same level"),
+                                  PickerOption(SyncMode.absolute, L("The Same Level"),
                                                help: L("Each display matches the source, plus its offset.")),
-                                  PickerOption(SyncMode.delta, L("The same change"),
+                                  PickerOption(SyncMode.delta, L("The Same Change"),
                                                help: L("Each display moves by as much as the source moved.")),
                               ],
                               style: .popUp, defaultValue: BrightnessConfig().syncMode,
@@ -159,7 +155,7 @@ struct BrightnessSections: View, ControlDeclaring {
     }
 
     private var sourceOptions: [PickerOption<DisplayKey?>] {
-        var options = [PickerOption<DisplayKey?>(nil, L("Built-in display"),
+        var options = [PickerOption<DisplayKey?>(nil, L("Built-in Display"),
                                                  help: L("Or the first display while the built-in one is closed."))]
         options += displays.map { PickerOption<DisplayKey?>($0.key, CDisplays.name($0)) }
         return options

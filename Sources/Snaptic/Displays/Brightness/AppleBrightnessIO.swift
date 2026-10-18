@@ -87,9 +87,6 @@ final class AppleBrightnessIO: @unchecked Sendable {
     /// Last known brightness, 0…1 (non-blocking).
     func brightness(of key: DisplayKey) -> Double? { locked { entries[key]?.value } }
 
-    /// True once the probe has finished for this display.
-    func isProbed(_ key: DisplayKey) -> Bool { locked { entries[key]?.supported != nil } }
-
     var hasAutoBrightnessControl: Bool { locked { functions.hasALC != nil && functions.alcEnabled != nil && functions.enableALC != nil } }
 
     func autoBrightness(of key: DisplayKey) -> Bool? { locked { entries[key]?.autoBrightness } }

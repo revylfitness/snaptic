@@ -59,12 +59,12 @@ import SnapticKit
         let overlayOK = eff.contains(.brightnessOverlay) && per.xdrOverlayWorks != false
         switch context.config.value.brightness.xdrMethod {
         case .gamma:
-            return gammaOK ? (.gamma, L("Color table (B)")) : (nil, L("Method B needs the color-table method on Apple silicon"))
+            return gammaOK ? (.gamma, XDRMethod.gamma.title) : (nil, L("Method B needs the color-table method on Apple silicon"))
         case .overlay:
-            return overlayOK ? (.overlay, L("Overlay (A)")) : (nil, L("Method A needs the overlay method"))
+            return overlayOK ? (.overlay, XDRMethod.overlay.title) : (nil, L("Method A needs the overlay method"))
         case .automatic:
-            if gammaOK { return (.gamma, L("Color table (B)")) }
-            if overlayOK { return (.overlay, L("Overlay (A)")) }
+            if gammaOK { return (.gamma, XDRMethod.gamma.title) }
+            if overlayOK { return (.overlay, XDRMethod.overlay.title) }
             if per.xdrGammaWorks == false && per.xdrOverlayWorks == false {
                 return (nil, L("Neither method made this display brighter"))
             }

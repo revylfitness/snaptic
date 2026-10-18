@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import SnapticKit
 
@@ -158,6 +159,9 @@ private struct HardwareLiveRows: View {
     let display: DisplayInfo
     @ObservedObject var live: DisplayRuntime
     @ObservedObject var drag: CLiveDrag
+    /// Custom range controls' live values (DDCController's custom publisher): re-renders during and after a drag
+    /// and on menu or read-back changes, like `live` does for volume and contrast.
+    @StateObject var customLive = CCustomLiveValues()
     let showsInput: Bool
     let showsPower: Bool
     let showsCustom: Bool
@@ -193,8 +197,12 @@ private struct HardwareLiveRows: View {
             powerRow
         }
         if showsCustom {
-            ForEach(customControls.filter { $0.kind == .range }) { control in
+            let ranges = customControls.filter { $0.kind == .range }
+            ForEach(ranges) { control in
                 customSlider(control)
+            }
+            .onChange(of: CCustomLiveValues.Tracked(key: key, codes: ranges.map(\.code)), initial: true) { _, tracked in
+                customLive.track(controller, tracked)
             }
             ForEach(customControls.filter { $0.kind == .command }) { control in
                 ButtonRow(L("Send “\(name(control))”"), help: L("Sends \(VCPPolicy.hex(control.code)) = \(control.value)."),
@@ -222,15 +230,19 @@ private struct HardwareLiveRows: View {
     }
 
     private func customSlider(_ control: DDCCustomControl) -> some View {
-        let current = controller.customValue(control.code, for: key) ?? 0.5
         let context = self.context
+        let controller = self.controller
+        let customLive = self.customLive
         let key = self.key
         let drag = self.drag
+        let code = control.code
+        // Read at call time, never captured: the value follows drags, the menu and read-backs.
+        let current = { customLive.value(code, key: key, controller: controller) }
         return SliderSetting(name(control),
-                             value: Binding(get: { current }, set: { drag.set(.custom(control.code), $0, key: key, context: context) }),
+                             value: Binding(get: current, set: { drag.set(.custom(code), $0, key: key, context: context) }),
                              in: 0...1, defaultValue: nil, format: .percent(of: 1), commit: .live,
                              anchor: ControlID("displays.hardware.customControl"),
-                             phase: { drag.phase(.custom(control.code), $0, current: current, key: key, context: context) })
+                             phase: { drag.phase(.custom(code), $0, current: current(), key: key, context: context) })
     }
 
     @ViewBuilder private var inputPicker: some View {
@@ -267,6 +279,46 @@ private struct HardwareLiveRows: View {
                 _ = controller.setPower(true, on: display.key)
             }
         }
+    }
+}
+
+/// The live values of one display's custom range controls, from `DDCController.customPublisher` (which starts with
+/// the current value and then sends every change: drags here, the menu's sliders, read-backs). Publishing re-renders
+/// `HardwareLiveRows`, whose slider bindings then read the newest value.
+@MainActor final class CCustomLiveValues: ObservableObject {
+    struct Tracked: Equatable {
+        let key: DisplayKey
+        let codes: [UInt8]
+    }
+
+    @Published private(set) var values: [UInt8: Double] = [:]
+    private var tracked: Tracked?
+    private var sinks: [AnyCancellable] = []
+
+    init() {}
+
+    /// Follows `tracked`'s controls (again only when the display or the list changed).
+    func track(_ controller: DDCController, _ tracked: Tracked) {
+        guard tracked != self.tracked else { return }
+        self.tracked = tracked
+        sinks = []
+        values = [:]
+        for code in Set(tracked.codes) {
+            sinks.append(controller.customPublisher(code, for: tracked.key)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] value in
+                    MainActor.assumeIsolated {
+                        guard let self, self.tracked == tracked else { return }
+                        self.values[code] = value
+                    }
+                })
+        }
+    }
+
+    /// The newest value of a control: the published one, else the controller's, else the middle.
+    func value(_ code: UInt8, key: DisplayKey, controller: DDCController) -> Double {
+        let v = (tracked?.key == key ? values[code] : nil) ?? controller.customValue(code, for: key) ?? 0.5
+        return v.isFinite ? min(1, max(0, v)) : 0.5
     }
 }
 

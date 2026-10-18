@@ -77,11 +77,6 @@ struct AppleDisplayPreset: Hashable, Identifiable, Sendable {
         return SNMonitorPanel.orientation(display: id)?.intValue
     }
 
-    func canRotate(_ key: DisplayKey) -> Bool {
-        guard supports("rotation"), let id = hardwareID(key) else { return false }
-        return SNMonitorPanel.canChangeOrientation(display: id)?.boolValue ?? false
-    }
-
     func underscan(of key: DisplayKey) -> Double? {
         guard supports("underscan"), let id = hardwareID(key) else { return nil }
         return SNMonitorPanel.underscan(display: id)?.doubleValue
