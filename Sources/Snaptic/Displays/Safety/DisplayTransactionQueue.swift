@@ -219,7 +219,8 @@ import SnapticShims
 
     @discardableResult
     private func requestTrialRevert(_ cause: TrialRevertReason, log: String) -> Bool {
-        guard var p = pending, p.life.requestRevert(cause) else { return false }
+        guard var p = pending else { return false }
+        guard p.life.requestRevert(cause) else { return false }
         pending = p
         // The panel may not be up yet (arming, applying, settling): the trial task checks
         // the lifecycle at every step, so the request isn't lost (FIXES-R1 B1).
@@ -501,6 +502,9 @@ import SnapticShims
     private func revertTrial(_ token: UInt64, _ why: TrialRevertReason, req: TransactionRequest,
                              ctx: DisplaysContext) async -> TransactionOutcome {
         guard let p = pending, p.token == token else { return stoppedOutcome(token) }
+        // Our own staged undo is underway: keep the guard's deadline from racing it (its
+        // hang rule still covers a stall here).
+        if !p.life.guardReverted { ctx.guardClient.extend(p.id, seconds: 30) }
         _ = await revertStaged(p.undo, ctx: ctx, shouldStop: { [weak self] in self?.isTrialCurrent(token) != true })
         guard isTrialCurrent(token) else { return stoppedOutcome(token) }
         if let afterRevert = req.afterRevert {

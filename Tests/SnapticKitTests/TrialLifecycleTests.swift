@@ -186,7 +186,8 @@ final class TrialLifecycleTests: XCTestCase {
             }
             if step == .proceed && t.phase == .confirming {
                 outside()
-                let choice: TrialPanelChoice = [.keep, .revert, .timeout][Int(rng.next() % 3)]
+                let choices: [TrialPanelChoice] = [.keep, .revert, .timeout]
+                let choice = choices[Int(rng.next() % 3)]
                 if choice == .keep && t.revertReason == nil && !t.isResolved { keepChosen = true }
                 step = t.panelClosed(choice)
                 outside()
