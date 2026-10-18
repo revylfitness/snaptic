@@ -154,6 +154,8 @@ import SnapticKit
             guard active, context === ctx, acks.generation == generation, !spawned.isReaped else {
                 spawned.terminate()
                 if active { lastFailure = L("Couldn't start the safety helper.") }
+                // Exited before we took the handle: its exit was ignored, so read the status here.
+                if let status = spawned.status, HelperExitStatus.isProtocolMismatch(status) { noteRestartRequired() }
                 resolveReadyWaiters(false)
                 return false
             }

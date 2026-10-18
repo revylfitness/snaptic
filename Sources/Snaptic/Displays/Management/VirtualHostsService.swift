@@ -287,7 +287,7 @@ import SnapticShims
             }
         } catch {
             shutdownNow(host)
-            hosts[spec.id] = nil
+            if hosts[spec.id] === host { hosts[spec.id] = nil }
             throw error
         }
     }
