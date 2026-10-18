@@ -2,9 +2,9 @@ import SwiftUI
 import SnapticKit
 
 /// Displays › Advanced (owner F; PLAN 0.3 §4.3): the cross-cutting groups. "Use Snaptic for" and "Experimental"
-/// (`DisplaysFeatureGroups`), the permissions those features need, and the settings whose 0.3 sections land in step 3
-/// (confirm display changes, resolution options, display names), reached by closing the sheet and opening their page
-/// (a sheet never presents another one). Footer: Restore Displays Defaults… · Done.
+/// (`DisplaysFeatureGroups`), Confirm display changes (B's `ConfirmChangesSection`), the permissions those features
+/// need, and the settings whose 0.3 sections land in step 3 (resolution options, display names), reached by closing
+/// the sheet and opening their page (a sheet never presents another one). Footer: Restore Displays Defaults… · Done.
 struct DisplaysAdvancedSheet: View, ControlDeclaring {
     typealias Controls = DisplaysAdvancedSheetControls
 
@@ -24,10 +24,9 @@ struct DisplaysAdvancedSheet: View, ControlDeclaring {
     var body: some View {
         AdvancedSheet(L("Displays Advanced Settings"), restoreDefaults: restore) {
             DisplaysFeatureGroups(switcher: switcher, runtime: runtime, features: features)
+            ConfirmChangesSection(env: env)
             permissions
             Section {
-                link(L("Confirm Display Changes"), help: L("Ask before keeping a new resolution, and how to undo it."),
-                     page: "displays.safety")
                 link(L("Resolution Options"), help: L("Favorites, filters, and the resolution slider."),
                      page: "displays.resolution")
                 link(L("Remembered Displays"), help: L("Displays Snaptic keeps settings for, and their names."),

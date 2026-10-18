@@ -349,11 +349,14 @@ struct DisplaysPanelContent: View, ControlDeclaring {
     let actions: DisplaysPanelActions
     @ObservedObject private var runtime: DisplaysRuntimeState
     @ObservedObject private var config: ConfigStore<DisplaysConfig>
+    /// B bumps it when the guard or panic state changes (the status rows).
+    @ObservedObject private var safetyRevision: ControllerRevision
 
     init(context: DisplaysContext, actions: DisplaysPanelActions) {
         self.context = context
         self.actions = actions
         _runtime = ObservedObject(wrappedValue: context.runtime)
+        _safetyRevision = ObservedObject(wrappedValue: context.runtime.revision(.diagnostics))
         _config = ObservedObject(wrappedValue: context.config)
     }
 

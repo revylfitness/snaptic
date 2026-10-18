@@ -60,6 +60,8 @@ private struct DisplaysRootContent: View {
     @ObservedObject private var modules: ConfigStore<ModulesConfig>
     @ObservedObject private var shell: SettingsShell
     @ObservedObject private var runtime: DisplaysRuntimeState
+    /// B bumps it when the guard, panic or transaction state changes (the status rows).
+    @ObservedObject private var safetyRevision: ControllerRevision
     @StateObject private var features: ConfigSlice<DisplaysConfig, [DisplayFeature: Bool]>
     @StateObject private var menu: ConfigSlice<DisplaysConfig, MenuConfig>
     @StateObject private var models = DisplayLiveModelCache()
@@ -70,6 +72,7 @@ private struct DisplaysRootContent: View {
         _modules = ObservedObject(wrappedValue: host.modulesStore)
         _shell = ObservedObject(wrappedValue: SettingsShell.shared)
         _runtime = ObservedObject(wrappedValue: env.runtime)
+        _safetyRevision = ObservedObject(wrappedValue: env.runtime.revision(.diagnostics))
         _features = StateObject(wrappedValue: ConfigSlice(env.config, \.rawFeatures))
         _menu = StateObject(wrappedValue: ConfigSlice(env.config, \.menu))
     }
