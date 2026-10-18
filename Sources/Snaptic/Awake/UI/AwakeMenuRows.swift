@@ -24,7 +24,6 @@ import SnapticKit
         self.context = context
         custom.context = context
         observe(context.runtime)
-        observeRebuilds(context)
     }
 
     /// Attaches to a (new) context: the rows read and act on it.
@@ -34,10 +33,7 @@ import SnapticKit
         if context == nil { custom.close() }
         sinks.removeAll()
         headers = []
-        if let context {
-            observe(context.runtime)
-            observeRebuilds(context)
-        }
+        if let context { observe(context.runtime) }
     }
 
     // MARK: Building
@@ -308,26 +304,6 @@ import SnapticKit
         Publishers.MergeMany(changes)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.refreshHeaders() } }
-            .store(in: &sinks)
-    }
-
-    /// The Snaptic menu's compact section is built once and rebuilt only when marked dirty (StatusMenu): every state
-    /// its rows show asks for that (ui F2; `governing` changes are SessionController's). The own Awake menu rebuilds
-    /// on every open anyway.
-    private func observeRebuilds(_ context: AwakeContext) {
-        let rt = context.runtime
-        let changes: [AnyPublisher<Void, Never>] = [
-            rt.$holds.removeDuplicates().map { _ in () }.eraseToAnyPublisher(),
-            rt.$pausedUntil.removeDuplicates().map { _ in () }.eraseToAnyPublisher(),
-            rt.$activeTriggerIDs.removeDuplicates().map { _ in () }.eraseToAnyPublisher(),
-            rt.$waitingTriggerIDs.removeDuplicates().map { _ in () }.eraseToAnyPublisher(),
-            rt.$effectiveFeatures.removeDuplicates().map { _ in () }.eraseToAnyPublisher(),
-            context.config.$value.map(\.sessions).removeDuplicates().map { _ in () }.eraseToAnyPublisher(),
-            context.config.$value.map(\.triggers).removeDuplicates().map { _ in () }.eraseToAnyPublisher(),
-        ]
-        Publishers.MergeMany(changes)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in MainActor.assumeIsolated { self?.context?.host.requestMenuRebuild() } }
             .store(in: &sinks)
     }
 

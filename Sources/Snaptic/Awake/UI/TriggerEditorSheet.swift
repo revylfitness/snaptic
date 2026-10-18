@@ -17,6 +17,8 @@ struct TriggerEditorSheet: View, ControlDeclaring {
     @State private var draft: AwakeTrigger?
     @State private var timingOpen = false
     @State private var confirmDelete = false
+    /// §4.3: a new rule opens with its condition kind pop-up focused (ux m12).
+    @FocusState private var kindFocused: Bool
 
     init(env: AwakePageEnvironment, target: AwakeRuleEditTarget) {
         self.env = env
@@ -69,10 +71,12 @@ struct TriggerEditorSheet: View, ControlDeclaring {
         }
         .frame(width: 600)
         .frame(minHeight: 420, idealHeight: 600, maxHeight: 800)
+        .defaultFocus($kindFocused, isNew)
         .onAppear {
             load()
             sources.begin(env.context)
             SettingsShell.shared.sheetDidAppear()
+            if isNew { kindFocused = true }
         }
         .onDisappear { sources.end() }
         .alert(L("Delete this rule?"), isPresented: $confirmDelete) {
@@ -123,7 +127,8 @@ struct TriggerEditorSheet: View, ControlDeclaring {
             .modifier(SettingsAnchor(ControlID("awake.rule.match")))
             ForEach(Array(0..<count), id: \.self) { (index: Int) in
                 CriterionEditors(entry: entryBinding(rule, index), sources: sources,
-                                 remove: removal(rule, index, count: count), anchored: index == 0)
+                                 remove: removal(rule, index, count: count), anchored: index == 0,
+                                 focus: index == 0 && isNew ? $kindFocused : nil)
             }
             HStack {
                 Spacer()
@@ -146,9 +151,9 @@ struct TriggerEditorSheet: View, ControlDeclaring {
         Section {
             PickerSetting(L("Display"), help: L("When the display may turn off while this rule keeps your Mac awake."),
                           selection: rule.options.display, options: [
-                              PickerOption(AwakeDisplayPolicy.keepOn, L("Keep on")),
-                              PickerOption(AwakeDisplayPolicy.maySleep, L("Can turn off")),
-                              PickerOption(AwakeDisplayPolicy.keepOnWhileActive, L("Keep on until idle")),
+                              PickerOption(AwakeDisplayPolicy.keepOn, L("Keep On")),
+                              PickerOption(AwakeDisplayPolicy.maySleep, L("Can Turn Off")),
+                              PickerOption(AwakeDisplayPolicy.keepOnWhileActive, L("Keep On Until Idle")),
                           ], style: .popUp, defaultValue: AwakeSessionOptions().display,
                           anchor: ControlID("awake.rule.display"))
             if rule.wrappedValue.options.display == .keepOnWhileActive {
@@ -163,7 +168,7 @@ struct TriggerEditorSheet: View, ControlDeclaring {
                                                  set: { rule.wrappedValue.options.activity = $0 }),
                               options: [
                                   PickerOption(AwakeActivityMode.off, L("Off")),
-                                  PickerOption(AwakeActivityMode.declare, L("Appear active")),
+                                  PickerOption(AwakeActivityMode.declare, L("Appear Active")),
                               ], style: .popUp, defaultValue: AwakeActivityMode.off,
                               anchor: ControlID("awake.rule.activity"))
             }
@@ -196,7 +201,7 @@ struct TriggerEditorSheet: View, ControlDeclaring {
 
     private func delayOptions(_ current: Int) -> [PickerOption<Int>] {
         AwakeTrigger.choices(AwakeTrigger.delayChoices, including: current).map {
-            PickerOption($0, AwakeTrigger.delayTitle($0))
+            PickerOption($0, AwakeTrigger.delayTitle($0, titleCase: true))
         }
     }
 
@@ -204,10 +209,10 @@ struct TriggerEditorSheet: View, ControlDeclaring {
         var values = AwakeTrigger.resumeChoices
         if let current = rule.resumeAfterManualEndMinutes, !values.contains(current) { values.append(current) }
         return values.map { (minutes: Int?) -> PickerOption<Int?> in
-            guard let minutes else { return PickerOption(nil, L("Resume when the conditions are next met")) }
-            let span = minutes % 60 == 0 ? AwakeCountdown.unit(minutes / 60, L("hour"), L("hours"))
-                                         : AwakeCountdown.unit(minutes, L("min"), L("min"))
-            return PickerOption(minutes, L("Resume after ") + span)
+            guard let minutes else { return PickerOption(nil, L("Resume When the Conditions Are Next Met")) }
+            let span = minutes % 60 == 0 ? AwakeCountdown.unit(minutes / 60, L("Hour"), L("Hours"))
+                                         : AwakeCountdown.unit(minutes, L("Min"), L("Min"))
+            return PickerOption(minutes, L("Resume After ") + span)
         }
     }
 

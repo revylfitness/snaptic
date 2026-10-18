@@ -271,6 +271,8 @@ final class AwakeTriggersTests: XCTestCase {
         XCTAssertEqual(AwakeTrigger.delayTitle(1_800), "30 minutes")
         XCTAssertEqual(AwakeTrigger.delayTitle(3_600), "1 hour")
         XCTAssertEqual(AwakeTrigger.delayTitle(90), "90 seconds")
+        XCTAssertEqual(AwakeTrigger.delayTitle(60, titleCase: true), "1 Minute")
+        XCTAssertEqual(AwakeTrigger.delayTitle(7_200, titleCase: true), "2 Hours")
         XCTAssertEqual(AwakeTrigger.choices([0, 30, 60], including: 45), [0, 30, 45, 60])
         XCTAssertEqual(AwakeTrigger.choices([0, 30, 60], including: 30), [0, 30, 60])
         let id = StableID()
@@ -284,82 +286,5 @@ final class AwakeTriggersTests: XCTestCase {
         var nudging = rule
         nudging.options.activity = .nudge
         XCTAssertEqual(nudging.savedFromEditor(wasNew: true).options.activity, .declare, "rules never move the pointer")
-    }
-
-    // MARK: Backup import strips only what came from the file (security S-2), restore keeps rules running (parity P1)
-
-    private func macWithOwnRulesAndNudge() -> AwakeConfig {
-        var c = AwakeConfig()
-        c.features[.triggers] = true
-        c.features[.activity] = true
-        c.features[.pointerNudge] = true
-        c.triggers.triggers = [
-            AwakeTrigger(id: id("office"), name: "Office Wi-Fi",
-                         criteria: [AwakeCriterionEntry(.network(.router(hash: digest, label: "Office")))]),
-            AwakeTrigger(id: id("dock"), name: "",
-                         criteria: [AwakeCriterionEntry(.usbDevice(vendor: 1, product: 2, serialHash: digest, name: "Dock"))]),
-        ]
-        var nudge = AwakeSessionOptions()
-        nudge.activity = .nudge
-        c.sessions.presets.append(AwakePreset(id: id("nudge"), name: "Presenting", kind: .duration(seconds: 7_200),
-                                              options: nudge))
-        c.sessions.defaultOptions.activity = .nudge
-        return c.sanitized()
-    }
-
-    func testImportOfOwnBackupKeepsThisMacsRulesAndPresets() throws {
-        let current = macWithOwnRulesAndNudge()
-        for includeTriggers in [false, true] {
-            let section = try XCTUnwrap(KitBackup.awakeSectionData(current, includeTriggers: includeTriggers))
-            let result = try XCTUnwrap(KitBackup.importAwake(current: current, imported: section))
-            XCTAssertEqual(result.triggers, current.triggers, "rules \(includeTriggers)")
-            XCTAssertEqual(result.sessions.presets, current.sessions.presets, "presets \(includeTriggers)")
-            XCTAssertEqual(result.sessions.defaultOptions, current.sessions.defaultOptions)
-            XCTAssertEqual(result, current, "an own backup changes nothing (\(includeTriggers))")
-        }
-    }
-
-    func testImportStripsRulesAndPresetsThatCameFromTheFile() throws {
-        let current = macWithOwnRulesAndNudge()
-        // A file that changed this Mac's rule (same id, other name) and adds a nudge preset and a hashed rule.
-        var file = current.triggers
-        file.triggers[0].name = "Changed"
-        file.triggers.append(AwakeTrigger(id: id("new"), name: "",
-                                          criteria: [AwakeCriterionEntry(.network(.router(hash: digest, label: "X")))]))
-        let imported = file.importing(over: current.triggers)
-        XCTAssertFalse(imported.triggers[0].enabled, "a changed rule is the file's: stripped and disabled")
-        XCTAssertTrue(imported.triggers[0].criteria.isEmpty)
-        XCTAssertEqual(imported.triggers[1], current.triggers.triggers[1], "an untouched rule stays this Mac's")
-        XCTAssertFalse(imported.triggers[2].enabled)
-        XCTAssertTrue(imported.triggers[2].criteria.isEmpty, "the file's salted condition never comes in")
-
-        var sessions = current.sessions
-        var nudge = AwakeSessionOptions()
-        nudge.activity = .nudge
-        sessions.presets.append(AwakePreset(id: id("other"), name: "Other", kind: .indefinite, options: nudge))
-        sessions.defaultOptions.displayIdleMinutes = 12
-        let s = sessions.importing(over: current.sessions)
-        XCTAssertEqual(s.presets.last?.options?.activity, .declare, "a nudge preset from the file never moves the pointer")
-        XCTAssertEqual(s.presets.first { $0.id == id("nudge") }?.options?.activity, .nudge, "this Mac's own preset kept")
-        XCTAssertEqual(s.defaultOptions.activity, .declare, "changed default options are the file's")
-        // A file can't turn an own declare preset into nudge.
-        var declareMac = current.sessions
-        declareMac.presets = declareMac.presets.map { p in
-            var p = p
-            if p.options?.activity == .nudge { p.options?.activity = .declare }
-            return p
-        }
-        let forged = current.sessions.importing(over: declareMac)
-        XCTAssertFalse(forged.presets.contains { $0.options?.activity == .nudge })
-    }
-
-    func testRestoreDefaultsKeepsRulesRunning() {
-        var c = AwakeConfig()
-        c.features[.triggers] = true
-        c.triggers.triggers = [AwakeTrigger(id: id("1"), name: "", criteria: [AwakeCriterionEntry(.display(.anyExternal))])]
-        let restored = c.restoringDefaults()
-        XCTAssertEqual(restored.features[.triggers], true)
-        XCTAssertEqual(restored.triggers.triggers.count, 1)
-        XCTAssertNil(AwakeConfig().restoringDefaults().features[.triggers], "default stays default")
     }
 }

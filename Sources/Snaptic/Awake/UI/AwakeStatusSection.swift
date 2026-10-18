@@ -5,7 +5,7 @@ import SnapticKit
 /// The Awake page's status row (owner: G; PLAN 0.3 §4.3 "Status", R5-9, R5-10, R5-11): what keeps the Mac awake now,
 /// and buttons that reach every session kind when the status items are hidden (26/27). Idle: [Pause Rules ▾]
 /// [Keep Awake ▾] (a click starts the default session; ▾ lists the presets, While an App Is Running ▸ and Custom…).
-/// Active: [Pause Rules ▾] [Options ▾] [Turn Off]; holds only: [Turn Off]. Buttons only, no switch (N5), none a
+/// Active: [Pause Rules ▾] [Options ▾] [Turn Off]; holds only: [Keep Awake ▾] [Turn Off] (a start joins the holds). Buttons only, no switch (N5), none a
 /// default button (r3 security L8). Every start is a `.settings` UI start and first asks `SettingsShell.mayStart()`
 /// (R5-8): right after an external open of the window it does nothing.
 struct AwakeStatusSection: View, ControlDeclaring {
@@ -187,7 +187,8 @@ struct AwakeStatusSection: View, ControlDeclaring {
                 let on = context.sessions.keepsDisplayOn
                 items.append(ActionMenuItem(id: "display", title: on ? L("Let Display Sleep") : L("Keep Display On")) {
                     [weak sessions = context.sessions] in
-                    sessions?.setKeepDisplayOn(!on)
+                    guard let sessions else { return }
+                    sessions.setKeepDisplayOn(!sessions.keepsDisplayOn)
                 })
             case .endHolds:
                 items.append(ActionMenuItem(id: "endHolds", title: L("End Command-Line Holds")) {

@@ -527,42 +527,21 @@ package struct AwakeTriggersConfig: ConfigModel {
     /// conditions could apply more often than the user chose.
     package func strippingHashes() -> AwakeTriggersConfig {
         var c = self
-        c.triggers = triggers.map(Self.strippingHashes)
-        return c
-    }
-
-    /// One rule without salted hashes (see `strippingHashes()`).
-    package static func strippingHashes(_ original: AwakeTrigger) -> AwakeTrigger {
-        var t = original
-        t.criteria = original.criteria.compactMap { e -> AwakeCriterionEntry? in
-            switch e.criterion {
-            case .display(.specific), .network(.router), .bluetooth(.audio), .bluetooth(.input):
-                return nil
-            case .usbDevice(let vendor, let product, _, let name):
-                return AwakeCriterionEntry(.usbDevice(vendor: vendor, product: product, serialHash: nil, name: name),
-                                           negated: e.negated)
-            default:
-                return e
+        c.triggers = triggers.map { original -> AwakeTrigger in
+            var t = original
+            t.criteria = original.criteria.compactMap { e -> AwakeCriterionEntry? in
+                switch e.criterion {
+                case .display(.specific), .network(.router), .bluetooth(.audio), .bluetooth(.input):
+                    return nil
+                case .usbDevice(let vendor, let product, _, let name):
+                    return AwakeCriterionEntry(.usbDevice(vendor: vendor, product: product, serialHash: nil, name: name),
+                                               negated: e.negated)
+                default:
+                    return e
+                }
             }
-        }
-        if t.criteria.isEmpty || t.criteria != original.criteria { t.enabled = false }
-        return t
-    }
-
-    /// Backup import (security S-2): only what came from the file is stripped. A rule equal to this Mac's rule with
-    /// the same id, either as stored or as this Mac would export it, is this Mac's own and is kept untouched (its
-    /// salted hashes are valid here and it stays enabled); every other rule loses its salted hashes like an export.
-    /// Nothing the file carries can add a hash or turn a rule on: a kept rule is exactly the current one.
-    package func importing(over current: AwakeTriggersConfig) -> AwakeTriggersConfig {
-        var c = self
-        var own: [StableID: AwakeTrigger] = [:]
-        for t in current.triggers where own[t.id] == nil { own[t.id] = t }
-        c.triggers = triggers.map { t -> AwakeTrigger in
-            if let mine = own[t.id] {
-                let exported = Self.strippingHashes(mine).sanitized()
-                if mine == t || mine.sanitized() == t || exported == t { return mine }
-            }
-            return Self.strippingHashes(t).sanitized()
+            if t.criteria.isEmpty || t.criteria != original.criteria { t.enabled = false }
+            return t
         }
         return c
     }
@@ -667,12 +646,17 @@ extension AwakeTrigger {
     }
 
     /// "None", "30 seconds", "1 minute", "2 minutes", "1 hour".
-    package static func delayTitle(_ seconds: Int) -> String {
+    /// `titleCase`: the pop-up option form ("1 Minute", §4.2 options are menu items, ux m3).
+    package static func delayTitle(_ seconds: Int, titleCase: Bool = false) -> String {
         let s = AwakeMath.clamp(seconds, delayRange)
         if s == 0 { return L("None") }
-        if s % 3_600 == 0 { return AwakeCountdown.unit(s / 3_600, L("hour"), L("hours")) }
-        if s % 60 == 0 { return AwakeCountdown.unit(s / 60, L("minute"), L("minutes")) }
-        return AwakeCountdown.unit(s, L("second"), L("seconds"))
+        if s % 3_600 == 0 {
+            return AwakeCountdown.unit(s / 3_600, titleCase ? L("Hour") : L("hour"), titleCase ? L("Hours") : L("hours"))
+        }
+        if s % 60 == 0 {
+            return AwakeCountdown.unit(s / 60, titleCase ? L("Minute") : L("minute"), titleCase ? L("Minutes") : L("minutes"))
+        }
+        return AwakeCountdown.unit(s, titleCase ? L("Second") : L("second"), titleCase ? L("Seconds") : L("seconds"))
     }
 
     /// A new rule from the editor's + : one condition, or the default display condition.

@@ -156,10 +156,10 @@ private struct PresetRow: View {
             }
             .modifier(SettingsAnchor(ControlID("awake.sessions.name")))
             PickerSetting(L("Kind"), selection: kindChoice, options: [
-                PickerOption(AwakePresetKindChoice.indefinite, L("Until turned off")),
-                PickerOption(AwakePresetKindChoice.duration, L("For a duration")),
-                PickerOption(AwakePresetKindChoice.untilTime, L("Until a time")),
-                PickerOption(AwakePresetKindChoice.untilIdle, L("Until downloads and tasks finish")),
+                PickerOption(AwakePresetKindChoice.indefinite, L("Until Turned Off")),
+                PickerOption(AwakePresetKindChoice.duration, L("For a Duration")),
+                PickerOption(AwakePresetKindChoice.untilTime, L("Until a Time")),
+                PickerOption(AwakePresetKindChoice.untilIdle, L("Until Downloads and Tasks Finish")),
             ], style: .popUp, defaultValue: nil, anchor: ControlID("awake.sessions.kind"))
             kindFields
             PickerSetting(L("Display"), help: L("When the display may turn off during this session."),
@@ -222,9 +222,9 @@ private struct PresetRow: View {
 
     /// No limit, 1, 2, 4, 8, 12 hours (0 = No limit).
     private static var atMostOptions: [PickerOption<Int>] {
-        var out: [PickerOption<Int>] = [PickerOption(0, L("No limit"))]
+        var out: [PickerOption<Int>] = [PickerOption(0, L("No Limit"))]
         for hours in AwakePresetKind.atMostHours {
-            out.append(PickerOption(hours, AwakeCountdown.unit(hours, L("hour"), L("hours"))))
+            out.append(PickerOption(hours, AwakeCountdown.unit(hours, L("Hour"), L("Hours"))))
         }
         return out
     }
@@ -291,9 +291,9 @@ private struct PresetRow: View {
 
     private static func displayTitle(_ p: AwakeDisplayPolicy) -> String {
         switch p {
-        case .keepOn: return L("Keep on")
-        case .maySleep: return L("Can turn off")
-        case .keepOnWhileActive: return L("Keep on until idle")
+        case .keepOn: return L("Keep On")
+        case .maySleep: return L("Can Turn Off")
+        case .keepOnWhileActive: return L("Keep On Until Idle")
         }
     }
 
@@ -327,10 +327,10 @@ private struct PresetRow: View {
         var out: [PickerOption<OptionChoice<AwakeActivityMode>>] = [
             PickerOption(.useDefault, L("Default")),
             PickerOption(.value(.off), L("Off")),
-            PickerOption(.value(.declare), L("Appear active")),
+            PickerOption(.value(.declare), L("Appear Active")),
         ]
         if effective.contains(.pointerNudge) {
-            out.append(PickerOption(.value(.nudge), L("Move the pointer slightly")))
+            out.append(PickerOption(.value(.nudge), L("Move the Pointer Slightly")))
         }
         return out
     }

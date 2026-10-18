@@ -640,9 +640,6 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
 
         publish(governing, now: now)
         let flipped = governing.isActive != lastGoverning.isActive
-        // The compact section in the Snaptic menu shows what governs (preset ✓, Add Time, Keep Display On, holds):
-        // any change, not only on ↔ off, rebuilds it when it next opens (ui F2).
-        if governing != lastGoverning { ctx.host.requestMenuRebuild() }
         lastGoverning = governing
         updateIdleWatch(governing)
         if flipped {

@@ -259,7 +259,8 @@ final class AwakePresentationTests: XCTestCase {
         XCTAssertEqual(AwakeStatusPlan.buttons(facts(.inactive, rules: true, paused: true)), [.resumeRules, .keepAwake])
         XCTAssertEqual(AwakeStatusPlan.buttons(facts(.manual(session(.indefinite)))), [.options, .turnOff])
         XCTAssertEqual(AwakeStatusPlan.buttons(facts(.trigger(top), rules: true)), [.pauseRules, .options, .turnOff])
-        XCTAssertEqual(AwakeStatusPlan.buttons(facts(.holds([hold]), holds: true)), [.turnOff], "R5-10: holds only")
+        XCTAssertEqual(AwakeStatusPlan.buttons(facts(.holds([hold]), holds: true)), [.keepAwake, .turnOff],
+                       "holds only: start a session beside the holds (parity P4); Turn Off ends them (R5-10)")
         XCTAssertEqual(AwakeStatusPlan.buttons(facts(.inactive, paused: true)), [.keepAwake], "no rule: no pause slot")
         for g: AwakeGoverning in [.inactive, .manual(session(.indefinite)), .trigger(top), .holds([hold])] {
             for rules in [false, true] {
@@ -321,5 +322,14 @@ final class AwakePresentationTests: XCTestCase {
         XCTAssertEqual(AwakeRuleRowText.state(enabled: true, active: true, waiting: true), "Active")
         XCTAssertEqual(AwakeRuleRowText.state(enabled: true, active: false, waiting: true), "Waiting")
         XCTAssertNil(AwakeRuleRowText.state(enabled: true, active: false, waiting: false))
+    }
+
+    func testStatusRowExplainsTheClosedLidRoute() {
+        var i = AwakeDetailInput(governing: .manual(session(.indefinite)), now: now(0))
+        XCTAssertFalse(AwakeStatusText.details(i, pausedUntilClock: nil).contains(AwakeStatusText.lidRoute))
+        i.lidWarning = true
+        let details = AwakeStatusText.details(i, pausedUntilClock: nil)
+        XCTAssertEqual(details.suffix(2), ["Closing the lid will put your Mac to sleep.", AwakeStatusText.lidRoute])
+        XCTAssertFalse(AwakeDetail.lines(i).contains(AwakeStatusText.lidRoute), "the menu header stays at 2 lines")
     }
 }

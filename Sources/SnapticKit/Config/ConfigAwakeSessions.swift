@@ -327,30 +327,6 @@ package struct AwakeSessionsConfig: ConfigModel {
         return c
     }
 
-    /// Backup import (security S-2): pointer movement is removed only from what came from the file. Default options
-    /// or a preset equal to this Mac's (same id), either as stored or as this Mac would export it, are this Mac's own
-    /// and keep their value; anything else loses `nudge`. A kept value is exactly the current one, so a file can't
-    /// turn pointer movement on.
-    package func importing(over current: AwakeSessionsConfig) -> AwakeSessionsConfig {
-        var c = withoutNudge()
-        if defaultOptions == current.defaultOptions || defaultOptions == current.defaultOptions.withoutNudge() {
-            c.defaultOptions = current.defaultOptions
-        }
-        var own: [StableID: AwakePreset] = [:]
-        for p in current.presets where own[p.id] == nil { own[p.id] = p }
-        c.presets = presets.map { p -> AwakePreset in
-            if let mine = own[p.id] {
-                var exported = mine
-                exported.options = mine.options?.withoutNudge()
-                if mine == p || exported == p { return mine }
-            }
-            var stripped = p
-            stripped.options = p.options?.withoutNudge()
-            return stripped
-        }
-        return c
-    }
-
     /// The "Default (…)" label; R5-11: `defaultOptions.display` for every kind.
     package func defaultDisplayPolicy(for kind: AwakePresetKind) -> AwakeDisplayPolicy { defaultOptions.display }
 }

@@ -140,6 +140,19 @@ struct AwakeDisplayChoice: Equatable {
 
 // MARK: - One condition row
 
+/// `.focused(_:)` only when a binding is given.
+private struct OptionalFocus: ViewModifier {
+    let focus: FocusState<Bool>.Binding?
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if let focus {
+            content.focused(focus)
+        } else {
+            content
+        }
+    }
+}
+
 struct CriterionEditors: View, ControlDeclaring {
     typealias Controls = TriggerEditorSheetControls
 
@@ -147,6 +160,8 @@ struct CriterionEditors: View, ControlDeclaring {
     @ObservedObject var sources: AwakePickerSources
     let remove: (@MainActor () -> Void)?
     let anchored: Bool
+    /// The new rule's first row: its kind pop-up takes focus (§4.3).
+    var focus: FocusState<Bool>.Binding? = nil
 
     var body: some View {
         let choice = AwakeCriterionChoice(entry.wrappedValue.criterion)
@@ -162,6 +177,7 @@ struct CriterionEditors: View, ControlDeclaring {
                 .labelsHidden()
                 .fixedSize()
                 .help(L("What this condition looks at."))
+                .modifier(OptionalFocus(focus: focus))
                 .modifier(OptionalSettingsAnchor(anchored ? ControlID("awake.rule.condition.kind") : nil))
                 if choice.allowsNegation {
                     Picker(L("Is or is not"), selection: entry.negated) {
@@ -182,8 +198,8 @@ struct CriterionEditors: View, ControlDeclaring {
                         Image(systemName: "minus.circle")
                     }
                     .buttonStyle(.borderless)
-                    .help(L("Remove This Condition"))
-                    .accessibilityLabel(L("Remove This Condition"))
+                    .help(L("Remove this condition"))
+                    .accessibilityLabel(L("Remove this condition"))
                     .modifier(OptionalSettingsAnchor(anchored ? ControlID("awake.rule.condition.remove") : nil))
                 }
             }
