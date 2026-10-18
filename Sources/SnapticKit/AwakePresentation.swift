@@ -50,7 +50,7 @@ package enum AwakeHolderText {
 
     private static func capitalizedFirst(_ s: String) -> String {
         guard let first = s.first else { return s }
-        return first.uppercased() + s.dropFirst()
+        return first.uppercased() + String(s.dropFirst())
     }
 }
 
@@ -287,7 +287,7 @@ package enum AwakeIndicatorText {
             return prefix + L("while ") + AwakeDetail.quoted(ruleName) + L(" applies")
         case .holds:
             let h = holderSummary ?? L("Held by the command line")
-            return prefix + h.prefix(1).lowercased() + h.dropFirst()
+            return prefix + h.prefix(1).lowercased() + String(h.dropFirst())
         }
     }
 }
