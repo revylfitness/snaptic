@@ -21,7 +21,7 @@ struct InfoButton: View {
                 .foregroundStyle(.secondary)
         }
         .buttonStyle(.borderless)
-        .help(L("Show More About \(title)"))
+        .help(L("About \(title)"))
         .accessibilityLabel(title)
         .accessibilityHint(L("Shows details"))
         .popover(isPresented: $shown, arrowEdge: .trailing) {

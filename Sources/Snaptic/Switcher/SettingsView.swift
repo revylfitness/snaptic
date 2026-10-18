@@ -8,9 +8,9 @@ struct AppChoice: Hashable {
     let name: String
 }
 
-/// Window Switcher › Advanced… (H; PLAN 0.3 §4.3; 21 controls): the feature switches that apply to every
-/// shortcut, the switcher's behavior, keys and pointer, shortcut handling, and the app lists. Footer: Restore Window
-/// Switcher Defaults….
+/// Window Switcher › Advanced… (H; PLAN 0.3 §4.3; 19 controls): window thumbnails, the switcher's behavior, keys
+/// and pointer, shortcut handling, and the app lists. Other Spaces and windowless apps have no feature switch here:
+/// the per-shortcut choices turn them on (review ux M3). Footer: Restore Window Switcher Defaults….
 struct SwitcherAdvancedSheet: View, ControlDeclaring {
     typealias Controls = SwitcherAdvancedSheetControls
     @ObservedObject var settings: AppSettings
@@ -18,7 +18,7 @@ struct SwitcherAdvancedSheet: View, ControlDeclaring {
     private var passthroughOn: Bool { settings.config.isOn(.passthrough) }
 
     var body: some View {
-        AdvancedSheet(L("Window Switcher"),
+        AdvancedSheet(L("Window Switcher Advanced Settings"),
                       restoreDefaults: RestoreDefaults(scopeName: L("Window Switcher"), destructive: false) { [settings] in
                           settings.reset()
                       },
@@ -27,29 +27,18 @@ struct SwitcherAdvancedSheet: View, ControlDeclaring {
                 ToggleSetting(L("Window thumbnails"), help: L("Live images of your windows. Needs Screen Recording."),
                               isOn: SwitcherBinding.feature(settings, .thumbnails),
                               anchor: ControlID("switcher.advanced.thumbnails"))
-                ToggleSetting(L("Windows on other Spaces"), help: L("Applies to every shortcut."),
-                              isOn: SwitcherBinding.feature(settings, .otherSpaces),
-                              anchor: ControlID("switcher.advanced.otherSpaces"))
-                ToggleSetting(L("Apps with no open windows"), help: L("Applies to every shortcut."),
-                              isOn: SwitcherBinding.feature(settings, .windowlessApps),
-                              anchor: ControlID("switcher.advanced.windowlessApps"))
-            } header: {
-                Text(L("Features"))
-            }
-            Section {
-                PickerSetting(L("Show on"), selection: SwitcherBinding.config(settings, \.showOnScreen),
-                              options: [PickerOption(.activeWindow, L("Display with the active window")),
-                                        PickerOption(.mouse, L("Display with the pointer"))],
+                PickerSetting(L("Show on"), help: L("Where the switcher appears."),
+                              selection: SwitcherBinding.config(settings, \.showOnScreen),
+                              options: [PickerOption(.activeWindow, L("Display with the Active Window")),
+                                        PickerOption(.mouse, L("Display with the Pointer"))],
                               style: .popUp, defaultValue: Config().showOnScreen,
                               anchor: ControlID("switcher.advanced.showOn"))
                 ToggleSetting(L("One entry per app"), help: L("Lists each app once, with its most recent window."),
                               isOn: SwitcherBinding.primary(settings, \.oneWindowPerApp),
                               anchor: ControlID("switcher.advanced.oneWindowPerApp"))
                 ToggleSetting(L("Include apps with no open windows"), help: L("Lists running apps that have no windows."),
-                              isOn: SwitcherBinding.primary(settings, \.includeWindowlessApps),
-                              anchor: ControlID("switcher.advanced.includeWindowless"),
-                              disabledReason: settings.config.isOn(.windowlessApps)
-                                  ? nil : L("Turn on Apps with no open windows to use this."))
+                              isOn: SwitcherBinding.windowless(settings, id: nil),
+                              anchor: ControlID("switcher.advanced.includeWindowless"))
             } header: {
                 Text(L("Switcher"))
             }

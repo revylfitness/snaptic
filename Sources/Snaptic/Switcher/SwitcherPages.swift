@@ -58,7 +58,6 @@ private struct SwitcherPageContent: View {
     private var blocked: Bool { host.disabledByDefaults.contains(.windowSwitcher) }
     private var enabled: Bool { !blocked && modules.value.isEnabled(.windowSwitcher) }
     private var thumbnailsOn: Bool { settings.config.isOn(.thumbnails) }
-    private var otherSpacesOn: Bool { settings.config.isOn(.otherSpaces) }
 
     var body: some View {
         SettingsPageScaffold(route: SettingsRoute(SettingsRootID.windowSwitcher)) {
@@ -69,7 +68,7 @@ private struct SwitcherPageContent: View {
                 .disabled(blocked)
             if blocked {
                 Section {
-                    StatusRow(L("Turned off by a defaults setting."), symbol: "lock.fill")
+                    DefaultsLockRow(module: .windowSwitcher)
                 }
                 FeatureHighlights(SwitcherPages.highlights)
             } else if !enabled {
@@ -153,10 +152,12 @@ private struct SwitcherPageContent: View {
                           help: L("Letting go of the modifier key switches to the selected window."),
                           isOn: SwitcherBinding.config(settings, \.releaseToSwitch),
                           anchor: ControlID("switcher.page.releaseToSwitch"))
-            PickerSetting(L("Show"), selection: SwitcherBinding.primary(settings, \.scope),
+            PickerSetting(L("Show"), help: L("Which windows the switcher lists. This Display is the display it opens on."),
+                          selection: SwitcherBinding.primary(settings, \.scope),
                           options: SwitcherBinding.scopeOptions, style: .popUp, defaultValue: .allWindows,
                           anchor: ControlID("switcher.page.scope"))
-            PickerSetting(L("Style"), selection: SwitcherBinding.style(settings, id: nil),
+            PickerSetting(L("Style"), help: L("How the switcher shows each window."),
+                          selection: SwitcherBinding.style(settings, id: nil),
                           options: SwitcherBinding.styleOptions(thumbnailsOn: thumbnailsOn), style: .segmented,
                           defaultValue: thumbnailsOn ? .thumbnails : .icons, anchor: ControlID("switcher.page.style"))
             if showsThumbnailOptions {
@@ -187,16 +188,12 @@ private struct SwitcherPageContent: View {
                           help: L("Lists windows that are minimized or belong to hidden apps."),
                           isOn: SwitcherBinding.primary(settings, \.includeMinimized),
                           anchor: ControlID("switcher.page.includeMinimized"))
-            PickerSetting(L("Windows from"), selection: SwitcherBinding.spaces(settings, id: nil),
-                          options: SwitcherBinding.spacesOptions(otherSpacesOn: otherSpacesOn), style: .popUp,
-                          defaultValue: otherSpacesOn ? .all : .current, anchor: ControlID("switcher.page.spaces"))
+            PickerSetting(L("Windows from"), help: L("Which Spaces the switcher lists windows from."),
+                          selection: SwitcherBinding.spaces(settings, id: nil),
+                          options: SwitcherBinding.spacesOptions, style: .popUp,
+                          defaultValue: .all, anchor: ControlID("switcher.page.spaces"))
         } header: {
             Text(L("Windows"))
-        } footer: {
-            if !otherSpacesOn {
-                Text(L("To list windows from other Spaces, turn on Windows on other Spaces in Advanced."))
-                    .foregroundStyle(.secondary)
-            }
         }
     }
 }
@@ -293,16 +290,37 @@ struct ShortcutKeysPicker: View {
         })
     }
 
-    /// Spaces as the switcher uses them: the current Space only while Windows on other Spaces is off.
+    /// Spaces as the switcher uses them: the current Space only while the other-Spaces feature is off. Choosing All
+    /// Spaces or Other Spaces turns that feature on (ux M3: this pop-up is the only control for it).
     static func spaces(_ settings: AppSettings, id: UUID?) -> Binding<SpacesFilter> {
         Binding(get: {
             let raw = Self.primaryOr(settings, id: id, \.spaces).rawValue
             let shown = SwitcherPageRules.effectiveSpace(raw, otherSpacesOn: settings.config.isOn(.otherSpaces))
             return SpacesFilter(rawValue: shown) ?? .current
         }, set: { value in
-            let enabled = SwitcherPageRules.spaceChoiceEnabled(value.rawValue, otherSpacesOn: settings.config.isOn(.otherSpaces))
-            guard enabled else { return }
-            Self.shortcut(settings, id: id, \.spaces).wrappedValue = value
+            guard let index = Self.index(settings, id: id) else { return }
+            var c = settings.config
+            if SwitcherPageRules.spaceChoiceTurnsOnOtherSpaces(value.rawValue) {
+                c.showOtherSpaces = true
+                c.disabledFeatures.set(.otherSpaces, enabled: true)
+            }
+            c.shortcuts[index].spaces = value
+            if c != settings.config { settings.config = c }
+        })
+    }
+
+    /// "Include apps with no open windows" of one shortcut: reads on only while the windowless feature is on too, and
+    /// turning it on turns the feature on (ux M3: this switch is the only control for it).
+    static func windowless(_ settings: AppSettings, id: UUID?) -> Binding<Bool> {
+        Binding(get: {
+            SwitcherPageRules.effectiveWindowless(Self.primaryOr(settings, id: id, \.includeWindowlessApps),
+                                                  featureOn: settings.config.isOn(.windowlessApps))
+        }, set: { on in
+            guard let index = Self.index(settings, id: id) else { return }
+            var c = settings.config
+            if SwitcherPageRules.windowlessChoiceTurnsOnFeature(on) { c.disabledFeatures.set(.windowlessApps, enabled: true) }
+            c.shortcuts[index].includeWindowlessApps = on
+            if c != settings.config { settings.config = c }
         })
     }
 
@@ -365,9 +383,9 @@ struct ShortcutKeysPicker: View {
     }
 
     static let scopeOptions: [PickerOption<SwitcherScope>] = [
-        PickerOption(.allWindows, L("All windows")),
-        PickerOption(.activeApp, L("Active app")),
-        PickerOption(.currentScreen, L("This display")),
+        PickerOption(.allWindows, L("All Windows")),
+        PickerOption(.activeApp, L("Active App")),
+        PickerOption(.currentScreen, L("This Display")),
     ]
 
     /// Thumbnails isn't offered while window thumbnails are off.
@@ -376,13 +394,9 @@ struct ShortcutKeysPicker: View {
             + [PickerOption(.icons, L("Icons")), PickerOption(.titles, L("List"))]
     }
 
-    /// All Spaces and Other Spaces show but can't be chosen while Windows on other Spaces is off.
-    static func spacesOptions(otherSpacesOn: Bool) -> [PickerOption<SpacesFilter>] {
-        [
-            PickerOption(.all, L("All Spaces"), enabled: SwitcherPageRules.spaceChoiceEnabled("all", otherSpacesOn: otherSpacesOn)),
-            PickerOption(.current, L("Current Space")),
-            PickerOption(.others, L("Other Spaces"),
-                         enabled: SwitcherPageRules.spaceChoiceEnabled("others", otherSpacesOn: otherSpacesOn)),
-        ]
-    }
+    static let spacesOptions: [PickerOption<SpacesFilter>] = [
+        PickerOption(.all, L("All Spaces")),
+        PickerOption(.current, L("Current Space")),
+        PickerOption(.others, L("Other Spaces")),
+    ]
 }

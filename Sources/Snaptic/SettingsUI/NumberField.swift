@@ -46,6 +46,9 @@ enum SettingsFormat {
 
 /// A typed value with its unit inside the text ("70%", "15 min"). Commits on Return and when focus leaves; clamps
 /// and snaps to `step`; Esc reverts; ↑/↓ move one step. Focus selects all. Invalid text beeps and reverts.
+/// The field follows its value whenever the user hasn't typed (also while focused), and a commit writes only what the
+/// user typed since the last sync (`TypedFieldState`): blur never writes stale text over a slider drag, a stepper
+/// click or a change made elsewhere.
 struct NumberField: View {
     let accessibilityTitle: String
     let value: Binding<Double>
@@ -56,7 +59,7 @@ struct NumberField: View {
     /// Named positions ("1512 × 982"): values are indices, typed text matches a label.
     let labels: [String]?
 
-    @State private var text = ""
+    @State private var edit = TypedFieldState()
     @FocusState private var focused: Bool
 
     /// `width` nil = derived from `SliderMath.widestText(range:step:format:)` (design m7).
@@ -72,7 +75,7 @@ struct NumberField: View {
     }
 
     var body: some View {
-        TextField(accessibilityTitle, text: $text)
+        TextField(accessibilityTitle, text: Binding(get: { edit.text }, set: { edit.edit($0) }))
             .labelsHidden()
             .textFieldStyle(.roundedBorder)
             .controlSize(.small)
@@ -81,7 +84,7 @@ struct NumberField: View {
             .frame(width: fieldWidth)
             .focused($focused)
             .onSubmit { commit() }
-            .onExitCommand { text = display }
+            .onExitCommand { edit.revert(display: display) }
             .onKeyPress(.upArrow) {
                 nudge(1)
                 return .handled
@@ -90,12 +93,13 @@ struct NumberField: View {
                 nudge(-1)
                 return .handled
             }
-            .onAppear { text = display }
+            .onAppear { edit.revert(display: display) }
             .onChange(of: display) { _, newValue in
-                if !focused { text = newValue }
+                edit.sync(display: newValue)
             }
             .onChange(of: focused) { _, isFocused in
                 if isFocused {
+                    edit.sync(display: display)
                     DispatchQueue.main.async {
                         MainActor.assumeIsolated {
                             _ = NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
@@ -121,23 +125,29 @@ struct NumberField: View {
         labels == nil ? step : (step ?? 1)
     }
 
+    private func shown(_ v: Double) -> String { SettingsFormat.text(v, format, labels: labels) }
+
     private func commit() {
-        // Unchanged text never writes: the shown value is rounded, the stored one may not be.
-        guard text != display else { return }
-        guard let parsed = SettingsFormat.parse(text, format, labels: labels) else {
-            NSSound.beep()
-            text = display
-            return
+        let range = range, step = snapStep, format = format, labels = labels
+        let result = edit.commit(display: display,
+                                 parse: { text in
+                                     SettingsFormat.parse(text, format, labels: labels)
+                                         .map { SliderMath.clampSnap($0, range: range, step: step) }
+                                 },
+                                 format: { shown($0) })
+        switch result {
+        case .none: break
+        case .invalid: NSSound.beep()
+        case .write(let v): if v != value.wrappedValue { value.wrappedValue = v }
         }
-        let v = SliderMath.clampSnap(parsed, range: range, step: snapStep)
-        if v != value.wrappedValue { value.wrappedValue = v }
-        text = SettingsFormat.text(v, format, labels: labels)
     }
 
     private func nudge(_ direction: Int) {
-        let base = SettingsFormat.parse(text, format, labels: labels) ?? value.wrappedValue
-        let v = SliderMath.nudged(base, direction: direction, range: range, step: snapStep)
+        let range = range, step = snapStep, format = format, labels = labels
+        let v = edit.nudge(value: value.wrappedValue,
+                           parse: { SettingsFormat.parse($0, format, labels: labels) },
+                           step: { SliderMath.nudged($0, direction: direction, range: range, step: step) },
+                           format: { shown($0) })
         if v != value.wrappedValue { value.wrappedValue = v }
-        text = SettingsFormat.text(v, format, labels: labels)
     }
 }

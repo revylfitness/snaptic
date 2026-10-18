@@ -13,6 +13,9 @@ enum SettingsBadge: Equatable {
         }
     }
 
+    /// VoiceOver label of a row that shows this badge after its title ("Disconnect displays, Beta"; review ux m8).
+    func spoken(_ title: String) -> String { L("\(title), \(self.title)") }
+
     var color: Color {
         switch self {
         case .beta: return .orange

@@ -76,7 +76,7 @@ struct AboutPage: View, ControlDeclaring {
         let modules = host.modules.map { module -> HostReport.Module in
             let state: String
             if host.disabledByDefaults.contains(module.id) {
-                state = L("Turned off by a defaults setting")
+                state = DefaultsLock.state(key: ModuleHost.disableKey(module.id))
             } else if !host.modulesStore.value.isEnabled(module.id) {
                 state = L("Off")
             } else {

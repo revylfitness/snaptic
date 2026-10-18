@@ -205,6 +205,129 @@ final class SliderMathTests: XCTestCase {
         XCTAssertEqual(SliderLabels.parse("Native", ["Default", "Native"]), 1)
     }
 
+    /// Percent-labelled resolution stops: a typed number snaps to the nearest position (review ui F6).
+    func testParseLabelsSnapsTypedNumbers() {
+        let labels = ["80%", "100%", "120%"]
+        XCTAssertEqual(SliderLabels.parse("100", labels), 1)
+        XCTAssertEqual(SliderLabels.parse("100%", labels), 1)
+        XCTAssertEqual(SliderLabels.parse(" 100 % ", labels), 1)
+        XCTAssertEqual(SliderLabels.parse("110%", labels), 1, "a tie takes the lower position")
+        XCTAssertEqual(SliderLabels.parse("111", labels), 2)
+        XCTAssertEqual(SliderLabels.parse("125%", labels), 2)
+        XCTAssertEqual(SliderLabels.parse("5", labels), 0)
+        XCTAssertEqual(SliderLabels.parse("-40%", labels), 0)
+        XCTAssertEqual(SliderLabels.parse("99,5", labels), 1)
+        XCTAssertNil(SliderLabels.parse("%", labels))
+        XCTAssertNil(SliderLabels.parse("1x2%", labels))
+        // Non-numeric labels are skipped; none numeric means no match.
+        XCTAssertEqual(SliderLabels.parse("130", ["Default", "100%", "150%"]), 2)
+        XCTAssertNil(SliderLabels.parse("130", ["Default", "Native"]))
+        XCTAssertNil(SliderLabels.parse("1512", ["1280 × 800", "1512 × 982"]))
+        // Sizes still match sizes.
+        XCTAssertEqual(SliderLabels.parse("1500x1000", ["1280 × 800", "1512 × 982"]), 1)
+    }
+
+    // MARK: Typed field (review ui F1)
+
+    private func parsePercent(_ text: String) -> Double? {
+        SliderMath.parse(text, .percent(of: 1), decimalSeparator: ".").map { SliderMath.clampSnap($0, range: 0...1, step: 0.01) }
+    }
+
+    private func showPercent(_ v: Double) -> String { SliderMath.format(v, .percent(of: 1), decimalSeparator: ".") }
+
+    /// Return, then a slider drag, then blur: the field follows the drag and blur writes nothing.
+    func testTypedFieldFollowsValueAfterReturnAndNeverWritesStaleText() {
+        var f = TypedFieldState(display: "50%")
+        f.edit("40")
+        XCTAssertTrue(f.isDirty)
+        XCTAssertEqual(f.commit(display: "50%", parse: parsePercent, format: showPercent), .write(0.4))
+        XCTAssertEqual(f.text, "40%")
+        XCTAssertFalse(f.isDirty)
+        // Still focused (AppKit keeps first responder after Return); the slider moves to 80%.
+        f.sync(display: "80%")
+        XCTAssertEqual(f.text, "80%")
+        // Focus leaves: nothing typed since, nothing written.
+        XCTAssertEqual(f.commit(display: "80%", parse: parsePercent, format: showPercent), .none)
+        XCTAssertEqual(f.text, "80%")
+    }
+
+    /// A value change elsewhere while focused but untouched is shown; blur doesn't write it back.
+    func testTypedFieldFollowsExternalChangesWhileFocused() {
+        var f = TypedFieldState(display: "20 s")
+        f.sync(display: "25 s")
+        f.sync(display: "30 s")
+        XCTAssertEqual(f.text, "30 s")
+        XCTAssertEqual(f.commit(display: "30 s", parse: { _ in XCTFail("untyped text parsed"); return nil },
+                                format: { "\($0)" }), .none)
+    }
+
+    /// Typed text survives outside changes until committed, and is what gets written.
+    func testTypedFieldKeepsTypingOverExternalChanges() {
+        var f = TypedFieldState(display: "50%")
+        f.edit("6")
+        f.sync(display: "70%")
+        XCTAssertEqual(f.text, "6")
+        XCTAssertEqual(f.commit(display: "70%", parse: parsePercent, format: showPercent), .write(0.06))
+        XCTAssertEqual(f.text, "6%")
+    }
+
+    /// Typing the shown text back, or nothing, isn't an edit; invalid text reverts to the current value.
+    func testTypedFieldUnchangedAndInvalid() {
+        var f = TypedFieldState(display: "50%")
+        f.edit("5")
+        f.edit("50%")
+        XCTAssertFalse(f.isDirty)
+        XCTAssertEqual(f.commit(display: "55%", parse: parsePercent, format: showPercent), .none)
+        XCTAssertEqual(f.text, "55%", "a commit with nothing typed re-syncs")
+        f.edit("abc")
+        XCTAssertEqual(f.commit(display: "55%", parse: parsePercent, format: showPercent), .invalid)
+        XCTAssertEqual(f.text, "55%")
+        XCTAssertFalse(f.isDirty)
+        f.edit("x")
+        f.revert(display: "60%")
+        XCTAssertEqual(f.text, "60%")
+        XCTAssertFalse(f.isDirty)
+    }
+
+    /// ↑/↓ step from typed text when there is some, else from the value (not from the rounded text).
+    func testTypedFieldNudge() {
+        var f = TypedFieldState(display: "50%")
+        let up: (Double) -> Double = { SliderMath.nudged($0, direction: 1, range: 0...1, step: 0.01) }
+        let raw: (String) -> Double? = { SliderMath.parse($0, .percent(of: 1), decimalSeparator: ".") }
+        XCTAssertEqual(f.nudge(value: 0.8, parse: raw, step: up, format: showPercent), 0.81, accuracy: 1e-9)
+        XCTAssertEqual(f.text, "81%")
+        f.edit("30")
+        XCTAssertEqual(f.nudge(value: 0.81, parse: raw, step: up, format: showPercent), 0.31, accuracy: 1e-9)
+        XCTAssertFalse(f.isDirty)
+    }
+
+    /// Any sequence of syncs and edits: a commit writes only when the last thing before it was typing that changed the
+    /// text, and the field is never dirty after a commit.
+    func testSeededTypedFieldCommitsOnlyTypedText() {
+        var g = SeededGenerator(seed: 0x7E_1D)
+        let texts = ["10%", "20%", "30%", "40", "abc", "", "55%", "20%"]
+        for _ in 0..<2000 {
+            var f = TypedFieldState(display: "20%")
+            var shown = "20%"
+            var typedSinceSync = false
+            for _ in 0..<Int(g.next() % 8) {
+                let t = texts[Int(g.next() % UInt64(texts.count))]
+                if g.next() % 2 == 0 {
+                    shown = t
+                    f.sync(display: t)
+                    if !f.isDirty { typedSinceSync = false }
+                } else {
+                    f.edit(t)
+                    typedSinceSync = f.isDirty
+                }
+            }
+            let result = f.commit(display: shown, parse: parsePercent, format: showPercent)
+            if !typedSinceSync { XCTAssertEqual(result, .none) }
+            if case .write = result { XCTAssertTrue(typedSinceSync) }
+            XCTAssertFalse(f.isDirty)
+        }
+    }
+
     // MARK: Fuzz
 
     /// format → parse gives the value back within half the shown resolution, for both separators.

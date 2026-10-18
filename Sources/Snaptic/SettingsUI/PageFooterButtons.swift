@@ -80,13 +80,12 @@ struct RestoreDefaultsConfirmation: ViewModifier {
     }
 }
 
-/// Where (?) leads: Snaptic's help (the project README, opened in the browser). Routes are checked so a malformed
-/// id never reaches the URL.
+/// Where (?) leads: Snaptic's help, the project README in the browser, at the heading for the page
+/// (`SettingsHelpAnchors`). Routes are checked so a malformed id never reaches the URL.
 enum SettingsHelp {
-    static let base = "https://github.com/revylfitness/snaptic#readme"
-
     @MainActor static func open(_ route: SettingsRoute) {
-        guard SettingsLocation.isValidID(route.id), let url = URL(string: base) else { return }
+        guard SettingsLocation.isValidID(route.id), let url = URL(string: SettingsHelpAnchors.url(for: route.id))
+        else { return }
         NSWorkspace.shared.open(url)
     }
 }

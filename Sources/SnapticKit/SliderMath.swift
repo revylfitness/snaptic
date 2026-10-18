@@ -323,7 +323,9 @@ package enum SliderLabels {
         labels.max { $0.count < $1.count } ?? ""
     }
 
-    /// Exact label (case, spaces and "×"/"x" ignored), else the nearest "W × H" label to a typed size.
+    /// Exact label (case, spaces and "×"/"x" ignored), else the nearest "W × H" label to a typed size, else the
+    /// nearest numeric label to a typed number ("110" or "110%" → "100%"; PLAN §4.1: a discrete slider snaps a typed
+    /// value to the nearest position).
     package static func parse(_ text: String, _ labels: [String]) -> Double? {
         guard text.count <= SliderMath.maxInputLength else { return nil }
         let s = SliderMath.trimmed(text).lowercased()
@@ -390,10 +392,84 @@ package enum SliderLabels {
         return String(out)
     }
 
-    /// "110%" or "110" (normalized) → 110; nil for anything else.
+    /// "110%", "110" or "99,5" (normalized) → the number; nil for anything else.
     private static func percentNumber(_ s: String) -> Double? {
         let body = s.hasSuffix("%") ? String(s.dropLast()) : s
         guard !body.isEmpty else { return nil }
-        return SliderMath.parseNumber(body, separator: ".")
+        // A decimal comma ("99,5") reads as a point (percent labels never group digits).
+        return SliderMath.parseNumber(body.replacingOccurrences(of: ",", with: "."), separator: ".")
+    }
+}
+
+/// The edit state of a typed value field (`NumberField`, the field of `SliderSetting` and `StepperSetting`).
+///
+/// The field always follows the value it shows unless the user has typed something since it last synced: then the
+/// typed text stays until Return, Esc, an arrow key or focus loss. A commit writes only text the user typed (dirty)
+/// and never writes stale text back over a value that changed elsewhere (a slider drag, a stepper click, brightness
+/// keys, a hardware read-back, the menu's slider).
+package struct TypedFieldState: Equatable, Sendable {
+    /// What the field shows.
+    package private(set) var text: String
+    /// The text last synced from the value (what `text` was before the user typed).
+    package private(set) var synced: String
+
+    package init(display: String = "") {
+        text = display
+        synced = display
+    }
+
+    /// The user typed since the last sync (and the text differs from what was shown).
+    package var isDirty: Bool { text != synced }
+
+    /// The value changed elsewhere, or the field appeared: follow it unless the user is typing. Focus doesn't matter.
+    package mutating func sync(display: String) {
+        guard !isDirty else { return }
+        text = display
+        synced = display
+    }
+
+    /// The user typed (the text binding's setter; programmatic changes never come through here).
+    package mutating func edit(_ newText: String) {
+        text = newText
+    }
+
+    /// Esc, or after a commit: show the value again and drop the typed text.
+    package mutating func revert(display: String) {
+        text = display
+        synced = display
+    }
+
+    /// What Return or focus loss does.
+    package enum Commit: Equatable, Sendable {
+        /// Nothing typed: no write (the field re-synced to the current value).
+        case none
+        /// Typed text that doesn't parse: beep (the field reverted).
+        case invalid
+        /// Write this value (already parsed, clamped and snapped by `parse`).
+        case write(Double)
+    }
+
+    /// Commits typed text. `parse` turns text into the value to write (clamped and snapped) or nil when invalid;
+    /// `format` shows a written value. Text the user didn't type is never parsed or written.
+    package mutating func commit(display: String, parse: (String) -> Double?, format: (Double) -> String) -> Commit {
+        guard isDirty else {
+            revert(display: display)
+            return .none
+        }
+        guard let v = parse(text) else {
+            revert(display: display)
+            return .invalid
+        }
+        revert(display: format(v))
+        return .write(v)
+    }
+
+    /// ↑/↓: steps from the typed number when there is one, else from the value; the field then shows the result.
+    package mutating func nudge(value: Double, parse: (String) -> Double?, step: (Double) -> Double,
+                                format: (Double) -> String) -> Double {
+        let base = (isDirty ? parse(text) : nil) ?? value
+        let v = step(base)
+        revert(display: format(v))
+        return v
     }
 }

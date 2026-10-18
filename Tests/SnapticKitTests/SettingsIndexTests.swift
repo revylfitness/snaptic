@@ -198,6 +198,17 @@ final class SettingsIndexTests: XCTestCase {
         XCTAssertNil(SettingsIndex.masterSwitch(root: SettingsRootID.permissions, in: tables))
     }
 
+    /// A route that names a row of a root page deep-links to that row (review ui F7).
+    func testAnchorEntryForRowRoutes() {
+        let entry = SettingsIndex.anchorEntry("awake.page.rules", root: SettingsRootID.awake, in: ControlRegistry.tables)
+        XCTAssertEqual(entry?.anchor, "awake.page.rules")
+        XCTAssertNil(entry?.route)
+        XCTAssertNil(SettingsIndex.anchorEntry("awake.page.rules", root: SettingsRootID.displays, in: ControlRegistry.tables))
+        XCTAssertNil(SettingsIndex.anchorEntry("awake.rules", root: SettingsRootID.awake, in: ControlRegistry.tables))
+        XCTAssertEqual(SettingsIndex.anchorEntry("switcher.advanced.excludedApps", root: SettingsRootID.windowSwitcher,
+                                                 in: ControlRegistry.tables)?.sheet, "switcher.advanced")
+    }
+
     func testRevealFallbacksFollowParents() {
         let tables: [any ControlTable.Type] = [RevealTestTable.self]
         XCTAssertEqual(SettingsIndex.revealFallbacks(for: "t.r.leaf", in: tables), ["t.r.mid", "t.r.top"])

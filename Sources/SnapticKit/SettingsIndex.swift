@@ -80,6 +80,15 @@ package enum SettingsIndex {
         return nil
     }
 
+    /// A route that names a row instead of a page ("awake.page.rules"): that row's search entry, when it is on
+    /// `root`. `SettingsShell.go(to:)` reveals it (scroll + highlight, opening its sub-page or sheet) when no page
+    /// answers the route, so menus can deep-link to a row of a root page (review ui F7).
+    package static func anchorEntry(_ routeID: String, root: String,
+                                    in tables: [any ControlTable.Type]) -> SettingsSearchEntry? {
+        guard let spec = spec(routeID, in: tables), let search = spec.search, search.root == root else { return nil }
+        return SettingsSearchEntry(spec, search: search)
+    }
+
     /// The page header switch of a module root ("Use Window Switcher"): its searchable setting that edits
     /// `modules.*.enabled` on the root page itself. A reveal into a module that is off highlights it.
     package static func masterSwitch(root: String, in tables: [any ControlTable.Type]) -> String? {

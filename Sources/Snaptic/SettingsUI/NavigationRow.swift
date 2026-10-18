@@ -39,7 +39,7 @@ struct NavigationRow: View {
             }
             .contentShape(Rectangle())
         }
-        .accessibilityLabel(title)
+        .accessibilityLabel(badge?.spoken(title) ?? title)
         .accessibilityValue(value ?? "")
         .onAppear { SettingsShell.shared.noteTitle(title, for: route) }
         .modifier(OptionalSettingsAnchor(control))

@@ -109,7 +109,7 @@ private struct GeneralPageContent: View {
         } header: {
             Text(L("Choose what Snaptic does"))
         } footer: {
-            Text(L("A module that's off adds nothing to the menu bar and doesn't run. Each one has its own page in the sidebar."))
+            Text(L("Anything that's off adds nothing to the menu bar and doesn't run. Each one has its own page in the sidebar."))
                 .foregroundStyle(.secondary)
         }
     }
