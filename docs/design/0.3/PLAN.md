@@ -1,161 +1,133 @@
 # Snaptic 0.3 plan: Awake module, Settings redesign, Menu bar redesign
 
-Status: **r3** (planning architect, after review round 2; r2 kept as `PLAN-r2.md`, r1 as `PLAN-r1.md`). Base: `feature/displays` == `main` @ 871c10b.
+Status: **r4** (planning architect, after review round 3; r3 kept as `PLAN-r3.md`, r2 as `PLAN-r2.md`, r1 as `PLAN-r1.md`). Base: `feature/displays` == `main` @ 871c10b.
 Normative like `docs/design/PLAN.md` (0.2): where this plan and 0.2 disagree, **this plan wins** for 0.3 scope; everything 0.2 says that this plan does not touch (safety framework, helpers, guard, transactions, R5 amendments) stays in force. Swift signatures in this document are the contract the lead writes as compiling stubs in step 0; once on the branch, the code wins over prose (R5 rule carried forward).
 
 Inputs: `docs/design/0.3/{awake-parity.md, power-apis.md, ui-audit.md, design-spec.md}` (cited as [AP], [PA], [UA], [DS] with section numbers).
 
-## r3 changes
+## r4 changes
 
-Resolves review round 2 (`review-r2-{parity,security,code,design,consistency}.md`) and applies the lead's r3 decisions. Totals: **parity** 1 B + 6 M + 12 m resolved, 0 rejected; **security** 1 H + 5 M + 5 L resolved (M4, M5 partly rejected), 1 L rejected (L6, moot); **code** 12 signature rows + 11 M + 13 m resolved (R2-M5, R2-M11 and two signature rows retired with the mechanism they fixed), 0 rejected; **design** 7 M + 14 m resolved (m2, m13 partly rejected), 0 rejected; **consistency** 1 B + 7 M + 14 m resolved (M6, m11 retired), 0 rejected.
+Resolves review round 3 (`review-r3-{product,security,code,consistency}.md`) and applies the lead's r4 decisions. Totals: **product** 5 M + 16 m resolved (M3 and M4 through lead decisions instead of the proposed mechanisms), 0 rejected; **security** 3 M + 8 L resolved, 0 rejected; **code** 9 signature rows + 1 B + 6 M + 14 m resolved (M2 partly rejected: the "sum of processes" comparison), B1's rendering fix replaced by lead-8; **consistency** 5 M + 16 m resolved, 0 rejected.
 
 **Lead decisions (normative)**
 
 | Id | Resolution | Sections |
 |---|---|---|
-| lead-1 consent | Keychain consent, `AwakeConsent`, `AwakeConsentStore`, `ConfigStore(admit:)`, L11 and HW-22 withdrawn. Pointer movement only for sessions started by a direct UI action in this process (`uiStartedInProcess`, never persisted), never CLI/rule/launch/restored/resumed, never locked/off console, capped 1–8 h on Snaptic's continuous clock; Drive Alive volumes chosen in the UI, stored by UUID; outside config changes take effect; fixed 5% hard floor + critical heat; residual risk table; CLI `extend` no longer needs r2's nudge refusal (extending a session never extends the activity cap) | N10, §1.1, §2.3, §2.6, §2.9, §2.14, §3.2, §3.3, §6.5, HW-19 |
-| lead-2 MDM | No managed preferences (0.2 rule); `Awake.disable.<feature>` + new `Modules.disable.<id>` from the persistent domain; deployable by a configuration profile; managed screen-lock detection dropped | N14, §1.2, §2.2, §2.12, §6.4 step 5 |
-| lead-3 hold | `awake hold`: client holds its own connection (EOF or peer-pid exit ends it), `--pid N` binds a same-uid pid (kqueue NOTE_EXIT armed first, start time re-verified), cap 12 h / `--max` ≤ 24 h; no command wrapping; usage + parent-shell pitfall; `ControlPeer`/`ControlHold`/`ControlContext` in ControlServer (A, step 1) | N1, §2.3 `HoldBinding`, §2.5, §2.8 `ProcessWatch`, §2.10, §3.1, §6.2, §6.4, HW-21 |
-| lead-4 untilIdle | Busy = top same-user process ≥ 50% of one core OR total CPU ≥ 15% OR disk ≥ 1 MB/s (IOBlockStorageDriver) OR network ≥ 50 KB/s; ends after 5 quiet min; `TaskQuiet`, `CPUMath`/`DiskMath`/`NetworkMath` | N9, §2.3, §2.5, §2.8, §6.6, HW-23, OQ-8 |
-| lead-5 run loop | Timers in `.common` mode, `DispatchQueue.main` coalescing, lint L14 | N15, §2.1, §2.5, §4.5, §5.1, §5.3, §6.3 |
-| lead-6 Awake menu | One `AwakeMenuRows` for both surfaces; "Keep Awake" header; Until Turned Off first-level; Start Session ›; Keep Display On while active; idle 6 rows, active 10 | §5.3, §5.4 |
-| lead-7 menu parity | Every 0.2 `DisplayMenuItemID` (46) has a 0.3 location or a reason; Customize Displays Menu shows/hides each; `ControlID` registry (`ControlCatalog`, `MenuItemCatalog`, frozen `ControlMapLegacy`), `--selftest-controls` for Switcher keys, DEBUG `ControlCoverage` | N16, §4.3 Menu Bar, §4.8, §5.2, §6.4, §6.5 |
+| lead-8 control coverage | Static per-surface `ControlTable`s (ids, availability as data, `replaces:`), one lead `ControlRegistry`; Kit test against the **literal** frozen 0.2 list (588 ids) and a removals table; lint L15 pairs literals with tables both ways; no render walk, no DEBUG gate, step-3 manual gate dropped; `ControlCoverage`, `ControlMap`/`ControlCatalog`/`MenuItemCatalog`, `gen-controlmap.py` never created | N16, §4.8, §4.8.1, §4.8.2, §6.2–§6.6 |
+| lead-9 hotkey pointer movement | Hotkey starts need "Move the pointer to keep apps active?" Allow / Not Now (0.2 R5.7); `AwakeActivityGate` (Kit, runtime only) defines who sets and clears `uiStartedInProcess`: only menu/Settings handlers and Allow set it; restore, resume, CLI/trigger takeover, replacement, module stop clear it | N10, §2.3, §2.5, §2.9, §3.2, HW-19 |
+| lead-10 battery floor | `discharging = batteryPresent ∧ (¬onAC ∨ falling)`; `batteryPresent` latched; unreadable laptop battery → activity and Drive Alive stop (as at 0%), session assertion kept, toast; `batteryUnreadable` end removed | N10, §1.1, §2.6, §3.2, HW-13 |
+| lead-11 lossy collections | `LossyArray` (Codable, mirrors `LossyMap`) for rules, criteria, presets, history, holds; hand-written element decoders; `StableID.derived` (Kit FNV-1a-128, name-based UUID) for M1 and default presets | N18, §2.7, §2.14, §4.6, §6.6 |
+| lead-12 process CPU | `proc_pid_rusage` user+system deltas × `mach_timebase_info` for every pid every 5 s; short-lived processes via aggregate CPU + new-process churn (`newProcesses`, default 3) | N9, §2.3, §2.8, §3.6, HW-23, OQ-8 |
+| lead-13 restore order | Snapshot sanitized → dynamic needs seeded → services activated → `restore` → arbitrate; re-apply if needs changed; `process` deactivation ends holds | §2.1, §2.5, §2.14 |
+| lead-14 ControlServer holds | Own held-slot pool (8), never counts against the 4 request slots, ping every 300 s, EOF/extra-byte close, no read timeout after the handshake; A implements, step 1 | §2.10, §6.2, §6.4 |
+| lead-15 product majors | First-level item "Keep Awake Until Turned Off" (default preset as verb, idle only), ✓ only on the running session; Pause Rules wherever rules exist (Rules › in both menus, status row Pause Rules ▾); Turn Off while a rule or holds remain → toast with Pause Rules / End Holds; holds stack beside UI sessions ("Held by Terminal (2)"); Customize Displays Menu in disclosure groups, ≤ 25 controls visible | N3, N17, §2.5, §2.10, §4.3, §5.2–§5.4 |
 
-**Parity**
-
-| Finding | Resolution | Sections |
-|---|---|---|
-| B1 | lead-7: full menu table; Saved Layouts ›, Virtual Displays ›, Picture in Picture ›, Actions ›, Display Tools additions, per-display toggles/headers | §4.8, §5.2 |
-| M1 | lead-7 tables + Switcher mirror checked by self-test + DEBUG coverage gating step 3 | §4.8, §6.4 |
-| M2 | lead-4 | §2.5, §2.8 |
-| M3 | lead-3; reply names the pid; < 2 s exit toast; `status --json` `pid`; README recipes | §2.5, §2.10 |
-| M4 | ✓ Keep Display On in both menus and the status row's Options ▾; page toggle applies to a running default-options session | §2.14, §4.3, §5.3, §5.4 |
-| M5 | `sharedActiveGlyph = governing && showShared`; sessions never remove an at-rest item; HW-14 notch case | N11, §5.2, §5.5 |
-| M6 | Header switch X; migration M10; dimmed disconnected device row with Connect | §4.6, §4.8, §5.2 |
-| m1 | Displays root status rows (automation paused, Safe Mode, helper) + map row | §4.3, §4.8 |
-| m2 | `PerDisplayPicker` on Brightness and Dimming | §4.3 |
-| m3 | Switcher Screen Recording row, onboarding chips, card target, footer rows mapped | §4.3, §4.7, §4.8 |
-| m4 | Displays Advanced › Permissions group | §4.3, §4.8 |
-| m5 | Rule editor: conditions list +/− ≤ 8, is/is not, After I turn it off | §4.3 |
-| m6 | "At most" for untilIdle presets and app sessions | §2.14, §4.3 |
-| m7 | CLI untilIdle presets get the 12 h cap | §2.5, §2.10 |
-| m8 | "Awake Settings… ⌘," is the only Settings item in the Awake menu | §5.2, §5.3 |
-| m9 | Keep Display On only while active; page help line | §4.3, §5.3 |
-| m10 | Pause moved to menu/hotkey; status row shows paused | §4.3 |
-| m11 | `.hidden` falls back to Show When Active with a toast | §5.2 |
-| m12 | Start Again hidden for process and automatic entries | §1.1, §4.3 |
-
-**Security**
+**Product (review-r3-product)**
 
 | Finding | Resolution | Sections |
 |---|---|---|
-| H1 | lead-1 (mechanism withdrawn; facts in §3.2) | N10, §3.2 |
-| M1 | Superseded: nothing is id-bound any more; pointer movement needs a live UI start; residual stated | §3.2 |
-| M2 | Cap on Snaptic's clock; idle never `anyInput`, per-type counters, declaration echoes excluded; HW-5 | §1.1, §2.8, §2.9 |
-| M3 | `.awake` events counted only (errors in the ring); `eventLines()` filters by `isExportedInDiagnostics` | §3.6 |
-| M4 | **Partly rejected**: lead-3 uses `LOCAL_PEERPID` + start time (lead decision; the peer is alive and blocked when read, and a connection hold ends on EOF anyway) rather than `LOCAL_PEERTOKEN`; adopted: read before the request, never from the request, arm-then-verify, pid ≤ 1 refused, same uid | §2.5, §2.8, §2.10 |
-| M5 | **Partly rejected**: no managed-pref reading (0.2 rule, lead-2); adopted: a module-level kill switch (`Modules.disable.awake`) and unkillable applies per feature | N14, §2.2 |
-| L1 | `source` kept through restore (no `.restored`); Drive Alive ignores CLI sources incl. restored | §2.3, §2.9 |
-| L2 | Snapshot read once at start; guard holds recomputed | §2.5, §2.6 |
-| L3 | `MNT_LOCAL`/`MNT_RDONLY`/`MNT_ROOTFS` + `f_mntfromname` = eligible BSD name | §2.8, §2.9, §3.4 |
-| L4 | §3.1 says UX not boundary; didstart hint ≤ 10 s; CLI never replaces a UI session (`.uiSessionRunning`) | §2.3, §2.5, §2.8, §3.1 |
-| L5 | `importable` after `KitBackup.merge`; hostile-backup test | §2.14, §6.6 |
-| L6 | **Rejected (moot)**: consent read/record failures no longer exist | — |
+| M1 | lead-15: default preset as a verb phrase (`verbTitle`), idle only, Until Turned Off back in Start Session ›, ✓ = running only; idle 6 / active 9 rows; mockups drawn per state | §2.14, §5.2, §5.3, §5.4 |
+| M2 | lead-15: Rules › in the compact section whenever a rule exists; status row Pause Rules ▾; "Rules are reached from…" sentence dropped | §1.1, §4.3, §4.4 #17, §5.3, §5.4 |
+| M3 | lead-15 (toast instead of ending every rule): Turn Off ends what governs, then "Rules can still keep your Mac awake." [Pause Rules] / holds toast; detail "Then “Desk dock” keeps it awake." | §2.5, §4.3, §5.3 |
+| M4 | lead-15/N17 (stacking instead of a standby slot): holds never refused for a UI session, ≤ 8 | N1, N17, §2.3, §2.5, §2.10, §3.1 |
+| M5 | lead-15: disclosure-group accordion, filter, three-way only for per-display items, collapsed "items need features that are off" row; §4.8 rows corrected | §4.3, §4.8 |
+| m1 | No ↺ at the default | §4.3 |
+| m2 | Compact section drawn idle and active, no internal separators | §5.2, §5.4 |
+| m3 | ⌥ "End “Desk dock” Session" (manualEnd) | §5.3 |
+| m4 | No idle "Off" detail | §5.3 |
+| m5 | Rule editor: one focused condition row, optional name with summary placeholder, "Keep your Mac awake while…", no is/is not for Power | §4.3 |
+| m6 | "Default session", "Sessions in the menu", "Sessions" sheet | §2.14, §4.3 |
+| m7 | Plain Keep Display On / Let Display Sleep button when Options ▾ would hold one item | §4.3 |
+| m8 | Copy Install Command subordinate, with help | §4.3 |
+| m9 | "When your Mac sleeps" help | §4.3 |
+| m10 | Concrete modes; Larger Text / More Space as subtitles on the extremes | §5.2 |
+| m11 | Display Details… under the tiles; Display Information last | §4.3 |
+| m12 | `AwakeIndicatorStyle` comment says Time | §2.14 |
+| m13 | "Restore <scope> Defaults…" titles | §4.1, §4.3, §4.6 |
+| m14 | ⌘F / Edit › Find focus sidebar search | §4.2 |
+| m15 | untilIdle detail "Ends after 5 min with no activity · quiet for 2 min" (`TaskQuiet.quietFor`) | §2.3, §2.5, §4.3, §5.3 |
+| m16 | Show When Active help per module; `--display-may-sleep`; Snaptic menu row budget + HW-15 | §2.10, §4.3, §5.2, HW-15 |
 
-**Code**
-
-| Finding | Resolution | Sections |
-|---|---|---|
-| sig overrideGuards | `= false` + explicit `CodingKeys` (also `uiStartedInProcess`, `activitySince`) | §2.3 |
-| sig facts init | `package init` on DisplayFact/USBFact/NetworkFacts/BluetoothFact | §2.7 |
-| sig static lets | `specs`, `activationOrder`, ControlMap tables are computed `{ get }`; `AwakeConsent.empty` gone | §2.2, §4.8 |
-| sig defaults | `recentNudges`/`recentDeclarations`/`volumes` `= []` + `init()` | §2.9 |
-| sig observedSections | Requirement in the protocol body + extension default | §4.5 |
-| sig ActivityDecision | `.skip` | §2.9 |
-| sig lossy | Hand-written lossy decoders for GuardMemory, AwakeBehavior, TriggerSuppression, DriveAliveVolume | §2.6, §2.7, §2.14 |
-| sig criterion entry | `{"criterion":{…},"negated":…}`; nested enums under `"condition"`/`"match"` | §2.7 |
-| sig StatusItemPlan | One declaration (lead, ConfigModules) with defaulted fields | §5.2 |
-| sig ModulePreferences | Both inits until step 3 | §4.6, §5.2 |
-| sig record → Bool | Retired with the consent store | — |
-| sig 1,000 inputs | Assert `needsSwap == false` | §2.4, §6.6 |
-| R2-M1 | Occurrence counts, warn-then-`--strict`, TEAMS.md owner exception, L5 lookbehind | §6.3 |
-| R2-M2 | Extension defaults + `settingsPages()` kept; forwarding removed at step-3 exit; lead declares `MenuPresence`/`StatusItemPlan`; `case .awake`, stub module | §2.11, §4.1, §4.5, §6.4 |
-| R2-M3 | Snapshot `bootSession`; drop `until` suppressions, reset guard memory | §2.6, §2.7, §2.14 |
-| R2-M4 | Never create past the deadline; `max(1, ceil(…))`; verify after expiry + arbitrate | §2.4 |
-| R2-M5 | Retired (lead-1) | §3.2 |
-| R2-M6 | `applyStatusItem(CustomItemRow)`, `requestStatusPlan`, `setPresence` | §2.11, §5.2, §5.3 |
-| R2-M7 | lead-5 | N15 |
-| R2-M8 | Kit `sanitized(now:)` + `SessionController.restore(_:)` | §2.5, §2.14 |
-| R2-M9 | lead-3 (owner A, server-side peer, refuse ≤ 1, re-verify after arming, reply names pid, recipes) | §2.10 |
-| R2-M10 | lead-4 (top process instead of busiest core, per lead), loopback/tunnel rule, wake reset | §2.5, §2.8 |
-| R2-M11 | Retired: no admission hook in `ConfigStore` | §2.14 |
-| m1 | PreventDiskIdle separate, no timeout; `takeRetainedValue` | §2.4 |
-| m2 | 14.0–14.3 subtitle in the title | §5.1 |
-| m3 | Highlight drawing, AX label, fixed header height, slider phase order | §5.1 |
-| m4 | L10 bans selector observers and unreceived publishers | §2.1, §6.3 |
-| m5 | Only `EventLog.swift` names `.awake`; L9 | §3.6, §6.3 |
-| m6 | `ConfigSlice` as `@StateObject` | §4.5 |
-| m7 | Optimistic `.live` target, 1 s readback ignore | §4.5 |
-| m8 | `upgradeDefaults()` inserts Awake disabled | §2.13 |
-| m9 | Round-trip note, Awake presence-absent mapping, save order, deterministic ids | §4.6 |
-| m10 | Hand-formatted ISO time in `AwakeCommandGrammar` | §2.10 |
-| m11 | `actions: [ToastAction]` | §2.5 |
-| m12 | `CGSSessionScreenIsLocked` in HW-1; DiskArbitration off main | §2.8 |
-| m13 | One `ChangeFanout` per K16 instance; onboarding step dropped (design m11) | §4.7, §6.3 |
-
-**Design**
+**Security (review-r3-security)**
 
 | Finding | Resolution | Sections |
 |---|---|---|
-| M1 | `AwakeMenuRows`; header "Keep Awake"; Start Session › | §5.3, §5.4 |
-| M2 | lead-6 (6 idle / 10 active; Custom…; subtitle for rules) | §5.3 |
-| M3 | Toast at first activation, state-dependent card, "New" sidebar badge | C7, §4.2, §4.3, §4.6 |
-| M4 | No section switch; rule rows → editor sheet with On + Delete Rule…; rule/condition terms; Pause in menu/hotkey | §2.7, §4.3, §4.4 #17 |
-| M5 | Control Center wording, one option order, Show When Active for Displays, Snaptic icon last, Time default Don't Show, Style help | C2, §4.3, §4.6 M2 |
-| M6 | Mockup C, Brightness and Dimming, height 720, Undo/Redo in Quick Changes + ⌘Z, "Extended display" | §4.2, §4.3 |
-| M7 | Mockup D (no Menu bar icon › row, idle copy, Battery level, no source noise) | §4.3 |
-| m1 | Serial comma rule | §4.2, §4.3 |
-| m2 | **Partly rejected**: every string adopted except "Stop when inactive for" → "Stop appearing active after" (the cap no longer measures inactivity, lead-1) | §2.3, §4.3 |
-| m3 | Mute in the Turn Off Display group | §5.2 |
-| m4 | Awake Settings… only | §5.3 |
-| m5 | Lid line only on battery or without an external display | §2.12, §5.3 |
-| m6 | EDID Export → Display Information; LUT import → PIP page; Export Settings panel after its sheet | §4.3 |
-| m7 | Field width from the widest value; discrete snap | §4.1 |
-| m8 | Reset glyph only off-default; nil default keeps the slot | §4.1 |
-| m9 | Empty-state copy | §4.3 |
-| m10 | Glyph tiles radio group; list row actions; end announcement only | §4.1, §5.3 |
-| m11 | Awake onboarding step dropped; icon line in Choose Modules | §4.7 |
-| m12 | Behavior merged into Shortcut; More Shortcuts…; Spaces disabled with reason | §4.3 |
-| m13 | **Partly rejected**: picker counting stated, Main display first merged; "Header row with one display" kept (a 0.2 setting; no setting lost) | §4.2, §4.3 |
-| m14 | Display Tools ▾ in the Display section header; "Display Information…" in About | §4.3 |
-| note | [DS] §1.4 "mini switches" is superseded by §4.1 (row switches at the form's default size) | §4.1 |
+| M1 | lead-9 (Allow / Not Now wording); first-nudge "Awake is moving the pointer slightly." [Stop] for UI starts; hotkey row in §3.2; HW-19 | N10, §2.5, §3.2, HW-19 |
+| M2 | `AwakeActivityGate` truth table (Kit, tested, every `.unchanged` event listed); fields moved out of `AwakeSession`; lint L16 | §2.3, §2.5, §6.3, §6.6 |
+| M3 | lead-10; Kit tests "AC but falling" and "entry missing after latch" | §2.6, §3.2, §6.6, HW-13 |
+| L1 | Peer pid comment "best effort, not identity"; refuse when ProcessWatch can't arm; tests for exit-before-accept, inherited fd, no half-close (L16) | §2.3, §2.5, §2.10, §6.3 |
+| L2 | lead-14 slot rules, extra byte ends the hold, `assert(active >= 0)`, `onClose` once on main | §2.10 |
+| L3 | Bounds from Snaptic's clock (`startedContinuous ≤ now`, deadline ≤ start + cap, cap/deadline consistent) | §2.3, §2.14 |
+| L4 | SessionController never reads the store after restore, writes whole snapshots; test | §2.5, §3.2 |
+| L5 | Cap carried across back-to-back sessions, reset after 15 min with nothing governing; relaunch case stated as a UX bound | §2.3, §2.9, §3.3 |
+| L6 | Privacy wording: history is a local timeline; salted hashes protect exports, not local readers | §3.6 |
+| L7 | Named fields instead of "protected"; `KitBackup.removedPaths` entries | §2.2, §2.14, §3.2, §3.6 |
+| L8 | No Return/default binding on start controls; 1 s ignore after an external `openSettings` | §2.5, §3.2, §4.3 |
 
-**Consistency**
+**Code (review-r3-code)**
 
 | Finding | Resolution | Sections |
 |---|---|---|
-| B1 | `MenuPresence` in KitModules, `StatusItemPlan` stays in ConfigModules (lead); M owns the plan function; S rule covers §2, §4.1, §4.5, §4.8, §5.2 | §2.2, §5.2, §6.2, §6.3 |
-| M1 | lead-3, owner A, step 1 | §2.10, §6.2, §6.4 |
-| M2 | Activity switch rule + `effectiveOptions` clamp | §2.14 |
-| M3 | "or no module is enabled"; everything Don't Show → no item | §5.2, §6.6 |
-| M4 | `DisplayActionID.fShowPanel/.fIdentify` in Kit | §2.2, §4.6 |
-| M5 | M6 restated (no data migration), B step 2, SafetyConfig test | §4.3, §4.6, §6.4 |
-| M6 | Retired (no consent) | — |
-| M7 | Signatures: `AwakeCommandGrammar`, `CPUMath`, `NetworkMath`, `DiskMath`, `AwakeMigrationResult`, `DisplaysConfigSection`, `DisplaysRestoreScope` | §2.8, §2.10, §4.5, §4.6 |
-| m1 | 7 sidebar rows everywhere | §0, §4.2, §6.4 |
-| m2 | Own-menu footer rule | §5.2, §5.3 |
-| m3 | `.skip` | §2.9 |
-| m4 | "Add 1 Hour" everywhere | §1.4, §2.5 |
-| m5 | One confirmation text in §4.3 | §2.12, §4.3 |
-| m6 | Per-kind "Default (…)" label | §2.14, §4.3 |
-| m7 | "Exp" vs "X" | §4.8 |
-| m8 | `perDisplayKeys`, `perDisplayPIP` | §4.5 |
-| m9 | ConfigModulesTests line 16; `upgradeDefaults()` | §2.13 |
-| m10 | ⇢ marks for MenuCustomizationPage, MenuSliderItem; ManagedMenuItem deletion; EventLog overload | §6.2 |
-| m11 | Retired (onboarding step dropped) | §4.7 |
-| m12 | ToastPresenter changes in lead step 2 | §6.4 |
-| m13 | AwakeBehavior home; openSettings adapter; `MenuSwitchHeaderView` | §2.6, §2.11, §5.1 |
-| m14 | Wireframes and counts aligned with defaults | §4.2, §4.3 |
+| sig StableID "m1."+SHA | `StableID.derived` (FNV-1a-128 name-based UUID) | §2.14, §4.6 |
+| sig all-or-nothing arrays | Hand-written element decoders + `LossyArray` | §2.7, §2.14 |
+| sig ControlResponse | Hand-written Codable, `init(…, holding: Bool = false)`, `jsonReply` keeps it | §2.10 |
+| sig AwakeHost.init | `ModuleContext` gains `requestStatusPlan`, `setPresence(ModuleID, MenuPresence)`, `hostSignals` | §2.11, §6.2 |
+| sig settingsAnchor | `struct SettingsAnchor: ViewModifier` | §4.1 |
+| sig M10 names | `menu.items[.dDisconnectItem]`, Kit `DisplayMenuItemID.cDDCPower` | §2.2, §4.6 |
+| sig MenuSliderRow | `required init(coder:)`, no trap | §5.1 |
+| sig legacy AwakeActionIDs | Gone (literal list has no Awake ids) | §4.8.1 |
+| sig ControlListener.Handler | Listener always creates a `ControlHold`; dispatch exposes it only for `holds: true` | §2.10 |
+| B1 | lead-8 (static declarations instead of the proposed CI render walk) | §4.8, §6.4, §6.5 |
+| M1 | lead-13 | §2.1, §2.5 |
+| M2 | lead-12; first-seen whole CPU time, pid+start time identity; **partly rejected**: "compare the sum of same-user processes" (idle background apps add up; churn + aggregate CPU cover short builds; OQ-8) | §2.8, OQ-8 |
+| M3 | lead-14 plus every listed rule (slots once, ordering, early close, EOF branch, client remainder/fflush/exit 5, lifetime end, `SNProcess.startTime`) | §2.10 |
+| M4 | Literal list (no generator), Mirror key cross-check over `ConfigFixtures`, in-process `--selftest-controls` | §4.8, §4.8.1 |
+| M5 | Deterministic ids, replace-by-id writer, two-run test | §4.6, §6.6 |
+| M6 | lead-11 | §2.7, §2.14 |
+| m1 | = sig AwakeHost | §2.11 |
+| m2 | = sig settingsAnchor | §4.1 |
+| m3 | L5 in python | §6.3 |
+| m4 | L14 allows `RunLoop.main.perform(inModes: [.default])` | §6.3 |
+| m5 | = sig M10 | §4.6 |
+| m6 | Per-driver disk deltas by registry entry id; HW-23 reworded | §2.8, HW-23 |
+| m7 | Test files move with sources; step-0 stubs for `Fingerprint.matches`, `ToastPresenter` actions; CI step in step 1 | §6.2, §6.4 |
+| m8 | = sig ControlResponse | §2.10 |
+| m9 | Item kept while its menu is open, removed via `menuDidClose` → `applyStatusItem` | §5.3 |
+| m10 | `state.value` assigned from memory only | §2.5 |
+| m11 | Counters in `EventLog.shared.awakeCounts` | §3.6 |
+| m12 | `ControlID == SettingsSearchEntry.id == anchor` (test) | §4.1, §4.8 |
+| m13 | `MigrationLedger` in `SnapticMigrationsV1` | §2.14, §4.6 |
+| m14 | DisplaysPageEnvironment wording | §6.2 |
+
+**Consistency (review-r3-consistency)**
+
+| Finding | Resolution | Sections |
+|---|---|---|
+| M1 | `menu.items`, `.disconnect`, Kit `cDDCPower` (C uses it) | §2.2, §4.6, §6.2 |
+| M2 | `NewModuleCard` enum, lossy decode | §2.2, §4.6, §6.6 |
+| M3 | CLI nudge refusal dropped; runtime gate only | §2.3, §2.10, §3.1 |
+| M4 | `ActivityPolicy.nudgeAllowed(governing:gate:…)` in Kit | §2.9, §6.6 |
+| M5 | `schedule` needs no service (`source(for:)` optional); `TaskSessionMonitor` dropped | §1.1, §2.1, §2.11, §6.2 |
+| m1 | "persisted manual session" | §2.12 |
+| m2 | "17 duplicates (14 + 3)" | §0 |
+| m3 | `AwakeHistoryEntry.source`, `offersStartAgain` | §1.1, §2.14, §4.3 |
+| m4 | §3.6 lists hold pids | §3.6 |
+| m5 | Time / Style / Customize Displays Menu… / `EventLog.shared.record` / actual hold cap | §2.1, §2.10, §2.14, §4.8 |
+| m6 | `ModulesConfig.firstRun(launchedBefore:)` | §2.13 |
+| m7 | `sharedShownAtRest: true` | §5.2 |
+| m8 | No ✓ on an idle default | §5.3 |
+| m9 | `TaskActivitySample` declared by G | §2.3 |
+| m10 | S rule covers §4.6 and §4.8; `ToastAction` declared; `SettingsIndex*.actions` superseded by control tables | §2.5, §6.3 |
+| m11 | One owner each: test files, MenuPlacement titles, DisplaysOnboardingStep (F), per-owner control tables, stores (ModuleHost) | §2.11, §4.7, §4.8.2, §6.2 |
+| m12 | Rules: Activity Off / Appear active only; every trigger nudge → declare | §2.7, §4.3 |
+| m13 | J `OtherAssertionsReader` (step 2), A `protectedSettings` and F `OverviewController` (step 1), CI step in step 1 | §6.4 |
+| m14 | = code sig legacy AwakeActionIDs | §4.8.1 |
+| m15 | Tests named against Kit APIs; `AwakeRefusal`, `AwakeLogEvent` entries | §6.6 |
+| m16 | "r1 security L6" citations; TEAMS.md contract list; `AwakeDiagnostics` wiring | §2.14, §3.2, §3.6, §6.3 |
+
+## r3 changes (shortened; the full table is in `PLAN-r3.md`)
+
+Resolved review round 2 (`review-r2-{parity,security,code,design,consistency}.md`): parity 1 B + 6 M + 12 m; security 1 H + 5 M + 5 L (M4, M5 partly rejected; L6 moot); code 12 signature rows + 11 M + 13 m; design 7 M + 14 m (m2, m13 partly rejected); consistency 1 B + 7 M + 14 m. Lead decisions lead-1…lead-7: consent record withdrawn (N10: pointer movement only for UI-started sessions, Snaptic-clock cap, fixed 5% floor); hidden kill switches instead of managed preferences (N14); `awake hold` with server-side peer and `--pid` (N1, §2.10); `untilIdle` busy signals (N9); `.common` run-loop mode (N15); one `AwakeMenuRows` (§5.3); every 0.2 menu item mapped (N16, §4.8). Still in force from r3: `MenuPresence` in KitModules and `StatusItemPlan` in ConfigModules (lead), `sanitized(now:)` + `restore(_:)`, snapshot `bootSession`, absolute assertion deadlines with `max(1, ceil(…))`, migration markers, Control Center presence wording, the Awake page and Display mockups (as amended in r4). **Superseded in r4**: the DEBUG `ControlCoverage` walk and the step-3 coverage gate (lead-8), `gen-controlmap.py` (lead-8), "a hold never coexists with a UI session" and `maxHeldConnections = 1` (lead-14, lead-15), the "two unreadable reads end the session" rule (lead-10), "Until Turned Off" as a first-level item (lead-15), r3's CLI nudge refusal (consistency M3).
 
 ## r2 changes (shortened; the full table is in `PLAN-r2.md`)
 
@@ -167,8 +139,8 @@ Resolved review round 1 (`review-r1-{parity,security,code,design}.md`): parity 2
 
 Snaptic 0.3 does three things:
 
-1. **Awake** (new module, `ModuleID.awake`): a free, MIT, public-API-only replacement for Amphetamine and Insomnia. Manual sessions (indefinite, duration, until a time, while an app runs, until downloads and tasks finish, while a command-line hold lasts), user-defined session types (presets), automatic sessions (rules with 12 TCC-free condition kinds, priorities, per-rule options), battery/thermal/Low Power Mode guards with a fixed 5% battery floor and a thermal end that nothing can weaken, activity simulation (pointer movement only for sessions the user started in Snaptic's UI), Drive Alive, its own menu bar indicator (shown while active by default) with optional countdown, hotkeys and `snaptic awake …` CLI (including `awake hold` for scripts). One named IOKit power assertion, swapped by type, with absolute-deadline `TimeoutActionRelease` backstops. Displays' `sleepPrevention` moves here.
-2. **Settings redesign**: one SwiftUI component library (`Sources/Snaptic/SettingsUI/`), a new information architecture (sidebar 31 rows → 7; default visible settings controls ~245 → ~60, §4.3 counts), every option explained, every 0.2 setting, button, action and menu item mapped to a 0.3 home and checked by a `ControlID` registry test (§4.8), the 14 duplicates removed, expert options behind **Advanced…**, settings search, and the live-update root causes fixed in the architecture (observable per-display runtime, controller revisions, drag-local slider state, throttled commits, per-section config observation and fan-out).
+1. **Awake** (new module, `ModuleID.awake`): a free, MIT, public-API-only replacement for Amphetamine and Insomnia. Manual sessions (indefinite, duration, until a time, while an app runs, until downloads and tasks finish), command-line holds that stack beside them (`awake hold`, up to 8), user-defined session types (presets), automatic sessions (rules with 12 TCC-free condition kinds, priorities, per-rule options), battery/thermal/Low Power Mode guards with a fixed 5% battery floor (applied whenever the battery is discharging, whatever the adapter reports) and a thermal end that nothing can weaken, activity simulation (pointer movement only for sessions the user started in Snaptic's UI, and after a confirmation when the start came from a hotkey), Drive Alive, its own menu bar indicator (shown while active by default) with optional countdown, hotkeys and `snaptic awake …` CLI (including `awake hold` for scripts). One named IOKit power assertion, swapped by type, with absolute-deadline `TimeoutActionRelease` backstops. Displays' `sleepPrevention` moves here.
+2. **Settings redesign**: one SwiftUI component library (`Sources/Snaptic/SettingsUI/`), a new information architecture (sidebar 31 rows → 7; default visible settings controls ~245 → ~60, §4.3 counts), every option explained, every 0.2 setting, button, action and menu item mapped to a 0.3 home: each page, sheet and menu builder declares its controls in a static table, and a Kit test checks the tables against a frozen literal 0.2 list (§4.8), the 17 duplicates removed (14 from [UA] plus 3 for Awake), expert options behind **Advanced…**, settings search, and the live-update root causes fixed in the architecture (observable per-display runtime, controller revisions, drag-local slider state, throttled commits, per-section config observation and fan-out).
 3. **Menu bar redesign**: one menu item factory (`MenuKit`), one header style, AppKit-only custom rows (sliders, switch headers) with live values that update while the menu is open (`.common` run-loop mode), no sliders in submenus, one level of submenus, "Settings…" then "Quit" last, one presence pop-up per module with Control Center wording; every 0.2 opt-in menu item keeps a 0.3 location and a show/hide control; an Awake status item (shown while active by default) and one Awake row set (`AwakeMenuRows`) used by both the Awake menu and the compact Awake section of the Snaptic menu.
 
 Priorities (0.2 order kept, Awake rows added): (1) never leave the user without a usable display, keyboard or way back; (2) nothing Snaptic does lets another process use Snaptic's permissions or see data obtained with them; (3) never damage a monitor **or drain a battery to shutdown** (Awake's critical-heat end and its fixed 5% battery floor have no setting and no kill switch); (4) parity; (5) polish.
@@ -177,22 +149,24 @@ Priorities (0.2 order kept, Awake rows added): (1) never leave the user without 
 
 | # | Decision | Why |
 |---|---|---|
-| N1 | CLI **may start** Awake sessions: closed grammar, guards apply, never pointer movement (N10), never Drive Alive (strict, OQ-1 settled; the session's `source` survives restore), never an unbounded session (`awake start` with no argument = 1 h; `awake hold` lasts while its own connection and process live, or while a named pid lives, and at most 12 h by default, 24 h with `--max`), never replaces a session the user started in the UI | §3.1: a same-user process can already hold the same assertion with `caffeinate`; nothing that uses Snaptic's TCC grants is reachable |
+| N1 | CLI **may start** Awake sessions: closed grammar, guards apply, never pointer movement (N10), never Drive Alive (strict, OQ-1 settled; the session's `source` survives restore), never an unbounded session (`awake start` with no argument = 1 h; `awake hold` lasts while its own connection and process live, or while a named pid lives, and at most 12 h by default, 24 h with `--max`); `start` and `preset` never replace a session the user started in the UI, and `hold` never replaces anything: holds stack beside any session, at most 8 (N17) | §3.1: a same-user process can already hold the same assertion with `caffeinate`; nothing that uses Snaptic's TCC grants is reachable |
 | N2 | Duration sessions run on the **continuous clock** (`CLOCK_MONOTONIC_RAW`, counts sleep, immune to clock changes); "Until" sessions are absolute wall instants; a reboot ends every session; trigger hysteresis is in-memory continuous-clock state and is never persisted | Predictable; matches Amphetamine; no recovery machinery; no defaults write per engine step |
-| N3 | One **governing** source at a time: the manual session if any, else the highest-priority active trigger | Amphetamine's priority model; one assertion; one indicator reason |
+| N3 | One **governing** source at a time: the manual session if any, else the highest-priority active trigger, else the command-line holds (one source, N17) | Amphetamine's priority model; one assertion; one indicator reason |
 | N4 | Every Settings slider gets a typed value field and a reset glyph; the field **is** the live value (no separate value label) | Explicit requirement; [DS] layout in §4.1 |
 | N5 | All modules always appear in the sidebar; each module page has a header switch (Wi-Fi pattern) whose accessibility label and tooltip are "Use <Module>"; session-level actions are **buttons**, never a second switch | [DS] §1.2; design B1, parity M7 |
 | N6 | Displays' 16 sidebar pages become **one** sidebar row with sub-pages in a `NavigationStack` | [DS] §1.1, [UA] §2.1 |
 | N7 | Everything about the menu bar (presence per module, icons, countdown, Displays menu customization) lives **only** on the Menu Bar page | Removes duplicates 4, 13 and the Awake split |
 | N8 | Displays feature switches live where the feature is used (sub-page header switch, section switch or Advanced › Use Snaptic for); the 47-switch Features page is deleted | [UA] §2.5 #4 |
-| N9 | Two task-bound session kinds: **Until Downloads and Tasks Finish** (`untilIdle`: ends after 5 min with no busy signal; busy = top process ≥ 50% of one core, or total CPU ≥ 15%, or disk I/O ≥ 1 MB/s, or network ≥ 50 KB/s) and **command-line hold** (`hold`, CLI `awake hold`) | Parity B1, M2, M3; code R2-M10 |
-| N10 | **No consent record** (r2's Keychain record is withdrawn: forgeable under the legacy file keychain that ad-hoc builds use, and lost on every ad-hoc update). Instead: (a) **pointer movement** acts only for a session started by a direct user action in Snaptic's own UI in this process (menu click, Settings button, Snaptic hotkey), never for CLI, trigger, restored or resumed sessions, never while the screen is locked or the session is off console, and at most `activity.stopAfterHours` (default 1 h, max 8 h) measured on Snaptic's own continuous clock, never on system idle time (Snaptic's own declarations reset idle); (b) **Drive Alive** volumes are chosen in the UI and stored by volume UUID; (c) a fixed 5% battery floor and the critical-heat end apply whatever the config says. Config changes made outside Snaptic take effect like any setting; the residual same-user risk is stated in §3.2 | Lead r3; security H1/M1/M2, code R2-M5 |
+| N9 | Two task-bound session kinds: **Until Downloads and Tasks Finish** (`untilIdle`: ends after 5 min with no busy signal; busy = busiest same-user process ≥ 50% of one core, or ≥ 3 new same-user processes in a 5 s sample (short-lived build steps), or total CPU ≥ 15%, or disk I/O ≥ 1 MB/s, or network ≥ 50 KB/s; process CPU from `proc_pid_rusage` scaled by `mach_timebase_info`) and **command-line hold** (`hold`, CLI `awake hold`, N17) | Parity B1, M2, M3; code R2-M10, r3 code M2 |
+| N10 | **No consent record** (r2's Keychain record is withdrawn: forgeable under the legacy file keychain that ad-hoc builds use, and lost on every ad-hoc update). Instead: (a) **pointer movement** acts only for a session started by a direct user action in Snaptic's own UI in this process (a menu click or a Settings button; a Snaptic hotkey only after the user clicks **Allow** on the confirmation toast "Move the pointer to keep apps active?", as 0.2 R5.7 does for Gather Windows), never for CLI, trigger, restored or resumed sessions; the flag that records this (`uiStartedInProcess`) is set only by those handlers and cleared on every restore, resume, CLI or trigger takeover, session replacement and module stop (§2.3 `AwakeActivityGate`), never while the screen is locked or the session is off console, and at most `activity.stopAfterHours` (default 1 h, max 8 h) measured on Snaptic's own continuous clock, never on system idle time (Snaptic's own declarations reset idle); (b) **Drive Alive** volumes are chosen in the UI and stored by volume UUID; (c) a fixed 5% battery floor and the critical-heat end apply whatever the config says; the floor applies whenever the battery is **discharging** (battery present and either not on AC or the percentage falling between the last two readings), and a laptop whose battery can't be read is treated as at 0% for activity and Drive Alive (§2.6). Config changes made outside Snaptic take effect like any setting; the residual same-user risk is stated in §3.2 | Lead r3/r4; security H1/M1/M2, r3 security M1–M3 |
 | N11 | A running Awake session is never invisible: whenever Awake governs and the Snaptic item exists, the Snaptic icon shows its active variant (whether or not an Awake icon exists); if no Snaptic icon exists, the Awake icon appears for the session; a session never removes an item that was shown at rest | Parity M2, M5 |
 | N12 | SnapticKit formats user-visible numbers, durations and clock times **by hand** from explicit inputs (`AwakeTextContext`), never through Foundation formatters | Code M11: corelibs 5.10 and macOS ICU disagree; Kit tests run on both |
 | N13 | Lint rules land in step 0 with a **ratchet** (`scripts/lint-legacy.tsv`) of known violations; a deleted file or symbol is removed only at the step-3 exit after a caller grep | Code B1, M10 |
 | N14 | Snaptic does **not** read managed preferences (0.2 rule). Organizations use documented hidden defaults read from Snaptic's persistent domain: `Modules.disable.awake` (whole module), `Awake.disable.<feature>` (per feature; `sessions`, `batteryGuard`, `thermalGuard` ignored, use the module key instead). An admin can deploy them with a configuration profile that writes Snaptic's user domain | Lead r3; security M5 |
 | N15 | Everything that must update while a menu is open (countdown, live rows, slider binds, `ControllerRevision` coalescing) runs in `.common` run-loop modes: timers via `RunLoop.main.add(_:forMode: .common)`, coalescing via `DispatchQueue.main.async`; `Timer.scheduledTimer` and `RunLoop.main` schedulers are banned in menu and Awake code (lint L14) | Lead r3; code R2-M7 |
-| N16 | Every 0.2 setting, button/action and menu item has a declared 0.3 `ControlID` (or a removal reason) in Kit tables that a test checks against frozen 0.2 lists; every 0.2 opt-in menu item keeps a menu location and a show/hide control in Customize Displays Menu | Lead r3; parity B1, M1 |
+| N16 | Every settings page, Advanced/other sheet and menu builder declares its controls in a static, compile-time table (Kit `ControlTable`: ids, availability conditions as data, the 0.2 ids it replaces), registered in one lead-owned `ControlRegistry` list. A Kit test checks the union against the frozen **literal** 0.2 list (§4.8.1) and the "removed with reason" table; lint checks that every `ControlID("…")` literal in a view or builder is in that type's table and vice versa. No runtime render walk, no debug gate; CI enforces it. Every 0.2 opt-in menu item keeps a menu location and a show/hide control in Customize Displays Menu | Lead r3/r4; parity B1, M1; r3 code B1, M4 |
+| N17 | **Holds stack**: each `awake hold` adds a holder (≤ 8) beside whatever else runs; the Mac stays awake while any holder exists; holds never replace, and are never replaced by, a manual session; the menu and status row say "Held by Terminal (2)" (local UI only) | Lead r4; r3 product M4 |
+| N18 | **Lossy collections**: rules, presets, history entries and Drive Alive volumes decode element by element (one bad element is dropped, the rest kept) through Kit `LossyArray`/`LossyMap`; every persisted id is a valid `StableID`; ids that must be reproducible (M1 rules, default presets) come from `StableID.derived(namespace:name:)`, a name-based UUID built from a Kit 128-bit FNV-1a hash | Lead r4; r3 code M5, M6, sig rows |
 
 ### 0.2 Decisions to confirm (lead)
 
@@ -206,11 +180,11 @@ Priorities (0.2 order kept, Awake rows added): (1) never leave the user without 
 | C6 | Bluetooth criterion limited to Bluetooth **audio** devices (CoreAudio transport type) and Bluetooth **input** devices (IORegistry `IOHIDDevice` `Transport` property, never opened); Beta | Adopt |
 | C7 | 0.1/0.2 → 0.3 upgraders get Awake **off** (ModuleHost and `upgradeDefaults()` insert it disabled before M1 runs) unless M1 produced an enabled rule from **effective** 0.2 sleep prevention. Upgrade experience (design M3): a state-dependent General card (Awake off: "New: Awake" [Turn On Awake] [Not Now]; migrated: "Your display sleep setting moved to Awake." [Show Awake] [OK]), a one-time toast at a migrated user's first activation, and a "New" sidebar badge on Awake until the page is first visited | Adopt |
 | C8 | Menu item "Switch Windows ⌥⇥" opens the switcher in sticky mode (stays open until Return/Esc/click); new small Switcher capability (A) | Adopt; fallback: omit the item |
-| C9 | Drive Alive runs only while an Awake session whose `source` is not `.commandLine` is active (restored sessions keep their source), unless the user turns on "Also when no session is running"; the battery floors and thermal guard gate it in **every** mode | Adopt |
+| C9 | Drive Alive runs only while an Awake session whose `source` is not `.commandLine` is active (restored sessions keep their source; holds count as `.commandLine`), unless the user turns on "Also when no session is running"; the battery floors and thermal guard gate it in **every** mode | Adopt |
 | C10 | Default session from the UI (status-row button, menu, hotkey) = the default preset, **Until Turned Off** out of the box; from the CLI, `awake start` without an argument = 1 h | Adopt (Amphetamine parity for the UI; no unbounded CLI sessions) |
 | C11 | Default Awake presence = **Show When Active** (`ownIconWhenActive`; fresh installs and upgraders whose M1 rule is on): one Snaptic icon at rest, the Awake icon beside it during a session | Adopt (design M3, parity M2) |
 
-**Lead (r1):** C1–C10 adopted as proposed. **Lead (r2):** C2, C5, C7, C9, C10 re-worded and C11 added. **Lead (r3):** N10, N14–N16 and the `awake hold`, `untilIdle` and Awake-menu shapes are lead decisions; C2, C5, C7, C9, C11 re-worded after review round 2; adopted unless the lead objects. OQ-1 is settled (strict); OQ-2…OQ-8 take their stated defaults until hardware testing says otherwise.
+**Lead (r1):** C1–C10 adopted as proposed. **Lead (r2):** C2, C5, C7, C9, C10 re-worded and C11 added. **Lead (r3):** N10, N14–N16 and the `awake hold`, `untilIdle` and Awake-menu shapes are lead decisions; C2, C5, C7, C9, C11 re-worded after review round 2; adopted unless the lead objects. **Lead (r4):** N10 and N16 re-worded, N17 and N18 new (lead-8…lead-15 in the r4 table). OQ-1 is settled (strict); OQ-2…OQ-8 take their stated defaults until hardware testing says otherwise.
 
 Open questions (need hardware or product input) are marked **[OQ-n]** and collected in §6.8.
 
@@ -226,17 +200,17 @@ Legend: **Def** = A always on with the module, S standard (on), O opt-in, X expe
 
 | Feature id | Covers | Def | Requires | Parity |
 |---|---|---|---|---|
-| `sessions` | Manual sessions: indefinite; duration (presets + custom h/m); until a clock time; while an app runs (picked from running apps, by bundle id, ends when its last instance quits; optional "At most" cap); **until downloads and tasks finish** (`untilIdle`: ends after 5 min with no busy signal, §2.5; 1 min start grace; optional "At most" cap); **command-line hold** (`hold`, CLI only, §2.10); extend (+15 min / +1 h / Add Time… for timed kinds and capped task kinds; no-op items are not shown); end; replace; display policy per session (keep on / can turn off / keep on until idle for N min), changeable mid-session ("Keep Display On" in the menu and the status row's Options ▾); end on sleep (opt), end on user switch (immediately / after 1 h / never), end after the screen has been locked for N h (opt); resume after Snaptic relaunch within the same boot; start a session at launch (opt); "why is my Mac awake" lid notice (on battery or without an external display); 5-minute reminder; **8-hour reminder** for indefinite sessions; last non-user end shown for 12 h | A | — | Amph 1.2 (incl. "while downloading" via `untilIdle`), 1.3 display sleep incl. mid-session toggle, 1.4 manual-sleep / FUS ends, 1.8 reason text; Insomnia 2.2 timed sessions, chips, 30-day cap; `caffeinate -w` (CLI `hold --pid`) |
+| `sessions` | Manual sessions: indefinite; duration (presets + custom h/m); until a clock time; while an app runs (picked from running apps, by bundle id, ends when its last instance quits; optional "At most" cap); **until downloads and tasks finish** (`untilIdle`: ends after 5 min with no busy signal, §2.5; 1 min start grace; optional "At most" cap); **command-line holds** (CLI only, stack beside any session, ≤ 8, N17, §2.10); extend (+15 min / +1 h / Add Time… for timed kinds and capped task kinds; no-op items are not shown); end; replace; display policy per session (keep on / can turn off / keep on until idle for N min), changeable mid-session ("Keep Display On" in the menu and the status row's Options ▾); end on sleep (opt), end on user switch (immediately / after 1 h / never), end after the screen has been locked for N h (opt); resume after Snaptic relaunch within the same boot; start a session at launch (opt); "why is my Mac awake" lid notice (on battery or without an external display); 5-minute reminder; **8-hour reminder** for indefinite sessions; last non-user end shown for 12 h | A | — | Amph 1.2 (incl. "while downloading" via `untilIdle`), 1.3 display sleep incl. mid-session toggle, 1.4 manual-sleep / FUS ends, 1.8 reason text; Insomnia 2.2 timed sessions, chips, 30-day cap; `caffeinate -w` (CLI `hold --pid`) |
 | `presets` | Session types: up to 12 named presets (kind + optional options, nil = "Use default"; task kinds with an optional "At most" cap), shown in the Awake menu's Start Session › in order; default preset; last custom value remembered | A | sessions | Amph "default duration", "Other Time" memory (1.2); Insomnia preset chips |
-| `batteryGuard` | End below N% on battery (5–50%, default 20%; the user floor can be turned off); **independently, a fixed 5% floor** (`AwakeGuards.hardFloorPercent`, no setting, no kill switch) always ends sessions and Drive Alive on battery; end on adapter disconnect (opt); end on Low Power Mode (opt); two unreadable battery reads on battery → end; rule restarts suppressed until cleared (+5% hysteresis or AC) | A | — | Amph 1.4; Insomnia 2.5 floor and unreadable rule |
-| `thermalGuard` | `.critical` → end all sessions and stop Drive Alive, pause automatic sessions 10 min; `.serious` → one-time toast (no setting) | A | — | Insomnia 2.5 |
+| `batteryGuard` | End below N% on battery (5–50%, default 20%; the user floor can be turned off); **independently, a fixed 5% floor** (`AwakeGuards.hardFloorPercent`, no setting, no kill switch) always ends sessions and Drive Alive while the battery is **discharging** (present, and not on AC or the percentage falling; §2.6); end on adapter disconnect (opt); end on Low Power Mode (opt); a laptop whose battery can't be read twice in a row stops activity and Drive Alive (treated as 0%) and keeps the session's assertion with a toast; rule restarts suppressed until cleared (+5% hysteresis, or AC and not falling) | A | — | Amph 1.4; Insomnia 2.5 floor and unreadable rule |
+| `thermalGuard` | `.critical` → end all sessions and holds and stop Drive Alive, pause rules 10 min; `.serious` → one-time toast (no setting) | A | — | Insomnia 2.5 |
 | `indicator` | Internal capability (kill switch only, not a user feature): Awake's own status item; **Time: Don't Show / Time Remaining / End Time** (default Don't Show); glyph family cup / eye / lightbulb (outline idle, `.fill` active); seconds only in the last minute; VoiceOver label and tooltip refreshed at every countdown change. Whether the item exists is `MenuPresence` alone (§5.3) | A | — | Amph 1.8 (no custom images); Insomnia 2.6 countdown |
-| `triggers` | Automatic sessions ("rules", each with **conditions**): ≤ 32 rules, each ≤ 8 conditions, All/Any, "is / is not" per condition, order = priority, per-rule session options, start delay, end delay (hysteresis), "After I turn it off: resume when the conditions are next met / after N min", "Pause automatic sessions for 1 h / until tomorrow" (menu and hotkey). Turned on implicitly by the first **Add Rule…** (no section switch, design M4) | O | sessions | Amph 1.5 (all criteria except SSID and the Cisco VPN brand; DNS servers covered by subnet + router) |
-| `activity` | "Appear active": `IOPMAssertionDeclareUserActivity` every 60 s while a session runs, the screen is unlocked and on console (read from the session dictionary, §2.9), the user hasn't typed or clicked for ≥ 60 s, and the displays are awake; it stops `stopAfterHours` (default 1 h, 1–8 h) after it first acted in the session, **measured on Snaptic's continuous clock** (N10), until the user starts or restarts a session in the UI | O | sessions | Amph 5.0 cursor movement (closest TCC-free equivalent) |
-| `pointerNudge` | "Move the pointer slightly": a 1-pt mouse-moved event and back, posted from a private event source with `CGEvent`, only with Accessibility, same conditions as `activity`, **only for sessions started by a direct user action in Snaptic's UI in this process** (N10), never within 2 pt of a display edge, never keyboard or clicks; while it acts, the menu and status row say "Moving the pointer" | X | activity | Amph 5.0 "Move the mouse cursor periodically" |
+| `triggers` | Automatic sessions ("rules", each with **conditions**): ≤ 32 rules, each ≤ 8 conditions, All/Any, "is / is not" per condition, order = priority, per-rule session options, start delay, end delay (hysteresis), "After I turn it off: resume when the conditions are next met / after N min", **Pause Rules** for 1 h / until tomorrow (Rules › in the Awake menu and the compact section whenever a rule exists, the status row's Pause Rules ▾, hotkey, CLI `awake pause`). Turned on implicitly by the first **Add Rule…** (no section switch, design M4) | O | sessions | Amph 1.5 (all criteria except SSID and the Cisco VPN brand; DNS servers covered by subnet + router) |
+| `activity` | "Appear active": `IOPMAssertionDeclareUserActivity` every 60 s while a session runs, the screen is unlocked and on console (read from the session dictionary, §2.9), the user hasn't typed or clicked for ≥ 60 s, and the displays are awake; it stops `stopAfterHours` (default 1 h, 1–8 h) after it first acted, **measured on Snaptic's continuous clock** (N10) and carried across back-to-back sessions, until the user starts or restarts a session in the UI | O | sessions | Amph 5.0 cursor movement (closest TCC-free equivalent) |
+| `pointerNudge` | "Move the pointer slightly": a 1-pt mouse-moved event and back, posted from a private event source with `CGEvent`, only with Accessibility, same conditions as `activity`, **only for sessions started by a direct user action in Snaptic's UI in this process** (N10; a hotkey start only after the user allows it in a confirmation toast), never within 2 pt of a display edge, never keyboard or clicks; while it acts, the menu and status row say "Moving the pointer" | X | activity | Amph 5.0 "Move the mouse cursor periodically" |
 | `driveAlive` | Per external volume opt-in, chosen in the UI and stored by volume UUID; tiny periodic write + `F_FULLFSYNC` to `/<volume>/.snaptic-keepalive` via a verified directory fd (§2.9); every 30–600 s (default 120); `PreventDiskIdle` while active; only during sessions whose source isn't the CLI unless "Also when no session is running"; battery floors and thermal guard apply in every mode | O | — | Amph 1.6 |
-| `history` | Local history (≤ 500 entries, 90 days; entries < 60 s that ended `.replaced` are merged), today/7-day totals, "Start Again" (app sessions keep their bundle id locally; not offered for command-line and automatic entries), clear; never exported, never in diagnostics | S | — | Amph 1.10 statistics |
-| `shortcuts` | Global hotkeys: Keep Awake on/off (default preset), Keep Display On (toggle), Start “<preset 1–4 name>”, Pause automatic sessions; all unbound by default | S | — | Amph 1.10 |
+| `history` | Local history (≤ 500 entries, 90 days; entries < 60 s that ended `.replaced` are merged), today/7-day totals, "Start Again" (app sessions keep their bundle id locally; entries record their `source`; not offered for command-line, process and automatic entries), clear; never exported, never in diagnostics | S | — | Amph 1.10 statistics |
+| `shortcuts` | Global hotkeys: Keep Awake on/off (default preset), Keep Display On (toggle), Start “<preset 1–4 name>”, Pause Rules; all unbound by default | S | — | Amph 1.10 |
 | `commandLine` | `snaptic awake status|start|hold|stop|extend|preset|pause` (§2.10); needs the host CLI switch (General) | S | — | Amph AppleScript 4 commands (equivalent surface); `caffeinate -w` |
 
 Always present (not flags): **Other apps keeping your Mac awake** — an inline live section in Awake › Advanced (`IOPMCopyAssertionsByProcess`, plus a warning when the system-wide `SleepDisabled` setting is on, read with `IOPMCopySystemPowerSettings`, the trace left by Amphetamine Power Protect, Insomnia or `pmset disablesleep`; never in logs, diagnostics or CLI); "Closing the lid will put your Mac to sleep" line in the Awake menu when a session is active on a laptop not in desktop mode (`AppleClamshellCausesSleep`).
@@ -248,7 +222,7 @@ Always present (not flags): **Other apps keeping your Mac awake** — an inline 
 | `app` (running / frontmost) | AppMonitor | `NSWorkspace` launch/terminate/activate notifications | none | Amph 4.0 |
 | `display` (any external, ignore built-in; a specific display; mirroring on) | DisplayPresence | `CGDisplayRegisterReconfigurationCallback`, `CGGetOnlineDisplayList`, `CGDisplayIsBuiltin`, `CGDisplayIsInMirrorSet`; specific display by salted `FingerprintRecord` matched with B's `Fingerprint.matches` | none | Amph 4.2, 4.1.5; replaces Displays `sleepPrevention` |
 | `power` (on adapter / on battery / charging / battery ≥ N%) | PowerMonitor | `IOPSCopyPowerSourcesInfo`, `notify_register_dispatch(kIOPSNotifyPowerSource / PercentChange)` (`import notify`) | none | Amph 5.0 |
-| `schedule` (weekdays × start–end, overnight allowed) | Ticker (G) | wall clock; boundary dates from `Calendar.autoupdatingCurrent.nextDate`, Ticker capped at 15 min; wake, clock and time-zone notifications | none | Amph 1.5/3.0 |
+| `schedule` (weekdays × start–end, overnight allowed) | none: TriggerController's Ticker (G) (consistency M5: no service id, `services(of: .schedule) == []`) | wall clock; boundary dates from `Calendar.autoupdatingCurrent.nextDate`, Ticker capped at 15 min; wake, clock and time-zone notifications | none | Amph 1.5/3.0 |
 | `cpu` (system CPU ≥ N%, 10 s average) | CPUSampler | `host_statistics(HOST_CPU_LOAD_INFO)` tick deltas, cached `mach_host_self()`, 5 s period while used | none | Amph 4.1.4 |
 | `audio` (output playing / microphone in use) | AudioMonitor | `kAudioDevicePropertyDeviceIsRunningSomewhere` on default output / input, property listeners on a private queue | none (no mic access, property only) [HW-9] | Amph 4.0 audio output |
 | `idle` (no input for ≥ N min) | IdleSampler | `CGEventSourceSecondsSinceLastEventType(.hidSystemState, t)` per input type (key down, flags changed, mouse down ×3, scroll wheel, mouse moved), minimum taken, mouse-moved resets within Snaptic's nudge echo window ignored; never `anyInput` (security M2; §2.9), 10 s period while used | none | Amph 4.1.5 |
@@ -348,16 +322,16 @@ AwakeModule (lead)            SnapticModule + StatusItemProvider; owns AwakeConf
        usb         USBWatcher             IOUSBHostDevice matching
        volumes     VolumeMonitor          mounted volumes (uuid, name, Drive Alive eligibility via DiskArbitration)
        audio       AudioMonitor           output/input running-somewhere (HAL calls on a private queue)
-       cpu         CPUSampler             total CPU 10 s average; top same-user process (% of one core) while untilIdle runs
+       cpu         CPUSampler             total CPU 10 s average; while untilIdle runs: every pid's rusage (timebase-scaled), busiest same-user process, new-process churn
        disk        DiskIOSampler          IOBlockStorageDriver Statistics byte deltas (untilIdle only)
        idle        IdleSampler            per-type HID idle, nudge echoes excluded (IdleMath), last real input
        network     NetworkMonitor         IPv4/IPv6 addresses, router hash, VPN, 64-bit throughput (loopback excluded)
        bluetooth   BluetoothPresence      BT audio + BT HID presence (Beta)
        activity    ActivitySimulator      DeclareUserActivity / pointer nudge
        driveAlive  DriveAliveService      keep-alive writes on a private serial queue
-       process     ProcessWatch           kqueue EVFILT_PROC/NOTE_EXIT + proc_pidinfo start time for `hold`
+       process     ProcessWatch           kqueue EVFILT_PROC/NOTE_EXIT + proc_pidinfo start time for holds (peer or --pid)
      Controllers (one per AwakeControllerID; G unless noted)
-       sessions    SessionController      manual session lifecycle, presets, task kinds, arbitrate(), assertion plan
+       sessions    SessionController      manual session lifecycle, presets, task kinds, the hold stack (N17), arbitrate(), assertion plan
        guards      GuardsController       battery/thermal/LPM/sleep/FUS/lock policies
        triggers    TriggerController      criterion facts → TriggerEngine.step → cached top trigger
        activity    ActivityController (J) drives ActivitySimulator from runtime state
@@ -367,9 +341,17 @@ AwakeModule (lead)            SnapticModule + StatusItemProvider; owns AwakeConf
        automation  AwakeAutomation        hotkeys + CLI verbs
 ```
 
-Everything is `@MainActor` except `DriveAliveService`'s I/O queue, `AudioMonitor`'s HAL queue and the C callbacks (IOKit, CoreAudio, SCDynamicStore, CG reconfiguration), which use `CallbackTarget` and hop with `MainActor.assumeIsolated` from main-queue delivery (`IONotificationPortSetDispatchQueue(port, .main)`, `SCDynamicStoreSetDispatchQueue(store, .main)`, `notify_register_dispatch(…, .main)`); CoreAudio listeners run on AudioMonitor's serial queue and publish with `DispatchQueue.main.async`. **Every `NotificationCenter`/`DistributedNotificationCenter`/`NSWorkspace` observer in Awake passes `queue: .main`** (lint L10: `queue: nil`, selector-based `addObserver(self, selector:` and `publisher(for:)` without `.receive(on: DispatchQueue.main)` banned under `Awake/`; `thermalStateDidChangeNotification` and `NSProcessInfoPowerStateDidChange` post on arbitrary queues). Timers are created unscheduled and added with `RunLoop.main.add(t, forMode: .common)` with ≥ 10% tolerance, so they fire while a menu is open (N15); `Timer` doesn't count sleep, so wake re-checks stay. No `static let shared` and no `passUnretained` outside `CallbackTarget` in Awake (lint rules 7 and 10 extended to `Awake/`). EventLog category `.awake` (lead adds), written only through `EventLog.record(_ event: AwakeLogEvent)` (§3.6).
+Everything is `@MainActor` except `DriveAliveService`'s I/O queue, `AudioMonitor`'s HAL queue and the C callbacks (IOKit, CoreAudio, SCDynamicStore, CG reconfiguration), which use `CallbackTarget` and hop with `MainActor.assumeIsolated` from main-queue delivery (`IONotificationPortSetDispatchQueue(port, .main)`, `SCDynamicStoreSetDispatchQueue(store, .main)`, `notify_register_dispatch(…, .main)`); CoreAudio listeners run on AudioMonitor's serial queue and publish with `DispatchQueue.main.async`. **Every `NotificationCenter`/`DistributedNotificationCenter`/`NSWorkspace` observer in Awake passes `queue: .main`** (lint L10: `queue: nil`, selector-based `addObserver(self, selector:` and `publisher(for:)` without `.receive(on: DispatchQueue.main)` banned under `Awake/`; `thermalStateDidChangeNotification` and `NSProcessInfoPowerStateDidChange` post on arbitrary queues). Timers are created unscheduled and added with `RunLoop.main.add(t, forMode: .common)` with ≥ 10% tolerance, so they fire while a menu is open (N15); `Timer` doesn't count sleep, so wake re-checks stay. No `static let shared` and no `passUnretained` outside `CallbackTarget` in Awake (lint rules 7 and 10 extended to `Awake/`). EventLog category `.awake` (lead adds), written only through `EventLog.shared.record(_ event: AwakeLogEvent)` (§3.6; r3 consistency m5).
 
-**Apply order** (same as Displays §3.6): resolve effective features → required services = `AwakeFeatureGraph.requiredServices(effective:criteria:dynamic:)` (features ∪ criterion kinds used by enabled triggers ∪ `dynamic` needs: `apps` while a whileApp session runs or a picker is open, `idle` while `keepOnWhileActive` governs, `taskQuiet` (cpu + disk + network) while an `untilIdle` session runs, `process` while a `hold` session runs) → stop emptied controllers → deactivate unneeded services (reverse) → activate needed services (in order) → start new controllers → notify the rest. A criterion source that isn't needed costs nothing: no notification ports, timers or listeners.
+**Apply order** (same as Displays §3.6): resolve effective features → required services = `AwakeFeatureGraph.requiredServices(effective:criteria:dynamic:)` (features ∪ criterion kinds used by enabled triggers ∪ `dynamic` needs: `apps` while a whileApp session runs or a picker is open, `idle` while `keepOnWhileActive` governs, `taskQuiet` (cpu + disk + network) while an `untilIdle` session runs, `process` while any hold exists) → stop emptied controllers → deactivate unneeded services (reverse) → activate needed services (in order) → start new controllers → notify the rest. A criterion source that isn't needed costs nothing: no notification ports, timers or listeners. `schedule` has no source: TriggerController's Ticker reads the wall clock and SystemEventsMonitor's clock, time-zone and day notifications (`AwakeContext.source(for: .schedule)` is nil; consistency M5).
+
+**Module start order** (normative; r3 code M1, lead r4): services start **before** sessions are restored.
+1. `AwakeModule.start` reads `SnapticAwakeStateV1` once and runs `AwakeRuntimeSnapshot.sanitized(now:)`.
+2. It seeds `AwakeDynamicNeeds` from the sanitized snapshot (`AwakeRuntimeSnapshot.dynamicNeeds`, Kit, G, tested): `taskQuiet` for an `untilIdle` manual session, `apps` for `whileApp`, `idle` for `keepOnWhileActive`, `process` when any persisted hold exists.
+3. The first apply resolves features and activates every needed service in `activationOrder`, the seeded needs included.
+4. Controllers start; `SessionController.start` calls `restore(_:)` with the sanitized snapshot only now, so ProcessWatch re-verifies `--pid` holds and TaskQuiet gets real samples; then the first `arbitrate()`.
+5. `restore` recomputes the needs; if they differ from the seed, the module re-applies once in the same turn.
+6. Deactivating `process` (a feature or kill-switch change) ends every remaining hold `.processExited`; `taskQuiet` and `apps` can't be deactivated while their session runs, because the needs come from the session.
 
 ### 2.2 Kit ids and feature graph (lead, `SnapticKit/AwakeFeatureGraph.swift`)
 
@@ -392,7 +374,7 @@ package struct AwakeDynamicNeeds: OptionSet, Hashable, Sendable {
     package static let apps = AwakeDynamicNeeds(rawValue: 1 << 0)       // whileApp session, app picker open
     package static let idle = AwakeDynamicNeeds(rawValue: 1 << 1)       // keepOnWhileActive governs
     package static let taskQuiet = AwakeDynamicNeeds(rawValue: 1 << 2)  // untilIdle session: cpu + disk + network
-    package static let process = AwakeDynamicNeeds(rawValue: 1 << 3)    // hold session: ProcessWatch
+    package static let process = AwakeDynamicNeeds(rawValue: 1 << 3)    // any hold exists: ProcessWatch
 }
 
 package struct AwakeFeatureSpec: Sendable {
@@ -433,7 +415,7 @@ package enum AwakeFeatureGraph {
 |---|---|---|---|---|---|
 | sessions | always | — | assertions, power, system | sessions | — |
 | presets | always | sessions | — | sessions | — |
-| batteryGuard | always (the floor's on/off is a protected setting, not a feature) | — | power | guards | — |
+| batteryGuard | always (the user floor's on/off is `guards.batteryFloorEnabled`; the 5% hard floor has no setting; r3 security L7) | — | power | guards | — |
 | thermalGuard | always | — | power | guards | — |
 | indicator | always (internal; kill switch only) | — | — | indicator | — |
 | triggers | optIn | sessions | (per criterion) | triggers | — |
@@ -446,11 +428,15 @@ package enum AwakeFeatureGraph {
 
 Kill switches (N14): Bool keys `Awake.disable.<feature>` read once per start from Snaptic's **persistent domain only** (Displays R5.4 rule; managed preferences are not read). `unkillable` features ignore them. `Modules.disable.<moduleID>` (lead, `ModuleHost`, read at launch from the persistent domain, honored for every module; new in 0.3 for Awake) makes that module unavailable: it never starts, its page shows "Turned off by a defaults setting." with the header switch disabled, its assertions are released, and nothing restores at the next launch. An organization deploys these keys with a configuration profile that writes Snaptic's user domain (README, step 5). Safe Mode keeps manual sessions and guards (they are safe), removes triggers, activity, nudge, Drive Alive. r2's managed screen-lock detection is withdrawn (0.2 rule); the Snaptic-clock activity cap (N10) bounds how long Snaptic can delay an idle lock.
 
-`KitModules.swift` (lead) additions: `ModuleID.awake` (start order: windowSwitcher, displays, awake), `EventCategory.awake`, `AwakeActionID: RawRepresentable` (open, like `DisplayActionID`), `MenuPresence` (§5.2, beside `MenuPlacementChoice`; consistency B1), `DisplayActionID.fShowPanel = "f.showPanel"` and `.fIdentify = "f.identify"` (used by migration M4 and by `OverviewController`, which drops its private copies; consistency M4), `ControlID` (§4.8), `AwakeCriterionKind` (here so the graph can reference it):
+`KitModules.swift` (lead) additions: `ModuleID.awake` (start order: windowSwitcher, displays, awake), `EventCategory.awake`, `AwakeActionID: RawRepresentable` (open, like `DisplayActionID`), `MenuPresence` (§5.2, beside `MenuPlacementChoice`; consistency B1), `DisplayActionID.fShowPanel = "f.showPanel"` and `.fIdentify = "f.identify"` (used by migration M4 and by `OverviewController`, which drops its private copies; consistency M4), `DisplayMenuItemID.cDDCPower = "c.ddc.power"` (used by migration M10 and by C's `DDCMenuItems`, which drops its private `powerItem`; r3 consistency M1), `NewModuleCard` (below; r3 consistency M2), `AwakeCriterionKind` (here so the graph can reference it). `ControlID` and the registry live in `SnapticKit/Controls/` (§4.8, lead):
 
 ```swift
 package enum AwakeCriterionKind: String, Codable, CaseIterable, Sendable {
     case app, display, power, schedule, cpu, audio, idle, volume, usb, network, networkActivity, bluetooth
+}
+/// One-time General cards (r3 consistency M2): a closed enum, so "awake.migrated" survives the M3 filter.
+package enum NewModuleCard: String, Codable, CaseIterable, Sendable {
+    case displays, awake, awakeMigrated = "awake.migrated"
 }
 ```
 
@@ -473,25 +459,28 @@ package struct AwakeSessionOptions: Codable, Equatable, Sendable {
     package func sanitized() -> AwakeSessionOptions
 }
 
-/// "Until Downloads and Tasks Finish" (N9, lead r3). Busy = ANY signal at or above its threshold in a 5 s sample;
+/// "Until Downloads and Tasks Finish" (N9, lead r3/r4). Busy = ANY signal at or above its threshold in a 5 s sample;
 /// the session ends after `quietSeconds` with no busy sample, never before `graceSeconds` from start.
 package struct UntilIdleSpec: Codable, Equatable, Sendable {
-    package var topProcessPercent: Int     // 50 = half of one core; 10...800 (busiest same-user process)
-    package var totalCPUPercent: Int       // 15; 1...90 (all cores, HOST_CPU_LOAD_INFO)
+    package var topProcessPercent: Int     // 50 = half of one core; 10...800 (busiest same-user process, timebase-scaled)
+    package var newProcesses: Int          // 3; 1...50 same-user pids first seen in one 5 s sample (short-lived build steps)
+    package var totalCPUPercent: Int       // 15; 1...90 (all cores, HOST_CPU_LOAD_INFO; also catches processes too short to sample)
     package var diskKBps: Int              // 1_024; 64...1_000_000 (read + write, IOBlockStorageDriver Statistics)
     package var networkKBps: Int           // 50; 1...100_000 (in + out, non-loopback, §2.8)
     package var quietSeconds: Int          // 300; 60...3_600
     package var graceSeconds: Int          // 60; 0...600 (not shown in the UI)
-    package init(topProcessPercent: Int = 50, totalCPUPercent: Int = 15, diskKBps: Int = 1_024, networkKBps: Int = 50,
-                 quietSeconds: Int = 300, graceSeconds: Int = 60)
+    package init(topProcessPercent: Int = 50, newProcesses: Int = 3, totalCPUPercent: Int = 15, diskKBps: Int = 1_024,
+                 networkKBps: Int = 50, quietSeconds: Int = 300, graceSeconds: Int = 60)
     package init(from decoder: Decoder) throws     // lossy per field; r2 keys (cpuBelowPercent, networkBelowKBps) never shipped
     package func sanitized() -> UntilIdleSpec
 }
-/// One untilIdle sample (Kit, J; nil fields = unknown, which counts as busy so an unknown never ends a session).
+/// One untilIdle sample (Kit, G declares it here; J's samplers fill it; r3 consistency m9). nil fields = unknown,
+/// which counts as busy so an unknown never ends a session.
 package struct TaskActivitySample: Equatable, Sendable {
-    package var topProcessPercent: Double?; package var totalCPUPercent: Double?
+    package var topProcessPercent: Double?; package var newProcesses: Int?; package var totalCPUPercent: Double?
     package var diskKBps: Double?; package var networkKBps: Double?
-    package init(topProcessPercent: Double?, totalCPUPercent: Double?, diskKBps: Double?, networkKBps: Double?)
+    package init(topProcessPercent: Double?, newProcesses: Int?, totalCPUPercent: Double?, diskKBps: Double?,
+                 networkKBps: Double?)
 }
 package enum TaskQuiet {   // Kit, G, tested
     package static func isBusy(_ s: TaskActivitySample, spec: UntilIdleSpec) -> Bool
@@ -499,11 +488,15 @@ package enum TaskQuiet {   // Kit, G, tested
     /// A wake or a missing sample resets it (code R2-M10).
     package static func step(quietSince: Double?, sample: TaskActivitySample, now: Double, spec: UntilIdleSpec)
         -> (quietSince: Double?, finished: Bool)
+    /// Seconds of the current quiet run, for the detail line "Ends after 5 min with no activity · quiet for 2 min"
+    /// (r3 product minor 15); nil while busy.
+    package static func quietFor(quietSince: Double?, now: Double) -> Double?
 }
 
 /// What a command-line hold is bound to (lead r3). The server resolves both; neither comes from the request.
 package enum HoldBinding: Equatable, Sendable {
-    /// Default: the `snaptic` client's own connection and process (peer pid from LOCAL_PEERPID).
+    /// Default: the `snaptic` client's own connection and process (peer pid from LOCAL_PEERPID: best effort, not
+    /// identity, r3 security L1; the connection's EOF is the authoritative end).
     /// Ends on EOF of that connection or exit of that pid. Never persisted (a relaunch closes the connection).
     case connection(pid: Int32, startTime: UInt64)
     /// `--pid N`: a same-user process the caller names; ends when it exits. Persisted; re-verified at restore.
@@ -518,21 +511,43 @@ package enum AwakeSessionKind: Equatable, Sendable {
     case until(unixTime: Double)                              // absolute wall instant
     case whileApp(bundleID: String, maxSeconds: Int?)         // validated reverse-DNS, ≤ 255 bytes; optional cap
     case untilIdle(UntilIdleSpec, maxSeconds: Int?)           // ends after quietSeconds with no busy sample
-    case hold(HoldBinding, maxSeconds: Int)                   // CLI only; cap required, ≤ AwakeClock.holdMaxCapSeconds
+    // r3's `.hold` case is gone: holds are not manual sessions any more, they stack beside them (N17, AwakeHold)
     package var isTimed: Bool { get }              // duration, until
-    package var cap: Int? { get }                  // whileApp/untilIdle/hold cap
-    package var isTaskBound: Bool { get }          // whileApp, untilIdle, hold
+    package var cap: Int? { get }                  // whileApp/untilIdle cap
+    package var isTaskBound: Bool { get }          // whileApp, untilIdle
 }
 extension AwakeSessionKind: Codable {              // hand-written, type-tagged: {"type":"duration","seconds":5400}
-    package init(from decoder: Decoder) throws     // unknown type, or hold(.connection) → throws → session dropped
+    package init(from decoder: Decoder) throws     // unknown type (incl. r3 drafts' "hold") → throws → session dropped
     package func encode(to encoder: Encoder) throws
 }
-extension HoldBinding: Codable { package init(from decoder: Decoder) throws; package func encode(to encoder: Encoder) throws }
+extension HoldBinding: Codable {                   // `.connection` never decodes (throws → that hold is dropped)
+    package init(from decoder: Decoder) throws; package func encode(to encoder: Encoder) throws
+}
+
+/// One command-line holder (N17, lead r4). SessionController keeps ≤ maxHolds; `.process` holds persist in the
+/// snapshot (LossyArray), `.connection` holds never do.
+package struct AwakeHold: Codable, Equatable, Sendable, Identifiable {
+    package static let maxHolds = 8
+    package var id: StableID
+    package var binding: HoldBinding
+    package var startedAt: Double                 // wall, display and history only
+    package var startedContinuous: Double
+    package var deadline: Double                  // continuous: start + cap (cap ≤ AwakeClock.holdMaxCapSeconds)
+    package var bootSession: String
+    package init(id: StableID, binding: HoldBinding, startedAt: Double, startedContinuous: Double, deadline: Double,
+                 bootSession: String)
+    package init(from decoder: Decoder) throws    // lossy per field; a binding that doesn't decode throws (dropped)
+    package func encode(to encoder: Encoder) throws
+    /// nil when expired, from another boot, `startedContinuous > now.continuous`, or deadline − start > holdMaxCap
+    /// (r3 security L3).
+    package func sanitized(now: ClockNow) -> AwakeHold?
+}
 
 /// Persisted and kept through restore (security L1: a restored CLI session stays `.commandLine`).
 package enum AwakeSessionSource: String, Codable, Sendable {
     case menu, hotkey, settings, commandLine, launch
-    /// menu, hotkey, settings: a direct user action in Snaptic's own UI (N10).
+    /// menu, hotkey, settings: a direct user action in Snaptic's own UI (N10). For pointer movement a hotkey start also
+    /// needs the confirmation toast (AwakeActivityGate).
     package var isDirectUserAction: Bool { get }
 }
 
@@ -548,26 +563,70 @@ package struct AwakeSession: Codable, Equatable, Sendable, Identifiable {
     package var bootSession: String               // kern.bootsessionuuid at start; mismatch = expired
     /// One-shot "Start Anyway"; not in CodingKeys, never persisted (security H2).
     package var overrideGuards: Bool = false
-    /// True only for a session started by a direct user action in this process; not in CodingKeys, so a restored or
-    /// resumed session is always false (N10: pointer movement needs it).
-    package var uiStartedInProcess: Bool = false
-    /// When activity first acted in this session (continuous); not persisted. The cap (N10) counts from here.
-    package var activitySince: Double? = nil
-    private enum CodingKeys: String, CodingKey {   // explicit (code sig): the three runtime fields above are excluded
+    // r3's `uiStartedInProcess` and `activitySince` moved out of the session into SessionController's runtime
+    // `AwakeActivityGate` (below; r3 security M2), so no session value, persisted or not, can carry them.
+    private enum CodingKeys: String, CodingKey {   // explicit (code sig): overrideGuards is excluded
         case id, kind, options, presetID, source, startedAt, startedContinuous, deadline, bootSession
     }
     package init(id: StableID, kind: AwakeSessionKind, options: AwakeSessionOptions, presetID: StableID?,
                  source: AwakeSessionSource, startedAt: Double, startedContinuous: Double, deadline: Double?,
-                 bootSession: String, overrideGuards: Bool = false, uiStartedInProcess: Bool = false)
+                 bootSession: String, overrideGuards: Bool = false)
     package init(from decoder: Decoder) throws    // lossy per field; kind failure throws (session dropped)
     package func encode(to encoder: Encoder) throws
-    package func sanitized(now: ClockNow) -> AwakeSession?   // nil if expired, other boot, or kind out of range
+    /// nil if expired, other boot, kind out of range, `startedContinuous > now.continuous`, or a deadline later than
+    /// startedContinuous + (cap or maxSessionSeconds), or `maxSeconds` and `deadline` disagree (r3 security L3).
+    package func sanitized(now: ClockNow) -> AwakeSession?
+}
+
+/// Runtime-only gate for activity simulation (r3 security M2, lead r4; Kit, G, `SnapticKit/AwakeActivityGate.swift`,
+/// tested truth table). SessionController holds the only instance; lint L16 allows `activityGate =` only in
+/// `SessionController.swift`. Nothing here is Codable.
+package struct AwakeActivityGate: Equatable, Sendable {
+    package enum Pointer: Equatable, Sendable {
+        case notAllowed      // CLI, launch, restored, resumed, trigger or hold governs
+        case askOnFirstUse   // hotkey start: the confirmation toast appears the first time pointer movement would act
+        case asking          // toast shown; declare meanwhile
+        case allowed         // menu/Settings start, or Allow clicked
+        case declined        // Not Now / toast dismissed / Stop on the first-nudge toast: declare for this session
+    }
+    /// True only after a menu-click or Settings-button start handler, or the hotkey toast's Allow handler, in this
+    /// process (N10). Never decoded, never derived from `source`.
+    package private(set) var uiStartedInProcess: Bool = false
+    package private(set) var pointer: Pointer = .notAllowed
+    /// Continuous instant activity first acted; the cap counts from here. Carried across back-to-back governing
+    /// sessions (r3 security L5); reset only by `uiStart`, `confirmAllowed`, or ≥ 15 min with nothing governing.
+    package private(set) var activitySince: Double? = nil
+    package private(set) var lastEnded: Double? = nil     // continuous; for `nothingGoverned`
+    package init()
+    package enum Event: Equatable, Sendable {
+        case uiStart                 // menu item / switch header / Settings button / Start Again / Start Anyway after a UI
+                                     // start / choosing the running preset again (restart)
+        case hotkeyStart             // Snaptic hotkey (incl. Start Anyway after a hotkey start)
+        case confirmAsked, confirmAllowed, confirmDeclined
+        case otherStart              // CLI start/preset, launch preset
+        case restore, resume         // a session read from the snapshot (launch, relaunch, update, re-enable)
+        case takeover                // governing passed from the manual session to a trigger or the hold stack
+        case replaced                // the manual session was replaced; the new session's own start event follows
+        case ended(now: Double)      // the manual session ended (activitySince kept for the carry)
+        case moduleStop
+        case acted(now: Double)      // activity acted: sets activitySince when nil
+        case nothingGoverned(now: Double)   // checked every arbitration: ≥ 900 s since the last end → activitySince = nil
+        case unchanged               // extend, Add Time, Keep Going, Keep Display On, option/feature changes, Safe Mode
+                                     // exit, outside writes to defaultOptions, a hold starting or ending
+    }
+    /// Truth table (normative): uiStart → (true, allowed, nil); hotkeyStart → (false, askOnFirstUse, kept);
+    /// confirmAsked → asking; confirmAllowed (only from asking) → (true, allowed, nil); confirmDeclined → declined;
+    /// otherStart, restore, resume, takeover, replaced → (false, notAllowed, kept); ended → (false, notAllowed, kept,
+    /// lastEnded = now); nothingGoverned → activitySince = nil when now − lastEnded ≥ 900; moduleStop → init();
+    /// acted → activitySince ?? now; unchanged → self.
+    package func applying(_ event: Event) -> AwakeActivityGate
 }
 
 package enum AwakeEndReason: String, Codable, CaseIterable, Sendable {
-    case user, timeUp, appQuit, processExited, tasksFinished, replaced, triggerEnded, batteryLow, batteryUnreadable,
+    case user, timeUp, appQuit, processExited, tasksFinished, replaced, triggerEnded, batteryLow,
          adapterDisconnected, lowPowerMode, thermal, systemSleep, userSwitch, lockedTooLong, moduleStopped, safeMode,
          reboot, assertionFailed
+    // r3's `batteryUnreadable` is gone (lead r4): an unreadable battery stops activity and Drive Alive, not sessions
 }
 
 package struct TriggerTop: Equatable, Sendable {
@@ -579,6 +638,7 @@ package enum AwakeGoverning: Equatable, Sendable {
     case inactive
     case manual(AwakeSession)
     case trigger(TriggerTop)
+    case holds([AwakeHold])          // non-empty; only when no manual session and no active trigger (N3, N17)
 }
 
 package enum AwakeUnavailableReason: String, Codable, Sendable { case featureOff, safeMode, turnedOffByDefaults }
@@ -587,12 +647,16 @@ package enum AwakeRefusal: Error, Equatable, Sendable {
     case guardActive(AwakeEndReason)   // UI: toast with "Start Anyway" (battery/LPM above the hard floor only; never
                                        // thermal, never the 5% floor, never CLI/trigger)
     case unavailable(AwakeUnavailableReason)
-    case invalid                       // bad duration, app not running, pid ≤ 1, gone, not ours or already exited
-    case notAllowedFromCLI             // nudge preset, indefinite or Until Turned Off from CLI
-    case uiSessionRunning              // CLI start/hold/preset while a UI-started manual session runs (security L4)
+    case invalid                       // bad duration, app not running, pid ≤ 1, gone, not ours, already exited, or
+                                       // ProcessWatch couldn't arm on the peer or --pid (r3 security L1)
+    case notAllowedFromCLI             // indefinite or Until Turned Off from CLI (r3 consistency M3: no nudge refusal;
+                                       // CLI sessions keep their options and ActivityPolicy never nudges for them)
+    case uiSessionRunning              // CLI start/preset while a UI-started manual session runs (security L4); never
+                                       // for `hold`, which stacks (N17)
+    case holdLimit                     // AwakeHold.maxHolds holds exist: "Snaptic is already holding for 8 commands."
     case rateLimited                   // CLI start/hold/stop/extend > 1/s
     package var exitCode: Int32 { get }  // 4 for every refusal (0.2 CLI table), message from `text`
-    package var text: String { get }     // uiSessionRunning: "A session started in Snaptic is running. Stop it first with “snaptic awake stop”."
+    package var text: String { get }     // uiSessionRunning: "A session started in Snaptic is running. Stop it first with “snaptic awake stop”, or use “snaptic awake hold”."
 }
 ```
 
@@ -610,6 +674,7 @@ package enum AwakeClock {
     package static let holdMaxCapSeconds = 24 * 3_600           // `awake hold --max` upper bound (lead r3)
     package static func start(_ kind: AwakeSessionKind, options: AwakeSessionOptions, presetID: StableID?,
                               source: AwakeSessionSource, now: ClockNow, id: StableID) -> AwakeSession
+    package static func hold(_ binding: HoldBinding, capSeconds: Int, now: ClockNow, id: StableID) -> AwakeHold
     /// nil = no limit; ≤ 0 = expired. Duration and caps use the continuous deadline; until uses wall time.
     package static func remaining(_ s: AwakeSession, now: ClockNow) -> Double?
     /// wall + remaining (code minor 2): the end time to show, correct after a clock change.
@@ -679,7 +744,8 @@ package struct AwakeArbiterInput: Equatable, Sendable {
     package var keepDisplayOnWhileLocked: Bool   // C1 Advanced option
     package var driveAliveWriting: Bool
     package var guardsHold: Bool
-    package var sessionEnd: Double?              // AwakeClock.continuousEnd of the governing manual session
+    package var sessionEnd: Double?              // AwakeClock.continuousEnd of the governing manual session, or the
+                                                 // latest deadline of the hold stack when holds govern
     package init(governing: AwakeGoverning, screenLocked: Bool, consoleActive: Bool, realIdleSeconds: Double?,
                  keepDisplayOnWhileLocked: Bool, driveAliveWriting: Bool, guardsHold: Bool, sessionEnd: Double?)
 }
@@ -687,15 +753,15 @@ package enum AwakeArbiter {
     package static let timeoutGraceSeconds: Double = 15
     package static let rearmThresholdSeconds: Double = 5
     package static func plan(_ input: AwakeArbiterInput) -> AwakeAssertionPlan
-    /// manual > highest-priority active trigger > inactive (N3).
-    package static func governing(manual: AwakeSession?, top: TriggerTop?) -> AwakeGoverning
+    /// manual > highest-priority active trigger > hold stack > inactive (N3, N17).
+    package static func governing(manual: AwakeSession?, top: TriggerTop?, holds: [AwakeHold]) -> AwakeGoverning
     /// true when the live assertion must be swapped: type or details changed, or the deadline appeared,
     /// disappeared or moved by more than rearmThresholdSeconds.
     package static func needsSwap(current: AwakeAssertionPlan, next: AwakeAssertionPlan) -> Bool
 }
 ```
 
-Plan rules (tested): inactive → `.off`; `.keepOn` → `.display`, downgraded to `.system` when `screenLocked && !keepDisplayOnWhileLocked` (C1) or `!consoleActive`; `.maySleep` → `.system`; `.keepOnWhileActive` → `.display` while `realIdleSeconds < displayIdleMinutes·60`, else `.system`; `deadline = sessionEnd + timeoutGraceSeconds` for manual sessions with an end (duration, until, caps), nil otherwise (trigger sessions have no backstop timeout: they end by condition); `preventDiskIdle` = `driveAliveWriting`; the plan contains no relative times, so it is **stable while nothing changes** (tested: 1,000 identical inputs at advancing times give `needsSwap(current:next:) == false` after the first, code sig: until-session deadlines differ by microseconds, so the test never compares plans with `==`).
+Plan rules (tested): inactive → `.off`; `.keepOn` → `.display`, downgraded to `.system` when `screenLocked && !keepDisplayOnWhileLocked` (C1) or `!consoleActive`; `.maySleep` → `.system`; holds → `.system` (display may sleep; holds have no options); `.keepOnWhileActive` → `.display` while `realIdleSeconds < displayIdleMinutes·60`, else `.system`; `deadline = sessionEnd + timeoutGraceSeconds` for manual sessions with an end (duration, until, caps) and for the hold stack (its latest deadline), nil otherwise (trigger sessions have no backstop timeout: they end by condition); `preventDiskIdle` = `driveAliveWriting`; the plan contains no relative times, so it is **stable while nothing changes** (tested: 1,000 identical inputs at advancing times give `needsSwap(current:next:) == false` after the first, code sig: until-session deadlines differ by microseconds, so the test never compares plans with `==`).
 
 **AssertionManager** (G, `Awake/Core/AssertionManager.swift`) holds at most one sleep assertion and, separately, at most one `PreventDiskIdle` assertion (code minor 1: no timeout, never swapped, created and released only when `preventDiskIdle` flips):
 
@@ -730,43 +796,68 @@ Creation uses `IOPMAssertionCreateWithProperties` with `AssertType`, `AssertName
                source: AwakeSessionSource, overrideGuards: Bool) -> Result<AwakeSession, AwakeRefusal>
     func startPreset(_ id: StableID, source: AwakeSessionSource) -> Result<AwakeSession, AwakeRefusal>
     func startDefault(source: AwakeSessionSource) -> Result<AwakeSession, AwakeRefusal>
-    /// CLI `awake hold`: the binding was resolved and verified server-side by AwakeAutomation (§2.10); ProcessWatch is
-    /// armed here. `.connection` sessions also end when AwakeAutomation reports the connection closed.
-    func hold(_ binding: HoldBinding, capSeconds: Int) -> Result<AwakeSession, AwakeRefusal>
-    func extend(by seconds: Int, source: AwakeSessionSource) -> Result<AwakeSession, AwakeRefusal>
-    /// Mid-session display toggle (menu, compact section, status row Options ▾, hotkey): sets the governing session's
+    /// CLI `awake hold` (N17): adds a holder beside whatever runs. The binding was resolved and verified server-side by
+    /// AwakeAutomation (§2.10); ProcessWatch is armed here, and a failed arm refuses `.invalid` (r3 security L1).
+    /// `.connection` holds also end when AwakeAutomation reports the connection closed. `.holdLimit` at 8.
+    func addHold(_ binding: HoldBinding, capSeconds: Int) -> Result<AwakeHold, AwakeRefusal>
+    func endHold(_ id: StableID, _ reason: AwakeEndReason)
+    /// "End Command-Line Holds" (Awake menu, status row): each client gets "Awake hold ended in Snaptic." and exits 0.
+    func endAllHolds(_ reason: AwakeEndReason)
+    private(set) var holds: [AwakeHold]
+    func extend(by seconds: Int, source: AwakeSessionSource) -> Result<AwakeSession, AwakeRefusal>   // manual only
+    /// Mid-session display toggle (menu, compact section, status row, hotkey): sets the governing session's
     /// `options.display` (`.keepOn` ↔ `.maySleep`); for a trigger session it lasts until that session ends.
     func setKeepDisplayOn(_ on: Bool)
+    /// User Turn Off (switch header, Turn Off Keep Awake, status row, `awake.toggle`): ends what governs: the manual
+    /// session, the governing rule's session (TriggerController.manualEnd), or, when only holds govern, the hold stack.
+    /// If a rule or holds still keep the Mac awake afterwards, one toast says so (rules below; lead r4, r3 product M3).
+    func turnOff(source: AwakeSessionSource)
     func end(_ reason: AwakeEndReason)         // manual session; trigger session → TriggerController.manualEnd
-    func toggleDefault(source: AwakeSessionSource)  // hotkey; status-row/menu buttons call start/end directly
-    /// Called once from `start(_:lifetime:effective:)` before the first `arbitrate()` (code R2-M8): drops a session
-    /// from another boot; for `hold(.process)` re-verifies pid, start time and uid with ProcessWatch; evaluates
-    /// AwakeGuards with live PowerFacts (a restored session on battery below a floor ends `.batteryLow`); keeps
-    /// `source`; `uiStartedInProcess` stays false. The snapshot is read only here: outside writes while Awake runs
-    /// are ignored (security L2).
+    func toggleDefault(source: AwakeSessionSource)  // hotkey; status-row/menu buttons call start/turnOff directly
+    /// The runtime gate (§2.3). Only this file assigns it, always through `applying(_:)` (lint L16).
+    private(set) var activityGate: AwakeActivityGate
+    /// ActivityController: pointer movement would act now and the gate is `askOnFirstUse` → shows the confirmation toast.
+    func requestPointerConfirmation()
+    /// ActivityController: activity acted (applies `.acted(now:)`).
+    func noteActivityActed(now: Double)
+    /// Called once from `start(_:lifetime:effective:)`, after every needed service is active (§2.1 start order) and
+    /// before the first `arbitrate()` (code R2-M8): drops sessions and holds from another boot; re-verifies each
+    /// `.process` hold's pid, start time and uid with ProcessWatch; evaluates AwakeGuards with live PowerFacts (a
+    /// restored session below a floor while discharging ends `.batteryLow`); keeps `source`; applies `.restore` to the
+    /// gate. The snapshot is read only here (security L2, r3 security L4): afterwards SessionController never reads
+    /// `state.value`; it always writes a whole snapshot built from its own runtime state.
     func restore(_ snapshot: AwakeRuntimeSnapshot)
-    /// Every manual-session end, after history and before arbitration (AwakeAutomation closes a held connection).
-    func observeEnds(_ lifetime: Lifetime, _ handler: @escaping @MainActor (AwakeSession, AwakeEndReason) -> Void)
-    /// Synchronous: reads the cached trigger top, guard memory, session facts and idle, computes
+    /// Every manual-session and hold end, after history and before arbitration (AwakeAutomation finishes a held
+    /// connection with its final line).
+    func observeEnds(_ lifetime: Lifetime, _ handler: @escaping @MainActor (AwakeEndedItem, AwakeEndReason) -> Void)
+    /// Synchronous: reads the cached trigger top, the hold stack, guard memory, session facts and idle, computes
     /// governing + plan, applies it. Called by every path that changes an input (code M7).
     func arbitrate()
     // AwakeFeatureController members (§2.11)
 }
+enum AwakeEndedItem: Equatable { case session(AwakeSession), hold(AwakeHold) }
+// Lead, Core/ToastPresenter.swift (r3 consistency m10): ≤ 2 per toast.
+struct ToastAction { let title: String; let isDefault: Bool; let action: @MainActor () -> Void }
 ```
-Starting from a menu item, a Settings button or a Snaptic hotkey passes `source: .menu/.settings/.hotkey` and sets `uiStartedInProcess = true`; every other start (CLI, `launch`, restore) leaves it false (N10).
+**Who sets the activity flags** (normative; N10, lead r4, r3 security M1/M2): only the handlers of a menu item or switch header click and of a Settings button apply `.uiStart`; the hotkey handler applies `.hotkeyStart`; the Allow button of the confirmation toast applies `.confirmAllowed`. Every other start (CLI, `launch`, restore, resume) applies `.otherStart`/`.restore`/`.resume`; a replacement applies `.replaced` before the new start's event; governing passing to a rule or the hold stack applies `.takeover`; `stop()` applies `.moduleStop`. Everything in the `.unchanged` list (extend, Keep Going, Keep Display On, option and feature changes, an outside write to `defaultOptions`, Safe Mode exit, holds coming and going) leaves the gate alone; tested per row.
+
+**Hotkey confirmation** (lead r4; 0.2 R5.7 precedent): when a hotkey-started session would move the pointer for the first time, ActivityController calls `requestPointerConfirmation()`; the toast "Move the pointer to keep apps active?" with **Allow** / **Not Now** appears (never in Recent Notices; while toasts are suppressed the gate stays `askOnFirstUse` and is asked at the next interval), and until Allow is clicked the session only declares activity. Dismissing the toast counts as Not Now for that session. Menu and Settings starts show a non-blocking toast at their first nudge: "Awake is moving the pointer slightly." **Stop** (Stop applies `.confirmDeclined`; r3 security M1).
+
+**Focus safety** (r3 security L8): no session-start control in Settings has `.keyboardShortcut(.defaultAction)` or a Return binding, and start handlers ignore clicks for 1 s after an externally requested `openSettings` (reopen or `open-settings` verb), so a stray Return on a window another process brought forward starts nothing.
 
 Rules:
-- At most one manual session. Starting a new one replaces the old (history entry `.replaced`); choosing the running preset again restarts its timer. Replacing a **task-bound** session shows the toast "Replaced “While Xcode is running”." (local UI only). A CLI `start`, `hold` or `preset` never replaces a session whose `source.isDirectUserAction` (refusal `.uiSessionRunning`, exit 4; security L4); it may replace a CLI or `launch` session. Starting while a trigger governs makes the manual session govern; when it ends, the trigger (if still active) governs again with no gap, because `end` calls `arbitrate()` in the same turn and `TriggerController` coalesces only `step`, never arbitration.
-- A tick (`Timer` added with `RunLoop.main.add(_:forMode: .common)`, N15; fires at `AwakeCountdown.nextChange` or at expiry, whichever is earlier, tolerance 10%) recomputes `remaining`; at ≤ 0 the session ends `.timeUp`. Ticks never drive correctness alone: expiry is also checked on wake, clock change, unlock, menu open and every arbitration.
-- **untilIdle** (N9): while it runs, `taskQuiet` keeps CPUSampler (total and top same-user process), DiskIOSampler and NetworkMonitor throughput active at 5 s. Each sample goes through `TaskQuiet.step`: the session ends `.tasksFinished` once `quietSeconds` (default 5 min) have passed with **no** busy sample (busy = any of top process ≥ `topProcessPercent` of one core, total CPU ≥ `totalCPUPercent`, disk ≥ `diskKBps`, network ≥ `networkKBps`), never before `graceSeconds` from start; an unknown sample and every wake reset the quiet window, and the first delta after a wake is discarded. Default display policy `maySleep`. Optional cap ("At most", §4.3). Toast: "Awake ended: downloads and tasks finished."
-- **hold** (§2.10): `ProcessWatch` (J) arms a kqueue `EVFILT_PROC`/`NOTE_EXIT` on the bound pid **first**, then re-reads `proc_pidinfo(pid, PROC_PIDTBSDINFO)`: the start time must equal the binding's and `pbi_uid == getuid()`; `kevent` returning `ESRCH`, a changed start time or another uid → refuse `.invalid` at start, end `.processExited` at restore. Exit → end `.processExited`. `.connection` bindings also end when the held CLI connection closes (EOF, error, server stop). No process is spawned or signalled (lint rule 12 holds). Shown as "While a command-line hold lasts" (no process name anywhere). If the bound process ends within 2 s of the start, the toast says "Awake stopped: the process it was holding for already ended." (parity M3).
+- At most one manual session. Starting a new one replaces the old (history entry `.replaced`); choosing the running preset again restarts its timer. Replacing a **task-bound** session shows the toast "Replaced “While Xcode is running”." (local UI only). A CLI `start` or `preset` never replaces a session whose `source.isDirectUserAction` (refusal `.uiSessionRunning`, exit 4; security L4); it may replace a CLI or `launch` session. `awake hold` never replaces anything (N17). Starting while a trigger governs makes the manual session govern; when it ends, the trigger (if still active) governs again with no gap, because `end` calls `arbitrate()` in the same turn and `TriggerController` coalesces only `step`, never arbitration.
+- **Turn Off with something else still keeping the Mac awake** (lead r4; r3 product M3): after `turnOff`, if a rule is active the toast says "Rules can still keep your Mac awake." with **Pause Rules** (1 hour); if only holds remain, "Terminal is still keeping your Mac awake." (holder names as in N17) with **End Holds**. While a manual session overrides an active rule, the detail line adds "Then “Desk dock” keeps it awake."; while holds exist under any governing source, it adds "Held by Terminal (2)".
+- A tick (`Timer` added with `RunLoop.main.add(_:forMode: .common)`, N15; fires at `AwakeCountdown.nextChange` or at the earliest expiry of the manual session or any hold, tolerance 10%) recomputes `remaining`; at ≤ 0 the session ends `.timeUp`, an expired hold ends `.timeUp`. Ticks never drive correctness alone: expiry is also checked on wake, clock change, unlock, menu open and every arbitration.
+- **untilIdle** (N9): while it runs, `taskQuiet` keeps CPUSampler (total CPU, every pid's rusage), DiskIOSampler and NetworkMonitor throughput active at 5 s. Each sample goes through `TaskQuiet.step`: the session ends `.tasksFinished` once `quietSeconds` (default 5 min) have passed with **no** busy sample (busy = any of busiest same-user process ≥ `topProcessPercent` of one core, ≥ `newProcesses` same-user pids first seen in the sample, total CPU ≥ `totalCPUPercent`, disk ≥ `diskKBps`, network ≥ `networkKBps`), never before `graceSeconds` from start; an unknown sample and every wake reset the quiet window, and the first delta after a wake is discarded. Detail line "Ends after 5 min with no activity · quiet for 2 min" (`TaskQuiet.quietFor`; r3 product minor 15). Default display policy `maySleep`. Optional cap ("At most", §4.3). Toast: "Awake ended: downloads and tasks finished."
+- **Holds** (N17, §2.10): `ProcessWatch` (J) arms a kqueue `EVFILT_PROC`/`NOTE_EXIT` on the bound pid **first**, then re-reads `proc_pidinfo(pid, PROC_PIDTBSDINFO)`: the start time must equal the binding's and `pbi_uid == getuid()`; `kevent` returning `ESRCH`, a changed start time or another uid → refuse `.invalid` at start, end `.processExited` at restore. Exit → end `.processExited`. `.connection` holds also end when their CLI connection closes (EOF, a byte after the request, error, server stop). No process is spawned or signalled (lint rule 12 holds). **Holder name** (local UI only, never persisted, logged, exported or sent over the CLI): walk `pbi_ppid` from the bound pid (≤ 16 hops, same uid only) to the first process that is a regular `NSRunningApplication` and use its `localizedName` ("Terminal", "iTerm", "Xcode"); otherwise "the command line". The menu and status row group by name: "Held by Terminal (2)", "Held by Terminal and Xcode". If the bound process ends within 2 s of the start, the toast says "Awake stopped: the process it was holding for already ended." (parity M3). Each hold ends in history as one `process` entry with source `.commandLine`.
 - whileApp: ends `.appQuit` when no running application has the bundle id (checked on terminate notifications and every arbitration); refuses to start if the app isn't running.
-- Caps: task-bound kinds end `.timeUp` at their `deadline`; "Add 1 Hour" extends the cap (§5.3) but never past `holdMaxCapSeconds` for `hold`. `hold` always has a cap (default 12 h). A CLI `untilIdle` start or an `awake preset` of an uncapped untilIdle preset gets `holdDefaultCapSeconds` (parity minor 7).
-- **Reminders and toasts**: 5-minute reminder when a timed session that ran ≥ 15 min reaches 5 min left, "Awake ends in 5 minutes." with **Add 1 Hour** (consistency m4: one label everywhere); **8-hour reminder** once per indefinite manual session, "Awake has kept your Mac awake for 8 hours." with **Turn Off** / **Keep Going** (`ToastPresenter` gains `actions: [ToastAction]`, ≤ 2, code minor 11); an end toast for every non-user end ("Awake ended: battery is below 20%." / "…: Xcode quit."; app names only in local UI); guard refusals from the UI show a toast "Battery is below 20%." with **Start Anyway** (battery/LPM above the 5% hard floor only; never from a menu item click, which closes the menu); "Awake was started from the command line." at most once per 10 minutes. Toasts are suppressed while locked, while the screensaver runs, off console, and while **presenting** (any display in a mirror set, or the frontmost app has a window covering a whole display — `CGWindowListCopyWindowInfo` bounds and owner PID only); a `screensaver.didstart` hint suppresses for at most 10 s unless ScreenSaverEngine is frontmost (security L4); suppressed toasts go to Recent Notices. ToastPresenter changes are lead-owned (§6.2, step 2).
+- Caps: task-bound kinds end `.timeUp` at their `deadline`; "Add 1 Hour" extends the cap (§5.3). Every hold has a cap (default 12 h, `--max` ≤ 24 h) that nothing extends. A CLI `untilIdle` start or an `awake preset` of an uncapped untilIdle preset gets `holdDefaultCapSeconds` (parity minor 7).
+- **Reminders and toasts**: 5-minute reminder when a timed session that ran ≥ 15 min reaches 5 min left, "Awake ends in 5 minutes." with **Add 1 Hour** (consistency m4: one label everywhere); **8-hour reminder** once per indefinite manual session, "Awake has kept your Mac awake for 8 hours." with **Turn Off** / **Keep Going** (`ToastPresenter` gains `actions: [ToastAction]`, ≤ 2, code minor 11); an end toast for every non-user end ("Awake ended: battery is below 20%." / "…: Xcode quit."; app names only in local UI); guard refusals from the UI show a toast "Battery is below 20%." with **Start Anyway** (battery/LPM above the 5% hard floor only; never from a menu item click, which closes the menu; it re-starts with the original request's source and gate event); "Awake was started from the command line." at most once per 10 minutes (also for the first hold in 10 minutes). Toasts are suppressed while locked, while the screensaver runs, off console, and while **presenting** (any display in a mirror set, or the frontmost app has a window covering a whole display — `CGWindowListCopyWindowInfo` bounds and owner PID only); a `screensaver.didstart` hint suppresses for at most 10 s unless ScreenSaverEngine is frontmost (security L4); suppressed toasts go to Recent Notices (confirmation toasts excepted). ToastPresenter changes are lead-owned (§6.2; `actions:` stubbed in step 0, implemented in step 2).
 - **Last end**: after a non-user end, `runtime.lastEnd` shows "Ended at 3:12 AM: battery below 20%." in the Awake menu and Settings status row for 12 h (also a Recent Notices entry).
-- **Persistence**: the manual session (without `overrideGuards`, `uiStartedInProcess`, `activitySince`; `hold(.connection)` never), rule suppressions, `pausedUntil` and guard memory are written to `SnapticAwakeStateV1` (`ConfigStore<AwakeRuntimeSnapshot>`, no admission hook) **on change only** (never per engine step). Loading: `AwakeRuntimeSnapshot.sanitized(now:)` (Kit: kinds clamped, deadline ≤ start + 30 days, other-boot sessions and `until` suppressions dropped via the snapshot's `bootSession`, code R2-M3) and then `SessionController.restore(_:)` (pid, uid, guards with live facts; code R2-M8). On start (launch, relaunch, update, re-enable), `resumeAfterRestart` (default on) restores the session if not expired in the same boot. A crash therefore loses nothing but the time Snaptic was down (assertions die with the process; [PA] §1.2).
+- **Persistence**: the manual session (without `overrideGuards`), the `.process` holds, rule suppressions, `pausedUntil` and guard memory are written to `SnapticAwakeStateV1` (`ConfigStore<AwakeRuntimeSnapshot>`, no admission hook) **on change only** (never per engine step), always as `state.value = snapshot(fromRuntime)`, a whole value built from memory; SessionController never mutates or reads back the adopted value (r3 code minor 10, security L4; Kit-side test that a snapshot written by another process while running has no effect until the next start). Loading: `AwakeRuntimeSnapshot.sanitized(now:)` (Kit: kinds clamped, the r3 security L3 bounds, other-boot sessions, holds and `until` suppressions dropped via the snapshot's `bootSession`, code R2-M3) and then `SessionController.restore(_:)` (pid, uid, guards with live facts; code R2-M8). On start (launch, relaunch, update, re-enable), `resumeAfterRestart` (default on) restores the session if not expired in the same boot; `.process` holds are always restored (their client already exited 0). A crash therefore loses nothing but the time Snaptic was down (assertions die with the process; [PA] §1.2).
 - **Start at launch** (Advanced, default None): a preset id started once per process; the flag is `HostSignals.launchSessionStarted` (not a static), so re-enabling the module doesn't start it again.
-- **Module stop / quit**: `stop()` releases all assertions synchronously and ends the session in history as `.moduleStopped`. It keeps the snapshot when `HostSignals.isTerminating` is true (set by `ModuleHost.shutdown()` before any module stops) so a relaunch resumes; otherwise (disable, Safe Mode) it clears the snapshot. Reset All Settings clears all three Awake stores with `isTerminating == false`.
+- **Module stop / quit**: `stop()` releases all assertions synchronously, ends the session and every hold in history as `.moduleStopped`, and finishes held connections. It keeps the snapshot when `HostSignals.isTerminating` is true (set by `ModuleHost.shutdown()` before any module stops) so a relaunch resumes; otherwise (disable, Safe Mode) it clears the snapshot. Reset All Settings clears all three Awake stores with `isTerminating == false`.
 
 ### 2.6 Guards (G, Kit `SnapticKit/AwakeGuards.swift`, `GuardsController`)
 
@@ -776,13 +867,23 @@ package enum ThermalLevel: Int, Codable, Sendable, Comparable {
     package static func < (a: ThermalLevel, b: ThermalLevel) -> Bool { a.rawValue < b.rawValue }   // not synthesized for raw-value enums
 }
 package struct PowerFacts: Equatable, Sendable {
-    package var hasBattery: Bool
+    /// Latched for the process lifetime (r3 security M3): true once IORegistry `AppleSmartBattery` exists or any
+    /// internal-battery IOPS entry was seen; a later read with no battery entry is an unreadable read, not a desktop.
+    package var batteryPresent: Bool
     package var onAC: Bool
-    package var percent: Int?            // nil = unreadable
+    package var percent: Int?            // nil = unreadable (no internal-battery entry or no capacity)
     package var charging: Bool
+    package var falling: Bool            // the newest reading is lower than the one before (PowerMath.falling)
     package var lowPowerMode: Bool
     package var thermal: ThermalLevel
-    package init(hasBattery: Bool, onAC: Bool, percent: Int?, charging: Bool, lowPowerMode: Bool, thermal: ThermalLevel)
+    /// Lead r4: battery present AND (not on AC OR percent falling over the last 2 readings). An underpowered USB-C
+    /// charger or hub that reports AC while the battery drains counts as discharging.
+    package var discharging: Bool { get }
+    package init(batteryPresent: Bool, onAC: Bool, percent: Int?, charging: Bool, falling: Bool, lowPowerMode: Bool,
+                 thermal: ThermalLevel)
+}
+package enum PowerMath {   // Kit, J (PowerMonitor keeps the last two readings), tested
+    package static func falling(previous: Int?, now: Int?) -> Bool   // false when either is nil
 }
 package struct AwakeGuardsConfig: ConfigModel {
     package var batteryFloorEnabled: Bool        // true ("When the battery is low"); off leaves the 5% hard floor
@@ -795,7 +896,7 @@ package struct AwakeGuardsConfig: ConfigModel {
     package func monotonic(over current: AwakeGuardsConfig) -> AwakeGuardsConfig
 }
 package struct GuardMemory: Codable, Equatable, Sendable {      // persisted in the snapshot (same boot only)
-    package var unreadableReads: Int = 0
+    package var unreadableReads: Int = 0               // ≥ 2 on a latched battery = unreadable (activity, Drive Alive off)
     package var holding: AwakeEndReason? = nil         // blocks trigger starts until cleared
     package var heldSince: Double? = nil               // continuous clock
     package var warnedSerious: Bool = false
@@ -817,11 +918,11 @@ package enum AwakeGuards {
     package static func evaluate(_ now: PowerFacts, previous: PowerFacts?, config: AwakeGuardsConfig,
                                  memory: GuardMemory, time: Double, active: Bool,
                                  overrideBattery: Bool) -> (verdict: AwakeGuardVerdict, memory: GuardMemory)
-    /// Drive Alive and activity may run only if this is true, in every mode (security M1).
-    package static func allowsBackgroundWork(_ now: PowerFacts, config: AwakeGuardsConfig) -> Bool
+    /// Drive Alive and activity (both modes) may run only if this is true, in every mode (security M1, lead r4).
+    package static func allowsBackgroundWork(_ now: PowerFacts, config: AwakeGuardsConfig, memory: GuardMemory) -> Bool
 }
 ```
-Rules: desktops (`!hasBattery`) skip battery rules; on AC battery rules don't apply; `percent < hardFloorPercent` on battery → end `.batteryLow` always (no override, not even Start Anyway); `percent < floor` on battery with the floor enabled → end `.batteryLow`; two consecutive unreadable reads on battery → `.batteryUnreadable`; AC → battery transition with `endOnAdapterDisconnect` → `.adapterDisconnected`; LPM on with `endOnLowPowerMode` → `.lowPowerMode`; `.critical` → end `.thermal` regardless of settings or features and hold for 10 min (evaluated in `SessionController` and `DriveAliveController` directly from `PowerMonitor`, not only through `GuardsController`, so no feature state can skip it); `.serious` → warn once per episode (no end option). Holding clears when battery ≥ floor + 5 or AC, LPM off, thermal ≤ fair for 10 min. **Guards apply to every source** (manual, trigger, CLI, restored). `overrideBattery` is the session's one-shot **Start Anyway** (UI only, never CLI/trigger, never persisted, never below the hard floor); thermal critical is never overridable. `allowsBackgroundWork` is false below the hard floor on battery, below the user floor on battery (floor enabled), with unreadable battery on battery, and at `.critical`.
+Rules (lead r4, r3 security M3): Macs where `batteryPresent` never latched (desktops) skip battery rules; battery rules apply while `discharging`, whatever `onAC` says; `percent < hardFloorPercent` while discharging → end `.batteryLow` always (no override, not even Start Anyway); `percent < floor` while discharging with the floor enabled → end `.batteryLow`; two consecutive reads with `percent == nil` on a latched battery → **unreadable**: treated as 0% for activity and Drive Alive (`allowsBackgroundWork` false, both stop), while the session's plain assertion continues, because it is harmless (macOS still sleeps the Mac at critically low battery whatever assertions exist, [PA] §1), with one toast "Snaptic can't read the battery level, so it stopped appearing active and keeping drives awake."; one readable reading clears it; AC → battery transition with `endOnAdapterDisconnect` → `.adapterDisconnected`; LPM on with `endOnLowPowerMode` → `.lowPowerMode`; `.critical` → end `.thermal` regardless of settings or features and hold for 10 min (evaluated in `SessionController` and `DriveAliveController` directly from `PowerMonitor`, not only through `GuardsController`, so no feature state can skip it); `.serious` → warn once per episode (no end option). Holding clears when battery ≥ floor + 5 and not falling, or on AC and not falling; LPM off; thermal ≤ fair for 10 min. **Guards apply to every source** (manual, trigger, hold, CLI, restored); a battery end also ends every hold. `overrideBattery` is the session's one-shot **Start Anyway** (UI only, never CLI/trigger, never persisted, never below the hard floor); thermal critical is never overridable. `allowsBackgroundWork` is false below the hard floor while discharging, below the user floor while discharging (floor enabled), while the battery is unreadable on a Mac with a latched battery, and at `.critical`. Kit tests cover "AC but falling" and "battery entry missing after it was seen" (r3 security M3).
 
 System behavior options (Kit `AwakeBehavior`, part of `AwakeSessionsConfig`; declared in `Config/ConfigAwakeSessions.swift`, G; consistency m13):
 
@@ -900,16 +1001,22 @@ package struct AwakeTrigger: Codable, Equatable, Sendable, Identifiable {
     package var enabled: Bool
     package var match: TriggerMatch
     package var criteria: [AwakeCriterionEntry]  // 1...8; a trigger with 0 valid criteria is disabled by sanitized()
-    package var options: AwakeSessionOptions     // sanitized(): `nudge` on a trigger with an idle criterion → `declare` (code M8)
+    package var options: AwakeSessionOptions     // sanitized(): every `nudge` → `declare` (rules never move the pointer, N10;
+                                                 // r3 consistency m12)
     package var startDelaySeconds: Int           // 0...3600; cpu/networkActivity default 60
     package var endDelaySeconds: Int             // 0...3600; default 30 (hysteresis)
     package var resumeAfterManualEndMinutes: Int?   // nil = when the condition next becomes true
     package static let maxTriggers = 32, maxCriteria = 8
     package init(id: StableID, name: String, criteria: [AwakeCriterionEntry])
+    /// Hand-written (N18, r3 code M6): `id` must decode as a StableID (else the rule is dropped); `criteria` through
+    /// `LossyArray<AwakeCriterionEntry>`; every other field lossy with its default.
+    package init(from decoder: Decoder) throws
+    package func encode(to encoder: Encoder) throws
 }
 package struct AwakeTriggersConfig: ConfigModel {
     package var triggers: [AwakeTrigger]         // order = priority; pausedUntil is runtime state (snapshot), not config
     package init()
+    package init(from decoder: Decoder) throws   // `triggers` via LossyArray: one unknown 0.4 rule drops only itself
     package func sanitized() -> AwakeTriggersConfig
 }
 ```
@@ -983,7 +1090,7 @@ package enum TriggerEngine {
 }
 ```
 
-Engine rules (tested, normative): a trigger becomes active when its condition has held for `startDelaySeconds` and inactive when false for `endDelaySeconds`; disabled, suppressed, paused or guard-held triggers are never active (their hysteresis still advances so they resume correctly); the governing trigger is the first active one in list order (priority); a priority change takes effect at the next step without ending the session if the top stays active; `step` runs on every source change, **coalesced to one run per main-queue turn**, plus the Ticker (schedule boundaries, `nextDeadline`); after each step `TriggerController` caches `top` and calls `SessionController.arbitrate()` synchronously; a wake runs `step` only after a 5 s settle so displays, power and network sources reread. `pausedUntil` (wall time, "Pause for 1 Hour" / "Pause Until Tomorrow") lives in the snapshot; a clock change re-evaluates it.
+Engine rules (tested, normative): a trigger becomes active when its condition has held for `startDelaySeconds` and inactive when false for `endDelaySeconds`; disabled, suppressed, paused or guard-held triggers are never active (their hysteresis still advances so they resume correctly); the governing trigger is the first active one in list order (priority); a priority change takes effect at the next step without ending the session if the top stays active; `step` runs on every source change, **coalesced to one run per main-queue turn**, plus the Ticker (schedule boundaries, `nextDeadline`); after each step `TriggerController` caches `top` and calls `SessionController.arbitrate()` synchronously; a wake runs `step` only after a 5 s settle so displays, power and network sources reread. `pausedUntil` (wall time, **Pause Rules** "for 1 Hour" / "Until Tomorrow") lives in the snapshot; a clock change re-evaluates it.
 
 **Specific display matching** (replaces Displays' per-display `preventSleep`): `DisplayPresence` builds a `FingerprintRecord` per online display via B's `DisplayIdentity.record(for:salt:)` from CG facts (vendor, model, serial, UUID via `CGDisplayCreateUUIDFromDisplayID`, built-in) — tiers t2, t3, t5 — and compares stored records with a new pure Kit helper `Fingerprint.matches(_ stored: FingerprintRecord, _ live: FingerprintRecord) -> Bool` (B; higher stored tiers that we can't compute don't conflict; `Fingerprint.match` needs a `DisplayKey` map Awake doesn't have). Awake therefore works with the Displays module off. The display picker in the trigger editor shows `NSScreen.localizedName` (or the Displays custom name when Displays runs, read-only from `DisplaysConfig.perDisplay[key].identity.customName`).
 
@@ -1023,8 +1130,11 @@ struct SessionFacts: Equatable, Sendable { var locked: Bool; var onConsole: Bool
     /// Arms kqueue EV_ADD EVFILT_PROC NOTE_EXIT (a DispatchSourceRead on the kq fd, main queue) FIRST, then re-reads
     /// facts: nil (refuse) on ESRCH, start-time mismatch or another uid. The handler runs once; `lifetime` ends it.
     func watch(pid: Int32, startTime: UInt64, lifetime: Lifetime, onExit: @escaping @MainActor () -> Void) -> Bool
+    /// N17 holder name: first regular-app ancestor via pbi_ppid (≤ 16 hops, same uid), `localizedName`; nil → "the
+    /// command line". Local UI only; never stored.
+    func holderName(for pid: Int32) -> String?
     func activate(_ context: AwakeContext, lifetime: Lifetime)
-    func deactivate()
+    func deactivate()                            // every watch's handler runs with .processExited (§2.1 start order)
 }
 ```
 
@@ -1035,13 +1145,30 @@ package struct CPUTicks: Equatable, Sendable {      // host_statistics HOST_CPU_
     package var user, system, idle, nice: UInt32
     package init(user: UInt32, system: UInt32, idle: UInt32, nice: UInt32)
 }
+/// `mach_timebase_info` (r3 code M2): rusage_info_v2 ri_user_time/ri_system_time are Mach absolute-time units, which
+/// on Apple silicon are 24 MHz ticks (numer 125, denom 3), not nanoseconds; Intel reports 1/1.
+package struct CPUTimebase: Equatable, Sendable {
+    package var numer: UInt32; package var denom: UInt32
+    package init(numer: UInt32, denom: UInt32)
+    package func nanos(_ ticks: UInt64) -> UInt64      // multipliedFullWidth, no overflow trap
+}
+/// One pid's counters at one sample (CPUSampler builds them from proc_listallpids + proc_pid_rusage).
+package struct ProcessCPUSample: Equatable, Sendable {
+    package var pid: Int32; package var startTime: UInt64; package var cpuTicks: UInt64   // user + system
+    package init(pid: Int32, startTime: UInt64, cpuTicks: UInt64)
+}
 package enum CPUMath {
     /// Busy share of all cores, 0...100; wrapping UInt32 subtraction; nil when no ticks elapsed.
     package static func load(prev: CPUTicks, now: CPUTicks) -> Double?
-    /// One process's CPU as % of one core (100 = one core) from rusage time deltas (ns) over a wall delta (s).
-    package static func processPercent(prevNanos: UInt64, nowNanos: UInt64, seconds: Double) -> Double?
-    /// The busiest value; nil for an empty sample.
-    package static func top(_ percents: [Double]) -> Double?
+    /// One process's CPU as % of one core (100 = one core) from rusage tick deltas over a wall delta (s).
+    package static func processPercent(prevTicks: UInt64, nowTicks: UInt64, seconds: Double,
+                                       timebase: CPUTimebase) -> Double?
+    /// The busiest same-user process and the churn over one window (pid + start time identify a process, so a reused
+    /// pid is a new process). A process first seen in this sample that started inside the window counts its whole CPU
+    /// time; one that started earlier (first sample of the session) is skipped. `newProcesses` counts first-seen
+    /// processes that started inside the window.
+    package static func window(prev: [ProcessCPUSample], now: [ProcessCPUSample], windowStart: UInt64,
+                               seconds: Double, timebase: CPUTimebase) -> (top: Double?, newProcesses: Int)
 }
 package struct InterfaceCounters: Equatable, Sendable {   // one if_msghdr2 row (NET_RT_IFLIST2, if_data64)
     package var name: String; package var bytesIn: UInt64; package var bytesOut: UInt64
@@ -1058,8 +1185,10 @@ package enum NetworkMath {
     package static func throughputKBps(prev: [InterfaceCounters], now: [InterfaceCounters], seconds: Double) -> Double?
 }
 package enum DiskMath {   // J, `SnapticKit/DiskMath.swift`
-    /// KB/s from summed IOBlockStorageDriver "Bytes (Read)" + "Bytes (Write)"; nil on a reset or a driver set change.
-    package static func throughputKBps(prevBytes: UInt64, nowBytes: UInt64, seconds: Double) -> Double?
+    /// KB/s from per-driver "Bytes (Read)" + "Bytes (Write)" keyed by `IORegistryEntryGetRegistryEntryID` (r3 code
+    /// minor 6): drivers present in both samples contribute their delta; a driver that appeared or vanished (hot-plug)
+    /// contributes nothing, so it is neither a reset nor a spike; a counter that went down counts 0 for that driver.
+    package static func throughputKBps(prev: [UInt64: UInt64], now: [UInt64: UInt64], seconds: Double) -> Double?
 }
 ```
 
@@ -1074,11 +1203,11 @@ package enum DiskMath {   // J, `SnapticKit/DiskMath.swift`
 | USBWatcher | first-match + terminated notifications on `IOUSBHostDevice` | events only | Iterators drained at arm; serial hashed immediately, raw never stored |
 | VolumeMonitor | didMount / didUnmount / willUnmount; DiskArbitration description per mount (`DASessionCreate`, `DADiskCreateFromVolumePath`, `DADiskCopyDescription`, synchronous IPC: run on a private utility queue, results hop to main; code minor 12) | events only | Builds `DriveAlivePolicy.VolumeFacts` (§2.9), including the BSD name (`kDADiskDescriptionMediaBSDNameKey`) the write path re-checks |
 | AudioMonitor | property listeners on default output/input `DeviceIsRunningSomewhere` + default-device change | events only | HAL calls and listeners on a private serial queue (they can block > 50 ms); each listener stored as a typed `AudioObjectPropertyListenerBlock` so Remove gets the same block, `[weak self]`; moves its listener when the default device changes; publishes on main. No input stream is ever opened |
-| CPUSampler | 5 s timer; 10 s window average (total); top process only while `taskQuiet` | ~10 µs/sample total; ≤ 5 ms with top process | `host_statistics` tick deltas → `CPUMath.load`; count = `MemoryLayout<host_cpu_load_info_data_t>.stride / MemoryLayout<integer_t>.stride` (the macro isn't imported); cached host port. Top process (N9): `proc_listallpids` + `proc_pid_rusage(RUSAGE_INFO_V2)` user + system time deltas → `CPUMath.processPercent`/`top`; processes of other users aren't readable and are skipped (so root's `mds_stores`/`kernel_task` bursts don't count); only the maximum is kept, never a pid, name or list (§3.6); no TCC |
-| DiskIOSampler | 5 s timer only while `taskQuiet` | ~50 µs/sample | `IOServiceGetMatchingServices(IOBlockStorageDriver)`, each driver's `Statistics` dictionary "Bytes (Read)" + "Bytes (Write)" summed → `DiskMath`; read-only registry properties, no device opened, no TCC; parity M2 |
+| CPUSampler | 5 s timer; 10 s window average (total); per-process sampling only while `taskQuiet` | ~10 µs/sample total; ≤ 5 ms with every pid | `host_statistics` tick deltas → `CPUMath.load`; count = `MemoryLayout<host_cpu_load_info_data_t>.stride / MemoryLayout<integer_t>.stride` (the macro isn't imported); cached host port. Per process (N9, lead r4, r3 code M2): every 5 s, `proc_listallpids` + `proc_pid_rusage(RUSAGE_INFO_V2)` for **every** pid; `ri_user_time + ri_system_time` deltas converted with `mach_timebase_info` (`CPUTimebase`, read once) → `CPUMath.window` (busiest same-user process, new-process churn). Processes too short to appear in any sample (a `make -j1` stream of 1–3 s `clang`s) are counted two ways: aggregate system CPU (`totalCPUPercent`) and process-count churn (`newProcesses`). Processes of other users aren't readable and are skipped (so root's `mds_stores`/`kernel_task` bursts don't count). The previous sample's pid → (start time, ticks) map is transient and in memory only, dropped when the session ends; nothing else is kept, never a name or list (§3.6); no TCC |
+| DiskIOSampler | 5 s timer only while `taskQuiet` | ~50 µs/sample | `IOServiceGetMatchingServices(IOBlockStorageDriver)`, each driver's `Statistics` dictionary "Bytes (Read)" + "Bytes (Write)" keyed by registry entry ID → `DiskMath`; read-only registry properties, no device opened, no TCC; parity M2. The counters are system-wide, so root Spotlight and Time Machine I/O count as busy (stated in HW-23 and the help text; r3 code minor 6) |
 | IdleSampler | 10 s timer (5 s while `keepOnWhileActive`, activity or `idle` criteria run) | trivial | per-type `.hidSystemState` seconds (key down, flags changed, left/right/other mouse down, scroll wheel, mouse moved; never `anyInput`), minimum taken, turned into **last real input** by `IdleMath` (§2.9) so Snaptic's own nudges and declarations never count |
 | NetworkMonitor | `SCDynamicStore` notifications for IPv4/IPv6 global + interface keys; router hash re-read on change; throughput 5 s timer only when `networkActivity` or `taskQuiet` is needed | events + 5 s | `sysctl NET_RT_IFLIST2` with `if_data64` (32-bit `if_data` wraps within seconds at multi-gigabit) → `NetworkMath.throughputKBps` (loopback excluded, tunnels not double-counted); read-only; no sockets; ARP/route via `sysctl` [HW-11] |
-| ProcessWatch | kqueue `EVFILT_PROC`/`NOTE_EXIT` per held pid | events only | §2.5 hold; one source per hold session |
+| ProcessWatch | kqueue `EVFILT_PROC`/`NOTE_EXIT` per held pid | events only | §2.5 holds; one kqueue per hold (≤ 8), closed in the cancel handler |
 | BluetoothPresence (Beta) | CoreAudio device-list listener (AudioMonitor's queue); `IOServiceAddMatchingNotification(IOHIDDevice)` filtered by `Transport` | events only | Never opens a HID device (Input Monitoring) [HW-10] |
 
 ### 2.9 Activity simulation and Drive Alive (J)
@@ -1089,8 +1218,7 @@ package enum DiskMath {   // J, `SnapticKit/DiskMath.swift`
 package enum ActivityDecision: Equatable, Sendable { case skip, declare, nudge }   // `.skip`, not `.none` (code sig)
 package struct ActivityInputs: Equatable, Sendable {      // Kit (code M13)
     package var mode: AwakeActivityMode         // governing session's effective mode (.off when none)
-    /// pointerNudge effective ∧ Accessibility preflight ∧ the governing session is manual with
-    /// `source.isDirectUserAction && uiStartedInProcess` (N10: never CLI, trigger, launch, restored or resumed).
+    /// `ActivityPolicy.nudgeAllowed(…)` below (r3 consistency M4): computed in Kit, never by the app.
     package var nudgeAllowed: Bool
     package var screenLocked: Bool              // session dictionary, read now
     package var onConsole: Bool                 // session dictionary, read now
@@ -1098,7 +1226,7 @@ package struct ActivityInputs: Equatable, Sendable {      // Kit (code M13)
     package var displaysAsleep: Bool            // CGDisplayIsAsleep(main)
     package var switcherVisible: Bool           // HostSignals
     package var secondsSinceUserInput: Double   // IdleMath over key/click/scroll types; only skips while the user works
-    /// Snaptic's continuous clock: now − session.activitySince (0 before the first action). Never system idle,
+    /// Snaptic's continuous clock: now − gate.activitySince (0 before the first action). Never system idle,
     /// which Snaptic's own declarations reset (security M2, N10).
     package var activityElapsedSeconds: Double
     package var stopAfterSeconds: Double        // AwakeActivityConfig.stopAfterHours · 3600, 1...8 h
@@ -1114,6 +1242,14 @@ package enum ActivityPolicy {   // Kit, J, tested truth table
     /// secondsSinceUserInput ≥ interval, activityElapsed < stopAfter. nudge additionally needs nudgeAllowed and
     /// edge distance > margin; otherwise a nudge request degrades to declare.
     package static func decide(_ i: ActivityInputs) -> ActivityDecision
+    /// The N10 rule in one place (r3 consistency M4, lead r4): true only when pointerNudge is effective, Accessibility
+    /// preflight passes, the governing source is a manual session, and `gate.uiStartedInProcess && gate.pointer ==
+    /// .allowed`. False for trigger, hold, CLI, launch, restored and resumed sessions and for an unconfirmed hotkey start.
+    package static func nudgeAllowed(governing: AwakeGoverning, gate: AwakeActivityGate, pointerNudgeEffective: Bool,
+                                     accessibility: Bool) -> Bool
+    /// True when a nudge would act except for the hotkey confirmation (gate `.askOnFirstUse`): ActivityController then
+    /// calls `SessionController.requestPointerConfirmation()`.
+    package static func needsPointerConfirmation(_ i: ActivityInputs, gate: AwakeActivityGate) -> Bool
 }
 package enum IdleMath {         // Kit, J
     package static let echoSeconds: Double = 1
@@ -1135,7 +1271,7 @@ package enum IdleMath {         // Kit, J
 ```
 `declare` calls `IOPMAssertionDeclareUserActivity("Snaptic: activity", kIOPMUserActiveLocal, &id)` reusing `id` and releases it on `stop()`. It turns the display on ([PA] §1.4), so it never runs while the displays are asleep. `nudge` posts one `mouseMoved` of +1 pt then −1 pt at the current location from `CGEventSource(stateID: .privateState)` via `.cghidEventTap`, with `eventSourceUserData = 0x534E5054` ('SNPT') so Snaptic's own taps (switcher hover-select) ignore it; `CGPreflightPostEventAccess()` before every post; never posts key, click or scroll events. Whether a private-state source or a declaration resets `.hidSystemState` idle is HW-5/HW-6; correctness is independent of the answer because the cap runs on Snaptic's clock.
 
-**The cap** (N10, security M2): `ActivityController` sets `session.activitySince` (continuous) the first time it acts for the governing session; activity stops (the session continues) once `activityElapsedSeconds ≥ stopAfterSeconds` (default 1 h, Advanced 1–8 h), so an unattended unlocked Mac reaches its idle lock. Only a new direct user action in Snaptic's UI (starting a session, or choosing the running preset again, which restarts it) clears `activitySince`; once the cap is reached the detail text says "Stopped appearing active after 1 hour."; real input does not reset it (it can't be told apart from our own declarations on every OS). A trigger session's activity (declare only) caps the same way, counted from the moment the rule's session first acted; the counter resets when that automatic session ends. While activity acts, detail text says "Appearing active" / "Moving the pointer" in the Awake menu and the Settings status row. Copy (Settings): "Appear active — Keeps apps from marking you as away while a session runs." / "Move the pointer slightly — Moves the pointer 1 point and back. Only for sessions you start in Snaptic. Needs Accessibility."
+**The cap** (N10, security M2): `ActivityController` calls `SessionController.noteActivityActed(now:)` the first time it acts, which sets the gate's `activitySince` (continuous); activity stops (the session continues) once `activityElapsedSeconds ≥ stopAfterSeconds` (default 1 h, Advanced 1–8 h), so an unattended unlocked Mac reaches its idle lock. Only a new direct UI start (`.uiStart`, incl. choosing the running preset again) or an allowed hotkey confirmation clears `activitySince`; once the cap is reached the detail text says "Stopped appearing active after 1 hour."; real input does not reset it (it can't be told apart from our own declarations on every OS). Trigger sessions (declare only) cap the same way, and the counter is **carried** across back-to-back governing sessions, so adjacent schedule rules can't chain 1 h caps; it resets only after 15 min with nothing governing (r3 security L5). A relaunch starts a new count (the gate isn't persisted); that bounds a no-TCC declaration, not a grant, and §3.3 calls the cap a UX bound for that case. While activity acts, detail text says "Appearing active" / "Moving the pointer" in the Awake menu and the Settings status row. Copy (Settings): "Appear active — Keeps apps from marking you as away while a session runs." / "Move the pointer slightly — Moves the pointer 1 point and back. Only for sessions you start in Snaptic. Needs Accessibility."
 
 **DriveAliveService** (`Awake/Sources/DriveAliveService.swift`):
 
@@ -1183,7 +1319,7 @@ Any check failure → that volume is skipped and the Drives row shows "Can't kee
 
 ### 2.10 Automation (G, `AwakeAutomation`)
 
-Hotkeys (`AwakeActionID`, owner "Awake", via `GlobalHotkeys`, all unbound by default): `awake.toggle` (Keep Awake on/off with the default preset), `awake.keepDisplayOn`, `awake.preset1…4`, `awake.pauseAutomatic`.
+Hotkeys (`AwakeActionID`, owner "Awake", via `GlobalHotkeys`, all unbound by default): `awake.toggle` (Keep Awake on/off with the default preset; off = `turnOff`), `awake.keepDisplayOn`, `awake.preset1…4`, `awake.pauseAutomatic` (title "Pause Rules"; raw value kept). A hotkey start is `.hotkeyStart` for the activity gate (§2.3, §2.5).
 
 CLI verbs (registered only while `commandLine` is effective and the host CLI is on). `start`, `hold`, `stop` and `extend` share a 1 request/s limit (security L3), on top of the global 20/s. Arguments go through `AwakeCommandGrammar` (G, Kit, consistency M7):
 
@@ -1199,36 +1335,40 @@ package enum AwakeCommand: Equatable, Sendable {
 }
 package enum PresetSelector: Equatable, Sendable { case index(Int), name(String) }   // 1-based; name ≤ 64 scalars
 package enum AwakeCommandGrammar {
-    /// verb is the word after "awake"; flags "--pid", "--max", "display-may-sleep"; numbers via AwakeDurationGrammar
-    /// limits (≤ 7 digits, no sign, no exponent). nil = usage error (exit 2). Never traps (seeded fuzz).
+    /// verb is the word after "awake"; flags "--pid", "--max", "--display-may-sleep" (r3 product minor 16; every flag
+    /// is a `--` word); numbers via AwakeDurationGrammar limits (≤ 7 digits, no sign, no exponent). nil = usage error
+    /// (exit 2). Never traps (seeded fuzz).
     package static func parse(verb: String, args: [String]) -> AwakeCommand?
     /// `awake status` line; ISO end time hand-formatted from explicit UTC components (N12, code minor 10).
     package static func statusLine(_ s: AwakeStatusFacts) -> String
     package static func statusJSON(_ s: AwakeStatusFacts) -> String
+    /// First reply line of a hold, with the actual cap ("at most 12 h", "at most 3 h"; r3 consistency m5).
+    package static func holdReply(pid: Int32?, capSeconds: Int) -> String
 }
 package struct AwakeStatusFacts: Equatable, Sendable {
-    package var active: Bool; package var automatic: Bool; package var kind: AwakeHistoryKind?
+    package var active: Bool; package var source: AwakeStatusSource?; package var kind: AwakeHistoryKind?
     package var display: AwakeDisplayPolicy?; package var endUnix: Double?; package var remaining: Double?
-    package var triggerNumber: Int?; package var holdPID: Int32?
-    package init(active: Bool, automatic: Bool, kind: AwakeHistoryKind?, display: AwakeDisplayPolicy?, endUnix: Double?,
-                 remaining: Double?, triggerNumber: Int?, holdPID: Int32?)
+    package var triggerNumber: Int?; package var holdPIDs: [Int32]
+    package init(active: Bool, source: AwakeStatusSource?, kind: AwakeHistoryKind?, display: AwakeDisplayPolicy?,
+                 endUnix: Double?, remaining: Double?, triggerNumber: Int?, holdPIDs: [Int32])
 }
+package enum AwakeStatusSource: String, Sendable { case manual, automatic, holds }
 ```
 
 | Verb | Policy | offOnly | Behavior |
 |---|---|---|---|
-| `awake status` | read | — | `inactive` or `active\tmanual|automatic\t<kind>\t<display policy>\t<ISO end or ->\t<remaining s>`; kinds `indefinite|duration|until|app|idle|process|automatic`; `--json` object adds `"pid"` for a hold (a number, never a name; parity M3); no app names, no process names, rule *numbers* only |
-| `awake start [<duration grammar>] [display-may-sleep]` | low | false | `AwakeDurationGrammar`; **no argument = 1 h**; `indefinite`/`forever` refused (exit 4, "Use the menu or `awake hold`"); `idle` = Until Downloads and Tasks Finish (cap 12 h); refused if the resulting options use `nudge`; refused while a UI-started session runs (`.uiSessionRunning`); guards apply (exit 4 with reason) |
-| `awake hold [--pid N] [--max <duration>]` | low | false | `hold` session (below); cap = `--max` (≤ 24 h) or 12 h; refused while a UI-started session runs |
-| `awake preset <n|name>` | low | false | Refused if the preset uses `nudge` or is Until Turned Off, or while a UI-started session runs; an uncapped untilIdle preset gets the 12 h cap |
-| `awake extend <duration>` | low | false | Manual timed or capped sessions only; a hold never past 24 h |
-| `awake stop` | low | true | Ends the manual session; a trigger session is suppressed as a manual end |
-| `awake pause [<duration>]` | low | true | Pauses automatic sessions (default 1 h, ≤ 24 h) |
+| `awake status` | read | — | `inactive` or `active\tmanual|automatic|holds\t<kind>\t<display policy>\t<ISO end or ->\t<remaining s>\t<hold count>`; kinds `indefinite|duration|until|app|idle|process|automatic`; `--json` object adds `"holds"` (count) and `"pids"` (numbers, never names; parity M3); no app names, no process or holder names, rule *numbers* only |
+| `awake start [<duration grammar>] [--display-may-sleep]` | low | false | `AwakeDurationGrammar`; **no argument = 1 h**; `indefinite`/`forever` refused (exit 4, "Use the menu or `awake hold`"); `idle` = Until Downloads and Tasks Finish (cap 12 h); options are the configured defaults, and pointer movement never acts for a CLI session (N10; r3 consistency M3: no nudge refusal); refused while a UI-started session runs (`.uiSessionRunning`); guards apply (exit 4 with reason) |
+| `awake hold [--pid N] [--max <duration>]` | low | false | Adds a holder (N17, below); cap = `--max` (≤ 24 h) or 12 h; never refused because a UI session runs; refused at 8 holds (`.holdLimit`, exit 4); guards apply |
+| `awake preset <n|name>` | low | false | Refused if the preset is Until Turned Off, or while a UI-started session runs; an uncapped untilIdle preset gets the 12 h cap; a nudge preset runs and declares only (N10) |
+| `awake extend <duration>` | low | false | Manual timed or capped sessions only (holds have `--max`; nothing extends a hold) |
+| `awake stop` | low | true | Ends the manual session; a trigger session is suppressed as a manual end; holds end with their own clients |
+| `awake pause [<duration>]` | low | true | Pauses rules (default 1 h, ≤ 24 h) |
 
-**`awake hold`** (lead r3; parity M3, security M4, code R2-M9, consistency M1). Snaptic never runs the caller's command. Two forms:
-- **Default (no `--pid`)**: the `snaptic` client itself is the hold. The server binds the session to `HoldBinding.connection(pid: peer.pid, startTime:)`, where `peer` is the connection's `ControlPeer` (below), replies with the first line "Holding until this command ends (at most 12 h). Press Control-C to stop." and **keeps the connection open**. The client keeps reading and never exits on its own; the session ends when the client's connection reaches EOF (the client exits, is killed or its terminal closes; the kernel closes the socket), when `ProcessWatch` sees the peer pid exit (a forked child that inherited the fd doesn't keep it alive), at the cap, or when the user ends it. When the server ends it (cap, user, guard, Snaptic quits), it writes a final line ("Awake hold ended: time is up." etc.) and closes; the client prints it and exits 0 (or 5 when Snaptic quit).
-- **`--pid N`**: binds to `HoldBinding.process(pid: N, …)`; the server checks N > 1, `pbi_uid == getuid()` and reads N's start time, arms `ProcessWatch` first and re-verifies (security M4), replies "Holding while process N runs (at most 12 h)." and closes; the client exits 0 immediately. The session survives a Snaptic relaunch (pid + start time re-verified at restore).
-- Server-side limits: a held connection doesn't count toward the 4 concurrent request slots; at most one held connection exists (a new hold replaces the old one, whose client gets "Replaced by another hold." and exits 0); a hold never replaces a UI-started session.
+**`awake hold`** (lead r3/r4; parity M3, security M4, code R2-M9, consistency M1, r3 product M4). Snaptic never runs the caller's command. Holds stack (N17): each one is a holder beside the manual session, rule sessions and other holds; the Mac stays awake while any holder exists; when nothing else governs, the hold stack governs (N3) with a system assertion. Two forms:
+- **Default (no `--pid`)**: the `snaptic` client itself is the hold. The server binds the holder to `HoldBinding.connection(pid: peer.pid, startTime: peer.startTime)`, where `peer` is the connection's `ControlPeer` (below), arms ProcessWatch on that pid (failure → `.invalid`, "Snaptic couldn't identify the caller.", exit 4), replies with `holding: true` and the first line `holdReply` ("Holding until this command ends (at most 12 h). Press Control-C to stop.") and **keeps the connection open**. The client prints and flushes that line, keeps reading and never exits on its own; the hold ends when the connection reaches EOF (the client exits, is killed or its terminal closes; the kernel closes the socket), when any byte arrives after the request, when `ProcessWatch` sees the peer pid exit, at the cap, when the user chooses **End Command-Line Holds**, when a guard ends sessions, or when Snaptic stops. When the server ends it, it writes a final line ("Awake hold ended: time is up." etc.) and closes; the client prints it and exits 0 (5 when Snaptic quit, or on EOF without a final line).
+- **`--pid N`**: binds to `HoldBinding.process(pid: N, …)`; the server checks N > 1, `pbi_uid == getuid()` and reads N's start time, arms `ProcessWatch` first and re-verifies (security M4), replies `holdReply(pid: N, …)` ("Holding while process N runs (at most 12 h).") and closes; the client exits 0 immediately. The holder survives a Snaptic relaunch (pid + start time re-verified at restore).
+- Limits: at most `AwakeHold.maxHolds` (8) holders of both forms; held connections use their own slot pool (`maxHeldConnections = 8`) and never count against the 4 request slots; a hold never replaces anything and nothing but its own end conditions ends it (a UI Turn Off leaves holds running and says so, §2.5).
 
 Usage (README, step 5), with the parent-shell pitfall explained:
 ```sh
@@ -1237,30 +1377,46 @@ snaptic awake hold --pid $$
 # Around one command in an interactive or single shell
 snaptic awake hold & HOLD=$!; make release; kill $HOLD
 ```
-Pitfall: `make` recipe lines, `npm run` steps, CI step runners and agent tool calls run each line in a fresh `sh -c` that exits as soon as the line ends. There, `--pid $$` names a shell that exits at once (the session ends within milliseconds; the toast and the reply say so), and a backgrounded `hold &` left behind by one line keeps holding after the work is done, until its cap. Put start, work and `kill` in **one** shell (one recipe line joined with `&&`, `.ONESHELL:`, or a script file), pass `--pid` of a process that lives as long as the work, or use `snaptic awake start 2h`. CI keeps `caffeinate -w` as before.
+Pitfall: `make` recipe lines, `npm run` steps, CI step runners and agent tool calls run each line in a fresh `sh -c` that exits as soon as the line ends. There, `--pid $$` names a shell that exits at once (the hold ends within milliseconds; the toast and the reply say so), and a backgrounded `hold &` left behind by one line keeps holding after the work is done, until its cap. Put start, work and `kill` in **one** shell (one recipe line joined with `&&`, `.ONESHELL:`, or a script file), pass `--pid` of a process that lives as long as the work, or use `snaptic awake start 2h`. CI keeps `caffeinate -w` as before.
 
-**ControlServer contract change** (A, step 1; `Core/ControlServer.swift`, `Core/ControlCommandRegistry.swift`, `Core/CLIClient.swift`, Kit `KitControl.swift`; consistency M1, code R2-M9):
+**ControlServer contract change** (A, step 1; `Core/ControlServer.swift`, `Core/ControlCommandRegistry.swift`, `Core/CLIClient.swift`, Kit `KitControl.swift`; consistency M1, code R2-M9, r3 code M3 and sig rows, r3 security L1/L2; lead r4):
 ```swift
-/// Read by the server on the accepted fd right after getpeereid, before the request line is read (the peer is
-/// alive and waiting for its reply): getsockopt(SOL_LOCAL, LOCAL_PEERPID) + proc_pidinfo start time. Never from the
-/// request, which a client writes; ControlRequest gains no field.
+/// Best effort, not identity (r3 security L1): LOCAL_PEERPID reports the socket's last owner, which an inherited or
+/// SCM_RIGHTS-passed fd changes, and a client can write its request and exit before accept. Read on the accepted fd
+/// right after getpeereid (uid from getpeereid), before the request line is read; start time from
+/// SNProcess.startTime(for:) (same µs epoch as HoldBinding). Never from the request; ControlRequest gains no field.
+/// A connection hold's authority is the connection itself: EOF ends it whatever the pid does.
 struct ControlPeer: Equatable, Sendable { let pid: pid_t; let uid: uid_t; let startTime: UInt64? }
-/// A connection kept open after its first reply (only for verbs registered with `holds: true`).
+/// Created by the listener for EVERY connection (the listener can't know `holds`: the registry lives on main; r3 code
+/// sig row). Dispatch passes it to the handler only when the entry has `holds: true`, and turns a `holding` reply
+/// from any other verb into an ordinary close.
 final class ControlHold: @unchecked Sendable {
-    func onClose(_ handler: @escaping @MainActor () -> Void)   // EOF, read error, server stop; called once, on main
+    var isClosed: Bool { get }                                 // the handler checks it after arming ProcessWatch
+    /// EOF, a byte after the request, read/write error, ping failure, server stop; called exactly once, on main.
+    /// Registered after the close happened → fires on the next main-queue turn.
+    func onClose(_ handler: @escaping @MainActor () -> Void)
     func finish(_ final: ControlResponse)                      // writes one more line, closes; idempotent
 }
 struct ControlContext { let peer: ControlPeer; let hold: ControlHold? }   // hold non-nil only for holds: true verbs
 // ControlCommandRegistry.Handler becomes  @MainActor (ControlRequest, ControlContext) async -> ControlResponse
 // register(_:policy:offOnly:cliAllowed:holds: Bool = false, summary:lifetime:_:); existing call sites keep compiling
 // through an overload that takes the old one-argument handler (removed at the step-3 exit).
-// ControlListener.Handler becomes (ControlRequest, ControlPeer, ControlCancellation, ControlHold?, Reply) -> Void.
-// KitControl: ControlResponse gains `holding: Bool` (lossy, default false); CLIClient keeps reading without a timeout
-// after a `holding` reply until EOF or the final line. maxHeldConnections = 1.
+// ControlListener.Handler becomes (ControlRequest, ControlPeer, ControlCancellation, ControlHold, Reply) -> Void.
+// KitControl: ControlResponse gets a hand-written Codable (`c.lossy(.holding, false)`; the synthesized one would make
+// the new key required) and `init(…, holding: Bool = false)`; `jsonReply` keeps `holding`.
+// KitControl: maxHeldConnections = 8, holdPingSeconds = 300.
 ```
-A handler that returns a `holding` response keeps the connection; any other response closes it as today. `getpeereid` keeps its uid check; a peer whose pid or start time can't be read gets "Snaptic couldn't identify the caller." (exit 5) for `holds` verbs only.
+Connection rules (normative, A; tested on the macOS job):
+- **Slots.** The 4 request slots are released in `onFinish` as today. A `holding` reply moves the connection from the request pool to the held pool on the listener queue: `active -= 1` exactly once and `held += 1`; its later finish decrements `held` only (no double release); `assert(active >= 0 && held >= 0)`. The old request's finish and the hold registration are `queue.async`'d in that order. A holding reply while `held == 8` becomes the refusal "Snaptic is already holding for 8 commands." (exit 4).
+- **After the handshake** there is no read timeout. `readAvailable` treats any byte after the request line as a close (a held client can't stream data and keep the queue busy); the EOF branch (where `cancellation` is nil) calls the hold's close; write errors close.
+- **Ping.** Every `holdPingSeconds` the server writes `{"ping":true}` plus a newline on each held connection; a write failure closes it. `CLIClient` ignores ping lines.
+- **Client.** `CLIClient.readReply` keeps the bytes after the first newline (no drop), prints and `fflush`es each line, never writes after the request and never half-closes (`shutdown(SHUT_WR)` is banned in CLIClient); EOF without a final line exits 5.
+- **CLI turned off / module stop.** The verb's `lifetime.onEnd` finishes every held connection ("Awake was turned off.").
+- **Tests:** hold, then 4 normal requests accepted and a 5th gets "busy"; 8 holds, the 9th refused; EOF after the reply releases exactly once; a client that exits before accept gets `.invalid` or ends at once; a forked child with the inherited fd doesn't keep a hold whose peer exited; an extra byte ends the hold; ping lines don't reach stdout.
 
-Never via CLI: editing triggers, presets, guards, Drive Alive volumes, activity mode, resuming automatic sessions, turning features on, Start Anyway. `KitControl.protectedSettings` replaces `"sleepprevention", "preventsleep"` with `"awake", "nudge", "pointernudge", "drivealive", "activity", "guards", "batteryguard", "thermalguard"`; `feature disable` stays limited to Displays; `module disable` help text lists Awake.
+`getpeereid` keeps its uid check.
+
+Never via CLI: editing triggers, presets, guards, Drive Alive volumes, activity mode, resuming rules, ending another client's hold, turning features on, Start Anyway. `KitControl.protectedSettings` replaces `"sleepprevention", "preventsleep"` with `"awake", "nudge", "pointernudge", "drivealive", "activity", "guards", "batteryguard", "thermalguard"`; `feature disable` stays limited to Displays; `module disable` help text lists Awake.
 
 ### 2.11 Runtime state, contracts, module (lead)
 
@@ -1272,6 +1428,9 @@ struct AwakeLastEnd: Equatable { let reason: AwakeEndReason; let at: Date }
     @Published var effectiveFeatures: Set<AwakeFeature> = []
     @Published var availability: [AwakeFeature: FeatureAvailability] = [:]
     @Published var governing: AwakeGoverning = .inactive
+    @Published var holds: [AwakeHold] = []       // the stack, also while another source governs (N17)
+    @Published var holderSummary: String?        // "Held by Terminal (2)"; local UI only, recomputed when holds change
+    @Published var pointerConfirmation = false   // the hotkey confirmation toast is showing (gate `.asking`)
     @Published var remaining: Double?            // updated at AwakeCountdown.nextChange only
     @Published var assertion: AwakeAssertionType = .off
     @Published var power: PowerFacts?
@@ -1329,6 +1488,9 @@ struct CustomItemRow: Equatable {
     let setPresence: @MainActor (MenuPresence) -> Void
     /// Adapter (consistency m13): calls ModuleContext.openSettings(route?.id); the host parses "<root>.<route>".
     let openSettings: @MainActor (SettingsRoute?) -> Void
+    /// Built from ModuleContext (r3 code sig row, minor 1): `ModuleContext` (lead) gains
+    /// `requestStatusPlan: @MainActor () -> Void`, `setPresence: @MainActor (ModuleID, MenuPresence) -> Void` and
+    /// `hostSignals: HostSignals`; AwakeHost binds `setPresence` to `.awake`.
     init(_ module: ModuleContext)
 }
 @MainActor final class AwakeContext {
@@ -1341,7 +1503,7 @@ struct CustomItemRow: Equatable {
     let host: AwakeHost
     let sessions: SessionController, triggers: TriggerController   // controllers other controllers call
     func service(_ id: AwakeServiceID) -> any AwakeServiceLifecycle
-    func source(for kind: AwakeCriterionKind) -> any CriterionSource
+    func source(for kind: AwakeCriterionKind) -> (any CriterionSource)?   // nil for .schedule (r3 consistency M5)
     init(host: AwakeHost, config: ConfigStore<AwakeConfig>, state: ConfigStore<AwakeRuntimeSnapshot>,
          history: ConfigStore<AwakeHistory>, runtime: AwakeRuntimeState)
 }
@@ -1354,7 +1516,7 @@ struct CustomItemRow: Equatable {
     init()
 }
 ```
-`AwakeModule` (lead) follows `DisplaysModule` line by line (resolve, apply order, kill switches, config sink with one main-queue hop, `stop()` sync and idempotent: controllers reverse, services reverse, `assertions.releaseAll()` last-resort, flush stores, held CLI connections finished) and adopts `StatusItemProvider` by forwarding to `IndicatorController` (G owns the item; StatusMenu never builds an Awake slot). r2's admission hooks and consent store are withdrawn (N10): the three stores are plain `ConfigStore`s.
+`AwakeModule` (lead) follows `DisplaysModule` line by line (resolve, apply order, the §2.1 start order, kill switches, config sink with one main-queue hop, `stop()` sync and idempotent: controllers reverse, services reverse, `assertions.releaseAll()` last-resort, flush stores, held CLI connections finished) and adopts `StatusItemProvider` by forwarding to `IndicatorController` (G owns the item; StatusMenu never builds an Awake slot). The three stores are created and owned by `ModuleHost` (§2.13) and passed to `AwakeModule` (r3 consistency m11: one owner); r2's admission hooks and consent store are withdrawn (N10): they are plain `ConfigStore`s.
 
 `SnapticModule` additions (§4.1: `tint`, `highlights`, `settingsRoot()`, `settingsDestination(_:)`, `settingsIndex()`) get **protocol-extension defaults** in `ModuleContracts.swift` (gray tint, no highlights, a root that renders the module's existing `settingsPages()` content, nil, `[]`), and `settingsPages()` stays until the step-3 exit, so A's `WindowSwitcherModule` and H's `SettingsWindowHost.swift` compile at step 0 (code R2-M2a).
 
@@ -1362,7 +1524,7 @@ struct CustomItemRow: Equatable {
 
 | Event | Behavior |
 |---|---|
-| Snaptic crash / force quit | powerd releases the assertion on process exit ([PA] §1.2). Nothing else to undo (Drive Alive leaves an 8-byte hidden file). Relaunch in the same boot resumes the admitted manual session. |
+| Snaptic crash / force quit | powerd releases the assertion on process exit ([PA] §1.2). Nothing else to undo (Drive Alive leaves an 8-byte hidden file). Relaunch in the same boot resumes the persisted manual session and `--pid` holds (connection-hold clients see EOF and exit 5). |
 | System sleep (lid, Apple menu, low battery, thermal) | Assertions don't prevent it. `willSleep`: if `endOnSystemSleep`, end `.systemSleep`; stop activity and Drive Alive writes. `didWake`: recompute remaining (continuous clock), end expired sessions, re-arbitrate, verify the assertion, triggers step after 5 s settle. |
 | Lid closed on battery, not desktop mode | Mac sleeps. When a session is active **and** the Mac is on battery or has no external display (design m5), the Awake menu shows "Closing the lid will put your Mac to sleep. To keep it awake with the lid closed, connect power and an external display." |
 | Clock change | Until-sessions and `pausedUntil` re-evaluated now (re-arm if the end moved > 5 s); duration sessions unaffected; schedules re-evaluated. |
@@ -1371,20 +1533,48 @@ struct CustomItemRow: Equatable {
 | Fast user switching (session dictionary: not on console) | Plan downgrades to system; activity paused; `userSwitchEnd` ends `.userSwitch` immediately or after 1 h off console (default). Becoming active again re-applies. |
 | Low Power Mode on | Toast once "Low Power Mode is on. Awake keeps running." unless `endOnLowPowerMode`. |
 | Thermal serious / critical | §2.6 (critical also stops Drive Alive). |
-| Safe Mode | Manual sessions, guards, indicator, history, shortcuts, CLI work; triggers, activity, nudge, Drive Alive are removed. |
+| Safe Mode | Manual sessions, holds, guards, indicator, history, shortcuts, CLI work; triggers, activity, nudge, Drive Alive are removed. |
 | Displays panic ("Restore All Displays") | Not an Awake participant: keep-awake is not a display hazard. (0.2's "sleep prevention released" row goes with the feature in step 3.) |
-| Module turned off from Settings | The §4.3 confirmation first when a session or enabled rule exists (one text, defined only in §4.3; consistency m5); then `stop()` with `isTerminating == false`: assertion released, session ended, snapshot cleared, status item removed, a held CLI connection finished ("Awake was turned off."). |
+| Module turned off from Settings | The §4.3 confirmation first when a session or enabled rule exists (one text, defined only in §4.3; consistency m5); then `stop()` with `isTerminating == false`: assertion released, session ended, snapshot cleared, status item removed, held CLI connections finished ("Awake was turned off."). |
 | `Modules.disable.awake` set | Module never starts (N14); a snapshot left from earlier is cleared at launch. |
-| Quit | `isTerminating = true`, then `stop()`: assertion released, snapshot kept for resume (`hold(.connection)` excluded), held CLI connections finished ("Snaptic quit."; client exit 5). |
+| Quit | `isTerminating = true`, then `stop()`: assertion released, snapshot kept for resume (connection holds excluded), held CLI connections finished ("Snaptic quit."; client exit 5). |
 
 ### 2.13 Interaction with Displays and the Switcher
 
 - **Displays**: `sleepPrevention` is removed **in step 3**, in one coordinated merge by D and F with the lead's lines and A's Kit rows (code B2): `DisplayFeature.sleepPrevention` and its spec, `PerDisplayManagement.preventSleep` (kept decodable and encoded until 0.4, ignored), PowerController's assertion code, `ManagementIDs.dSleepPrevention*`, `DisplaysRuntimeState.sleepPreventionActive`, the Arrangement-page section, the menu badge, the CLI `prevent-sleep` verb, the KitBackup/KitControl/DisplaysUIModel/Diagnostics rows and their tests. Until then the enum case, spec and runtime property stay and compile; M1 reads raw JSON either way, so it doesn't depend on the case. The ratchet (§6.3) lists `PowerController.swift` for L1 until that merge. Awake never calls Displays code except B's pure `DisplayIdentity`/`Fingerprint.matches` helpers and a read-only look at `DisplaysConfig` custom names.
 - **Switcher**: no functional coupling. Pointer nudges are tagged and suppressed while the switcher panel is visible (`HostSignals.switcherVisible`, set by A). Hotkey conflicts across modules are reported by `GlobalHotkeys` with the owning module's name.
 - **Host**: `ModuleHost` gains `awake: AwakeModule`, `awakeStore`, `awakeStateStore`, `awakeHistoryStore` (one store per key: `SnapticAwakeV1`, `SnapticAwakeStateV1`, `SnapticAwakeHistoryV1`), `case .awake` in `module(_:)`, the `Modules.disable.<id>` read (N14), flushes the stores on quit, and includes them in Reset All Settings (history and state cleared too; `restoringDefaults` turns nudge and Drive Alive off).
-- **Upgraders** (code M4, C7, code minor 8): in `ModuleHost.init`, when module settings existed before this launch and `modules[.awake] == nil`, the host inserts `ModulePreferences(enabled: false, presence: .ownIconWhenActive)` for Awake **before** M1 runs; `ModulesConfig.upgradeDefaults()` (0.1 users, where `modulesExisted` is false) inserts the same entry. M1 turns it on only if it produced an enabled rule. `ModulesConfig.defaultPreferences(_:)` becomes per id (fresh installs: Awake enabled, `.ownIconWhenActive`); `ConfigModulesTests` lines 15, 16 (`placement(id) == .shared` no longer holds for Awake) and 34 are updated (consistency m9).
+- **Upgraders** (code M4, C7, code minor 8): in `ModuleHost.init`, when module settings existed before this launch and `modules[.awake] == nil`, the host inserts `ModulePreferences(enabled: false, presence: .ownIconWhenActive)` for Awake **before** M1 runs; `ModulesConfig.upgradeDefaults()` (reached through `ModulesConfig.firstRun(launchedBefore: true)` for 0.1 users, who have no module settings yet; r3 consistency m6) inserts the same entry. M1 turns it on only if it produced an enabled rule. `ModulesConfig.defaultPreferences(_:)` becomes per id (fresh installs: Awake enabled, `.ownIconWhenActive`); `ConfigModulesTests` lines 15, 16 (`placement(id) == .shared` no longer holds for Awake) and 34 are updated by the lead, who owns that test file from step 0 (consistency m9, r3 code minor 7).
 
 ### 2.14 Config models (Kit; lossy decode per field, `sanitized()` clamps everything)
+
+**Lossy collections and derived ids** (N18, lead r4; r3 code M5, M6 and the StableID sig row). Lead, `SnapticKit/KitLossy.swift`, step 0:
+
+```swift
+/// Mirrors LossyMap (r3 code M6): decodes element by element, a bad element is skipped and the rest kept; encodes all.
+/// Replaces the Decodable-only `LossyArray` in ConfigAutomation.swift, which the lead moves here in step 0 (its
+/// callers in ConfigAutomation keep compiling: same name, same `items`).
+package struct LossyArray<Element: Codable & Equatable>: Codable, Equatable {
+    package var items: [Element]
+    package init(_ items: [Element] = [])
+    package init(from decoder: Decoder) throws      // ≤ 1,024 elements read, as today
+    package func encode(to encoder: Encoder) throws
+}
+extension KeyedDecodingContainer {
+    /// `c.lossyArray(.presets, default)`: missing key → default; present → element-wise (never all-or-nothing).
+    package func lossyArray<T: Codable & Equatable>(_ key: Key, _ fallback: @autoclosure () -> [T]) -> [T]
+}
+/// 128-bit FNV-1a (offset basis 0x6c62272e07bb014262b821756295c58d, prime 2^88 + 0x13b) over UTF-8, via
+/// multipliedFullWidth; Kit has no SHA (CryptoKit is app-only), and these ids aren't secrets. Fixed test vectors.
+package enum NameHash { package static func fnv1a128(_ bytes: [UInt8]) -> (hi: UInt64, lo: UInt64) }
+extension StableID {
+    /// Name-based, v5-shaped UUID: fnv1a128(namespace ‖ 0x00 ‖ name) with the RFC 9562 version nibble 8 ("custom",
+    /// because the hash isn't SHA-1) and variant 10; always a valid StableID (it parses with UUID(uuidString:)).
+    /// Same input → same id on every run and platform (M1 re-runs, default presets).
+    package static func derived(namespace: String, name: String) -> StableID
+}
+```
+Every Awake list decodes through it: `AwakeTriggersConfig.triggers`, `AwakeTrigger.criteria`, `AwakeSessionsConfig.presets`, `AwakeHistory.entries`, `AwakeRuntimeSnapshot.holds`; volumes are a `LossyMap` already. The element types (`AwakeTrigger`, `AwakePreset`, `AwakeHistoryEntry`, `AwakeHold`) get hand-written `init(from:)`: an invalid `id`, `kind` or `binding` throws (that element is dropped), every other field is lossy with its default. Kit tests: one unknown 0.4 element among three keeps the other two, and the next save keeps them.
 
 ```swift
 // Config/ConfigAwake.swift (lead shell; G fills the functions in step 2, code M14)
@@ -1397,17 +1587,19 @@ package struct AwakeConfig: ConfigModel {
     package var drives: DriveAliveConfig             // J
     package var indicator: AwakeIndicatorConfig      // G (edited on the Menu Bar page)
     package var shortcuts: LossyMap<AwakeActionID, HotkeyCombo>   // G
-    package var migrations: [String]                 // ids of one-time migrations already run ("fromDisplays.v1")
+    // r3's `migrations: [String]` moved to the lead's MigrationLedger (key SnapticMigrationsV1, §4.6; r3 code m13)
     package init()
     package func sanitized() -> AwakeConfig
     /// Page Restore Defaults: everything back to defaults; pointerNudge off, nudge presets → declare, Drive Alive
-    /// volumes cleared (safe direction, security L6).
+    /// volumes cleared (safe direction, r1 security L6).
     package func restoringDefaults() -> AwakeConfig
-    /// Backup (security M7): nudge → declare, drops drives, features.pointerNudge, recentApps, startAtLaunch,
-    /// salted hashes; rules only when `includeTriggers` (the user ticked the export checkbox).
+    /// Backup (security M7): nudge → declare, drops `drives`, `features.pointerNudge`, `sessions.recentApps`,
+    /// `sessions.behavior.startAtLaunch`, salted hashes; rules only when `includeTriggers` (the export checkbox).
     package func exportable(includeTriggers: Bool) -> AwakeConfig
-    /// Import: same stripping, guards monotonic over `current`, pointerNudge and Drive Alive volumes kept from
-    /// `current`. Applied by KitBackup AFTER its generic `merge`/`mergeByID`, as the last step (security L5).
+    /// Import: same stripping; `guards` monotonic over `current`; `features.pointerNudge` and `drives.volumes` kept from
+    /// `current` (r3 security L7: the fields are named, no "protected" concept). Applied by KitBackup AFTER its generic
+    /// `merge`/`mergeByID`, as the last step (security L5). Defense in depth: KitBackup.removedPaths also lists
+    /// `awake.drives`, `awake.features.pointerNudge`, `awake.sessions.behavior.startAtLaunch`, `awake.sessions.recentApps`.
     package func importable(current: AwakeConfig) -> AwakeConfig
 }
 // r2's AwakeConsent / ConfigAwakeConsent.swift / AwakeConsentStore are withdrawn (N10).
@@ -1424,12 +1616,20 @@ package struct AwakePreset: Codable, Equatable, Sendable, Identifiable {
     package var kind: AwakePresetKind
     package var options: AwakeSessionOptions?   // nil = "Use default" (parity M5)
     package init(id: StableID, name: String?, kind: AwakePresetKind, options: AwakeSessionOptions?)
+    package init(from decoder: Decoder) throws  // hand-written (N18): id and kind required, the rest lossy
+    package func encode(to encoder: Encoder) throws
+    /// Menu title as a verb phrase for the first-level item (r3 product M1): "Keep Awake Until Turned Off",
+    /// "Keep Awake for 1 Hour", "Keep Awake Until 5:00 PM", "Keep Awake Until Downloads and Tasks Finish".
+    package func verbTitle(_ text: AwakeTextContext) -> String
 }
 package struct AwakeSessionsConfig: ConfigModel {
-    package var presets: [AwakePreset]          // ≤ 12; default: 30 min, 1 h, 2 h, 5 h, Until Turned Off, Until Downloads and Tasks Finish
-    package var defaultPresetID: StableID?      // nil or unknown → Until Turned Off (C10)
+    /// ≤ 12, via LossyArray (N18). Defaults: 30 min, 1 h, 2 h, 5 h, Until Turned Off, Until Downloads and Tasks Finish,
+    /// with ids `StableID.derived(namespace: "awake.preset.default", name: "30m" | "1h" | "2h" | "5h" | "indefinite" |
+    /// "idle")`, so `init()` and `restoringDefaults()` give the same ids every time.
+    package var presets: [AwakePreset]
+    package var defaultPresetID: StableID?      // nil or unknown → Until Turned Off (C10); UI "Default session"
     /// What "Keep the display on" (display) and the Advanced activity switches (activity) edit; used when a preset
-    /// has nil options.
+    /// has nil options. `init(from:)` decodes `presets` with `lossyArray` (r3 code M6).
     package var defaultOptions: AwakeSessionOptions
     package var lastCustomSeconds: Int          // 5400
     package var behavior: AwakeBehavior         // §2.6
@@ -1449,7 +1649,7 @@ package struct AwakeSessionsConfig: ConfigModel {
 ```swift
 
 // Config/ConfigAwakeIndicator.swift (G)
-/// Menu Bar page "Time" pop-up: Don't Show / Time Remaining / End Time (design M5).
+/// Menu Bar page "Time" pop-up: Don't Show / Time Remaining / End Time (design M5; .icon = Don't Show).
 package enum AwakeIndicatorStyle: String, Codable, CaseIterable, Sendable { case icon, iconAndTime, iconAndEndTime }
 package enum AwakeGlyphFamily: String, Codable, CaseIterable, Sendable {
     case cup, eye, lightbulb                     // cup.and.saucer / eye / lightbulb, outline idle, .fill active (tested on 14)
@@ -1457,7 +1657,7 @@ package enum AwakeGlyphFamily: String, Codable, CaseIterable, Sendable {
     package var active: String { get }
 }
 package struct AwakeIndicatorConfig: ConfigModel {
-    package var style: AwakeIndicatorStyle          // .icon ("Show" pop-up on Menu Bar)
+    package var style: AwakeIndicatorStyle          // .icon (the "Time" pop-up on Menu Bar; r3 product minor 12)
     package var glyph: AwakeGlyphFamily             // .cup
     package init()
     package func sanitized() -> AwakeIndicatorConfig   // unknown legacy glyph (mug, sun, bolt) → .cup
@@ -1493,15 +1693,20 @@ package struct DriveAliveConfig: ConfigModel {
 package struct AwakeRuntimeSnapshot: ConfigModel {
     package var bootSession: String              // kern.bootsessionuuid when written (code R2-M3)
     package var manual: AwakeSession?
+    package var holds: [AwakeHold]               // `.process` holds only, ≤ 8, LossyArray (N17, N18)
     package var suppressions: LossyMap<StableID, TriggerSuppression>
-    package var pausedUntil: Double?             // wall time; "Pause automatic sessions" (only here, code M2)
+    package var pausedUntil: Double?             // wall time; "Pause Rules" (only here, code M2)
     package var guardMemory: GuardMemory
     package init()
     package func sanitized() -> AwakeRuntimeSnapshot
-    /// Load-time clamp (Kit half of code R2-M8): drops a manual session from another boot or out of range and
-    /// `hold(.connection)`; on a boot mismatch drops `until` suppressions (keeps `untilFalse`) and resets guard memory
-    /// except `warnedSerious`; keeps `source` (security L1). Pid checks and guards run in SessionController.restore.
+    /// Load-time clamp (Kit half of code R2-M8): drops a manual session or hold from another boot or out of range
+    /// (`AwakeSession.sanitized(now:)`, `AwakeHold.sanitized(now:)`: start not after now, deadline within the kind's
+    /// cap of the start, cap and deadline consistent; r3 security L3); on a boot mismatch drops `until` suppressions
+    /// (keeps `untilFalse`) and resets guard memory except `warnedSerious`; keeps `source` (security L1). Pid checks
+    /// and guards run in SessionController.restore.
     package func sanitized(now: ClockNow) -> AwakeRuntimeSnapshot
+    /// Services the restored state needs before restore runs (§2.1 start order; r3 code M1).
+    package var dynamicNeeds: AwakeDynamicNeeds { get }
 }
 
 // SnapticKit/AwakeHistory.swift (G): key SnapticAwakeHistoryV1
@@ -1509,14 +1714,17 @@ package enum AwakeHistoryKind: String, Codable, Sendable { case indefinite, dura
 package struct AwakeHistoryEntry: Codable, Equatable, Sendable {
     package var start: Double; package var end: Double
     package var kind: AwakeHistoryKind
+    package var source: AwakeSessionSource       // r3 consistency m3: Start Again is hidden for .commandLine
     package var presetID: StableID?; package var triggerID: StableID?
-    package var bundleID: String?                // app sessions, for Start Again; local only (security L6)
+    package var bundleID: String?                // app sessions, for Start Again; local only (r1 security L6)
     package var endReason: AwakeEndReason
-    package init(start: Double, end: Double, kind: AwakeHistoryKind, presetID: StableID?, triggerID: StableID?,
-                 bundleID: String?, endReason: AwakeEndReason)
+    package init(start: Double, end: Double, kind: AwakeHistoryKind, source: AwakeSessionSource, presetID: StableID?,
+                 triggerID: StableID?, bundleID: String?, endReason: AwakeEndReason)
+    package init(from decoder: Decoder) throws   // hand-written (N18): unknown kind, source or endReason → entry dropped
+    package var offersStartAgain: Bool { get }   // false for .commandLine source and for process/automatic kinds
 }
 package struct AwakeHistory: ConfigModel {
-    package var entries: [AwakeHistoryEntry]
+    package var entries: [AwakeHistoryEntry]     // LossyArray (N18)
     package init()
     package func sanitized() -> AwakeHistory
     package func appending(_ e: AwakeHistoryEntry, cap: Int) -> AwakeHistory   // cap 500; merges < 60 s `.replaced` runs
@@ -1528,7 +1736,7 @@ package struct AwakeHistory: ConfigModel {
 
 `AwakeActionID`'s raw values are `awake.*` (G registers them). `LossyMap<StableID, …>` works because `StableID` is `RawRepresentable` with `String` raw values.
 
-**Outside changes** (N10, lead r3): `ConfigStore` is unchanged (no `admit:` hook; r2's hook, `revertedAtLoad`, `onAdmissionReverted` and the Keychain store are withdrawn, which also retires code R2-M5/M11 and consistency M6). A `defaults write` to `SnapticAwakeV1` takes effect like any setting through `onExternalChange`, after `sanitized()`. What keeps that safe is runtime policy that reads no config the attacker controls: pointer movement needs a live UI-started session (`uiStartedInProcess`, never persisted), the activity cap runs on Snaptic's clock, the hard floor and critical-heat end are constants, CLI sessions never drive Drive Alive (source kept through restore), and the snapshot is read once at start through `sanitized(now:)` + `restore(_:)`. §3.2 states the residual risk.
+**Outside changes** (N10, lead r3): `ConfigStore` is unchanged (no `admit:` hook; r2's hook, `revertedAtLoad`, `onAdmissionReverted` and the Keychain store are withdrawn, which also retires code R2-M5/M11 and consistency M6). A `defaults write` to `SnapticAwakeV1` takes effect like any setting through `onExternalChange`, after `sanitized()`. What keeps that safe is runtime policy that reads no config the attacker controls: pointer movement needs a live UI-started session (`AwakeActivityGate`, never persisted; a hotkey start, whose binding config can change, needs the confirmation click), the activity cap runs on Snaptic's clock, the hard floor and critical-heat end are constants, CLI sessions never drive Drive Alive (source kept through restore), and the snapshot is read once at start through `sanitized(now:)` + `restore(_:)`. §3.2 states the residual risk.
 
 ## 3. Security and privacy (additions to 0.2 §4.10)
 
@@ -1539,9 +1747,9 @@ Threat model unchanged: a same-user process can already hold power assertions (`
 Allowed because starting an Awake session grants nothing new: any same-user process can create the identical assertion itself (`caffeinate`). Constraints that keep it that way:
 - The CLI server is off by default (General › Command line) and keeps its 0.2 socket rules (0700/0600, `getpeereid`, 20/s), plus 1/s for `start`, `hold`, `stop`, `extend` (security L3).
 - CLI sessions are `source: .commandLine` (kept through restore, security L1), visible in the indicator and menu ("Started from the command line"), subject to every guard, no "Start Anyway"; a toast says so at most once per 10 minutes, so a hidden indicator (26/27) can't hide a script. These are **UX, not a boundary** (security L4): any same-user process can run `caffeinate` invisibly, so visibility and bounds only keep Snaptic from being the quieter tool.
-- **Never** pointer movement or Drive Alive: presets or options with `nudge` are refused, pointer movement acts only for UI-started sessions (N10), and `DriveAlivePolicy.shouldWrite` ignores sessions whose source is `.commandLine` (OQ-1 settled strict). Drive Alive has no verbs, and its first write follows a UI action.
-- **Never replaces a UI session**: `start`, `hold` and `preset` are refused (exit 4) while a session the user started in Snaptic runs (security L4).
-- **Never unbounded**: no argument = 1 h; `indefinite` refused; `hold` lasts while its own connection and process live (or a named same-uid pid lives, verified by start time) and at most 12 h (24 h with `--max`); the peer is identified by the server (`LOCAL_PEERPID` on the accepted fd), never by the request.
+- **Never** pointer movement or Drive Alive: CLI sessions keep their configured options, but `ActivityPolicy.nudgeAllowed` is false for every CLI session (N10; r3 consistency M3 dropped r2's nudge refusal, which refused every `start` once pointer movement was on), and `DriveAlivePolicy.shouldWrite` ignores sessions whose source is `.commandLine` (OQ-1 settled strict). Drive Alive has no verbs, and its first write follows a UI action.
+- **Never replaces a UI session**: `start` and `preset` are refused (exit 4) while a session the user started in Snaptic runs (security L4); `hold` replaces nothing and stacks beside it (N17).
+- **Never unbounded**: no argument = 1 h; `indefinite` refused; each hold lasts while its own connection and process live (or a named same-uid pid lives, verified by start time) and at most 12 h (24 h with `--max`), and at most 8 holds exist; the peer is identified by the server (`LOCAL_PEERPID` on the accepted fd, best effort, not identity; the connection's EOF is authoritative), never by the request.
 - Closed grammar only (`AwakeCommandGrammar` over `AwakeDurationGrammar`, digit/decimal/overflow limits); max 30 days for `start`; no free-form strings reach the assertion or the log.
 
 ### 3.2 Settings that touch Snaptic's grants or safety floors (N10)
@@ -1550,20 +1758,22 @@ r2 tried to make some settings writable only from the UI with a Keychain consent
 
 | Capability | What a same-user process can do by editing defaults | What still holds |
 |---|---|---|
-| Pointer movement (Accessibility grant) | Turn on `pointerNudge`, set a preset's or the default options' activity to `nudge` | Snaptic moves the pointer only while a session the user started by a direct action in Snaptic's own UI **in this process** governs (menu click, Settings button, Snaptic hotkey; `uiStartedInProcess` is never persisted), never for CLI, rule, `launch`, restored or resumed sessions, never while locked or off console, ±1 pt mouse-moved only (lint L2), at most `stopAfterHours` (≤ 8 h, clamped) on Snaptic's clock, and the menu says "Moving the pointer" while it does. Residual: if the user starts such a session, the attacker's setting makes Snaptic post 1-pt moves the user didn't choose, for ≤ 8 h; it can't click, type or scroll |
+| Pointer movement (Accessibility grant) | Turn on `pointerNudge`, set a preset's or the default options' activity to `nudge` | Snaptic moves the pointer only while a session the user started by a direct action in Snaptic's own UI **in this process** governs (menu click or Settings button; `AwakeActivityGate` is never persisted), never for CLI, rule, hold, `launch`, restored or resumed sessions, never while locked or off console, ±1 pt mouse-moved only (lint L2), at most `stopAfterHours` (≤ 8 h, clamped) on Snaptic's clock, the menu says "Moving the pointer" while it does, and the first nudge shows "Awake is moving the pointer slightly." [Stop]. Residual: if the user starts such a session from the menu or Settings, the attacker's setting makes Snaptic post 1-pt moves the user didn't choose, for ≤ 8 h; it can't click, type or scroll |
+| Hotkey bindings (`awake.shortcuts`, applied live) | Bind `awake.toggle` or a preset hotkey to a combo the user presses for other reasons, with nudge defaults (r3 security M1) | A hotkey start never moves the pointer until the user clicks **Allow** on "Move the pointer to keep apps active?" (lead r4; 0.2 R5.7 makes Gather Windows confirm the same way); until then it only declares activity. Residual: an unexpected keep-awake session, visible in the menu bar and ended with one click |
 | Drive Alive (Removable Volumes grant) | Add an eligible volume UUID, enable it, set `firstWriteDone`, set "Also when no session is running" | Writes go only to eligible external volumes (DiskArbitration + fd checks, §2.9), only the fixed 8-byte `.snaptic-keepalive` file, never for CLI sessions. Drive Alive grants **no new capability**: a same-user process can write files to those volumes itself. Residual: an unprompted Removable Volumes dialog, which the user can decline |
-| Battery floor | Turn the user floor off or set it to 5% | The fixed 5% hard floor and two-unreadable-reads rule always end sessions and Drive Alive on battery; critical heat always ends (§2.6). Residual: none beyond what `caffeinate` allows anyway |
-| Snapshot (`SnapticAwakeStateV1`) | Write a session, clear guard memory | Read once at start: `sanitized(now:)` + `restore(_:)` keep the written `source` (a forged `.menu` source still never sets `uiStartedInProcess`), re-verify pids, evaluate guards with live facts and recompute guard holds; outside writes while Awake runs are ignored (security L2) |
+| Battery floor | Turn the user floor off or set it to 5% | The fixed 5% hard floor ends sessions and Drive Alive whenever the battery is discharging, also on an AC adapter that can't keep up; `batteryPresent` is latched, so a missing battery entry on a laptop is an unreadable read (activity and Drive Alive stop), not a desktop; critical heat always ends (§2.6; r3 security M3). Residual: none beyond what `caffeinate` allows anyway |
+| Snapshot (`SnapticAwakeStateV1`) | Write a session or holds, clear guard memory | Read once at start: `sanitized(now:)` (bounds from Snaptic's clock, not the snapshot's own fields; r3 security L3) + `restore(_:)` keep the written `source` (a forged `.menu` source never sets the activity gate), re-verify `--pid` holds, evaluate guards with live facts and recompute guard holds; afterwards SessionController never reads the store and always writes whole snapshots from memory, so outside writes while Awake runs have no effect (security L2, r3 security L4; tested) |
 
-- **Restore Defaults / Reset All Settings** turn pointer movement off and clear Drive Alive volumes (security L6).
-- Import (`importable(current:)`, after KitBackup's merge) never brings in pointer movement or volumes and only tightens guards (security L5).
+- **Restore Defaults / Reset All Settings** turn pointer movement off and clear Drive Alive volumes (r1 security L6).
+- Import (`importable(current:)`, after KitBackup's merge) never brings in `features.pointerNudge` or `drives.volumes` and only tightens `guards` (security L5, r3 security L7).
+- Focus: another process can bring Settings forward (reopen, `open-settings`); session-start controls have no Return binding and ignore clicks for 1 s after an external open (r3 security L8).
 - Not a boundary against a process that drives Snaptic's UI with Accessibility or replaces a user-writable app bundle (0.2 R5.7).
 
 ### 3.3 Activity simulation
 
 - Default `declare` uses no TCC and posts no events.
-- `nudge` (experimental) is the only code path in Snaptic that posts mouse events: one file (`ActivitySimulator.swift`, lint L2), `mouseMoved` ±1 pt only from a private-state event source, tagged 'SNPT', never key/click/scroll, never within 2 pt of a display edge, never while locked, in the screensaver or off console (all read from the session dictionary and process state, never from notifications alone, security M2), never when the user typed or clicked within the interval, only for UI-started sessions of this process (N10); Accessibility is requested lazily, only when the user turns nudge on (through `PermissionFlow`), and the toggle explains how to revoke it.
-- Both modes stop `stopAfterHours` (default 1 h, max 8 h) after they first acted in the session, **measured on Snaptic's continuous clock** (security M2: Snaptic's own declarations may reset system idle, so idle time can't bound them). Organizations can turn them off with `Awake.disable.activity` / `Awake.disable.pointerNudge` (N14).
+- `nudge` (experimental) is the only code path in Snaptic that posts mouse events: one file (`ActivitySimulator.swift`, lint L2), `mouseMoved` ±1 pt only from a private-state event source, tagged 'SNPT', never key/click/scroll, never within 2 pt of a display edge, never while locked, in the screensaver or off console (all read from the session dictionary and process state, never from notifications alone, security M2), never when the user typed or clicked within the interval, only for UI-started sessions of this process, and for hotkey starts only after the confirmation toast (N10); Accessibility is requested lazily, only when the user turns nudge on (through `PermissionFlow`), and the toggle explains how to revoke it.
+- Both modes stop `stopAfterHours` (default 1 h, max 8 h) after they first acted, **measured on Snaptic's continuous clock** (security M2: Snaptic's own declarations may reset system idle, so idle time can't bound them) and carried across back-to-back sessions (r3 security L5). Relaunching Snaptic starts a new count; for `declare`, which needs no TCC, the cap is a UX bound, not a boundary. Organizations can turn them off with `Awake.disable.activity` / `Awake.disable.pointerNudge` (N14).
 
 ### 3.4 Drive Alive writes
 
@@ -1575,13 +1785,15 @@ Awake spawns nothing (lint rule 12 already bans `Process`, `posix_spawn`, `NSApp
 
 ### 3.6 Privacy
 
-- **Logs** (`EventLog`, `.awake`): written only as `EventLog.shared.record(_ event: AwakeLogEvent)` (A adds the overload in `Core/EventLog.swift`; it is the only code that names the `.awake` category; consistency m10, code minor 5), a closed Kit enum (G, `SnapticKit/AwakeLogEvent.swift`) with a fixed `text` per case. Cases are split: **counted only** (`sessionStarted(AwakeHistoryKind)`, `sessionEnded(AwakeEndReason)`, `triggerActive(index: Int)`, `activityCapped`) increment a per-case counter in `AwakeDiagnostics` and never enter the ring, so no activity timeline exists anywhere; **ring** cases are errors only (`assertionFailed`, `driveAliveError(DriveAliveError)`, `holdRefused`, `restoreDropped`). Lint L9 bans `record(.awake` and the token `EventCategory.awake` outside `Core/EventLog.swift` (security M6). No app names, bundle ids, process names, pids, volume names/UUIDs, USB names/serials, addresses, router data, criterion payloads or rule names can reach the log.
-- **CPU and disk samples**: only aggregate numbers (the busiest same-user process's share, total CPU, summed disk bytes) are kept, in memory, for the running untilIdle session; no pid or process name is stored, shown, logged or exported.
+- **Logs** (`EventLog`, `.awake`): written only as `EventLog.shared.record(_ event: AwakeLogEvent)` (A adds the overload in `Core/EventLog.swift`; it is the only code that names the `.awake` category; consistency m10, code minor 5), a closed Kit enum (G, `SnapticKit/AwakeLogEvent.swift`) with a fixed `text` per case. Cases are split: **counted only** (`sessionStarted(AwakeHistoryKind)`, `sessionEnded(AwakeEndReason)`, `holdStarted`, `triggerActive(index: Int)`, `activityCapped`) increment a per-case counter **kept in `EventLog` itself** (`EventLog.shared.awakeCounts: [String: Int]`, A; `AwakeDiagnostics` (G) reads it, because EventLog is a singleton and can't reach the per-context diagnostics; r3 code minor 11) and never enter the ring, so the log holds no activity timeline; **ring** cases are errors only (`assertionFailed`, `driveAliveError(DriveAliveError)`, `holdRefused`, `restoreDropped`). Lint L9 bans `record(.awake` and the token `EventCategory.awake` outside `Core/EventLog.swift` (security M6). No app names, bundle ids, process names, pids, volume names/UUIDs, USB names/serials, addresses, router data, criterion payloads or rule names can reach the log.
+- **CPU and disk samples**: only aggregate numbers (the busiest same-user process's share, new-process churn, total CPU, summed disk bytes) are kept, in memory, for the running untilIdle session; the sampler's transient pid → (start time, CPU ticks) map from the previous sample is in memory only and dropped with the session (r3 code M2); no pid or process name is stored, shown, logged or exported.
+- **Hold holders**: the holder name ("Terminal") is computed from the process tree when shown, only in the Awake menu, the Settings status row and toasts; never persisted, logged, exported, in diagnostics or over the CLI (which shows pids only).
+- **History** is a local timeline: `SnapticAwakeHistoryV1` keeps 90 days of start/end times, kinds, sources and app bundle ids in a domain any unsandboxed same-user process can read; it never reaches logs, diagnostics, the CLI or exports, and the user can Clear History… or turn History off (r3 security L6). Rule definitions and `recentApps` (app, device and network names) are plaintext in the same domain for the same reason.
 - **Assertion properties** are world-readable (`pmset -g assertions`): name is fixed; `Details` is only `manual` or `automatic` (no criterion kinds).
-- **CLI** `awake status`: kinds and trigger numbers only.
-- **Stored identifiers**: router MACs and USB serials as salted hashes (`SnapticAwakeSalt`, never exported); display matches as salted fingerprint tiers (existing salt).
-- **Backup** (`AwakeConfig.exportable/importable`, A wires them into KitBackup's new `awake` section): export includes presets (nudge rewritten to declare), guards, indicator, behavior; trigger definitions **only** when the user ticks "Include automatic-session rules (contains app, device and network names)" (off by default; salted hashes are stripped either way since they are useless on another Mac); omits history, runtime state, salts, `recentApps`, `startAtLaunch`, Drive Alive volumes, `pointerNudge`. Import: same stripping, guards monotonic (stricter only; `awake.guards` joins `safetyPaths`), protected fields always kept from the current config.
-- **Diagnostics** (shared report): Awake section with effective features, governing kind, assertion type, guard state, source activity (running/idle), counts of rules/conditions by kind, Awake event **counts** per `AwakeLogEvent` case (from `AwakeDiagnostics`, no timestamps), Drive Alive volume count and last error codes. `DiagnosticsController.eventLines()` (F) keeps only entries whose `EventCategory.isExportedInDiagnostics` (lead, `KitModules.swift`; false for `.awake`, Kit-tested) holds (security M3). The "Other apps keeping your Mac awake" list never goes into diagnostics, logs or CLI.
+- **CLI** `awake status`: kinds, rule numbers, the hold count and, with `--json`, hold pids (numbers, never names; r3 consistency m4).
+- **Stored identifiers**: router MACs and USB serials as salted hashes (`SnapticAwakeSalt`, never exported); display matches as salted fingerprint tiers (existing salt). The salts live in the same domain, and a router MAC leaves about 24 unknown bits per vendor prefix, so salted hashes protect **exports and diagnostics**, not a local same-user reader (r3 security L6).
+- **Backup** (`AwakeConfig.exportable/importable`, A wires them into KitBackup's new `awake` section): export includes presets (nudge rewritten to declare), guards, indicator, behavior; trigger definitions **only** when the user ticks "Include automatic-session rules (contains app, device and network names)" (off by default; salted hashes are stripped either way since they are useless on another Mac); omits history, runtime state, salts, `recentApps`, `startAtLaunch`, Drive Alive volumes, `pointerNudge`. Import: same stripping, guards monotonic (stricter only; `awake.guards` joins `safetyPaths`), `features.pointerNudge` and `drives.volumes` always kept from the current config, and the `removedPaths` entries of §2.14 strip them generically too (r3 security L7).
+- **Diagnostics** (shared report): Awake section with effective features, governing kind, assertion type, guard state, source activity (running/idle), counts of rules/conditions by kind, Awake event **counts** per `AwakeLogEvent` case (from `EventLog.shared.awakeCounts` via `AwakeDiagnostics`, no timestamps), Drive Alive volume count and last error codes. `DiagnosticsController.eventLines()` (F) keeps only entries whose `EventCategory.isExportedInDiagnostics` (lead, `KitModules.swift`; false for `.awake`, Kit-tested) holds (security M3). The "Other apps keeping your Mac awake" list never goes into diagnostics, logs or CLI.
 - `settingsIndex()` entries are static strings (test: no entry title or keyword comes from config).
 
 ## 4. Settings redesign
@@ -1613,7 +1825,7 @@ struct FeatureHighlights: View { init(_ rows: [FeatureHighlight]) }
 /// Reset: a glyph only for continuous values (`resetGlyph: true`, used by SliderSetting/StepperSetting/NumberField);
 /// every row with `reset` also gets a context menu "Reset to Default" (design M6).
 struct SettingRow<Control: View>: View {
-    init(_ title: String, help: String? = nil, anchor: String? = nil, isDefault: Bool = true,
+    init(_ title: String, help: String? = nil, anchor: ControlID? = nil, isDefault: Bool = true,
          reset: (() -> Void)? = nil, resetGlyph: Bool = false, resetLabel: String? = nil,
          @ViewBuilder control: () -> Control)
 }
@@ -1626,7 +1838,7 @@ struct ResetButton: View { init(visible: Bool, label: String, action: @escaping 
 /// section footer ("Needs Accessibility." [Open Accessibility Settings…]). Hardware can't do it → the caller omits the row.
 struct ToggleSetting: View {
     init(_ title: String, help: String? = nil, isOn: Binding<Bool>, subordinate: Bool = false,
-         anchor: String? = nil, badge: SettingsBadge? = nil, disabledReason: String? = nil, fix: StatusAction? = nil)
+         anchor: ControlID? = nil, badge: SettingsBadge? = nil, disabledReason: String? = nil, fix: StatusAction? = nil)
 }
 
 /// Every slider in Settings (N4). Normative layout (design M6), trailing cluster after the title:
@@ -1642,7 +1854,7 @@ struct SliderSetting: View {
          step: Double? = nil, defaultValue: Double?, format: ValueFormat,
          minSymbol: String? = nil, maxSymbol: String? = nil,
          commit: SliderCommit = .throttled(hz: 15), preview: (@MainActor (Double) -> Void)? = nil,
-         anchor: String? = nil, subordinate: Bool = false, disabledReason: String? = nil)
+         anchor: ControlID? = nil, subordinate: Bool = false, disabledReason: String? = nil)
 }
 enum SliderCommit: Equatable {
     case live                  // hardware value through DisplayLiveControlling (§4.5): latest-wins mailbox
@@ -1659,7 +1871,7 @@ struct NumberField: View {      // commits on Return and blur; clamps + snaps to
 }
 struct StepperSetting: View {   // small integer ranges (≤ ~20 values): label + NumberField + Stepper + reset slot
     init(_ title: String, help: String? = nil, value: Binding<Int>, in range: ClosedRange<Int>, step: Int = 1,
-         defaultValue: Int?, format: ValueFormat, anchor: String? = nil)
+         defaultValue: Int?, format: ValueFormat, anchor: ControlID? = nil)
 }
 enum PickerSettingStyle { case automatic, popUp, segmented, radio, pullDown }
 struct PickerOption<V: Hashable>: Identifiable {         // code M13: Identifiable needs an id
@@ -1669,11 +1881,11 @@ struct PickerOption<V: Hashable>: Identifiable {         // code M13: Identifiab
 }
 struct PickerSetting<V: Hashable>: View {   // pop-up (> 4 options), segmented (2–4 short), radio (2–5 with help)
     init(_ title: String, help: String? = nil, selection: Binding<V>, options: [PickerOption<V>],
-         style: PickerSettingStyle = .automatic, defaultValue: V?, anchor: String? = nil, subordinate: Bool = false)
+         style: PickerSettingStyle = .automatic, defaultValue: V?, anchor: ControlID? = nil, subordinate: Bool = false)
 }
 /// Glyph tiles (Snaptic/module/Awake icons, display icons): rendered symbols with `.isSelected` AX trait, never raw names.
 /// A radio group: the row title is the group label, arrow keys move the selection (design m10).
-struct GlyphTilePicker: View { init(_ title: String, symbols: [String], selection: Binding<String>, anchor: String? = nil) }
+struct GlyphTilePicker: View { init(_ title: String, symbols: [String], selection: Binding<String>, anchor: ControlID? = nil) }
 /// Pull-down button with actions (Display Tools ▾, Copy Settings From ▾, Options ▾).
 struct ActionMenuButton: View { init(_ title: String, items: [ActionMenuItem]) }
 struct ActionMenuItem: Identifiable { let id: String; let title: String; let enabled: Bool; let action: @MainActor () -> Void }
@@ -1694,7 +1906,9 @@ struct DisplayTile: Identifiable, Hashable { let id: DisplayKey; let name: Strin
 /// Page footer: trailing `Advanced…` and (?) only (design M5). `restoreDefaults` appears here (leading) only on
 /// pages without an Advanced sheet.
 struct PageFooterButtons: View { init(advanced: (() -> Void)?, help: SettingsRoute?, restoreDefaults: RestoreDefaults? = nil) }
-struct RestoreDefaults { let scopeName: String; let destructive: Bool; let action: @MainActor () -> Void }   // confirmation names the scope
+/// Button title "Restore <scope> Defaults…" ("Restore Awake Defaults…", "Restore Displays Defaults…"; r3 product
+/// minor 13); the confirmation names the scope too. Reset All Settings… keeps its own title.
+struct RestoreDefaults { let scopeName: String; let destructive: Bool; let action: @MainActor () -> Void; var title: String { get } }
 /// 520 wide, ≤ 25 controls, Done = Return trailing; Restore Defaults… leading in its footer. Never presents another sheet.
 struct AdvancedSheet<Content: View>: View {
     init(_ title: String, restoreDefaults: RestoreDefaults?, @ViewBuilder content: () -> Content)
@@ -1705,13 +1919,16 @@ struct ReorderableList<Item: Identifiable, Row: View>: View {
     init(_ items: Binding<[Item]>, onEdit: ((Item) -> Void)? = nil, onDelete: ((Item) -> Void)?,
          @ViewBuilder row: @escaping (Item) -> Row)   // code M13
 }
-struct AppListEditor: View { init(_ title: String, help: String?, bundleIDs: Binding<[String]>, anchor: String?) }   // moved from Switcher AppListSection; used by Switcher and PIP
-struct ShortcutSetting: View { init(_ title: String, help: String? = nil, combo: Binding<HotkeyCombo?>, owner: String, anchor: String? = nil) }  // wraps ShortcutRecorder; shows conflicts by owner
+struct AppListEditor: View { init(_ title: String, help: String?, bundleIDs: Binding<[String]>, anchor: ControlID?) }   // moved from Switcher AppListSection; used by Switcher and PIP
+struct ShortcutSetting: View { init(_ title: String, help: String? = nil, combo: Binding<HotkeyCombo?>, owner: String, anchor: ControlID? = nil) }  // wraps ShortcutRecorder; shows conflicts by owner
 /// Empty lists: ContentUnavailableView with the page's own copy (design m8).
 struct EmptyListView: View { init(_ title: String, symbol: String, text: String?, action: StatusAction?) }
 /// Each page's scroll scaffold owns its ScrollViewReader (code minor 3); anchors register here.
 struct SettingsPageScaffold<Content: View>: View { init(route: SettingsRoute, @ViewBuilder content: () -> Content) }
-extension View { func settingsAnchor(_ id: String) -> some View }   // id + search highlight (1.2 s tint; static with Reduce Motion)
+/// `.modifier(SettingsAnchor(ControlID("awake.batteryFloor")))`: id + search highlight (1.2 s tint; static with Reduce
+/// Motion). A ViewModifier, not a `View` extension, so lint rule 10 holds (r3 code sig row, minor 2). Rows that take
+/// `anchor:` apply it themselves. The ControlID literal must be in the view's control table (lint L15, §4.8).
+struct SettingsAnchor: ViewModifier { init(_ id: ControlID) }
 ```
 
 Shell contracts (lead, `Core/ModuleContracts.swift`; replaces `settingsPages()`). `SettingsRoute` and `SettingsSearchEntry` are **Kit** types (H, `SnapticKit/SettingsIndex.swift`) so the search ranking, anchor uniqueness and the control map are tested on Linux (code minor 13); each module's `settingsIndex()` returns its Kit table (`SettingsIndexAwake.entries`, …):
@@ -1720,6 +1937,7 @@ Shell contracts (lead, `Core/ModuleContracts.swift`; replaces `settingsPages()`)
 // SnapticKit/SettingsIndex.swift (H)
 package struct SettingsRoute: Hashable, Sendable { package let id: String; package init(_ id: String) }   // "displays.color"
 package struct SettingsSearchEntry: Hashable, Sendable {
+    /// `id == anchor ==` the row's `ControlID.rawValue` (Kit test; r3 code minor 12).
     package let id: String; package let title: String; package let keywords: [String]
     package let root: String                 // sidebar item id
     package let route: SettingsRoute?        // sub-page, nil = root page
@@ -1794,7 +2012,7 @@ Awake                cup.and.saucer.fill      orange    (master switch on page)
 Permissions          hand.raised.fill         blue
 About                info.circle.fill         gray
 ```
-Search results replace the list with "Title — Page" rows; choosing one calls `SettingsShell.reveal`. No results → `ContentUnavailableView.search(text:)`.
+Search results replace the list with "Title — Page" rows; choosing one calls `SettingsShell.reveal`. No results → `ContentUnavailableView.search(text:)`. ⌘F and Edit › Find focus the sidebar search field (System Settings precedent; r3 product minor 14).
 
 **Copy rules** ([DS] §4, normative): sentence case for labels, help, section headers; Title Case for buttons, menu items, page titles; serial comma ("Startup, command line, backup, and Safe Mode."; design m1); labels name the thing or the on-state, no "Enable/Disable/Allow X to"; one help sentence ≤ 90 characters describing the on state; "Mac", "display", "click", "press"; never "monitor" in labels (use "display" or "hardware"); errors say what to do; real ellipsis; "20%", "60 Hz", "15 min" in values; Apple terms table [DS] §4.7 (Display, Virtual display, Picture in Picture, Brightness indicator, Saved layouts, Start automatically, Keep Awake, Display Information, Confirm display changes, Settings). Every visible control has help text or is self-evident by Apple precedent (review item: each `ToggleSetting`/`SliderSetting` without `help:` needs a reviewer note).
 
@@ -1819,7 +2037,8 @@ Open at login                                       ( )
 ─────────────────────────────────────────────────────
 Command-line control                                ( )
   Lets scripts and other apps control Snaptic with the `snaptic` command.
-Copy Install Command
+    Copy Install Command                                  subordinate, only while on
+      Copies a Terminal command that installs `snaptic`.
 ─────────────────────────────────────────────────────
 Export Settings…                      Import Settings…
                                             Advanced…  (?)
@@ -1830,7 +2049,7 @@ Export Settings…                      Import Settings…
 | Card | State-dependent (C7, design M3): Awake off → "New: Awake" **Turn On Awake** (turns the module on and opens the Awake page; no ellipsis) / **Not Now**; migrated by M1 → "Your display sleep setting moved to Awake." **Show Awake** (opens Awake) / **OK**; dismissal stored in generalized `newModuleCards` | V once | "New: Displays" card |
 | Status row | "Safe Mode is on." [Leave Safe Mode…] while true | V when true | Overview banner |
 | Startup | Open at login | V | Startup page (X: a page for one toggle) |
-| Command line | Command-line control (help "Lets scripts and other apps control Snaptic with the `snaptic` command.") · Copy Install Command | V | CLI page |
+| Command line | Command-line control (help "Lets scripts and other apps control Snaptic with the `snaptic` command.") · Copy Install Command (subordinate `ButtonRow`, only while Command-line control is on; help "Copies a Terminal command that installs `snaptic`."; r3 product minor 8) | V | CLI page |
 | Backup | Export Settings… (sheet: "Include automatic-session rules (contains app, device and network names)" checkbox, off) · Import Settings… | V | Backup & Reset |
 | Advanced | Commands can skip confirmation · exit codes ((i) popover) · Restart in Safe Mode… / Leave Safe Mode (with its explanation) · footer leading: **Reset All Settings…** (destructive, scope "all Snaptic settings"; parity minor 12) | A | CLI page, Safe Mode page (X), Backup & Reset |
 
@@ -1855,18 +2074,25 @@ Scroll over a slider to adjust it                   (•)
 Customize Displays Menu…
 ─────────────────────────────────────────────────────
 Snaptic icon                       [◫] [◩] [◰]
-                          Restore Defaults…     (?)
+              Restore Menu Bar Defaults…     (?)
 ```
 
 | Section | Controls | Where |
 |---|---|---|
-| Modules (no header, design M5) | One pop-up per module (C2), labelled with the module name, Control Center wording and **one option order for every module**: *Always Show in Menu Bar · Show When Active · Show in Snaptic Menu · ─ · Don't Show*. *Show When Active* is offered for Displays (an external display is connected) and Awake (a session runs), not for the Switcher. Help for Don't Show: "Use the keyboard shortcut or Settings to reach it." Awake's *Don't Show* is disabled until the Keep Awake shortcut is bound; the footer then reads "To hide Awake, first set a Keep Awake shortcut." (parity M2). Under a module with its own icon: its **Icon** glyph tiles (parity B2). Under Awake (Always Show or When Active): **Time** (*Don't Show / Time Remaining / End Time*, default Don't Show) and **Icon** tiles (cup, eye, lightbulb) | V |
+| Modules (no header, design M5) | One pop-up per module (C2), labelled with the module name, Control Center wording and **one option order for every module**: *Always Show in Menu Bar · Show When Active · Show in Snaptic Menu · ─ · Don't Show*. *Show When Active* is offered for Displays (help "Shows the icon while an external display is connected.") and Awake (help "Shows the icon while your Mac is being kept awake."; r3 product minor 16), not for the Switcher. Help for Don't Show: "Use the keyboard shortcut or Settings to reach it." Awake's *Don't Show* is disabled until the Keep Awake shortcut is bound; the footer then reads "To hide Awake, first set a Keep Awake shortcut." (parity M2). Under a module with its own icon: its **Icon** glyph tiles (parity B2). Under Awake (Always Show or When Active): **Time** (*Don't Show / Time Remaining / End Time*, default Don't Show) and **Icon** tiles (cup, eye, lightbulb) | V |
 | Warnings | 0.2's hidden-icon warnings kept as status rows ("No Snaptic icon is shown…", "The Displays icon only appears while an external display is connected.") | V when true |
 | Displays menu | **Style**: Standard / Compact (help "Compact shows one slider per display.") · Scroll over a slider to adjust it · Customize Displays Menu… → sheet (below) | V + sheet |
 | Snaptic icon | Glyph tiles (curated, rendered); last, the least-used control (design M5) | V |
-| Footer | Restore Defaults… (scope "menu bar settings", leading) · (?) | V |
+| Footer | Restore Menu Bar Defaults… (scope "menu bar settings", leading) · (?) | V |
 
-**Customize Displays Menu…** sheet (M; ≤ 25 controls with lists counted as 1; design m13): **Displays** — one reorderable list of displays with a checkbox each (visible in the menu) and a pinned "Main display" row that can be dragged (replaces "Main display first"), "Use the Default Order"; section order; status badges; header row with one display (kept: a 0.2 setting, design m13 partly rejected). **Menu items** — every item of the §4.8 "0.2 menu" table that has a 0.3 location, grouped by area (Per display, Displays section, Display Tools) with human titles ("Volume", "Input", "Turn Display On or Off", "Extra Brightness", "Rotation", "Saved Layouts", "Night Shift", …), each with a pop-up: *Show* (its §5.2 location) / *In Display Submenu* (per-display items only) / *Hide*; sliders Show/Hide only; custom actions appear under Displays section › Actions with their own rows (the same flag as Automations › "Show in menu"). Items whose feature is off are listed dimmed with "Turn on <feature> in Settings to use this." Footer leading Restore Defaults…. The 0.2 per-display "Header switch" is gone (migration M10, parity M6).
+**Customize Displays Menu…** sheet (M; lead r4, r3 product M5, design m13): split per menu section into **disclosure groups** inside one grouped `List`, an accordion (expanding a group collapses the others), so **at most 25 controls are visible at once**: the filter field plus the expanded group's rows (the largest, Per Display, has 23 with every feature on and a DDC display; group headers aren't counted).
+- Filter field at the top ("Filter menu items"): shows matching rows across all groups and expands their groups.
+- **Displays** (collapsed by default): one reorderable list of displays with a checkbox each (visible in the menu) and a pinned "Main display" row that can be dragged (replaces "Main display first"), Use the Default Order; section order; status badges; header row with one display (kept: a 0.2 setting, design m13 partly rejected).
+- **Per Display** (expanded by default): the per-display items of the §4.8 "0.2 menu" table with human titles ("Volume", "Input", "Turn Display On or Off", "Extra Brightness", "Rotation", …), each with the pop-up *Show* (its §5.2 location) / *In Display Submenu* / *Hide*; the per-display sliders (Brightness, Volume, Contrast, custom controls, Resolution) are checkboxes, because a slider is never in a submenu.
+- **Displays Section** (collapsed): Arrange Displays…, Saved Layouts ›, Virtual Displays ›, Picture in Picture ›, Actions › with one checkbox per custom action (the same flag as Automations › "Show in menu"), each a checkbox (Show).
+- **Display Tools** (collapsed): one checkbox per Display Tools item.
+- In each group, items whose feature is off collapse into one dimmed row ("6 items need features that are off" ›, which lists them with "Turn On in Settings…"), instead of one dimmed row each.
+- Footer leading **Restore Displays Menu Defaults…**. The 0.2 per-display "Header switch" is gone (migration M10, parity M6).
 
 **Window Switcher** (H; header switch "Use Window Switcher"; was 6 pages / ~40 controls)
 
@@ -1887,6 +2113,7 @@ Snaptic icon                       [◫] [◩] [◰]
 ─────────────────────────────────────────────────────
 Display                                      [Display Tools ▾]   section header, trailing (design m14)
 [▭ Built-in Retina Display] [▭ DELL U2720Q]                       tiles (hidden with one display)
+Display Details…                                                  for the selected display (r3 product minor 11)
 Brightness              ☀ ━━━━━━●━━━━ ☀  [ 70% ]      (no reset glyph: live value, no default)
 ─────────────────────────────────────────────────────
 Resolution                       [Default — 1512 × 982 ▾]
@@ -1909,7 +2136,6 @@ Virtual Displays                               Off  ›
 Picture in Picture                             Off  ›
 Automations                                    Off  ›
 ─────────────────────────────────────────────────────
-Display Details…
 Display Information                                 ›
                                              Advanced…  (?)
 ```
@@ -1918,11 +2144,11 @@ Display Information                                 ›
 |---|---|---|
 | Header | Displays switch; status line ("2 displays") | F |
 | Status rows (parity minor 1) | "Display automation is paused." [Resume Display Automation] (B) · "Safe Mode is on." [Leave Safe Mode…] (host) · "The safety helper stopped." [Restart Snaptic] (B) — each only while true | F + B |
-| Display | Section header with **Display Tools ▾** trailing (always there, also with one display; design m14): Identify Displays, Redetect Displays, Show Displays Panel, Match Text Size…, Connect All Displays (if `disconnect`), Disconnect All But Main (if `disconnect`), Restore All Displays · `PerDisplayPicker` (hidden with one display; pop-up with > 4) · Brightness (SliderSetting, ☀︎ symbols, full range incl. XDR, `.live`, `defaultValue: nil`; value in nits when Show nits is on) · Automatically adjust brightness (built-in, only when the Experimental `autoBrightness` is on) | F, C |
+| Display | Section header with **Display Tools ▾** trailing (always there, also with one display; design m14): Identify Displays, Redetect Displays, Show Displays Panel, Match Text Size…, Connect All Displays (if `disconnect`), Disconnect All But Main (if `disconnect`), Restore All Displays · `PerDisplayPicker` (hidden with one display; pop-up with > 4) · **Display Details…** (`ButtonRow` for the selected display, directly under the tiles; r3 product minor 11) · Brightness (SliderSetting, ☀︎ symbols, full range incl. XDR, `.live`, `defaultValue: nil`; value in nits when Show nits is on) · Automatically adjust brightness (built-in, only when the Experimental `autoBrightness` is on) | F, C |
 | Resolution (selected display) | Resolution pop-up (scaled modes, "Default for display" first, favorites marked; with `hiddenModes` a "Show All Resolutions" section) · Refresh rate (if > 1) · HDR (if supported and `hdrToggle`) · Rotation (if `rotation`) · **Resolution options** disclosure (collapsed): resolution slider (SliderSetting, discrete, `.onRelease`), **Quick Changes ▾** (Toggle HiDPI, Native, Default, Native ÷ 2 "Half of native, sharper", Toggle Notch, ─, Undo Resolution Change ⌘Z, Redo Resolution Change ⇧⌘Z; the same two are the Settings window's Edit › Undo/Redo while the Displays page is shown; design M6), Add to / Remove from Favorites, favorites list (Apply, −) | D |
 | Arrangement | Use as: Main display / Extended display / Mirror for "X" (pop-up; Apple copy) · Arrange Displays… (sheet: canvas + Snap to edges + keyboard Position/Align form as a disclosure) · Saved Layouts › (with arrangement, design M6) | D |
 | Navigation | Group 1: Brightness and Dimming › (renamed so VoiceOver doesn't read "Brightness" twice; design M6) · Color › · Hardware Controls › ("Volume, input, and power for displays that support them.") · Keyboard › — Group 2: Virtual Displays › · Picture in Picture › · Automations ›. Full-width grouped rows; a row shows On/Off only when its sub-page has a feature switch (Brightness and Dimming and Keyboard show none; consistency m14). Always present | F + owners |
-| Details | Display Details… (`ButtonRow`) · Display Information › | F |
+| Details | Display Information › (last row; Display Details… moved under the tiles) | F |
 | Footer | Advanced… · (?) | F |
 
 Height (design M6): about 1,000 pt with every section, so at the default 720 pt the first navigation group starts above the fold on a 14" display; the root page is a scrolling hub by design.
@@ -1945,7 +2171,7 @@ Height (design M6): about 1,000 pt with every section, so at the default 720 pt 
 4. **Resolution filters** (D): Offer modes below 720p · Remember my choice · Only native aspect ratio on the slider · Show values as · Snap to favorites · "Filters for <display>" disclosure (DPI filter, width limits, refresh filters).
 5. **Experimental** (F lists, owners implement): HDR switch, Underscan, Built-in auto-brightness, Brightness broadcast (`osdBroadcast`, + notification name), Show all resolutions (`hiddenModes`) — each with an Experimental badge and one help line.
 6. **Permissions** (parity minor 4): the 0.2 Features-page permission rows become this group's footer status ("Some features need Accessibility." [Open Accessibility Settings…]) and the Permissions page rows. Night Shift and Apple display presets move to Color › Advanced, HDR virtual modes to Virtual Displays › Advanced (owners keep their switches next to their settings).
-Footer: Restore Defaults… (scope "Displays settings") · Done.
+Footer: Restore Displays Defaults… (scope "Displays settings") · Done.
 
 Sub-pages (each: `SettingsPageHeader` with the feature-group switch where one exists, own Advanced… when needed):
 
@@ -1970,20 +2196,23 @@ Sub-pages (each: `SettingsPageHeader` with the feature-group switch where one ex
      Keep your Mac awake for a while, or automatically
      when certain conditions are met.
 ──────────────────────────────────────────────────
-Your Mac can sleep as usual.                   [Keep Awake]
+Your Mac can sleep as usual.          [Pause Rules ▾] [Keep Awake]   Pause Rules ▾ only while ≥ 1 rule exists
   active: Keeping your Mac awake until 3:45 PM   [Options ▾] [Turn Off]
           1h 12m left · Appearing active                   (detail; no "Started from the menu")
+          Then “Desk dock” keeps it awake. · Held by Terminal (2)       (each only while true)
+  untilIdle: …until downloads and tasks finish · Ends after 5 min with no activity · quiet for 2 min
+  holds only: Held by Terminal (2)                         [End Holds]
   after a non-user end (12 h): Ended at 3:12 AM: battery below 20%.
-  paused: Automatic sessions are paused until 4:00 PM.     [Resume]
+  paused: Rules are paused until 4:00 PM.                  [Resume]
 ──────────────────────────────────────────────────
-Default duration                       [Until Turned Off ▾]
+Default session                        [Until Turned Off ▾]
 Keep the display on                                   (•)
   When off, your Mac stays awake but the display can turn off.
-Durations in the menu                              [Edit…]
+Sessions in the menu                               [Edit…]
 ──────────────────────────────────────────────────
 End sessions automatically                                 (laptops only)
 When the battery is low                               (•)
-    Battery level       ━━━━●━━━━━  [ 20% ] ↺
+    Battery level       ━━━━●━━━━━  [ 20% ]            (reset slot empty at the default; r3 product minor 1)
 When the power adapter is disconnected                ( )
 ──────────────────────────────────────────────────
 Start automatically
@@ -2000,26 +2229,26 @@ footer: Choose where Awake appears in Menu Bar settings.  (link)      Advanced�
 
 | Section | Controls | Where |
 |---|---|---|
-| Status | Status row (reaches everything when the status item is hidden, 26/27). Idle: "Your Mac can sleep as usual." + **Keep Awake** (default preset; design M7). Active: "Keeping your Mac awake until 3:45 PM" / "…until downloads and tasks finish" / "…while a command-line hold lasts" / "…while “Desk dock” applies" + detail ("1h 12m left", plus "Appearing active" / "Moving the pointer" / "Stopped appearing active after 1 hour." while relevant) + **Options ▾** (Add 15 Minutes, Add 1 Hour, Add Time… for timed and capped kinds; ─; ✓ Keep Display On, always while active; parity M4) + **Turn Off**. Last non-user end for 12 h. While paused: "Automatic sessions are paused until 4:00 PM." [Resume] (design M4). Buttons only, no switch (N5) | V |
-| Durations | Default duration (pop-up of presets; sets `defaultPresetID`) · Keep the display on (edits `defaultOptions.display`; a running session that uses default options follows it at once; help "When off, your Mac stays awake but the display can turn off." plus, for task kinds, "Download and app sessions let the display turn off unless set in Durations."; parity M4, M5, minor 9) · Durations in the menu: Edit… (preset sheet) | V |
+| Status | Status row (reaches everything when the status item is hidden, 26/27). Idle: "Your Mac can sleep as usual." + **Keep Awake** (default preset; design M7) and, whenever ≥ 1 rule exists and rules aren't paused, **Pause Rules ▾** (For 1 Hour / Until Tomorrow; lead r4, r3 product M2). Active: "Keeping your Mac awake until 3:45 PM" / "…until downloads and tasks finish" / "…while “Desk dock” applies" / "Held by Terminal (2)" (holds only) + detail ("1h 12m left", "Ends after 5 min with no activity · quiet for 2 min" for untilIdle, "Then “Desk dock” keeps it awake.", "Held by Terminal (2)" under another source, plus "Appearing active" / "Moving the pointer" / "Stopped appearing active after 1 hour." while relevant) + **Options ▾** (Add 15 Minutes, Add 1 Hour, Add Time… for timed and capped kinds; ─; ✓ Keep Display On, always while active; End Command-Line Holds while holds exist; parity M4) — or, when it would hold only Keep Display On (indefinite or uncapped session, no holds), a plain **Keep Display On** / **Let Display Sleep** button instead (r3 product minor 7) — + **Turn Off** (holds only: **End Holds**). Pause Rules ▾ stays beside them while a rule exists. Last non-user end for 12 h. While paused: "Rules are paused until 4:00 PM." [Resume] (design M4). Buttons only, no switch (N5); none is a default button (r3 security L8) | V |
+| Sessions (r3 product minor 6: one term) | **Default session** (pop-up of presets; sets `defaultPresetID`) · Keep the display on (edits `defaultOptions.display`; a running session that uses default options follows it at once; help "When off, your Mac stays awake but the display can turn off." plus, for task kinds, "Download and app sessions let the display turn off unless set in Sessions."; parity M4, M5, minor 9) · **Sessions in the menu**: Edit… (the "Sessions" sheet) | V |
 | End sessions automatically | When the battery is low (switch) + Battery level (SliderSetting 5–50%, step 5, default 20, subordinate; design M7: "Below" was a fragment) · When the power adapter is disconnected; footer "Sessions always end below 5% battery or if your Mac gets very hot." | V (laptops only) |
-| Start automatically (design M4) | No section switch: **Add Rule…** turns `triggers` on with the first rule. Rule rows (`ReorderableList`): name, `TriggerEngine.summary` subtitle, trailing "Active" / "Waiting" / "Off", chevron; click or Return opens `TriggerEditorSheet`; drag or VoiceOver Move Up/Down to reorder (help "Higher in the list wins."). Empty: the help line + Add Rule…. Pause lives in the menu and the hotkey only (parity minor 10) | V |
-| Keyboard | Keyboard Shortcuts… (sheet: Keep Awake, Keep Display On, Start “<preset name>” ×4 (design m2), Pause automatic sessions) | V |
+| Start automatically (design M4) | No section switch: **Add Rule…** turns `triggers` on with the first rule. Rule rows (`ReorderableList`): name, `TriggerEngine.summary` subtitle, trailing "Active" / "Waiting" / "Off", chevron; click or Return opens `TriggerEditorSheet`; drag or VoiceOver Move Up/Down to reorder (help "Higher in the list wins."). Empty: the help line + Add Rule…. **Pause Rules** is reachable whenever a rule exists: the status row's Pause Rules ▾, Rules › in the Awake menu and in the compact section, the hotkey and `awake pause` (lead r4, r3 product M2; parity minor 10's menu-only rule is superseded) | V |
+| Keyboard | Keyboard Shortcuts… (sheet: Keep Awake, Keep Display On, Start “<preset name>” ×4 (design m2), Pause Rules) | V |
 | Navigation | Drives › (J) · History › (G). r2's "Menu bar icon ›" row is gone (a chevron must push, design M7); the page footer carries "Choose where Awake appears in Menu Bar settings." as a link | V |
 | Footer | link · Advanced… · (?) | V |
-| Advanced (11) | Activity: **Appear active** (`activity`; switch semantics §2.14; help "Keeps apps from marking you as away while a session runs.") · **Move the pointer slightly** (Experimental `pointerNudge`; help "Moves the pointer 1 point and back. Only for sessions you start in Snaptic. Needs Accessibility."; Accessibility footer + fix button) · **Stop appearing active after** (1 / 2 / 4 / 8 hours, default 1 hour; help "Counts from when the session starts appearing active."; design m2 partly rejected: "when inactive" would describe system idle, which the cap no longer uses, N10). End sessions automatically: When your Mac sleeps · When you switch users (Immediately / After 1 Hour / Never) · When Low Power Mode turns on · After the screen has been locked for (Never / 1 / 4 / 12 hours). Display: Keep the display on while locked (C1). Restart: Continue sessions after Snaptic restarts · Start a session when Snaptic opens (pop-up of presets / None). **Other apps keeping your Mac awake** (inline live section, design M4: process names and assertion types, a warning row when system-wide `SleepDisabled` is on — "Sleep is turned off for this Mac by another app or command. Snaptic can't change this."; empty "No other apps are keeping your Mac awake."). Footer leading Restore Defaults… (scope "Awake settings"; keeps history; turns pointer movement and Drive Alive off) | A |
+| Advanced (11) | Activity: **Appear active** (`activity`; switch semantics §2.14; help "Keeps apps from marking you as away while a session runs.") · **Move the pointer slightly** (Experimental `pointerNudge`; help "Moves the pointer 1 point and back. Only for sessions you start in Snaptic. Needs Accessibility."; Accessibility footer + fix button) · **Stop appearing active after** (1 / 2 / 4 / 8 hours, default 1 hour; help "Counts from when Awake starts appearing active, also across back-to-back sessions."; design m2 partly rejected: "when inactive" would describe system idle, which the cap no longer uses, N10). End sessions automatically: When your Mac sleeps (help "When you choose Sleep or close the lid."; r3 product minor 9) · When you switch users (Immediately / After 1 Hour / Never) · When Low Power Mode turns on · After the screen has been locked for (Never / 1 / 4 / 12 hours). Display: Keep the display on while locked (C1). Restart: Continue sessions after Snaptic restarts · Start a session when Snaptic opens (pop-up of presets / None). **Other apps keeping your Mac awake** (inline live section, design M4: process names and assertion types, a warning row when system-wide `SleepDisabled` is on — "Sleep is turned off for this Mac by another app or command. Snaptic can't change this."; empty "No other apps are keeping your Mac awake."). Footer leading **Restore Awake Defaults…** (scope "Awake settings"; keeps history; turns pointer movement and Drive Alive off) | A |
 
 **Turn-off confirmation** (the only copy of this text; §2.12 refers here, consistency m5): turning the header switch off while a session or an enabled rule exists asks "Turn off Awake? This ends the current session and stops automatic sessions." [Turn Off] [Cancel] (parity M7).
 
-Durations sheet (`PresetEditorSheet`): `ReorderableList` of presets with + / − and Edit/Delete/Move VoiceOver actions; each row has an **Options** disclosure: name, kind (Until turned off / For a duration (h, m NumberFields) / Until a time (time picker) / Until downloads and tasks finish, with **At most** (No limit / 1 / 2 / 4 / 8 / 12 hours; parity minor 6) and a "Thresholds" disclosure: top process, total CPU, disk, network, quiet for), Display (*Default (<per-kind default>)* via `defaultDisplayPolicy(for:)`, e.g. "Default (Keep on)" or "Default (Can turn off)"; consistency m6 / Keep on / Can turn off / Keep on until idle for [n min]), Activity (*Default* / Off / Appear active / Move the pointer slightly; only when `activity` is effective). The page pop-up chooses the default (no ★).
+**Sessions** sheet (`PresetEditorSheet`, title "Sessions"; r3 product minor 6): `ReorderableList` of presets with + / − and Edit/Delete/Move VoiceOver actions; each row has an **Options** disclosure: name, kind (Until turned off / For a duration (h, m NumberFields) / Until a time (time picker) / Until downloads and tasks finish, with **At most** (No limit / 1 / 2 / 4 / 8 / 12 hours; parity minor 6) and a "Thresholds" disclosure: top process, new processes, total CPU, disk, network, quiet for; help "Disk activity counts every app, including Spotlight."), Display (*Default (<per-kind default>)* via `defaultDisplayPolicy(for:)`, e.g. "Default (Keep on)" or "Default (Can turn off)"; consistency m6 / Keep on / Can turn off / Keep on until idle for [n min]), Activity (*Default* / Off / Appear active / Move the pointer slightly; only when `activity` is effective). The page's Default session pop-up chooses the default (no ★).
 
 Custom session panel (`CustomSessionPanel`, menu "Custom…"): For | Until | While an App Is Running; h/m fields, a time picker or an app pop-up; **At most** pop-up for the app kind (parity minor 6); Return = Start; ⌥ "Add Time…" opens it in extend mode.
 
-Rule editor sheet (`TriggerEditorSheet`, parity minor 5, design M4): **On** switch · Name · **Conditions**: "Start when [All ▾ / Any ▾] of these conditions are met" + a list of condition rows, each "[kind ▾] [is ▾ / is not ▾] [kind-specific fields]" with + / − (1…8 rows; + disabled at 8; the router kind is titled **"Connected to this network"**) · Session options (Display, Activity) · "Wait before starting" / "Wait before ending" (start/end delays) under a Timing disclosure · **After I turn it off**: [Resume when the conditions are next met ▾ / Resume after 15 min / 1 hour / 4 hours] (`resumeAfterManualEndMinutes`; Amphetamine re-activation parity) · footer leading **Delete Rule…** (standard alert) · Cancel / Done.
+Rule editor sheet (`TriggerEditorSheet`, parity minor 5, design M4, r3 product minor 5): **On** switch · Name (optional; placeholder = `TriggerEngine.summary` of the current conditions) · **Conditions**: "Keep your Mac awake while [all ▾ / any ▾] of these conditions are met" + a list of condition rows, each "[kind ▾] [is ▾ / is not ▾] [kind-specific fields]" with + / − (1…8 rows; + disabled at 8; the router kind is titled **"Connected to this network"**; no is / is not for Power, whose values include their inverses); a new rule opens with one condition row whose kind pop-up has focus (journey 7 ≈ 9 clicks) · Session options (Display; Activity *Off* / *Appear active* only, because rules never move the pointer; r3 consistency m12) · "Wait before starting" / "Wait before ending" (start/end delays) under a Timing disclosure · **After I turn it off**: [Resume when the conditions are next met ▾ / Resume after 15 min / 1 hour / 4 hours] (`resumeAfterManualEndMinutes`; Amphetamine re-activation parity) · footer leading **Delete Rule…** (standard alert) · Cancel / Done.
 
 **Drives** (J, sub-page of Awake): header switch "Keep drives awake" (`driveAlive`) · eligible volumes list with switches (turning one on performs the first write, so the Removable Volumes prompt follows the click) and per-row status ("Can't keep this drive awake: …") · **Check drives every** (SliderSetting 30–600 s, default 120; design m2) · **Also when no session is running** (design m2). Empty: "Connect an external drive to keep it from spinning down."
 
-**History** (G, sub-page): totals row (Today, Last 7 days) · list (Start Again in the row menu, hidden for `process` and `automatic` entries; parity minor 12; app sessions use their locally stored bundle id) · Clear History…. Empty: `ContentUnavailableView("No Sessions Yet", systemImage: "cup.and.saucer")`.
+**History** (G, sub-page): totals row (Today, Last 7 days) · list (Start Again in the row menu where `offersStartAgain`: hidden for command-line entries and for `process` and `automatic` kinds; parity minor 12, r3 consistency m3; app sessions use their locally stored bundle id; Start Again is a UI start) · Clear History…. Empty: `ContentUnavailableView("No Sessions Yet", systemImage: "cup.and.saucer")`.
 
 **Permissions** (H): Accessibility and Screen Recording rows (state, "Needed by …", Open Settings, Show Snaptic in Finder, relaunch), Removable Volumes info row when Drive Alive is on ("macOS asks the first time Snaptic writes to a drive"), signer line (R5.7).
 
@@ -2029,16 +2258,16 @@ Rule editor sheet (`TriggerEditorSheet`, parity minor 5, design M4): **On** swit
 
 | Page | Settings | Buttons + nav rows + tiles | Total | Notes |
 |---|---|---|---|---|
-| General | 2 | 3 | 5 | card not counted (one-time) |
+| General | 2 | 2 | 4 | card not counted (one-time); Copy Install Command appears only while Command-line control is on |
 | Menu Bar | 8 | 1 | 9 | 3 presence pop-ups, Awake Time + Icon, Style, scroll, Snaptic tiles; Customize… |
 | Window Switcher | 8 | 1 | 9 | shortcut, release, show, style, preview, auto size, minimized, Spaces; More Shortcuts… |
-| Displays root | 4 | 1 tiles + 3 + 9 nav | 17 | brightness, resolution, refresh, use as; Display Tools ▾, Arrange…, Display Details…; hub exception (without nav rows 8) |
+| Displays root | 4 | 1 tiles + 3 + 9 nav | 17 | brightness, resolution, refresh, use as; Display Tools ▾, Display Details… (under the tiles), Arrange…; hub exception (without nav rows 8) |
 | Brightness and Dimming | 7 | 1 tiles | 8 | restore, smooth, sync, xdr (XDR only; 6 without), dim on lock, dim to black, nits |
 | Color | 8 | 1 tiles | 9 | |
 | Hardware Controls | 5 | 1 tiles + 1 | 7 | external only |
 | Keyboard | 6 | 1 | 7 | |
 | Saved Layouts / Virtual / PIP / Automations | 1 / 1 / 0 / 2 | 2 / 2 / 5 / 4 | 3 / 3 / 5 / 6 | lists count 1 |
-| Awake | 5 | 5 + 1 list | 11 | default duration, keep display on, battery low + level, adapter; Edit…, Add Rule…, Keyboard Shortcuts…, Drives, History, rule list; desktop: 2 settings, 8 total |
+| Awake | 5 | 5 + 1 list | 11 | default session, keep display on, battery low + level, adapter; Edit…, Add Rule…, Keyboard Shortcuts…, Drives, History, rule list; desktop: 2 settings, 8 total (status-row actions incl. Pause Rules ▾ not counted, §4.2) |
 | Advanced sheets | — | — | General 4, Switcher 21, Displays 25, Brightness 20, Color 15, Hardware 18, Keyboard 14, Awake 11 | ≤ 25 each |
 
 Default-visible settings across the five root pages ≈ 30, ≈ 60 including sub-pages (was ≈ 245).
@@ -2063,7 +2292,7 @@ Default-visible settings across the five root pages ≈ 30, ≈ 60 including sub
 | 14 | Restore All Displays in 4 places, fixed shortcut | Menu Display Tools, panel, root page Display Tools ▾ (all actions); shortcut editable in one place (Displays › Advanced › Confirm display changes, mirrored in the Keyboard Shortcuts list) |
 | 15 | Awake "on" twice (module switch vs session switch, parity M7 / design B1) | Header switch = module ("Use Awake"); sessions = buttons (Keep Awake / Options ▾ / Turn Off) in Settings, native items + a mouse switch in the menu |
 | 16 | Awake icon off in three places (`indicator`, style `.hidden`, `ownItem`; parity M1) | `MenuPresence` only; `.hidden` style deleted; `indicator` is an internal capability |
-| 17 | Rules on/off in three places (section switch, row switches, Pause; design M4) | One switch per rule, inside its editor sheet; Pause in the menu and hotkey; the status row shows a paused state with Resume |
+| 17 | Rules on/off in three places (section switch, row switches, Pause; design M4) | One switch per rule, inside its editor sheet; **Pause Rules** (one action, several entry points: Rules › in both menus, the status row's Pause Rules ▾, hotkey, CLI); the status row shows a paused state with Resume |
 
 ### 4.5 Live-update architecture (fixes [UA] §1 at the source)
 
@@ -2118,17 +2347,17 @@ Rule (lint + review): a Settings view may read controller state only inside a vi
 
 ### 4.6 Config migration (no setting lost)
 
-All migrations are pure Kit functions with tests. **Each runs once**: the containing model gets a lossy `migrations: [String]` marker list (`DisplaysConfig`, `ModulesConfig`, `AwakeConfig`), a migration records its id after running, and never runs again (code M3; a later user "off" sticks). **Legacy fields stay declared, decoded and encoded until 0.4** (struct Codable drops undeclared keys; only `LossyMap` keeps unknown ones), so a downgrade to 0.2 still reads them. Old-key removal is a 0.4 task.
+All migrations are pure Kit functions with tests. **Each runs once**: markers live in their own store, `MigrationLedger` (lead, Kit `SnapticKit/Config/ConfigMigrations.swift`, key `SnapticMigrationsV1`, `ConfigStore<MigrationLedger>` owned by `ModuleHost`: `package var done: Set<String>` decoded element-wise), which 0.2 never reads or writes; a migration records its id after running and never runs again (code M3; a later user "off" sticks). Because 0.2 can't drop them, a 0.3 → 0.2 → 0.3 round trip doesn't re-run M5 or M10 over choices the user made in 0.3 (r3 code minor 13; r3's per-model `migrations` lists are not added). **Legacy fields stay declared, decoded and encoded until 0.4** (struct Codable drops undeclared keys; only `LossyMap` keeps unknown ones), so a downgrade to 0.2 still reads them. Old-key removal is a 0.4 task.
 
 | # | From | To | Where |
 |---|---|---|---|
-| M1 | `DisplaysConfig.features.sleepPrevention` + `perDisplay.*.management.preventSleep` (+ that display's `identity.fingerprint`, `customName`/`lastKnownName`), read from raw JSON | Awake rules "While a display is connected" (`.any` over `display(.specific)`, options `.keepOn`), **at most 8 displays per rule** (more → "… (2)", "… (3)"), rule ids derived deterministically from the display keys (`StableID` = "m1." + SHA-256 prefix of the sorted keys; code minor 9) so a re-run can't duplicate; enabled iff 0.2 sleep prevention was **effective**: Displays module enabled ∧ feature on ∧ ≥ 1 display flagged (parity "Also"); if enabled, Awake module (presence `.ownIconWhenActive`) and `triggers` turned on, `newModuleCards` gains `"awake.migrated"` (the General card) and the first activation of a migrated rule shows the toast "Keeping your Mac awake while “DELL U2720Q” is connected is now part of Awake." [Show in Settings] once (then marker `fromDisplays.toast` is recorded; design M3); marker `fromDisplays.v1`; afterwards `save(force: true)` on the **modules store first and the Awake store last** (its marker is the commit point; code minor 9) | Kit `AwakeMigration.fromDisplays(rawJSON:modulesEnabled:) -> AwakeMigrationResult` (G), run by `ModuleHost` after the Awake-disabled insertion (§2.13) and before modules start (lead) |
+| M1 | `DisplaysConfig.features.sleepPrevention` + `perDisplay.*.management.preventSleep` (+ that display's `identity.fingerprint`, `customName`/`lastKnownName`), read from raw JSON | Awake rules "While a display is connected" (`.any` over `display(.specific)`, options `.keepOn`), **at most 8 displays per rule** (more → "… (2)", "… (3)"), rule ids `StableID.derived(namespace: "awake.m1", name: "<chunk index>:" + the chunk's sorted display keys joined by ",")` (N18; valid UUIDs, no SHA in Kit; r3 code sig row, M5), and the writer **replaces rules by id** instead of appending, so a re-run after a crash between saves gives the same rules once (test: two runs over the same JSON give equal ids and one set of rules); enabled iff 0.2 sleep prevention was **effective**: Displays module enabled ∧ feature on ∧ ≥ 1 display flagged (parity "Also"); if enabled, Awake module (presence `.ownIconWhenActive`) and `triggers` turned on, `newModuleCards` gains `.awakeMigrated` (the General card; a `NewModuleCard` case, so M3's filter keeps it; r3 consistency M2) and the first activation of a migrated rule shows the toast "Keeping your Mac awake while “DELL U2720Q” is connected is now part of Awake." [Show in Settings] once (then marker `fromDisplays.toast` is recorded; design M3); marker `fromDisplays.v1`; afterwards `save(force: true)` on the **modules store, then the Awake store, then the ledger** (the ledger's marker is the commit point; code minor 9) | Kit `AwakeMigration.fromDisplays(rawJSON:modulesEnabled:) -> AwakeMigrationResult` (G), run by `ModuleHost` after the Awake-disabled insertion (§2.13) and before modules start (lead) |
 | M2 | `ModulePreferences.placement` (`shared/ownIcon/hidden`) + Displays `hideWithoutExternalDisplay` | `presence: MenuPresence`: `shared` → `.inSnapticMenu`, `hidden` → `.hidden`, `ownIcon` → `.ownIcon`, except Displays `ownIcon` + `hideWithoutExternalDisplay` → `.ownIconWhenActive` (design M5). `placement` and `hideWithoutExternalDisplay` keep being **written** from presence (`.ownIconWhenActive` → `.ownIcon` + hide flag for Displays, `.ownIcon` for Awake) so 0.2 reads them. When `presence` is absent but `placement` exists (0.3 → 0.2 → 0.3 round trip), Awake's `.ownIcon` decodes as `.ownIconWhenActive`, its default (code minor 9). `ModulePreferences.init(enabled:placement:…)` stays beside the new `init(enabled:presence:…)` until the step-3 exit (code sig) | `ConfigModules` decode (lead) |
-| M3 | `ModulesConfig.showNewDisplaysCard` | `newModuleCards: [String]` decoded as strings and filtered to known `ModuleID`s (a `Set<ModuleID>` would fail as a whole on one unknown id) | lead |
+| M3 | `ModulesConfig.showNewDisplaysCard` | `newModuleCards: [NewModuleCard]` (Kit enum `displays`, `awake`, `awakeMigrated = "awake.migrated"`) decoded through `LossyArray`, so an unknown card id drops only itself (r3 consistency M2); `showNewDisplaysCard == true` → `.displays` | lead |
 | M4 | `MenuConfig.showPanelShortcut`, `identifyShortcut` | `keys.shortcuts[DisplayActionID.fShowPanel]` (`"f.showPanel"`) and `[.fIdentify]` (`"f.identify"`), Kit constants in `KitModules.swift` (consistency M4), when those are unset; marker `menuShortcuts.v1`; legacy fields kept and encoded | `DisplaysConfig.init(from:)` post-decode (lead) |
 | M5 | `keys.osdShowNits` (default false) | once: if `keys.osdShowNits` is true, set `brightness.showNits = true` (default true); otherwise leave it. r1 re-ran the OR on every decode, so a user's later "off" came back at the next launch (code M3); marker `showNits.v1` | `DisplaysConfig` post-decode (lead) |
 | M6 | `SafetyConfig.panicHotkey` / `panicHotkeyEnabled` | **No data migration** (consistency M5): the UI edits the existing fields with their 0.2 meanings (§4.3 Confirm display changes); a `SafetyConfig` test pins that nil keeps "default + fallback" and `false` disables all | B (step 2) |
-| M10 | Per-display `management.powerSwitch` (Header switch: None / Connect-Disconnect / DDC standby) | once: any display with `.connect` → `menu.itemVisibility[d.disconnectItem] = .visible` (top-level "Disconnect" under that display's row); any with `.ddcStandby` → `[c.ddc.power] = .visible`; the field stays decoded and encoded, unused (parity M6); marker `powerSwitch.v1` | `DisplaysConfig` post-decode (lead) |
+| M10 | Per-display `management.powerSwitch` (`HeaderPowerSwitch`: `none` / `disconnect` / `ddcStandby`) | once: any display with `.disconnect` → `menu.items[.dDisconnectItem] = .visible` (top-level "Disconnect" under that display's row); any with `.ddcStandby` → `menu.items[.cDDCPower] = .visible` (Kit constant, §2.2); `MenuConfig.items` is the `LossyMap<DisplayMenuItemID, MenuItemVisibility>` (r3 consistency M1, code sig row); the field stays decoded and encoded, unused (parity M6); marker `powerSwitch.v1` | `DisplaysConfig` post-decode (lead) |
 | M7 | Switcher features `otherSpaces`/`windowlessApps` vs per-shortcut flags | unchanged storage; UI only | — |
 | M8 | Raw feature flags of features without a switch in the new UI | unchanged; each still reachable (§4.8) | — |
 | M9 | Awake indicator legacy values (r1 drafts never shipped) | none needed; `AwakeIndicatorConfig.sanitized()` maps unknown glyphs to `.cup` | — |
@@ -2147,56 +2376,114 @@ package enum AwakeMigration {
     package static func fromDisplays(rawJSON: Data?, modulesEnabled: Set<ModuleID>) -> AwakeMigrationResult
 }
 ```
-**Round trip 0.3 → 0.2 → 0.3** (code minor 9, documented in the README's downgrade note): 0.2 doesn't encode `migrations`, so the marker-guarded M4, M5 and M10 run again after an upgrade back; each is idempotent on unchanged data and only fills unset values, so a value the user changed in 0.2 wins. Awake's stores are untouched by 0.2 (it doesn't know the keys).
+**Round trip 0.3 → 0.2 → 0.3** (code minor 9, r3 code minor 13, documented in the README's downgrade note): the ledger key is untouched by 0.2, so no migration runs twice; values the user changes in 0.2 (legacy fields 0.2 still reads) are read again by 0.3 only where 0.3 still mirrors them (`placement`, `hideWithoutExternalDisplay`, §4.6 M2). Awake's stores are untouched by 0.2 (it doesn't know the keys).
 
-Page **Restore Defaults…** resets only that page's scope through Kit functions (`AwakeConfig.restoringDefaults()`, `DisplaysConfig.restoringDefaults(scope: DisplaysRestoreScope)`, `MenuConfig()` etc.), each tested to leave other scopes, salts and history untouched and to turn pointer movement and Drive Alive volumes **off** (security L6). `AwakeConfig.restoringDefaults()` is written by G in step 2 (it needs G's and J's fields; code M14); step 0 has a stub returning `AwakeConfig()`.
+Page **Restore Defaults…** resets only that page's scope through Kit functions (`AwakeConfig.restoringDefaults()`, `DisplaysConfig.restoringDefaults(scope: DisplaysRestoreScope)`, `MenuConfig()` etc.), each tested to leave other scopes, salts and history untouched and to turn pointer movement and Drive Alive volumes **off** (r1 security L6). Button titles name the scope ("Restore Awake Defaults…", §4.1). `AwakeConfig.restoringDefaults()` is written by G in step 2 (it needs G's and J's fields; code M14); step 0 has a stub returning `AwakeConfig()`.
 
 ### 4.7 Onboarding (H)
 
-Welcome → Choose modules (3 rows with switches and one-line descriptions; Awake preselected for fresh installs; the Awake row's description ends "Its icon appears while your Mac is being kept awake."; design m11) → Displays chips (existing; summary lists **user words**, not feature ids; chips are toggles; includes the 0.2 chips **"Hide the menu-bar icon"** → Displays presence Don't Show, and **"Turn on Sharper Text"** → `smartHiDPI`; parity minor 3) → Permissions (only what was chosen) → Done. r2's Awake quick-setup step is dropped (it repeated two page controls; design m11), so no `OnboardingStep.awake` case is added (code minor 13, consistency m11 moot). One primary button, always in the window footer ("Continue" / "Done"); the in-form "Use These Features" button is removed.
+Welcome → Choose modules (3 rows with switches and one-line descriptions; Awake preselected for fresh installs; the Awake row's description ends "Its icon appears while your Mac is being kept awake."; design m11) → Displays chips (F, `DisplaysOnboardingStep.swift`; H owns only `Onboarding.swift`; r3 consistency m11; existing; summary lists **user words**, not feature ids; chips are toggles; includes the 0.2 chips **"Hide the menu-bar icon"** → Displays presence Don't Show, and **"Turn on Sharper Text"** → `smartHiDPI`; parity minor 3) → Permissions (only what was chosen) → Done. r2's Awake quick-setup step is dropped (it repeated two page controls; design m11), so no `OnboardingStep.awake` case is added (code minor 13, consistency m11 moot). One primary button, always in the window footer ("Continue" / "Done"); the in-form "Use These Features" button is removed.
 
 ### 4.8 0.2 → 0.3 control map (normative; parity B2)
 
 One row per 0.2 control in [UA] §2.2 and §3.2 (identical per-display or per-item controls share a row). Destinations: **V** visible on the named page, **A** that page's Advanced sheet, **S** sub-page, **D** Display Details sheet, **K** a Keyboard Shortcuts sheet, **C** Customize Displays Menu sheet, **I** Displays › Display Information, **M** menu, **X** removed (reason given), **Exp** the page's Experimental group (kept; consistency m7). Pages: Gen = General, MB = Menu Bar, Sw = Window Switcher, Root = Displays root, Br = Brightness and Dimming, Col = Color, HW = Hardware Controls, Kb = Keyboard, SL = Saved Layouts, VD = Virtual Displays, PIP, Aut = Automations, Aw = Awake.
 
-**ControlID registry** (N16; parity B1, M1; lead r3). Reachability is checked against declarations, not prose:
+**Control registry** (N16; parity B1, M1; lead r3/r4; replaces r3's `ControlCatalog`/`MenuItemCatalog`/`ControlMap`, the DEBUG `ControlCoverage` walk and `gen-controlmap.py`; r3 code B1, M4). Reachability is checked against static declarations, not renders: grouped `Form`s are lazy, hardware-gated and subordinate rows don't exist on every Mac, and menus build lazily, so no single Mac could render everything (r3 code B1). Instead every surface **declares** its controls at compile time and CI checks the declarations.
+
 ```swift
-// SnapticKit/KitModules.swift (lead)
-package struct ControlID: RawRepresentable, Hashable, Codable, Sendable {   // "displays.root.brightness", "menu.display.hdr"
+// SnapticKit/Controls/ControlRegistry.swift (lead, step 0)
+package struct ControlID: RawRepresentable, Hashable, Codable, Sendable {   // "awake.page.batteryFloor"
+    package let rawValue: String
+    package init(rawValue: String)
+    package init(_ rawValue: String)        // views and builders use only this form, with a string literal (lint L15)
+}
+package struct LegacyControlID: RawRepresentable, Hashable, Sendable {     // "l.gen.cli.enabled" (§4.8.1)
     package let rawValue: String
     package init(rawValue: String)
 }
-// SnapticKit/ControlMap.swift (H) — the 0.3 side, declared by the owners of each surface
-package enum ControlCatalog {
-    /// Every 0.3 control: settings rows (= SettingsSearchEntry.id of every SettingsIndex* table), buttons and pull-down
-    /// items (`SettingsIndex*.actions`), menu items (`MenuItemCatalog.items`, M), shortcut rows (K sheets).
-    package static func all() -> Set<ControlID>
+package enum HardwareCondition: String, Hashable, Sendable {
+    case builtinDisplay, externalDisplay, twoDisplays, ddcDisplay, ddcVolume, xdrDisplay, appleDisplay, hdrDisplay,
+         notch, battery
 }
-package struct MenuItemSpec: Hashable, Sendable {          // M, `SnapticKit/MenuItemCatalog.swift`
-    package let id: ControlID; package let location: String          // "display submenu", "Display Tools", …
-    package let legacy: DisplayMenuItemID?                           // the 0.2 id it replaces, if any
-    package let showHide: Bool                                       // has a pop-up in Customize Displays Menu
-    package init(id: ControlID, location: String, legacy: DisplayMenuItemID?, showHide: Bool)
+/// Closed allowlist of runtime states a control can depend on (r3 code B1's "state-gated ids").
+package enum ControlState: String, Hashable, Sendable {
+    case safeMode, automationPaused, helperStopped, pendingConfirmation, screenRecordingMissing, accessibilityMissing,
+         awakeActive, awakeIdle, rulesExist, rulesPaused, holdsExist, notAtDefault, commandLineOn, hiddenIconWarning,
+         disconnectedDisplay, timedOrCapped
 }
-package enum MenuItemCatalog { package static var items: [MenuItemSpec] { get } }   // literal table (§4.8 "0.2 menu")
-// SnapticKit/ControlMapLegacy.swift (lead, generated ONCE in step 0 from 871c10b by scripts/gen-controlmap.py, then
-// frozen; consistency: the 0.2 side never changes)
-package enum ControlMapLegacy {
-    package static var settingKeyPaths: [String] { get }   // every Codable key path of DisplaysConfig + ModulesConfig ("all
-                                                   // features on" fixture) + Switcher `Config` (mirrored, see below)
-    package static var actions: [String] { get }   // every 0.2 DisplayActionID / AwakeActionID raw value, Switcher
-                                                   // action, and named page button ("button.resolution.undo", …, [UA] §2.2)
-    package static var menuItems: [String] { get }   // every 0.2 DisplayMenuItemID raw value (46 at 871c10b, incl.
-                                                   // "a.custom.*" as one pattern) + fixed 0.2 menu rows ("menu.recentNotices", …)
+/// Availability as data (the §4.2 States rules); every condition must hold for the control to exist.
+package enum ControlCondition: Hashable, Sendable {
+    case displayFeature(DisplayFeature), awakeFeature(AwakeFeature), switcherFeature(SwitcherFeature), module(ModuleID)
+    case hardware(HardwareCondition)
+    case parentOn(ControlID)              // subordinate rows: shown only while the parent is on
+    case perItem(String)                  // one instance per list item: "display", "rule", "preset", "customAction", …
+    case state(ControlState)
 }
-package enum ControlMap {                          // H + owners: the mapping
-    package enum Home: Hashable, Sendable { case control(ControlID), removed(reason: String) }
-    package static var settings: [String: Home] { get }
-    package static var actions: [String: Home] { get }
-    package static var menuItems: [String: Home] { get }
+package enum ControlKind: String, Hashable, Sendable {
+    case setting, button, navigation, list, statusAction, shortcut, menuItem, menuSlider, menuSubmenu, menuSwitchHeader
 }
+package enum MenuCustomize: String, Hashable, Sendable { case threeWay, checkbox, none }   // Customize Displays Menu row
+package struct MenuPlacementSpec: Hashable, Sendable {
+    package let location: String          // "display submenu", "Displays section", "Display Tools", "Awake menu", …
+    package let customize: MenuCustomize
+    package let legacyMenuID: DisplayMenuItemID?
+    package init(_ location: String, customize: MenuCustomize, legacy: DisplayMenuItemID? = nil)
+}
+package struct ControlSpec: Hashable, Sendable {
+    package let id: ControlID
+    package let kind: ControlKind
+    package let when: [ControlCondition]      // [] = always present
+    package let replaces: [LegacyControlID]   // the frozen 0.2 controls this one is the home of
+    package let keys: [String]                // config key paths it edits (key cross-check below); may be empty
+    package let menu: MenuPlacementSpec?
+    package init(_ id: String, _ kind: ControlKind, when: [ControlCondition] = [], replaces: [String] = [],
+                 keys: [String] = [], menu: MenuPlacementSpec? = nil)
+}
+/// One table per settings page, sheet, page section file and menu builder (§4.8.2); `<TypeName>Controls`, in
+/// `SnapticKit/Controls/<TypeName>Controls.swift`, owned by the owner of the view or builder.
+package protocol ControlTable {
+    static var surface: String { get }        // every id starts with surface + ".", e.g. "awake.page"
+    static var controls: [ControlSpec] { get }
+}
+package enum ControlRegistry {               // lead: the one list of types (§4.8.2); adding a table = one line here
+    package static var tables: [any ControlTable.Type] { get }
+}
+// SnapticKit/Controls/ControlLegacy.swift (lead, step 0; the literal §4.8.1 table, frozen at 871c10b)
+package enum ControlLegacy {
+    package static var ids: [LegacyControlID] { get }                 // §4.8.1 expanded (588 ids)
+    package static var switcherKeyPaths: [String: LegacyControlID] { get }   // for `--selftest-controls` (A)
+    package static var internalKeys: Set<String> { get }              // config keys that are state, not controls
+}
+// SnapticKit/Controls/ControlRemovals.swift (lead, step 0): the "removed with reason" table (§4.8.1, last table)
+package enum ControlRemovals { package static var removed: [LegacyControlID: String] { get } }
+
+// App, Core/ModuleContracts.swift (lead): every page, sheet, section view and menu builder names its table, which keeps
+// the declaration "next to" the type by name while the data sits in Kit, where the Linux test can see it (the app
+// target isn't importable from Kit tests).
+@MainActor protocol ControlDeclaring { associatedtype Controls: ControlTable }
+// struct AwakePage: View, ControlDeclaring { typealias Controls = AwakePageControls; … }
 ```
-Tests (`ControlMapTests`, Kit, Linux + macOS): every entry of each `ControlMapLegacy` list has a `ControlMap` home; every `.control` id is in `ControlCatalog.all()`; every `.removed` reason is non-empty; no `ControlMap` key is absent from the legacy lists; catalog ids are unique; every `MenuItemSpec` with a `legacy` id has `showHide == true` unless its row in the menu table says otherwise. The Switcher `Config` lives in the app target, so its keys are mirrored in Kit (`ControlMapLegacy.settingKeyPaths` prefix `switcher.`) and the macOS CI job runs `Snaptic --selftest-controls <token-file>` (A, `SelfTest.swift`, token-gated like `--selftest-helpers`, prints the recursive key paths of `JSONEncoder().encode(Config())`), compared by `scripts/selftest-controls.sh` (lead) with the mirror; a new Switcher key without a mapping fails CI. **Rendering** (parity M1): in DEBUG builds `.settingsAnchor(_:)` and MenuKit record every `ControlID` they render into `ControlCoverage` (H, app); the Debug menu's "Check Control Coverage" walks every root, route and sheet once and builds every menu with all items set to Show, then lists catalog ids that never rendered. The step-3 exit requires that list to be empty with all features on.
+
+Rules:
+- A view or builder passes ids only as literals: `SettingRow(…, anchor: ControlID("awake.page.batteryFloor"))`, `MenuKit.toggle(…, control: ControlID("menu.display.hdr"))`. Per-instance controls (one per display, rule, custom action) share one id; `perItem` says so.
+- `ControlID == SettingsSearchEntry.id == anchor` for every searchable row (r3 code minor 12).
+
+**Kit test** (`ControlRegistryTests`, Linux + macOS; skipped until step 3, green from the step-3 exit):
+1. Every `ControlLegacy.ids` entry is in the `replaces` of at least one spec **or** a key of `ControlRemovals.removed` with a non-empty reason, never both; neither table names an id that isn't in `ControlLegacy.ids` (a trailing `*` matches the pattern ids).
+2. Control ids are unique across all tables and start with their table's `surface`; `parentOn` targets exist in the same table.
+3. Every `setting` spec has a `SettingsIndex*` entry with the same id, and every entry has a spec.
+4. Every `l.menu.*` id with a home is replaced by a spec whose `menu.customize != .none` unless §4.8 says otherwise ("always while paused"), and `CustomizeMenuSheetControls` has one row per such spec (N16's show/hide guarantee).
+5. **Key cross-check** (r3 code M4): `ConfigFixtures.full()` (lead, Kit: every optional set, one `perDisplay` entry, all features on) for `DisplaysConfig`, `ModulesConfig` and `AwakeConfig`, walked with `Mirror` into dotted key paths (`perDisplay.*.color.suspended`); every path is in some spec's `keys` or in `ControlLegacy.internalKeys`. A new 0.3 setting without a declared control fails here; nothing depends on `JSONEncoder` dropping nil optionals.
+6. `ControlRegistry.tables` and the §4.8.2 list agree (count and names).
+
+**Lint L15** (python, lead, step 0; ratchet-free, because the tables start empty and grow with the views):
+- `ControlID(` with anything but one string literal is banned outside `SettingsUI/` and `Core/MenuKit.swift` (their internals forward a `ControlID` value).
+- Every file under `Sources/Snaptic/` that uses a `ControlID("…")` literal declares the type's table (`typealias Controls = X`), and each literal is an id in `SnapticKit/Controls/X.swift` (several types may name one table, e.g. a page and its section views).
+- Every id in a table is used as a literal by at least one type that names the table (declared ⇒ constructed in code).
+- Every `ControlTable` conformer under `SnapticKit/Controls/` is listed in `ControlRegistry.swift`.
+
+The Switcher `Config` lives in the app target, so its keys are checked by `Snaptic --selftest-controls <token-file>` (A, `SelfTest.swift`, token-gated like `--selftest-helpers`, run by the macOS CI job from step 1): in process it builds a `Config` with every optional set (`gatherShortcut`) and one shortcut, walks its key paths with `Mirror`, and exits nonzero unless every path is in `ControlLegacy.switcherKeyPaths` or in the `keys` of a Switcher table (a new Switcher key without a control fails CI), and every legacy path still exists or is removed (r3 code M4; no shell comparison script).
+
 
 **General**
 
@@ -2209,9 +2496,9 @@ Tests (`ControlMapTests`, Kit, Linux + macOS): every entry of each `ControlMapLe
 | Menu | Displays "Hide the icon when no external display is connected" | MB Displays pop-up *Show When Active* (migration M2; design M5) |
 | Menu | Snaptic **Icon** | MB Snaptic icon tiles |
 | Menu | Scroll on a slider to adjust | MB V |
-| Menu | Display blocks Expanded/Compact | MB "Display controls" |
+| Menu | Display blocks Expanded/Compact | MB **Style** (Standard / Compact; r3 consistency m5) |
 | Menu | Main display first · Status badges · Header row with one display · Section order ▲▼ · Display order ▲▼ + Use the Default Order | C (Main display first = the pinned "Main display" row in the order list) |
-| Menu | ≈ 46 Visible/In submenu/Hidden pickers | C (grouped, human titles, every item of the "0.2 menu" table below; sliders Show/Hide only; quick-menu items X → their Display Tools twin, C3) |
+| Menu | ≈ 46 Visible/In submenu/Hidden pickers | C (disclosure groups Per Display / Displays Section / Display Tools, human titles, every item of the "0.2 menu" table below; per-display items three-way, the rest checkboxes; quick-menu items X → their Display Tools twin, C3) |
 | Menu | Reset Menu Settings | C footer Restore Defaults… (and MB footer) |
 | Menu | Hidden-icon warnings | MB status rows |
 | Command-Line | Allow command-line control · Copy install command | Gen V |
@@ -2374,7 +2661,7 @@ Tests (`ControlMapTests`, Kit, Linux + macOS): every entry of each `ControlMapLe
 | Automation | Action fields (Name, Show in menu, Allow from CLI, Shortcut, Program, Arguments, Run Now, Delete) | Aut list (Show in menu) + Details… sheet; shortcut also in Kb K |
 | Display Names | Name · Use the System Name · Icon · Details disclosure · EDID Copy Hex/Base64 · Copy Settings From… | D |
 | Display Names | EDID Export… | I (design m6: no file panel over the Details sheet) |
-| Display Names | Show in the menu and the Displays panel · Menu order ▲▼ | C (D has a "Menu visibility…" link) |
+| Display Names | Show in the menu and the Displays panel · Menu order ▲▼ | C (D has a **Customize Displays Menu…** link; r3 consistency m5) |
 | Display Names | Remembered: Forget… · Forget All… | I › Remembered displays |
 | Safety | Confirm resolution changes · Revert after N s · Tell me when displays were restored · Restore All shortcut (now editable) · Allowed without asking | Root A › Confirm display changes |
 | Safety | Restore All Displays Now | Root Display Tools ▾; M Display Tools (kept top-level in the Displays section while a confirmation is pending); panel |
@@ -2385,7 +2672,7 @@ Tests (`ControlMapTests`, Kit, Linux + macOS): every entry of each `ControlMapLe
 | Onboarding | Module switches · Displays chips · Hide the menu-bar icon · Turn on Smart HiDPI | Onboarding Choose modules + Displays chips, incl. "Hide the menu-bar icon" and "Turn on Sharper Text" chips (§4.7; parity minor 3) |
 | Onboarding | In-form "Use These Features" | X (one primary button in the footer) |
 
-**0.2 menu** ([UA] §3.2 fixed rows, plus **every** 0.2 `DisplayMenuItemID`; parity B1, lead r3). "Default" is the 0.2 default visibility, kept; every row with a 0.3 location has a Show / (In Display Submenu) / Hide pop-up in Customize Displays Menu (C). Locations are those of §5.2.
+**0.2 menu** ([UA] §3.2 fixed rows, plus **every** 0.2 `DisplayMenuItemID`; parity B1, lead r3). "Default" is the 0.2 default visibility, kept; every row with a 0.3 location has a row in Customize Displays Menu (C): a Show / In Display Submenu / Hide pop-up for per-display items, a checkbox for the rest (lead r4). Locations are those of §5.2.
 
 *Fixed rows*
 
@@ -2453,6 +2740,82 @@ Tests (`ControlMapTests`, Kit, Linux + macOS): every entry of each `ControlMapLe
 | `a.custom.<id>` (custom actions with "Show in the menu") | Displays section "Actions ›" (one item per action, Run on click); the per-action flag stays Automations › "Show in menu" and is mirrored in C | per action |
 | More ▸ › Resolution slider, quick actions, Brightness Method ▸ | covered by `d.resolutionSlider`, Quick Changes (Root V, Kb K), `c.brightness.method` above | — |
 
+### 4.8.1 Frozen 0.2 control list (literal; `ControlLegacy.ids`; lead r4)
+
+The 0.2 side, written here once from [UA] §2.2/§3.2 and the 0.2 sources at 871c10b (page files, the Switcher `Config` keys, `SwitcherFeature`, `DisplayFeature`, the registered `DisplayActionID`s and `DisplayMenuItemID`s, `StatusMenu`/`DisplaysMenuBuilder` fixed rows). The lead copies it verbatim into `ControlLegacy.swift` in step 0; it never changes afterwards. A name ending in `*` is one id for a parameterized family (favorites 1–5, layouts 1–9, virtual displays 1–8, input slots, PIP configurations, custom actions). Identical per-display or per-item controls are one id. The 0.3 homes are the §4.8 tables above; the owners encode them as `replaces:` in their control tables.
+
+| Prefix | Ids (each entry is prefix + name) | n |
+|---|---|---|
+| `l.gen.modules.` | switcher, displays, newDisplaysCard.turnOn, newDisplaysCard.notNow | 4 |
+| `l.gen.menu.` | switcher.show, switcher.icon, displays.show, displays.icon, displays.hideWithoutExternal, snaptic.icon, scrollAdjustsSliders, compact, mainFirst, showBadges, headerForSingleDisplay, sectionOrder, displayOrder, useDefaultOrder, reset, hiddenIconWarnings | 16 |
+| `l.gen.cli.` | enabled, maySkipConfirmation, copyInstall, exitCodes | 4 |
+| `l.gen.startup.` | launchAtLogin | 1 |
+| `l.gen.permissions.` | rows, openSettings, relaunch | 3 |
+| `l.gen.backup.` | export, import, resetAll | 3 |
+| `l.gen.safeMode.` | restart, leave | 2 |
+| `l.gen.otherApps.` | policy | 1 |
+| `l.gen.about.` | checkUpdates, licenses | 2 |
+| `l.sw.shortcut.` | modifier, keyCode, scope, style, includeMinimized, includeWindowlessApps, spaces, oneWindowPerApp, add, delete | 10 |
+| `l.sw.` | releaseToSwitch, previewSelected, showOtherSpaces, autoSize, thumbnailSize, showOnScreen, selectOnHover, passthroughOnlyWhenFullscreen, excludedBundleIDs, passthroughBundleIDs, privateBundleIDs, protectPrivateWindows, gatherShortcut, permissionRows | 14 |
+| `l.sw.feature.` | thumbnails, preview, otherSpaces, windowlessApps, search, actionClose, actionMinimize, actionFullscreen, actionHide, actionQuit, hoverButtons, hoverSelect, commandTabTakeover, passthrough | 14 |
+| `l.dfeat.` | overview, diagnostics, resolution, hiddenModes, scaleMatch, brightness, brightnessApple, brightnessDDC, brightnessGamma, brightnessOverlay, brightnessRestore, dimToBlack, dimOnLock, nits, xdr, sync, autoBrightness, color, colorProfiles, nightShift, applePresets, ddcControls, ddcInput, ddcPower, ddcCustom, brightnessKeys, volumeKeys, shortcuts, osd, osdBroadcast, mainDisplay, arrangement, mirroring, rotation, underscan, hdrToggle, disconnect, autoDisconnectBuiltin, protection, layouts, virtualScreens, smartHiDPI, hdrVirtual, pip, pipFilters, menuBarOverlays, sleepPrevention, hooks, customActions | 49 |
+| `l.d.overview.` | ddcPower, brightness, volume, mute, resolutionSlider, resolutionPicker, input, identify, redetect, showPanel, showPanelShortcut, identifyShortcut, activeFeatures, banner.resume, banner.leaveSafeMode, banner.restartHelper | 16 |
+| `l.d.features.` | permissionRows, featureOffRows | 2 |
+| `l.d.resolution.` | confirm, allowBelow720p, persistedChoice, sliderLabel, sliderSnapping, sliderNativeAspectOnly, mode, refresh, quick.hiDPI, quick.native, quick.default, quick.nativeHalved, quick.notch, undo, redo, addFavorite, favorite.apply, favorite.remove, dpiFilter, widthMin, widthMax, widthClear, refreshFilter, matchUIScale, forgetRemembered, hiddenModes.display, hiddenModes.try, scaleMatch.reference, scaleMatch.tolerance, scaleMatch.preview, scaleMatch.apply | 31 |
+| `l.d.brightness.` | display, slider, snapMarks, method, use, switchover, switchoverValue, minHardware, gammaStatus, gammaAskAgain, nits.now, nits.custom, nits.min, nits.max, nits.peak, showNits, xdr.enabled, xdr.customMax, xdr.max, xdr.test, xdr.globalMax, xdr.method, xdr.batteryFloor, xdr.pauseOnLowPower, xdr.detent, sync.enabled, sync.source, sync.mode, sync.follow, sync.offset, sync.externalChanges, restoreMode, smoothTransitions, dimToBlack, dimOnLockLevel, featureOffRows | 36 |
+| `l.d.color.` | display, suspend, suspendAll, contrast, gamma, gain, temperature, blackLevel, whiteLevel, invert, rgbGain.red, rgbGain.green, rgbGain.blue, rgbGamma.red, rgbGamma.green, rgbGamma.blue, resetDisplay, profile, profile.showInFinder, profile.openColorSync, profile.restorePrevious, applePreset, autoBrightness, menuBarStrip, cornerRadiusTop, cornerRadiusBottom, allowGammaWithCustomProfile, nightShift, nightShiftWarmth | 29 |
+| `l.d.ddc.` | readback, readbackInterval, restoreOnWake, display, enabled, info, readCapabilities, checkConnection, volume, contrast, vcp.use, vcp.min, vcp.max, vcp.invert, vcp.showInMenu, vcp.readbackInterval, input.name, input.hide, input.order, input.switch, input.add, input.resetList, power.state, power.on, power.standby, power.standbyValue, custom.list, custom.add, raw.code, raw.value, raw.read, raw.send, raw.unlockCode, raw.unlock, raw.lockAll, timing.replyDelay, timing.retries, timing.writeTwice, timing.ignoreChecksum, timing.forgetFraming, allowedWithoutAsking, featureOffRows | 42 |
+| `l.d.keys.` | permission.pane, permission.status, permission.grant, permission.retry, brightnessPolicy, brightnessAlsoSystem, target, steps, fineSteps, alternateKeys, volumePolicy, volumeAlsoSystem, muteAlsoSystem, perDisplay.keysEnabled, perDisplay.showVolumeOSD, perDisplay.audioDeviceName, modifiers, shortcutFilter, inputSlots | 19 |
+| `l.d.osd.` | style, position, target, showValue, showNits, native, preview, broadcastName | 8 |
+| `l.d.arrangement.` | canvas, snap, positionForm, mainDisplay, mirroring, rotation, hdr, underscan, underscanApply, powerSwitch, connect, connectAll, autoDisconnectWithoutDDC, ignoreForAutoDisconnect, preventSleep, featureOffRows | 16 |
+| `l.d.protection.` | protect, saveProtected, fields, forgetAll, undoToast, layout.name, layout.save, layout.status, layout.applyAutomatically, layout.priority, layout.apply, layout.stopTrusting, layout.update, layout.move, layout.delete | 15 |
+| `l.d.virtual.` | connected, edit, delete, new.shape, new.create, recipes, bulk, behavior.restoreLayoutAfterConnect, behavior.reconnectAfterWake, behavior.disconnectOnLock, editor.name, editor.aspect, editor.fillSizes, editor.diagonal, editor.hiDPI, editor.portrait, editor.reconnect, editor.hdr, editor.refresh, editor.sizes, editor.associations, smartHiDPI.enabled, smartHiDPI.size, smartHiDPI.hdr | 24 |
+| `l.d.pip.` | intro, screenRecording, running.pause, running.show, running.crop, running.stop, running.bulk, config.start, config.edit, new, newStream, windows, editor.name, editor.showAs, editor.target, editor.autoStart, editor.delete, editor.level, editor.opacity, editor.clickThrough, editor.lockPosition, editor.lockAspect, editor.integerScaling, editor.showTitleBar, editor.snapToQuarters, editor.shadow, editor.resetPosition, editor.matchRefresh, editor.fps, editor.showCursor, editor.warpOnCommandClick, editor.crop, editor.rotation, editor.flip, editor.scaling, editor.size, editor.nativeMode, editor.lut, editor.filters, importLUT, privacy.prefixes, privacy.restoreDefaults, pauseWhenOccluded, stopHotkeyEnabled | 44 |
+| `l.d.automation.` | hook.name, hook.enabled, hook.event, hook.display, hook.delay, hook.program, hook.choose, hook.arguments, action.name, action.showInMenu, action.cliAllowed, action.shortcut, action.program, action.arguments, action.runNow, action.delete | 16 |
+| `l.d.names.` | name, useSystemName, icon, showInMenu, menuOrder, details, edid.copyHex, edid.copyBase64, edid.export, copySettingsFrom, forget, forgetAll | 12 |
+| `l.d.safety.` | confirm, confirmSeconds, announceRecovery, panicHotkey, restoreAllNow, resume, helper.status, helper.canRevert, pendingConfirmation, undoJournal, allowedWithoutAsking, keptModes.forget, unavailable | 13 |
+| `l.d.diagnostics.` | copyReport, export, refresh, report | 4 |
+| `l.onboarding.` | modules, displayChips, hideMenuIcon, smartHiDPI, useTheseFeatures | 5 |
+| `l.action.` | c.brightnessUp, c.brightnessDown, c.brightnessUpFine, c.brightnessDownFine, c.volumeUp, c.volumeDown, c.volumeUpFine, c.volumeDownFine, c.mute, c.contrastUp, c.contrastDown, c.contrastUpFine, c.contrastDownFine, c.gammaUp, c.gammaDown, c.gammaUpFine, c.gammaDownFine, c.temperatureUp, c.temperatureDown, c.temperatureUpFine, c.temperatureDownFine, c.invert, c.colorReset, c.colorSuspend, c.menuBarStrip, c.nightShiftToggle, c.nightShiftUp, c.nightShiftDown, c.syncToggle, c.xdrToggle, c.xdrUp, c.xdrDown, c.ddcPowerOn, c.ddcStandby, c.inputSlot*, d.resolutionUp, d.resolutionDown, d.hiDPIToggle, d.nativeMode, d.defaultMode, d.nativeHalved, d.resolutionUndo, d.resolutionRedo, d.notchToggle, d.matchUI, d.rotate, d.hdrToggle, d.setMain, d.mirrorToggle, d.toggleBuiltin, d.connectAll, d.disconnect, d.disconnectAllButMain, d.sleepPreventionToggle, d.protectionToggle, d.smartHiDPIToggle, d.favorite*, d.layout*, d.virtualToggle*, e.pipToggle.*, e.pipToggleDisplay, e.pipPickWindow, e.pipPauseAll, e.pipHideAll, e.pipStopAll, f.showPanel, f.identify, f.redetect, f.copyDiagnostics, b.restoreAll, b.resumeAutomation, a.custom.* | 72 |
+| `l.menu.` | c.brightness.slider, c.brightness.method, c.ddc.volume, c.ddc.mute, c.ddc.contrast, c.ddc.input, c.ddc.power, c.ddc.custom, c.color.submenu, c.color.profiles, c.color.applePresets, c.color.autoBrightness, c.menuBarStrip.toggle, c.xdr.toggle, c.sync.toggle, c.tools.nightShift, d.resolutionSlider, d.resolutionMenu, d.matchUI, d.setMain, d.mirrorMenu, d.rotationMenu, d.hdrToggle, d.powerSwitch, d.disconnectItem, d.connectAll, d.connectAll.quick, d.disconnectAllButMain, d.arrange, d.underscanMenu, d.sleepPrevention, d.protection, d.layoutsMenu, d.layoutMatch, d.virtualMenu, d.smartHiDPI, b.restoreAll, b.restoreAll.quick, b.resumeAutomation, f.tools.identify, f.tools.redetect, f.tools.panel, f.quick.redetect, e.pip.display, e.pip.tools, a.custom.* | 46 |
+| `l.menu.fixed.` | switcher.enableThumbnails, switcher.pressHint, switcher.gather, displays.header, displays.more, displays.moreResolution, displays.moreMute, tools.header, tools.moreFeatures, recentNotices, quickMenu, settings, quit, safeModeRow, upgradeCard | 15 |
+| | **Total** | **588** |
+
+`ControlLegacy.switcherKeyPaths` maps the 0.2 `Config` key paths to these ids: `shortcuts.modifier` … `shortcuts.oneWindowPerApp` → `l.sw.shortcut.*`, the 13 top-level fields (`releaseToSwitch` … `gatherShortcut`) → `l.sw.<name>`, `disabledFeatures` → the `l.sw.feature.*` ids; `shortcuts.id` is in `internalKeys`.
+
+**Removed with reason** (`ControlRemovals.removed`, lead; every other id above has a home):
+
+| Legacy id | Reason |
+|---|---|
+| `l.d.overview.activeFeatures` | Developer statistic; Display Information lists effective and unavailable features |
+| `l.d.features.featureOffRows`, `l.d.brightness.featureOffRows`, `l.d.ddc.featureOffRows`, `l.d.arrangement.featureOffRows` | "X is off · Turn On" rows are replaced by `FeatureHighlights` and header/section switches (§4.4 #6) |
+| `l.d.diagnostics.refresh` | Display Information refreshes on change |
+| `l.d.pip.intro` | `FeatureHighlights` while Picture in Picture is off |
+| `l.onboarding.useTheseFeatures` | One primary button, in the window footer (§4.7) |
+| `l.d.arrangement.powerSwitch`, `l.menu.d.powerSwitch` | No switches in menu device rows; migration M10 promotes Disconnect / Turn Off Display (parity M6) |
+| `l.menu.c.brightness.method` | Expert choice; Brightness › Advanced › Brightness methods (no submenus in submenus) |
+| `l.menu.fixed.quickMenu`, `l.menu.d.connectAll.quick`, `l.menu.b.restoreAll.quick`, `l.menu.f.quick.redetect` | Right-click menu removed (C3); each item has a Display Tools twin |
+| `l.menu.fixed.tools.moreFeatures` | "Display Settings…" in each display submenu and "Snaptic Settings…" cover it (parity minor 3) |
+
+### 4.8.2 Control tables (`ControlRegistry.tables`)
+
+One `<TypeName>Controls` table per §6.2 page, sheet, page-section file and menu-builder file; the lead creates each as an S stub (`surface` set, `controls = []`) in step 0 and lists it in `ControlRegistry.swift`; owners fill theirs with the views. Surfaces and owners:
+
+| Owner | Tables (surface) |
+|---|---|
+| H | `GeneralPage` (general.page), `GeneralAdvancedSheet` (general.advanced), `PermissionsPage` (permissions.page), `AboutPage` (about.page), `Onboarding` (onboarding), `SwitcherPage` (switcher.page), `SwitcherAdvancedSheet` (switcher.advanced), `SwitcherShortcutsSheet` (switcher.shortcuts) |
+| M | `MenuBarPage` (menubar.page), `CustomizeMenuSheet` (menubar.customize), `StatusMenu` (menu.snaptic: footer, status rows), `DisplaysMenuBuilder` (menu.displays), `DisplayMenuBlock` (menu.display) |
+| F | `DisplaysPage` (displays.root), `DisplayDetailsSheet` (displays.details), `DisplaysAdvancedSheet` (displays.advanced), `DisplayInformationPage` (displays.info), `DisplayLiveControls` (displays.panel), `DisplaysOnboardingStep` (onboarding.displays) |
+| C | `BrightnessSubpage` + `BrightnessSections` (displays.brightness), `BrightnessAdvancedSheet` (displays.brightness.advanced), `ColorPage` (displays.color), `HardwareControlsPage` (displays.hardware), `KeyboardPage` (displays.keyboard; its Keyboard Shortcuts sheet and Advanced sheet in the same table), `BrightnessMenuItems`, `DDCMenuItems`, `ColorMenuItems` (menu.display.c) |
+| D | `ResolutionSections` + `ResolutionOptionsSection` (displays.resolution), `MatchTextSizeSection`, `ArrangeSheet`, `ConnectionSection`, `SavedLayoutsPage`, `VirtualDisplaysPage`, `VirtualDisplayEditorSheet`, `ResolutionMenuItems`, `VirtualMenuItems`, `LayoutsMenuItems` (menu.display.d) |
+| E | `PIPPage`, `PIPEditorSheet`, `PIPMenuItems` |
+| A | `AutomationsPage`, `HookEditorSheet`, `ActionEditorSheet`, `WindowSwitcherModule` (menu.switcher) |
+| B | `ConfirmChangesSection` (displays.advanced.confirm), `PanicCoordinator` (menu.display.b) |
+| G | `AwakePage` (awake.page), `AwakeAdvancedSheet` (awake.advanced), `PresetEditorSheet` (awake.sessions), `TriggerEditorSheet` (awake.rule), `CustomSessionPanel` (awake.custom), `AwakeHistoryPage` (awake.history), `AwakeMenuRows` (menu.awake), `IndicatorController` (menu.awake.item) |
+| J | `DrivesPage` (awake.drives) |
+
+Display contributors that build menu items from a controller file (e.g. `XDRController`, `SyncController`, `SmartHiDPIController`; [UA] §3.1) move their item construction into their owner's `*MenuItems` file in step 2, so every builder is one of the files above.
+
 ## 5. Menu bar redesign (M owns the system; module owners own their sections)
 
 ### 5.1 MenuKit (M, `Core/MenuKit.swift`, `Core/MenuSliderRow.swift`, `Core/MenuSwitchHeader.swift`)
@@ -2490,6 +2853,9 @@ Custom rows are **AppKit only** (design M11, code minor 4): no `NSHostingView` i
     static func quit() -> NSMenuItem                                                                     // "Quit Snaptic" ⌘Q
 }
 @MainActor final class MenuSliderRow: NSMenuItem {
+    /// NSMenuItem's `required init(coder:)` (r3 code sig row): calls `super.init(coder:)` and leaves a disabled row with
+    /// no view and no handler; it never traps (menus are never decoded from nibs here, but a trap would be a crash path).
+    required init(coder: NSCoder)
     /// AppKit view 300×30: leading 16 pt template symbol in the image column, NSSlider (.regular) on the text
     /// column, trailing value label 40 pt (monospacedDigitSystemFont, secondaryLabelColor); measured per OS [HW-15].
     /// `discrete`: tick-snapped, commits on `.ended` only (resolution slider).
@@ -2504,7 +2870,7 @@ Custom rows are **AppKit only** (design M11, code minor 4): no `NSHostingView` i
 
 Custom-row behavior (code minor 3, normative): a view row draws its highlight from `enclosingMenuItem.isHighlighted` with an `NSVisualEffectView(material: .selection)` background so arrow-key navigation shows it, and sets `accessibilityLabel` (title + value); `MenuSliderRow` delivers `.began` on mouse down, `.changed` while tracking and `.ended` after `super.mouseDown` returns; each scroll-wheel step (with "Scroll over a slider to adjust it") delivers a `.changed` + `.ended` pair.
 
-Item rules: Title Case; ellipsis only when more input follows; toggles use checkmarks or a changing title; submenus one level deep, ≤ ~12 items plus at most one "More…" that opens Settings. **Images: all items of a section or none** (design m1; 15-SDK builds show every attached image on 26/27, [DS] §3.3): the Displays section gives every top-level item a 16 pt template symbol (device rows, `rectangle.3.group` for Arrange Displays…, `square.stack.3d.up` for Saved Layouts ›, `display.2` for Virtual Displays ›, `pip` for Picture in Picture ›, `bolt` for Actions ›, `wrench.and.screwdriver` for Display Tools); the Switcher and Awake sections use none, except the app rows of "While an App Is Running ›", which is its own group (parity minor 11). Custom rows are never clickable themselves; every slider action and every switch-header action also has a native path (C4). Every item built through MenuKit passes its `ControlID` (§4.8) so DEBUG coverage can see it. `ClosureMenuItem`, `CMenu.item`, `ManagedMenuItem` (in D's `Displays/Management/ManagementSupport.swift`), `DisplayMenuBlock.actionItem`, `PanicMenuItem`, `MenuSliderItem` are deleted **at the step-3 exit** after a caller grep, tracked in the ratchet until then (code M10); contributors move to MenuKit during steps 1–3 (lint L6 bans `NSMenuItem(` outside the MenuKit files; permanent ratchet rows: `AppDelegate.swift` main menu, `PIPWindow.swift` context menu).
+Item rules: Title Case; ellipsis only when more input follows; toggles use checkmarks or a changing title; submenus one level deep, ≤ ~12 items plus at most one "More…" that opens Settings. **Images: all items of a section or none** (design m1; 15-SDK builds show every attached image on 26/27, [DS] §3.3): the Displays section gives every top-level item a 16 pt template symbol (device rows, `rectangle.3.group` for Arrange Displays…, `square.stack.3d.up` for Saved Layouts ›, `display.2` for Virtual Displays ›, `pip` for Picture in Picture ›, `bolt` for Actions ›, `wrench.and.screwdriver` for Display Tools); the Switcher and Awake sections use none, except the app rows of "While an App Is Running ›", which is its own group (parity minor 11). Custom rows are never clickable themselves; every slider action and every switch-header action also has a native path (C4). Every item built through MenuKit passes its `ControlID("…")` literal (§4.8), which lint L15 checks against the builder's control table. `ClosureMenuItem`, `CMenu.item`, `ManagedMenuItem` (in D's `Displays/Management/ManagementSupport.swift`), `DisplayMenuBlock.actionItem`, `PanicMenuItem`, `MenuSliderItem` are deleted **at the step-3 exit** after a caller grep, tracked in the ratchet until then (code M10); contributors move to MenuKit during steps 1–3 (lint L6 bans `NSMenuItem(` outside the MenuKit files; permanent ratchet rows: `AppDelegate.swift` main menu, `PIPWindow.swift` context menu).
 
 ### 5.2 Snaptic icon menu (shared item)
 
@@ -2537,25 +2903,39 @@ Displays                                             header
                                                     Match Text Size… · Connect All Displays · Disconnect All But Main ·
                                                     Restore All Displays · ─ · ✓ Sync Brightness · ✓ Night Shift
 ───
-Keep Awake                                   [●]    compact Awake section (§5.4): AwakeMenuRows minus rules, no header
-  Until turned off
-Turn Off Keep Awake
-✓ Keep Display On
-Until Turned Off
+Keep Awake                                   [○]    compact Awake section, idle (§5.4); no section header, no internal
+Keep Awake Until Turned Off                         separators (the switch header's height sets the group apart)
 Start Session                                 ›
 While an App Is Running                       ›
+Rules                                         ›     only while ≥ 1 rule exists (lead r4)
 ───
 Recent Notices                                ›     only when there are some
 Snaptic Settings…                            ⌘,
 Quit Snaptic                                 ⌘Q
 ```
 
+The same section while a timed session runs (compact, active):
+
+```
+Keep Awake                                   [●]    detail: "Until 3:45 PM · 1h 12m left"
+Turn Off Keep Awake
+Add 15 Minutes
+Add 1 Hour                                          ⌥ Add Time…
+✓ Keep Display On
+Start Session                                 ›
+While an App Is Running                       ›
+Rules                                         ›     only while ≥ 1 rule exists
+```
+
+**Row budget** (r3 product minor 16): the default setup (both modules shared, 1 built-in + 1 DDC external, Awake Show When Active and idle, Screen Recording granted) has 17 items + 3 separators ≈ 20 lines (Switcher 3, Displays header + 2 device rows + 3 sliders + Arrange Displays… + Display Tools ›, compact Awake 4, Snaptic Settings…, Quit); the budget is ≤ 24 lines in the default setup, checked in HW-15.
+
 Display submenu (one level, ≤ ~12 items with the defaults; per-item visibility from C; design m2, m3):
 
 ```
-✓ Default                                           subtitle "1512 × 982"; ≤ 8 modes: current, default, favorites, recommended
-  Larger Text
-  More Space
+✓ 1512 × 982                                        subtitle "Default"; ≤ 8 modes: current, default, favorites, recommended
+  1800 × 1169                                       subtitle "More Space" on the largest listed scaled mode
+  1280 × 832                                        subtitle "Larger Text" on the smallest (r3 product minor 10: concrete
+                                                    modes; the two words are only subtitles on the extremes)
   More Resolutions…                                 opens Settings › Displays › Resolution options
   Undo Resolution Change / Redo Resolution Change   only when available (parity B2)
 ───
@@ -2610,7 +2990,7 @@ package struct StatusItemPlan: Equatable, Sendable {
 //   package init(enabled: Bool, presence: MenuPresence, symbol: String = "")
 //   package static func defaultPreferences(_ id: ModuleID) -> ModulePreferences   // per id: .awake → (true, .ownIconWhenActive)
 // The existing statusItemPlan(running:) stays and calls the new function with awakeActive: false,
-// displaysActive: true, awakeShortcutBound: false until the step-3 exit.
+// displaysActive: true, awakeShortcutBound: false, sharedShownAtRest: true until the step-3 exit (r3 consistency m7).
 
 // SnapticKit/MenuLayout.swift (M): the logic only
 extension ModulesConfig {
@@ -2622,36 +3002,42 @@ Plan rules (tested truth table, `MenuLayoutTests`): Awake `.ownIcon` → custom 
 
 ### 5.3 Awake status item (G, `IndicatorController`, exposed through `AwakeModule: StatusItemProvider`)
 
-`NSStatusItem(variableLength)`, `autosaveName = "SnapticAwake"`, `behavior = .removalAllowed`, created and removed only in `applyStatusItem` (code R2-M6). KVO on `isVisible` ignores changes made by Snaptic itself and during teardown (a flag around our own writes), and `isVisible = true` is set whenever the item is re-created, because the autosave name restores `false` after a removal (code minor 5). A user ⌘-drag removal calls `AwakeHost.setPresence(.inSnapticMenu)` with the toast "Awake's menu bar icon was removed. Awake is now in the Snaptic menu; change this in Settings › Menu Bar." With `.ownIconWhenActive`, the plan adds the item when a session starts and removes it when it ends (deferred while its menu is open).
+`NSStatusItem(variableLength)`, `autosaveName = "SnapticAwake"`, `behavior = .removalAllowed`, created and removed only in `applyStatusItem` (code R2-M6). KVO on `isVisible` ignores changes made by Snaptic itself and during teardown (a flag around our own writes), and `isVisible = true` is set whenever the item is re-created, because the autosave name restores `false` after a removal (code minor 5). A user ⌘-drag removal calls `AwakeHost.setPresence(.inSnapticMenu)` with the toast "Awake's menu bar icon was removed. Awake is now in the Snaptic menu; change this in Settings › Menu Bar." With `.ownIconWhenActive`, the plan adds the item when a session starts and removes it when it ends. While the item's own menu is open the plan keeps it (`StatusItemPlan.custom` still contains Awake): IndicatorController keeps reporting it through `statusItem`, and `menuDidClose` calls `requestStatusPlan()`, whose `applyStatusItem` then removes it, so the item still changes only in `applyStatusItem` (r3 code minor 9).
 
-Look (design M7 r1): template SF Symbol with `SymbolConfiguration(pointSize: 15, weight: .regular, scale: .medium)` (compared optically with Wi-Fi), outline when idle, `.fill` when active, same width; `imagePosition = .imageLeading`; text set with `button.title` and `button.font = .monospacedDigitSystemFont(ofSize: NSFont.menuBarFont(ofSize: 0).pointSize, weight: .regular)` — **never an `attributedTitle` with a color** (breaks the system's menu-bar text treatment on transparent 26/27 bars and under Increase Contrast). Text: Time *Time Remaining* → `AwakeCountdown.short` ("1h 42m", "42m", "42s") for timed and capped sessions; *End Time* → `AwakeCountdown.clock` ("5:00 PM", system 12/24 h); indefinite, uncapped task and automatic sessions show the glyph only. Redraw at `AwakeCountdown.nextChange` (minute boundaries; 1 s in the last minute) on a timer in `.common` mode, so the title and an open menu keep updating (N15). **Accessibility label and tooltip are refreshed at every `nextChange` tick**, also in icon-only style: "Awake, 1 hour 42 minutes remaining" / "Awake, until turned off" / "Awake, off" (design M8); the countdown never posts an announcement, a session end posts one ("Awake turned off.", design m10).
+Look (design M7 r1): template SF Symbol with `SymbolConfiguration(pointSize: 15, weight: .regular, scale: .medium)` (compared optically with Wi-Fi), outline when idle, `.fill` when active, same width; `imagePosition = .imageLeading`; text set with `button.title` and `button.font = .monospacedDigitSystemFont(ofSize: NSFont.menuBarFont(ofSize: 0).pointSize, weight: .regular)` — **never an `attributedTitle` with a color** (breaks the system's menu-bar text treatment on transparent 26/27 bars and under Increase Contrast). Text: Time *Time Remaining* → `AwakeCountdown.short` ("1h 42m", "42m", "42s") for timed and capped sessions; *End Time* → `AwakeCountdown.clock` ("5:00 PM", system 12/24 h); indefinite, uncapped task, automatic and hold-only states show the glyph only. Redraw at `AwakeCountdown.nextChange` (minute boundaries; 1 s in the last minute) on a timer in `.common` mode, so the title and an open menu keep updating (N15). **Accessibility label and tooltip are refreshed at every `nextChange` tick**, also in icon-only style: "Awake, 1 hour 42 minutes remaining" / "Awake, until turned off" / "Awake, held by Terminal" / "Awake, off" (design M8); the countdown never posts an announcement, a session end posts one ("Awake turned off.", design m10).
 
-**One row set** (design M1, M2, lead r3): `AwakeMenuRows` (G, `Awake/UI/AwakeMenuRows.swift`, replaces r2's `AwakeMenuBuilder`) builds the rows for both the Awake menu and the compact section; the header is always "Keep Awake" (it names the session, the Settings switch names the module). Idle, Awake menu (6 rows):
+**One row set** (design M1, M2, lead r3/r4, r3 product M1): `AwakeMenuRows` (G, `Awake/UI/AwakeMenuRows.swift`, replaces r2's `AwakeMenuBuilder`) builds the rows for both the Awake menu and the compact section; the header is always "Keep Awake" (it names the session, the Settings switch names the module). The switch header and the first-level item start **the same session**: the default preset. ✓ marks only the running session's preset, never an idle default (Apple: ✓ = current state). Idle, Awake menu (6 rows with a rule, 5 without):
 
 ```
 Keep Awake                                 [○]   switchHeader (mouse): on → default preset, off → Turn Off
-  Off                                            detail: "Off", or "Ended at 3:12 AM: battery below 20%." (12 h),
-                                                 or "Ended because the battery is below 20%." (guard holding)
+                                                 no detail line at rest (r3 product minor 4); a detail only for
+                                                 "Ended at 3:12 AM: battery below 20%." (12 h) or "Ended because the
+                                                 battery is below 20%." (guard holding)
 ────
-Until Turned Off                                 first-level native start item (lead r3; keyboard path to start)
-Start Session                               ›    For 30 Minutes · ✓ For 1 Hour · For 2 Hours · For 5 Hours ·
-                                                 Until Downloads and Tasks Finish · ─ · Custom…
-                                                 (presets in order, minus Until Turned Off; ✓ = default or running)
+Keep Awake Until Turned Off                      the default preset as a verb phrase (`AwakePreset.verbTitle`):
+                                                 "Keep Awake for 1 Hour" when that is the default; idle only (lead r4)
+Start Session                               ›    Until Turned Off · For 30 Minutes · For 1 Hour · For 2 Hours ·
+                                                 For 5 Hours · Until Downloads and Tasks Finish · ─ · Custom…
+                                                 (all presets in order; ✓ only on the running one)
 While an App Is Running                     ›    running regular apps (recent first, ≤ 12, app icons; own group)
 ────
-Automatic Sessions                          ›    subtitle "Waiting for Desk dock" / "Desk dock is active" /
-                                                 "Paused until 4:00 PM"; rows read-only (subtitle "Active"/"Waiting";
-                                                 click opens the rule in Settings; ⌥ alternate "Turn Off “Desk dock”");
-                                                 active rules + ≤ 4 others; ─ Pause for 1 Hour · Pause Until Tomorrow
-                                                 (or Resume Automatic Sessions) · Edit Rules…   (only with `triggers`)
+Rules                                       ›    only while ≥ 1 rule exists and `triggers` is effective (lead r4,
+                                                 r3 product M2); subtitle "Waiting for Desk dock" / "Desk dock is
+                                                 active" / "Paused until 4:00 PM"; rule rows read-only (subtitle
+                                                 "Active"/"Waiting"; click opens the rule in Settings; ⌥ alternate
+                                                 **End “Desk dock” Session** on an active rule = manualEnd, never
+                                                 disables it; r3 product minor 3); active rules + ≤ 4 others;
+                                                 ─ Pause Rules for 1 Hour · Pause Rules Until Tomorrow (or Resume
+                                                 Rules) · Edit Rules…
 ────
 Awake Settings…                           ⌘,     the only Settings item in this menu (design m4, parity minor 8)
 ```
-Active timed session (10 rows): the detail reads "Until 3:45 PM · 1h 12m left" (plus "Appearing active" / "Moving the pointer" / "Stopped appearing active after 1 hour." and, on battery or without an external display, "Closing the lid will put your Mac to sleep."); **Turn Off Keep Awake** follows the header (native, keyboard/VoiceOver path, parity M4); then a group **Add 15 Minutes** · **Add 1 Hour** (⌥ **Add Time…**, opens the Custom panel in extend mode; timed and capped kinds only, parity minor 5) · **✓ Keep Display On** (mid-session toggle, `setKeepDisplayOn`; present only while active, design M2, parity minor 9); then Until Turned Off, Start Session ›, While an App Is Running ›, Automatic Sessions ›, Awake Settings…. Choosing an item in Start Session › while a session runs replaces it; choosing the running preset restarts its timer. When the Snaptic item is absent the menu also ends with Recent Notices › and Quit Snaptic (§5.2). Every common task takes ≤ 2 clicks and has a keyboard path. "Start Anyway" never appears in the menu: a refused start shows a toast with the button (parity minor 9).
+Active timed session (9 rows with a rule): the detail reads "Until 3:45 PM · 1h 12m left" (plus, each only while true, "Then “Desk dock” keeps it awake.", "Held by Terminal (2)", "Ends after 5 min with no activity · quiet for 2 min" for untilIdle, "Appearing active" / "Moving the pointer" / "Stopped appearing active after 1 hour." and, on battery or without an external display, "Closing the lid will put your Mac to sleep."); **Turn Off Keep Awake** takes the first-level item's slot right after the header (native, keyboard/VoiceOver path, parity M4); then a group **Add 15 Minutes** · **Add 1 Hour** (⌥ **Add Time…**, opens the Custom panel in extend mode; timed and capped kinds only, parity minor 5) · **✓ Keep Display On** (mid-session toggle, `setKeepDisplayOn`; present only while active, design M2, parity minor 9) · **End Command-Line Holds** (only while holds exist); then Start Session ›, While an App Is Running ›, Rules ›, Awake Settings…. While only holds keep the Mac awake, the header is on with detail "Held by Terminal (2)", Turn Off Keep Awake (and the switch) end the hold stack, because it is what governs, and the default-preset item stays (starting it adds a manual session beside the holds). Choosing an item in Start Session › while a session runs replaces it; choosing the running preset restarts its timer. When the Snaptic item is absent the menu also ends with Recent Notices › and Quit Snaptic (§5.2). Every common task takes ≤ 2 clicks and has a keyboard path. "Start Anyway" never appears in the menu: a refused start shows a toast with the button (parity minor 9).
 
 ### 5.4 Compact Awake section in the Snaptic menu
 
-Shown when the plan's `awakeCompactInShared` is true (§5.2), with no section header (design m3): the same `AwakeMenuRows` minus Automatic Sessions › and minus Awake Settings… (the Snaptic menu's footer has Snaptic Settings…): switchHeader "Keep Awake" with detail · Turn Off Keep Awake (active) · Add 15 Minutes / Add 1 Hour (timed or capped) · **✓ Keep Display On** (active; parity M4) · Until Turned Off · Start Session › · While an App Is Running › (its own submenu; parity minor 11). Rules are reached from the Awake page or the Awake item.
+Shown when the plan's `awakeCompactInShared` is true (§5.2), with no section header and no internal separators (design m3, r3 product minor 2): the same `AwakeMenuRows` minus Awake Settings… (the Snaptic menu's footer has Snaptic Settings…): switchHeader "Keep Awake" with detail · idle: the default-preset item · active: Turn Off Keep Awake, Add 15 Minutes / Add 1 Hour (timed or capped), **✓ Keep Display On** (parity M4), End Command-Line Holds (holds) · Start Session › · While an App Is Running › (its own submenu; parity minor 11) · **Rules ›** whenever ≥ 1 rule exists and `triggers` is effective, so Pause Rules is reachable at rest in the default configuration (lead r4, r3 product M2). Both states are drawn in §5.2.
+
 
 ### 5.5 macOS 26/27 hidden and overflow behavior
 
@@ -2667,51 +3053,62 @@ Restyled with the same `DisplayLiveControls` rows as the Displays root page (sha
 
 | Team | Owns |
 |---|---|
-| **Lead** | Contracts, stubs, CI, lint + ratchet, Info.plist, Package.swift, Awake module shell, host wiring (ModuleHost incl. `Modules.disable.<id>`, HostSignals, ToastPresenter changes), cross-section migrations, ConfigSlice/ControllerRevision types, `MenuPresence`/`StatusItemPlan`/`ControlID` types, the frozen `ControlMapLegacy` lists |
-| **G — Awake core** | Awake Kit models and logic, sessions/assertions/guards/triggers/history/automation controllers, task sessions, indicator and `AwakeMenuRows`, Awake settings pages, Awake search index |
-| **J — Awake sources** | Criterion sources, PowerMonitor, SystemEventsMonitor (session facts), CPU/disk samplers, ProcessWatch, activity simulation, Drive Alive (+ Drives page) |
-| **H — Settings UI** | SettingsUI library, SettingsShell (sole owner) + search, Kit settings index types, `ControlMap`/`ControlCatalog` + DEBUG `ControlCoverage`, General/Permissions/About pages, Onboarding, Window Switcher page |
-| **M — Menu system** | MenuKit, MenuSliderRow, MenuSwitchHeader, StatusMenu, Kit MenuLayout (plan logic) + `MenuItemCatalog`, Menu Bar page + Customize sheet, Displays menu builder/blocks, `ConfigMenu` |
-| **A, B, C, D, E, F** (existing) | Their Displays controllers (observability, menu contributors on MenuKit) and the new pages/sections for their features (§4.3), per §6.2; A also Switcher runtime changes, **ControlServer peer credentials and held connections** (§2.10), `EventLog` Awake overload, `--selftest-controls`, KitBackup/KitControl; B also `Fingerprint.matches` |
+| **Lead** | Contracts, stubs, CI, lint + ratchet, Info.plist, Package.swift, Awake module shell, host wiring (ModuleHost incl. `Modules.disable.<id>`, the three Awake stores, the migration ledger, HostSignals, ToastPresenter changes), cross-section migrations, ConfigSlice/ControllerRevision types, `MenuPresence`/`StatusItemPlan` types, `LossyArray`/`StableID.derived`, the control registry (`ControlRegistry`, the literal `ControlLegacy` list, `ControlRemovals`, `ConfigFixtures`, lint L15) and the S stubs of every control table |
+| **G — Awake core** | Awake Kit models and logic (incl. `AwakeActivityGate`, `AwakeHold`), sessions/holds/assertions/guards/triggers/history/automation controllers, task sessions, indicator and `AwakeMenuRows`, Awake settings pages, Awake search index, G's control tables |
+| **J — Awake sources** | Criterion sources, PowerMonitor (+ Kit `PowerMath`), SystemEventsMonitor (session facts), CPU/disk samplers, ProcessWatch (+ holder names), activity simulation, Drive Alive (+ Drives page and its control table) |
+| **H — Settings UI** | SettingsUI library (incl. `SettingsAnchor`), SettingsShell (sole owner) + search, Kit settings index types, General/Permissions/About pages, Onboarding, Window Switcher page, H's control tables |
+| **M — Menu system** | MenuKit, MenuSliderRow, MenuSwitchHeader, StatusMenu, Kit MenuLayout (plan logic), Menu Bar page + Customize sheet, Displays menu builder/blocks, `ConfigMenu` (+ `ConfigMenuTests`), M's control tables |
+| **A, B, C, D, E, F** (existing) | Their Displays controllers (observability, menu contributors on MenuKit) and the new pages/sections for their features (§4.3), per §6.2; A also Switcher runtime changes, **ControlServer peer credentials and held connections** (§2.10, incl. the held-slot pool and ping), `EventLog` Awake overload and `awakeCounts`, in-process `--selftest-controls`, KitBackup/KitControl; B also `Fingerprint.matches`; every owner fills its own control tables (§4.8.2) |
 
 ### 6.2 Files (normative; every path goes into `scripts/stubs.tsv` with owner and kind in step 0; ⇢ = ownership moves; ✗ = deleted **at the step-3 exit** after a caller grep, tracked in the ratchet until then)
 
 ```
 Lead:
   Package.swift (link CoreAudio, SystemConfiguration, DiskArbitration), Resources/Info.plist (0.3.0,
-    NSRemovableVolumesUsageDescription), .github/workflows/build.yml (+ selftest-controls step),
-    scripts/{lint.sh, lint-legacy.tsv (new), stubs.tsv, gen-stubs.py, gen-controlmap.py (new), selftest-controls.sh (new)}
+    NSRemovableVolumesUsageDescription), .github/workflows/build.yml (+ selftest-controls step, landed in step 1 with
+    A's flag; r3 consistency m13, code minor 7),
+    scripts/{lint.sh (+ L15, L16; L5 in python), lint-legacy.tsv (new), stubs.tsv, gen-stubs.py}
+    (r3's gen-controlmap.py and selftest-controls.sh are not created: the list is literal, the self-test compares in process)
   SnapticKit/KitModules.swift (ModuleID.awake, EventCategory.awake + isExportedInDiagnostics, AwakeActionID,
-    AwakeCriterionKind, MenuPresence, ControlID, DisplayActionID.fShowPanel/.fIdentify;
-    DisplayFeature.sleepPrevention removed in step 3 together with D/F/A), SnapticKit/AwakeFeatureGraph.swift (new),
-    SnapticKit/FeatureGraph.swift (−sleepPrevention in step 3), SnapticKit/ControlMapLegacy.swift (new, generated once)
+    AwakeCriterionKind, MenuPresence, NewModuleCard, DisplayActionID.fShowPanel/.fIdentify, DisplayMenuItemID.cDDCPower,
+    NameHash + StableID.derived; DisplayFeature.sleepPrevention removed in step 3 together with D/F/A),
+    SnapticKit/KitLossy.swift (LossyArray moved here from ConfigAutomation.swift and made Codable + Equatable, lossyArray),
+    SnapticKit/AwakeFeatureGraph.swift (new), SnapticKit/FeatureGraph.swift (−sleepPrevention in step 3),
+    SnapticKit/Controls/{ControlRegistry, ControlLegacy (literal §4.8.1), ControlRemovals}.swift (new) and an S stub of
+    every §4.8.2 table (ownership of each table file goes to its owner in stubs.tsv),
+    SnapticKit/Config/ConfigMigrations.swift (new: MigrationLedger), Tests/SnapticKitTests/Support/ConfigFixtures.swift (new),
+    Tests/SnapticKitTests/ConfigModulesTests.swift (⇢ from A; r3 code minor 7)
   SnapticKit/Config/ConfigAwake.swift (shell; G fills functions in step 2),
     Config/ConfigDisplays.swift (M4, M5, M10, migrations markers, DisplaysConfigSection, changedSections,
     DisplaysRestoreScope + restoringDefaults(scope:)),
     Config/ConfigModules.swift (⇢ from A; presence, newModuleCards, markers, per-id defaults, upgradeDefaults + Awake,
     StatusItemPlan (stays here, new defaulted fields), M2, M3)
   Snaptic/Core/{ModuleContracts (settings contracts §4.1 + extension defaults, SettingsTint, FeatureHighlight,
-               StatusItemProvider + CustomItemRow, FeatureAvailability moved here), ModuleContext (⇢ from A; hostSignals),
+               StatusItemProvider + CustomItemRow, ControlDeclaring, FeatureAvailability moved here),
+               ModuleContext (⇢ from A; requestStatusPlan, setPresence, hostSignals),
                HostSignals (new), ConfigSlice (new), ToastPresenter (⇢ from A; presenting/screensaver suppression,
-               Recent Notices routing, actions: [ToastAction]), ModuleHost (⇢ from A; Awake wiring, stores,
-               Modules.disable.<id>, upgrader insertion, M1, isTerminating, Reset All)}.swift
+               Recent Notices routing, ToastAction + actions: (stub in step 0, step 2)), ModuleHost (⇢ from A; Awake
+               wiring, the three Awake stores, the migration ledger store, Modules.disable.<id>, upgrader insertion, M1,
+               isTerminating, Reset All)}.swift
                (ConfigStore.swift stays A's and unchanged: r2's admission hook is withdrawn)
   Snaptic/Awake/{AwakeModule, AwakeContext (+AwakeHost), AwakeContracts (+ChangeFanout), AwakeRuntimeState}.swift (new)
   Snaptic/Displays/{DisplaysModule (fan-out by section), DisplaysRuntimeState (ControllerRevision per id, DisplayRuntime
-               fields, DisplaysPageEnvironment forwards no config; −sleepPreventionActive in step 3),
+               fields, DisplaysPageEnvironment stops forwarding config at the step-3 exit, r3 code minor 14;
+               −sleepPreventionActive in step 3),
                DisplaysContracts (observedSections default, DisplayLiveControlling, LiveControl, DragPhase)}.swift
 
 G (Kit, each with Tests/SnapticKitTests/<Name>Tests.swift):
-  AwakeSession (+HoldBinding, UntilIdleSpec, TaskActivitySample, TaskQuiet), AwakeClock (+AwakeCountdown,
+  AwakeSession (+HoldBinding, AwakeHold, UntilIdleSpec, TaskActivitySample, TaskQuiet), AwakeActivityGate, AwakeClock (+AwakeCountdown,
   AwakeDurationGrammar), AwakeArbiter, AwakeGuards, AwakeTriggers, AwakeTriggerEngine, AwakeHistory, AwakeSnapshot,
   AwakeMigration (+AwakeMigrationResult), AwakeCommandGrammar (+AwakeCommand, AwakeStatusFacts), AwakeLogEvent,
   Config/ConfigAwakeSessions (+AwakeBehavior, UserSwitchEnd), Config/ConfigAwakeIndicator, SettingsIndexAwake
-G (app): Snaptic/Awake/Core/{AssertionManager, SessionController, TaskSessionMonitor (untilIdle + hold),
-               GuardsController, TriggerController, Ticker, HistoryController, AwakeAutomation, AwakeDiagnostics}.swift
+G (app): Snaptic/Awake/Core/{AssertionManager, SessionController (manual session, untilIdle via TaskQuiet, the hold
+               stack), GuardsController, TriggerController, Ticker (TriggerController's; no service id), HistoryController,
+               AwakeAutomation, AwakeDiagnostics}.swift (r3's TaskSessionMonitor is dropped: consistency M5)
          Snaptic/Awake/UI/{IndicatorController, AwakeMenuRows, CustomSessionPanel, AwakePage, PresetEditorSheet,
                TriggerEditorSheet, CriterionEditors, AwakeAdvancedSheet, OtherAssertionsSection, AwakeHistoryPage}.swift
 
-J (Kit): CPUMath (+CPUTicks), NetworkMath (+InterfaceCounters; CIDR/IPv6 parse + match, MAC normalize, throughput),
+J (Kit): CPUMath (+CPUTicks, CPUTimebase, ProcessCPUSample), PowerMath, NetworkMath (+InterfaceCounters; CIDR/IPv6 parse + match, MAC normalize, throughput),
          DiskMath, ActivityPolicy (+IdleMath), DriveAlivePolicy, Config/ConfigAwakeDevices (+VolumeUUIDKey)
 J (app): Snaptic/Awake/Sources/{PowerMonitor, SystemEventsMonitor, AppMonitor, DisplayPresence, USBWatcher, VolumeMonitor,
                AudioMonitor, CPUSampler, DiskIOSampler, IdleSampler, NetworkMonitor, BluetoothPresence, ActivitySimulator,
@@ -2719,8 +3116,8 @@ J (app): Snaptic/Awake/Sources/{PowerMonitor, SystemEventsMonitor, AppMonitor, D
          Snaptic/Awake/Core/{ActivityController, DriveAliveController}.swift, Snaptic/Awake/UI/DrivesPage.swift
 
 H (Kit): SliderMath, SettingsIndex (SettingsRoute, SettingsSearchEntry, SettingsSearch — Kit so search is tested on Linux),
-         ControlMap (+ControlCatalog; §4.8), SettingsIndexGeneral, SettingsIndexSwitcher
-H (app): Snaptic/SettingsUI/ControlCoverage.swift (DEBUG coverage recorder + "Check Control Coverage")
+         SettingsIndexGeneral, SettingsIndexSwitcher (r3's ControlMap/ControlCatalog and the app's ControlCoverage are
+         not created: lead-8)
 H (app): Snaptic/SettingsUI/{SettingsIcon, SettingsPageHeader, FeatureHighlights, SettingRow, ToggleSetting, SliderSetting,
                NumberField, StepperSetting, PickerSetting, GlyphTilePicker, ActionMenuButton, InfoButton, NavigationRow,
                ButtonRow, StatusRow, PerDisplayPicker, PageFooterButtons, AdvancedSheet, ReorderableList, AppListEditor,
@@ -2730,22 +3127,27 @@ H (app): Snaptic/SettingsUI/{SettingsIcon, SettingsPageHeader, FeatureHighlights
          Snaptic/Switcher/{SwitcherPages, SettingsView}.swift (⇢ from A)
 
 M (Kit): MenuLayout (ModulesConfig.statusItemPlan logic only; MenuPresence and StatusItemPlan are the lead's,
-         consistency B1), MenuItemCatalog, SettingsIndexMenuBar,
-         Config/ConfigMenu (⇢ from F; legacy shortcut fields kept and encoded until 0.4)
+         consistency B1), SettingsIndexMenuBar,
+         Config/ConfigMenu (⇢ from F; legacy shortcut fields kept and encoded until 0.4), Tests ConfigMenuTests (⇢ from F)
 M (app): Snaptic/Core/{MenuKit, MenuSliderRow, MenuSwitchHeader (MenuSwitchHeaderView), MenuBarPage,
                CustomizeMenuSheet}.swift (new),
-         Snaptic/Core/{StatusMenu, MenuPlacement}.swift (⇢ from A), Core/MenuSliderItem.swift (⇢ from A, then ✗),
+         Snaptic/Core/StatusMenu.swift (⇢ from A), Core/MenuPlacement.swift (⇢ from A; its `MenuPlacementChoice` UI
+         titles move to `MenuPresence` titles, the old titles ✗ at the step-3 exit; r3 consistency m11),
+         Core/MenuSliderItem.swift (⇢ from A, then ✗),
          Snaptic/Displays/UI/{DisplaysMenuBuilder, DisplayMenuBlock}.swift (⇢ from F),
          Displays/UI/MenuCustomizationPage.swift (⇢ from A, then ✗)
 D: also `ManagedMenuItem` in Displays/Management/ManagementSupport.swift ✗ (symbol only, step-3 exit; consistency m10)
 
 F: Displays/UI/{DisplaysPage, DisplayLiveControls, DisplayDetailsSheet, DisplaysAdvancedSheet, DisplaysFeatureGroups,
                DisplayInformationPage}.swift (new); DisplaysOverviewPage ✗, FeaturesPage ✗, DisplayIdentityPage ✗ (→ DetailsSheet),
-               DiagnosticsPage ✗ (→ DisplayInformationPage); OverviewController (panel restyle), DisplaysOnboardingStep;
+               DiagnosticsPage ✗ (→ DisplayInformationPage); OverviewController (panel restyle, Kit `fShowPanel`/`fIdentify`
+               constants in step 1), DisplaysOnboardingStep (F makes the §4.7 chip changes; H owns Onboarding.swift);
    Kit DisplaysUIModel (groups, user titles; −sleepPrevention in step 3), Kit SettingsIndexDisplays (rows from owners via F)
 C: Displays/UI/{BrightnessSubpage, BrightnessSections, BrightnessAdvancedSheet, ColorPage, HardwareControlsPage,
                KeyboardPage}.swift; BrightnessPage ✗ (→ Subpage/Sections), DDCPage ✗ (→ HardwareControlsPage),
-               KeysPage ✗ + OSDPage ✗ (→ KeyboardPage); BrightnessMenuItems, DDCMenuItems (MenuKit);
+               KeysPage ✗ + OSDPage ✗ (→ KeyboardPage); BrightnessMenuItems, DDCMenuItems (MenuKit; `cDDCPower` from Kit),
+               ColorMenuItems (new: the color, XDR, sync, Night Shift and menu-bar-strip items move here from their
+               controllers);
    Displays/Live/DisplayLiveController.swift (new; DisplayLiveControlling); controllers: runtime fields + revision bumps;
    Kit ConfigKeys (osdShowNits legacy, kept encoded)
 D: Displays/UI/{ResolutionSections, ResolutionOptionsSection, MatchTextSizeSection, ArrangeSheet, ArrangementCanvas,
@@ -2760,14 +3162,16 @@ A: Displays/UI/{AutomationsPage, HookEditorSheet, ActionEditorSheet}.swift (Auto
    (sticky mode C8, HostSignals.switcherVisible), Settings (250 ms debounce), WindowSwitcherModule (MenuKit)}.swift;
    Core/ControlServer (ControlPeer via LOCAL_PEERPID, ControlHold, held-connection slot), Core/ControlCommandRegistry
    (ControlContext handler + old-signature overload, `holds:`, protected list), Core/CLIClient (holding replies),
-   Core/EventLog (`record(_ event: AwakeLogEvent)`), Core/SelfTest (`--selftest-controls`);
+   Core/EventLog (`record(_ event: AwakeLogEvent)`, `awakeCounts`), Core/SelfTest (`--selftest-controls`, in process);
+   Kit Config/ConfigAutomation (its `LossyArray` moves to KitLossy in the lead's step 0);
    Kit KitBackup (awake section via AwakeConfig.exportable/importable applied after merge, awake.guards in safetyPaths;
-   −sleepPrevention rows in step 3), KitControl (ControlResponse.holding, maxHeldConnections, protected words;
+   −sleepPrevention rows in step 3, removedPaths for Awake), KitControl (ControlResponse hand-written Codable +
+   holding, maxHeldConnections = 8, holdPingSeconds, protected words;
    −sleepPrevention in step 3)
 F: also Displays/UI/DiagnosticsController.swift (eventLines filter by EventCategory.isExportedInDiagnostics)
 ```
 
-Unique basenames are kept (e.g. `PowerMonitor` (J) vs `PowerController` (D); `KeyboardPage` (C) vs no other). Lead adds `.awake` to the extension-placement lint allowlist (`SharedExtensions.swift` stays the only shared home). Ownership collisions resolved: `SettingsShell` is H's alone; `SettingsTint`, `FeatureHighlight` and `StatusItemProvider` are lead types in `ModuleContracts` (code minor 12, B3); `MenuPresence` (KitModules) and `StatusItemPlan` (ConfigModules) have one declaration each, by the lead, and M owns only the plan function (consistency B1).
+Unique basenames are kept (e.g. `PowerMonitor` (J) vs `PowerController` (D); `KeyboardPage` (C) vs no other). Lead adds `.awake` to the extension-placement lint allowlist (`SharedExtensions.swift` stays the only shared home). Ownership collisions resolved: `SettingsShell` is H's alone; `SettingsTint`, `FeatureHighlight` and `StatusItemProvider` are lead types in `ModuleContracts` (code minor 12, B3); `MenuPresence` (KitModules) and `StatusItemPlan` (ConfigModules) have one declaration each, by the lead, and M owns only the plan function (consistency B1); r3's "ControlMap: H + owners" is gone: each owner edits only its own `*Controls.swift` tables, and the shared registry, legacy list and removals are the lead's (r3 consistency m11); the Awake stores have one owner, `ModuleHost`.
 
 ### 6.3 CI, lint and ratchet (lead, step 0)
 
@@ -2775,25 +3179,27 @@ Unique basenames are kept (e.g. `PowerMonitor` (J) vs `PowerController` (D); `Ke
 - macOS job unchanged (Xcode 16.4, Swift 5 language mode, debug + tests + universal + helper self-test); Awake adds no helper, so no new self-test.
 - `FeatureAvailability` moves from `DisplaysContracts.swift` to `Core/ModuleContracts.swift` (lead, step 0) so Awake doesn't depend on a Displays file.
 
-**Ratchet** (code B1, R2-M1): `scripts/lint-legacy.tsv`, one row per (rule, path): `rule ⇥ path ⇥ count ⇥ permanent|step`; counts are **occurrences**, not lines. `lint.sh` fails on any violation of L1–L14 not covered by a row (count exceeded or path missing). A non-permanent row whose actual count is now lower only **warns** during steps 1–3; `lint.sh --strict` (CI from the step-3 exit on) fails on it. TEAMS.md gains an exception like the one for `stubs.tsv` (lead, step 0): a team may lower or delete ratchet rows **for paths it owns** in its own branch; rows are sorted by path so parallel edits touch different lines. `lint.sh --write-ratchet` generates the initial file at 871c10b in step 0 (≈ 54 `Slider(`/`Stepper(`, ≈ 125 `.font(.caption)`, 18 `NSMenuItem(`, 4 `objectWillChange.send()`, 7 `State(initialValue:`, `PowerController.swift` for L1). Permanent rows: `AppDelegate.swift` (L6, the app's main menu that Settings text fields need for Edit), `PIPWindow.swift` (L6, context menu), `ArrangementCanvas.swift` (L5, custom drag canvas). Deleted files (✗) and symbols (`ClosureMenuItem`, `CMenu`, `ManagedMenuItem`, `MenuSliderItem`, `MenuSlot.quick`) stay until the step-3 exit, where owners remove them after `grep` shows no callers (code M10). **Step-3 exit: only permanent rows remain.**
+**Ratchet** (code B1, R2-M1): `scripts/lint-legacy.tsv`, one row per (rule, path): `rule ⇥ path ⇥ count ⇥ permanent|step`; counts are **occurrences**, not lines. `lint.sh` fails on any violation of L1–L14 not covered by a row (count exceeded or path missing). A non-permanent row whose actual count is now lower only **warns** during steps 1–3; `lint.sh --strict` (CI from the step-3 exit on) fails on it. TEAMS.md (lead, step 0) gains an exception like the one for `stubs.tsv`: a team may lower or delete ratchet rows **for paths it owns** in its own branch; its contract-file list adds the files that move to the lead (`ConfigModules.swift`, `ModuleHost.swift`, `ModuleContext.swift`, `ToastPresenter.swift`, `ConfigModulesTests.swift`) and the new lead files (`KitLossy.swift`, `Controls/{ControlRegistry, ControlLegacy, ControlRemovals}.swift`, `ConfigMigrations.swift`, `ConfigFixtures.swift`; r3 consistency m16); rows are sorted by path so parallel edits touch different lines. `lint.sh --write-ratchet` generates the initial file at 871c10b in step 0 (≈ 54 `Slider(`/`Stepper(`, ≈ 125 `.font(.caption)`, 18 `NSMenuItem(`, 4 `objectWillChange.send()`, 7 `State(initialValue:`, `PowerController.swift` for L1). Permanent rows: `AppDelegate.swift` (L6, the app's main menu that Settings text fields need for Edit), `PIPWindow.swift` (L6, context menu), `ArrangementCanvas.swift` (L5, custom drag canvas). Deleted files (✗) and symbols (`ClosureMenuItem`, `CMenu`, `ManagedMenuItem`, `MenuSliderItem`, `MenuSlot.quick`) stay until the step-3 exit, where owners remove them after `grep` shows no callers (code M10). **Step-3 exit: only permanent rows remain.**
 
 Lint additions:
 - L1 `IOPMAssertionCreate`/`IOPMAssertionCreateWithProperties` only in `Awake/Core/AssertionManager.swift`; `IOPMAssertionRelease` there and in `Awake/Sources/ActivitySimulator.swift` (its DeclareUserActivity id, code M8); `IOPMAssertionSetProperty` banned (the swap replaces it).
 - L2 `IOPMAssertionDeclareUserActivity`, `.post(tap:`, `CGEvent(mouseEventSource` only in `ActivitySimulator.swift`; there, mouse event types other than `.mouseMoved` are banned; `keyboardEventSource`, `CGEvent(keyboardEvent`, `CGEvent(scrollWheelEvent` banned everywhere in Awake.
 - L3 (r1) dropped: rule 12 already bans spawning outside HelperSpawner everywhere (code minor 13).
 - L4 Banned everywhere: `UNUserNotificationCenter`, `import CoreWLAN`, `import IOBluetooth`, `CLLocationManager`, the string literals `"pmset"` and `"sudo"`.
-- L5 `(?<![A-Za-z])Slider\(`, `(?<![A-Za-z])Stepper\(`, `.font(.caption)` only under `Sources/Snaptic/SettingsUI/` (ratchet for the rest; the lookbehind keeps `ScrollSlider(` and `MenuSliderRow(` out; code R2-M1).
+- L5 `(?<![A-Za-z])Slider\(`, `(?<![A-Za-z])Stepper\(`, `.font(.caption)` only under `Sources/Snaptic/SettingsUI/` (ratchet for the rest; the lookbehind keeps `ScrollSlider(` and `MenuSliderRow(` out; code R2-M1). Implemented in python like rule 10, because BSD grep on macOS has neither lookbehind nor `-P` (r3 code minor 3).
 - L6 `NSMenuItem(` only in `MenuKit.swift`, `MenuSliderRow.swift`, `MenuSwitchHeader.swift` (ratchet).
 - L7 `objectWillChange.send()` banned in `Displays/UI/`, `Awake/UI/`, `SettingsUI/`; `State(initialValue:` banned in Settings views (ratchet).
-- L8 (r1's python anchor scan) replaced by Kit tests: anchors unique across `SettingsIndex*` tables, every `ControlMap` id exists; plus a DEBUG assertion in `SettingsPageScaffold` when `reveal` targets an anchor that never registered (code minor 13).
+- L8 (r1's python anchor scan) replaced by Kit tests: anchors unique across `SettingsIndex*` tables, every searchable control is declared in a control table (`ControlRegistryTests` 3); plus a DEBUG assertion in `SettingsPageScaffold` when `reveal` targets an anchor that never registered (code minor 13).
 - L9 `record\(\s*\.awake` and the token `EventCategory.awake` banned outside `Core/EventLog.swift` (only `AwakeLogEvent` cases may be logged, through A's overload; security M6, code minor 5). A variable holding the category can still slip through; review checks it.
 - L10 under `Awake/`: `queue: nil`, `addObserver(self, selector:` and `.publisher(for:` not followed by `.receive(on: DispatchQueue.main)` in the same statement are banned (code M6, minor 4); the `static let shared` (rule 7) and `passUnretained` (rule 10) rules extend to `Awake/`.
 - L11 (r2: consent writers) withdrawn with the consent record (N10).
 - L12 `.controlSize(.regular)` only in `SettingsUI/SettingsPageHeader.swift` (design B2).
 - L13 `NSHostingView` banned in `Core/Menu*.swift`, `Core/StatusMenu.swift`, `Displays/UI/*Menu*.swift`, `Awake/UI/AwakeMenuRows.swift`, `Awake/UI/IndicatorController.swift` (design M11).
-- L14 (N15, code R2-M7) under `Awake/`, `Core/Menu*.swift`, `Core/StatusMenu.swift` and any `*Menu*.swift`: `Timer.scheduledTimer`, `.scheduledTimer(`, `RunLoop.main.perform`, `receive(on: RunLoop.main)` and `RunLoop.main` as a Combine scheduler are banned; timers are created unscheduled and added with `RunLoop.main.add(_:forMode: .common)`.
+- L14 (N15, code R2-M7) under `Awake/`, `Core/Menu*.swift`, `Core/StatusMenu.swift` and any `*Menu*.swift`: `Timer.scheduledTimer`, `.scheduledTimer(`, `RunLoop.main.perform` without an explicit mode list, `receive(on: RunLoop.main)` and `RunLoop.main` as a Combine scheduler are banned; timers are created unscheduled and added with `RunLoop.main.add(_:forMode: .common)`. `RunLoop.main.perform(inModes: [.default])` stays allowed: it deliberately defers work until menu tracking ends (`ResolutionMenuItems.swift:111`; r3 code minor 4).
+- L15 (lead r4, §4.8): control-table pairing: `ControlID(` takes only a string literal outside `SettingsUI/` and `Core/MenuKit.swift`; every literal is in the using type's table; every table id is used by a literal; every table is registered.
+- L16 (r3 security M2, L1): `activityGate =` and `AwakeActivityGate(` only in `Awake/Core/SessionController.swift`; `shutdown(` banned in `Core/CLIClient.swift` (the client never half-closes).
 
-**Stub kinds** (code M14): `gen-stubs.py` gains K15 Awake service (`AwakeServiceLifecycle` class, `init()`, no-op activate/deactivate), K16 criterion source (K15 + `static var kinds`, no-op `contribute`, `observe` backed by **one `ChangeFanout` per instance**, a stored `let`, code minor 13), K17 Awake controller (`AwakeFeatureController`, `id` from the extra column, no-op members, `availability` returns available), K18 settings page (`struct T: View` rendering `SettingsPageScaffold` with the title), K19 sheet (`struct T: View` with `@Environment(\.dismiss)` and a Done button), K20 Kit settings index table (`package enum T { package static let entries: [SettingsSearchEntry] = [] }`). SettingsUI components, MenuKit, `ConfigSlice`, `ControlServer`'s new types, and **every Kit type in §2, §4.1, §4.5, §4.8 and §5.2** (incl. `SettingsRoute`, `SettingsSearchEntry`, `ValueFormat`, `DisplaysConfigSection`, `DisplaysRestoreScope`, `ControlID`, `ControlMap*`, `MenuItemCatalog`, `MenuPresence`, `StatusItemPlan`; consistency B1) are `S` (special, hand-written by the lead from this plan's signatures, so step 0 references no team-owned type that doesn't exist yet) or `L`. About 125 new rows.
+**Stub kinds** (code M14): `gen-stubs.py` gains K15 Awake service (`AwakeServiceLifecycle` class, `init()`, no-op activate/deactivate), K16 criterion source (K15 + `static var kinds`, no-op `contribute`, `observe` backed by **one `ChangeFanout` per instance**, a stored `let`, code minor 13), K17 Awake controller (`AwakeFeatureController`, `id` from the extra column, no-op members, `availability` returns available), K18 settings page (`struct T: View, ControlDeclaring` with `typealias Controls = TControls`, rendering `SettingsPageScaffold` with the title), K19 sheet (the same with `@Environment(\.dismiss)` and a Done button), K20 Kit settings index table (`package enum T { package static let entries: [SettingsSearchEntry] = [] }`), K21 Kit control table (`package enum TControls: ControlTable { package static let surface = "<extra column>"; package static let controls: [ControlSpec] = [] }`, lead r4). SettingsUI components, MenuKit, `ConfigSlice`, `ControlServer`'s new types, `ToastAction`, and **every Kit type in §2, §4.1, §4.5, §4.6, §4.8 and §5.2** (incl. `SettingsRoute`, `SettingsSearchEntry`, `ValueFormat`, `DisplaysConfigSection`, `DisplaysRestoreScope`, `AwakeMigration`/`AwakeMigrationResult` (`.nothing`), `MigrationLedger`, `ControlID`, `ControlSpec`, `ControlRegistry`, every `*Controls` table, `MenuPresence`, `StatusItemPlan`, `AwakeActivityGate`, `AwakeHold`, `LossyArray`; consistency B1, r3 consistency m10) are `S` (special, hand-written by the lead from this plan's signatures, so step 0 references no team-owned type that doesn't exist yet) or `L`. About 185 new rows (≈ 58 of them K21 control tables, §4.8.2).
 
 ### 6.4 Delivery order
 
@@ -2805,61 +3211,65 @@ Lint additions:
 | `SnapticModule` additions with **extension defaults**; `settingsPages()` kept | yes | `WindowSwitcherModule` (A) and `SettingsWindowHost.swift` (H) keep compiling (code R2-M2a) |
 | `AwakeFeatureGraph` + tests, `KitModules` additions (`MenuPresence` with a real `legacyPlacement`, `ControlID`, `DisplayActionID.fShowPanel/.fIdentify`, `EventCategory.isExportedInDiagnostics`) | yes | lead-owned Kit; M2 needs `MenuPresence` now (code R2-M2c) |
 | `StatusItemPlan` new defaulted fields (in `ConfigModules.swift`); `MenuLayout.swift` S stub whose plan function reproduces 0.2 placement | yes | one declaration, lead (consistency B1); M fills the logic in step 1 |
-| `ControlMapLegacy.swift` generated from 871c10b by `gen-controlmap.py`, then frozen; `ControlMap`/`MenuItemCatalog` S stubs (empty tables); `ControlMapTests` added **skipped** until step 3 | yes | the 0.2 side must be captured before anything is deleted |
+| `Controls/`: `ControlRegistry`, the literal `ControlLegacy` list copied from §4.8.1, `ControlRemovals`, every §4.8.2 table as a K21 stub, `ConfigFixtures`; `ControlRegistryTests` added **skipped** until step 3; lint L15 on from day 0 (tables and literals both start empty, so it is green) | yes | the 0.2 side is fixed in this plan; nothing has to be generated or rendered (lead r4) |
+| `LossyArray` moved to KitLossy (Codable), `NameHash` + `StableID.derived`, `MigrationLedger`, `NewModuleCard`, `DisplayMenuItemID.cDDCPower` | yes | lead Kit; M1, M3, M10 and every Awake list need them |
+| S stubs for team types other teams call early: `Fingerprint.matches` (B fills it in step 1, G's step-1 `TriggerEngine` calls it), `AwakeActivityGate`, `AwakeHold`, `PowerMath`, `ToastAction` + `ToastPresenter.show(…, actions:)` (lead fills it in step 2 while G's step-2 callers land) | yes | r3 code minor 7: parallel steps compile against stubs |
 | `AwakeConfig` shell with all sub-config types as G/J **stubs** (`init()`, `sanitized()` identity) | yes | G/J fill them in step 1 |
 | `restoringDefaults`, `exportable`, `importable` | stub only (identity / `AwakeConfig()`) | need G's and J's fields; G implements in step 2 |
-| Migrations M2–M5, M10 + markers + tests; per-id module defaults; upgrader insertion of Awake disabled (ModuleHost and `upgradeDefaults()`); `Modules.disable.<id>` read | yes | lead Kit / host |
+| Migrations M2–M5, M10 + ledger markers + tests; per-id module defaults; upgrader insertion of Awake disabled (ModuleHost and `upgradeDefaults()`); `Modules.disable.<id>` read | yes | lead Kit / host |
 | M1 | no: stub `AwakeMigration.fromDisplays` returns `.nothing`; G implements in step 1, lead wires the hook in step 2 | needs G's trigger model |
 | `changedSections` with `DisplaysConfigSection` (all cases); `observedSections` requirement + default; `ControllerRevision` per id; `ConfigSlice`; `DisplayRuntime` fields; `DisplayLiveControlling` | yes | lead types; defaults keep the ~21 conformers compiling |
 | `DisplaysPageEnvironment` stops forwarding config | **no** (step-3 exit) | 23 legacy pages need it until they use slices (code R2-M2b) |
 | `HostSignals`, `StatusItemProvider` + `CustomItemRow` | yes | lead |
 | ControlServer peer credentials / held connections | no (A, step 1) | A's files (consistency M1) |
 | `sleepPrevention` removal, MenuKit migration of old factories, file deletions, `settingsPages()` removal, old `register` handler overload removal | **no** (step 3) | would break 11+ files owned by C/D/F/A (code B2, M10) |
-| Lint L1–L14 + ratchet generated from 871c10b; TEAMS.md ratchet exception | yes | ratchet makes it green on day 0 |
+| Lint L1–L16 + ratchet generated from 871c10b; TEAMS.md ratchet exception and contract-file list | yes | ratchet makes it green on day 0 |
+| `build.yml` `--selftest-controls` step | **no** (step 1, with A's flag) | the flag doesn't exist before A's step-1 merge (r3 consistency m13, code minor 7) |
 
 | Step | Who (parallel) | Exit criterion |
 |---|---|---|
 | 0 | Lead | Everything marked "yes" above; Info.plist; Package.swift links; CI green on Linux and macOS with the ratchet |
-| 1 | G (Kit only, incl. `AwakeMigration`, `AwakeCommandGrammar`, `TaskQuiet`) ∥ J (sources incl. CPU top process, DiskIOSampler, ProcessWatch; Kit math) ∥ H (library, shell, search, Kit index types, `ControlMap`/`ControlCatalog` skeleton) ∥ M (MenuKit, MenuSliderRow, MenuSwitchHeader, StatusMenu with `MenuPresence` and the plan, MenuLayout logic, `MenuItemCatalog`) ∥ A (Switcher debounce, sticky mode, `switcherVisible`; **ControlServer `ControlPeer` + `ControlHold` + `ControlContext` handler, CLIClient holding mode, KitControl `holding`**; `EventLog` Awake overload; `--selftest-controls`) ∥ B (`Fingerprint.matches`) | Kit tests for G/J/H/M; sources activate/deactivate cleanly; shell shows all 7 roots with stub pages; StatusMenu renders existing sections through MenuKit; a test verb with `holds: true` stays connected until the client exits; green, merged |
-| 2 | G (controllers, assertion, sessions incl. task kinds and `restore`, guards, triggers, automation incl. `awake hold`, indicator + `AwakeMenuRows`, `restoringDefaults`/`exportable`/`importable`; lead wires M1) ∥ lead (ToastPresenter: presenting/screensaver suppression, Recent Notices routing, `actions: [ToastAction]`; consistency m12) ∥ H (General, Permissions, About, Onboarding, Switcher page) ∥ M (Displays menu builder/blocks with every §4.8 menu location, Menu Bar page, Customize sheet) ∥ B (observability + M6 UI + `SafetyConfig` test; consistency M5) ∥ C/D/E (controller observability + revision bumps + MenuKit contributors; C `DisplayLiveController`) ∥ F (Displays root page, live controls, Details sheet, panel; `eventLines` filter) ∥ A (KitBackup awake section after merge) | Awake works end to end from the menu, hotkeys and CLI (`hold` both forms); menus per §5 incl. every opt-in item; Displays root page live; green, merged |
-| 3 | G (Awake page, editors, history, Advanced, other-assertions section) ∥ J (Drives page, nudge path, Bluetooth Beta) ∥ C/D/E/A/B/F (sub-pages and Advanced groups per §4.3; duplicates per §4.4) ∥ **one coordinated merge** D + F + A + lead removing `sleepPrevention` (§2.13) ∥ H (search index assembly, highlight, `ControlMapTests` un-skipped and green, `ControlCoverage` check) ∥ lead (`DisplaysPageEnvironment` forwarding removed, `settingsPages()` and the old handler overload removed) ∥ all owners delete ✗ files and old factories after a caller grep | Every §4.3 page meets its budget; every slider is a `SliderSetting`; search finds every entry; `ControlMapTests` green and "Check Control Coverage" lists nothing with all features on; **ratchet holds only permanent rows** and CI runs `lint.sh --strict`; green, merged |
+| 1 | G (Kit only, incl. `AwakeMigration`, `AwakeCommandGrammar`, `TaskQuiet`, `AwakeActivityGate`, `AwakeHold`, lossy list decoders) ∥ J (sources incl. per-process CPU with the timebase, DiskIOSampler, ProcessWatch; Kit math incl. `PowerMath`) ∥ H (library incl. `SettingsAnchor`, shell, search, Kit index types) ∥ M (MenuKit, MenuSliderRow, MenuSwitchHeader, StatusMenu with `MenuPresence` and the plan, MenuLayout logic) ∥ A (Switcher debounce, sticky mode, `switcherVisible`; **ControlServer `ControlPeer` + `ControlHold` + `ControlContext` handler, held-slot pool (8), ping, CLIClient holding mode, KitControl hand-written `ControlResponse` + `holding`**; `KitControl.protectedSettings` words; `EventLog` Awake overload + `awakeCounts`; in-process `--selftest-controls`, with the lead's `build.yml` step in the same merge) ∥ B (`Fingerprint.matches`) ∥ F (`OverviewController` switches to the Kit `fShowPanel`/`fIdentify` constants) | Kit tests for G/J/H/M (incl. `AwakeActivityGate`, `PowerMath`, `CPUMath.window`); sources activate/deactivate cleanly; shell shows all 7 roots with stub pages; StatusMenu renders existing sections through MenuKit; a test verb with `holds: true` stays connected until the client exits and passes the §2.10 connection tests; `--selftest-controls` green in CI; green, merged |
+| 2 | G (controllers, assertion, sessions incl. task kinds, the hold stack and `restore` in the §2.1 start order, guards, triggers, automation incl. `awake hold`, hotkey confirmation, indicator + `AwakeMenuRows`, `restoringDefaults`/`exportable`/`importable`; lead wires M1) ∥ J (`OtherAssertionsReader` + `SleepDisabled`, holder names; r3 consistency m13) ∥ lead (ToastPresenter: presenting/screensaver suppression, Recent Notices routing, `actions: [ToastAction]`; consistency m12) ∥ H (General, Permissions, About, Onboarding, Switcher page) ∥ M (Displays menu builder/blocks with every §4.8 menu location, Menu Bar page, Customize sheet) ∥ B (observability + M6 UI + `SafetyConfig` test; consistency M5) ∥ C/D/E (controller observability + revision bumps + MenuKit contributors with their control tables; C `DisplayLiveController`, `ColorMenuItems`) ∥ F (Displays root page, live controls, Details sheet, panel; `eventLines` filter) ∥ A (KitBackup awake section after merge) | Awake works end to end from the menu, hotkeys and CLI (`hold` both forms); menus per §5 incl. every opt-in item; Displays root page live; green, merged |
+| 3 | G (Awake page, editors, history, Advanced, other-assertions section) ∥ J (Drives page, nudge path, Bluetooth Beta) ∥ C/D/E/A/B/F (sub-pages and Advanced groups per §4.3; duplicates per §4.4) ∥ **one coordinated merge** D + F + A + lead removing `sleepPrevention` (§2.13) ∥ H (search index assembly, highlight) ∥ lead (`ControlRegistryTests` un-skipped; every owner's tables filled with their pages) ∥ lead (`DisplaysPageEnvironment` forwarding removed, `settingsPages()` and the old handler overload removed) ∥ all owners delete ✗ files and old factories after a caller grep | Every §4.3 page meets its budget; every slider is a `SliderSetting`; search finds every entry; `ControlRegistryTests` green (every frozen 0.2 id has a declared home or a removal reason) and lint L15 green; no manual or rendering gate (lead r4); **ratchet holds only permanent rows** and CI runs `lint.sh --strict`; green, merged |
 | 4 | Review | Adversarial reviews: security (§3, outside changes, pointer-movement and Drive Alive rules, hold peer checks), correctness (clock, guards, triggers, assertion swaps, task kinds, migration), UX (copy rules, budgets, light/dark/Increase Contrast, VoiceOver incl. the Awake menu), consistency (contracts vs code); fixes |
 | 5 | Lead | README (Awake, CLI verbs and exit codes, **`awake hold` usage and the parent-shell pitfall** (§2.10), the hidden kill switches and how an organization deploys them with a configuration profile (N14), privacy, "why not lid-closed on battery", switching from Amphetamine Power Protect / Insomnia and cleaning up their sudoers rules and `SleepDisabled`, the 0.3 → 0.2 → 0.3 note), website, THIRD_PARTY_NOTICES (Insomnia, KeepingYouAwake if logic is followed closely; no code from APSL sources such as `caffeinate.c` — behavior only), Appendix hardware session, merge |
 
 ### 6.5 Done means
 
 - Every In row of §1.1 and §1.5 implemented, reachable in Settings (and menu, hotkey and CLI where listed), wired to availability, kill switch, Safe Mode, diagnostics and `configDidChange`; idempotent start/stop; no stubs left.
-- **Every 0.2 setting, button/action and menu item reaches its §4.8 home** (`ControlMapTests` green over the frozen 0.2 lists, `--selftest-controls` green, "Check Control Coverage" empty; reviewer walk-through of the table); every 0.2 opt-in menu item renders at its §5.2 location and can be shown or hidden in Customize Displays Menu.
+- **Every 0.2 setting, button/action and menu item reaches its §4.8 home** (`ControlRegistryTests` green over the literal §4.8.1 list and the removals table, lint L15 green, `--selftest-controls` green; reviewer walk-through of the table); every 0.2 opt-in menu item has a declared §5.2 location and a row in Customize Displays Menu.
 - Awake holds at most one sleep assertion at any time (assert in debug + test via `AssertionManager` counters); `pmset -g assertions` shows only fixed-vocabulary strings (`Details` = manual/automatic).
-- Pointer movement never acts for a CLI, rule, `launch`, restored or resumed session, or while locked or off console, whatever the config says; activity stops after `stopAfterHours` on Snaptic's clock; the 5% hard floor and critical heat end sessions with every config (HW-19). `awake hold` ends within 1 s of its client's exit or kill, and at its cap.
+- Pointer movement never acts for a CLI, rule, hold, `launch`, restored or resumed session, for a hotkey start before Allow, or while locked or off console, whatever the config says; activity stops after `stopAfterHours` on Snaptic's clock; the 5% hard floor ends sessions whenever the battery is discharging (also on a weak adapter) and critical heat ends them with every config (HW-19). Each `awake hold` ends within 1 s of its client's exit or kill, and at its cap; up to 8 holds coexist with a UI session.
 - Every Settings slider is a `SliderSetting` with live value field and reset; every slider in the menu is a `MenuSliderRow` with a live value; no slider in a submenu; no `NSHostingView` in a menu.
 - Page budgets of §4.3 met; the duplicates resolved as in §4.4; no developer titles, camelCase ids or raw SF Symbol names visible.
-- Migrations M1–M5 and M10 tested, each runs once (markers), M6 pinned by its `SafetyConfig` test; a 0.2 settings fixture (all features on) loads with no setting lost and a 0.3 → 0.2 downgrade still reads every legacy field.
+- Migrations M1–M5 and M10 tested, each runs once (ledger markers, also across a 0.2 round trip), M1 gives the same rule ids on every run, M6 pinned by its `SafetyConfig` test; Awake lists survive one undecodable element; a 0.2 settings fixture (all features on) loads with no setting lost and a 0.3 → 0.2 downgrade still reads every legacy field.
 - Lint passes with only permanent ratchet rows; CI green on all jobs; hardware list §6.7 run and Beta labels updated.
 
 ### 6.6 Kit unit tests (new)
 
 - `AwakeFeatureGraph`: spec totality, resolve (kill switches incl. `unkillable` ignored, Safe Mode, requirements), `enabling` refuses unavailable, `requiredServices` per criterion kind and per dynamic need, activation order respects dependencies.
-- `AwakeSession`/`AwakeClock`: start for every kind; remaining with continuous vs wall; `endWall` after a clock jump; `continuousEnd` for until-kinds; reboot expiry; clock jumps ±1 day don't move duration sessions; extend caps at 30 days; `canExtend` per kind; task caps; type-tagged Codable round trips and unknown types dropped; `overrideGuards`, `uiStartedInProcess`, `activitySince` never encoded and false/nil after decode; `source` survives a round trip; `hold(.connection)` never decodes, `hold(.process)` does; `isDirectUserAction` per source.
+- `AwakeSession`/`AwakeClock`: start for every kind; remaining with continuous vs wall; `endWall` after a clock jump; `continuousEnd` for until-kinds; reboot expiry; clock jumps ±1 day don't move duration sessions; extend caps at 30 days; `canExtend` per kind; task caps; type-tagged Codable round trips and unknown types (incl. r3's `"hold"`) dropped; `overrideGuards` never encoded and false after decode; `source` survives a round trip; `isDirectUserAction` per source; `sanitized(now:)` bounds (start after now, deadline beyond the cap from start, cap/deadline mismatch; r3 security L3). `AwakeHold`: `.connection` never decodes, `.process` does, `sanitized(now:)` bounds, `maxHolds`. `AwakeActivityGate`: the full truth table per event, every `.unchanged` event leaves the gate equal, a hotkey start is `askOnFirstUse` until `confirmAllowed`, Not Now/dismissal → `declined`, the carry across back-to-back sessions and the 15-min reset (r3 security M1, M2, L5).
 - `AwakeCountdown`: every boundary (3600, 3599, 61, 60, 59, 1, 0), "2h" on the hour, rounding up, `nextChange` never 0, spoken strings, `clock` 12/24 h.
 - `AwakeDurationGrammar` / `AwakeCommandGrammar`: valid and invalid inputs, 7-digit / 2-decimal limits, "1e300h", huge digit strings, overflow, `idle`, `--pid` (≤ 1, negative, non-numeric refused), `--max` > 24 h refused, preset by index and name, locale-independent parsing, seeded fuzz never traps; `statusLine`/`statusJSON` incl. `pid` and the hand-formatted ISO time.
-- `AwakeArbiter`: governing precedence; every display policy × locked × console × idle; deadline grace; `needsSwap` thresholds; disk-idle flag; 1,000 inputs at advancing times → `needsSwap == false` after the first.
-- `AwakeGuards`: desktop/no battery, AC, floor crossing, the 5% hard floor with the user floor off and with Start Anyway, `reloaded(sameBoot:)`, hysteresis +5, two unreadable reads, adapter disconnect, LPM, serious warn-once (no end), critical end + cooldown, override only for battery/LPM, `allowsBackgroundWork`, `monotonic(over:)`, assertion-hold backoff.
-- `AwakeTriggers` decode: lossy per entry, unknown kinds dropped, the nested `"criterion"`/`"condition"` shape (one `type` key per object), limits (32/8), sanitize (names, CIDRs, bundle ids, minutes, nudge on idle triggers → declare).
-- `TaskQuiet`: each busy signal alone keeps the session (top process 50%, total 15%, disk 1 MB/s, network 50 KB/s), all quiet for 5 min ends it, unknown sample and wake reset the window, grace respected; single-threaded load on 12 cores stays busy (parity M2).
+- `AwakeArbiter`: governing precedence manual > trigger > holds > inactive (N3, N17); holds plan `.system` with the latest hold deadline; every display policy × locked × console × idle; deadline grace; `needsSwap` thresholds; disk-idle flag; 1,000 inputs at advancing times → `needsSwap == false` after the first.
+- `AwakeGuards` + `PowerMath`: desktop (never latched), AC and not falling, **AC but falling** (weak charger: battery rules and the hard floor apply), latched battery with a missing entry (unreadable, not a desktop), floor crossing, the 5% hard floor with the user floor off and with Start Anyway, `reloaded(sameBoot:)`, hysteresis +5 and "not falling", two unreadable reads → `allowsBackgroundWork` false and no session end, one readable read clears it, adapter disconnect, LPM, serious warn-once (no end), critical end + cooldown, override only for battery/LPM, `allowsBackgroundWork`, `monotonic(over:)`, assertion-hold backoff.
+- `AwakeTriggers` decode: lossy per criterion entry **and per rule** (one unknown 0.4 rule among three keeps two, and they survive the next save; r3 code M6), invalid ids drop the rule, unknown kinds dropped, the nested `"criterion"`/`"condition"` shape (one `type` key per object), limits (32/8), sanitize (names, CIDRs, bundle ids, minutes, every nudge → declare).
+- `TaskQuiet`: each busy signal alone keeps the session (top process 50%, 3 new processes, total 15%, disk 1 MB/s, network 50 KB/s), all quiet for 5 min ends it, unknown sample and wake reset the window, grace respected, `quietFor`; single-threaded load on 12 cores stays busy (parity M2); a stream of 2 s processes at 100% of one core stays busy through `newProcesses` (r3 code M2).
 - `TriggerEngine`: every criterion kind true/false/unknown; negation; all/any with unknowns; start/end delays on the continuous clock; priority order and reorder; pause; guard hold; manual end with and without `resumeAfterManualEndMinutes`; suppressions expire; overnight schedules and week wrap; `scheduleBoundaries`; `summary` wording; seeded fuzz deterministic.
-- `AwakeHistory`: cap, merge of short `.replaced` runs, prune, totals across given day starts.
-- `AwakeSnapshot.sanitized(now:)`: other-boot session dropped, `until` suppressions dropped and `untilFalse` kept on a boot mismatch, guard memory reset except `warnedSerious`, `source` kept, connection holds dropped, out-of-range kinds dropped.
-- `AwakeConfig`: `restoringDefaults` (pointer movement and volumes off), `exportable` (nudge → declare, drops, rules opt-in, hashes stripped), `importable` applied after `KitBackup.merge` with a hostile backup (nudge in presets[]/triggers[], volumes, floor 5: none survive, guards only tighten; security L5); activity switches and `effectiveOptions` clamping (consistency M2); `defaultDisplayPolicy(for:)`.
-- `AwakeMigration`: no Displays settings; feature off with flags; feature on but Displays module off (not effective → disabled trigger); 1, 3 and 9 displays (split at 8); missing fingerprints; corrupt JSON; marker prevents a second run.
-- `NetworkMath`: IPv4/IPv6 CIDR parse/match, invalid input, MAC normalization and hashing input, 64-bit byte deltas and resets, throughput with `lo0` excluded and `utun` + `en0` not double-counted. `CPUMath`: tick deltas incl. UInt32 wraparound, `processPercent`, `top`. `DiskMath`: deltas, resets.
-- `ActivityPolicy` truth table (nudgeAllowed false for every non-UI or restored session, edge margin, the Snaptic-clock cap at 1 h and 8 h independent of input, screensaver, console, lock); `IdleMath` (nudge and declaration echoes ignored, real input kept); `DriveAlivePolicy` eligibility table (allowlist, boot container, DMG, non-local, BSD name) and `shouldWrite` (CLI source incl. restored CLI sessions, guards, first write).
+- `AwakeHistory`: cap, merge of short `.replaced` runs, prune, totals across given day starts, lossy per entry, `offersStartAgain` per source and kind (r3 consistency m3).
+- `AwakeSnapshot.sanitized(now:)`: other-boot session and holds dropped, `until` suppressions dropped and `untilFalse` kept on a boot mismatch, guard memory reset except `warnedSerious`, `source` kept, connection holds dropped, out-of-range kinds dropped; `dynamicNeeds` per restored state (r3 code M1).
+- `AwakeConfig`: presets lossy per element; default preset ids equal `StableID.derived` across `init()` and `restoringDefaults()`; `restoringDefaults` (pointer movement and volumes off), `exportable` (nudge → declare, drops, rules opt-in, hashes stripped), `importable` applied after `KitBackup.merge` with a hostile backup (nudge in presets[]/triggers[], volumes, floor 5: none survive, guards only tighten; security L5); activity switches and `effectiveOptions` clamping (consistency M2); `defaultDisplayPolicy(for:)`.
+- `AwakeMigration`: no Displays settings; feature off with flags; feature on but Displays module off (not effective → disabled trigger); 1, 3 and 9 displays (split at 8); missing fingerprints; corrupt JSON; ledger marker prevents a second run; two runs over the same JSON give equal ids and, written over each other, one set of rules (r3 code M5). `NameHash`/`StableID.derived`: fixed vectors, valid `StableID`, version 8 and variant bits. `LossyArray`: round trip, one bad element dropped, encode keeps the rest. `MigrationLedger`: element-wise decode.
+- `NetworkMath`: IPv4/IPv6 CIDR parse/match, invalid input, MAC normalization and hashing input, 64-bit byte deltas and resets, throughput with `lo0` excluded and `utun` + `en0` not double-counted. `CPUMath`: tick deltas incl. UInt32 wraparound, `CPUTimebase` (125/3 and 1/1; a busy Apple-silicon process reads ≈ 100%, not ≈ 2.4%), `processPercent`, `window` (first-seen-in-window whole CPU time, pid reuse by start time, churn count). `DiskMath`: per-driver deltas, a driver appearing or vanishing contributes nothing, a counter going down counts 0.
+- `ActivityPolicy` truth table and `nudgeAllowed(governing:gate:…)` (false for trigger, hold, CLI, launch, restored and resumed sessions and for an unconfirmed hotkey start; r3 consistency M4), `needsPointerConfirmation`, edge margin, the Snaptic-clock cap at 1 h and 8 h independent of input, screensaver, console, lock); `IdleMath` (nudge and declaration echoes ignored, real input kept); `DriveAlivePolicy` eligibility table (allowlist, boot container, DMG, non-local, BSD name) and `shouldWrite` (CLI source incl. restored CLI sessions, guards, first write).
 - `VolumeUUIDKey` validation; `WeekdaySet` masking.
 - `SliderMath`: clamp/snap, isDefault tolerance, hand formats and spoken units, parse with units and both decimal separators.
-- `SettingsIndex`: ranking, synonyms, diacritic table, empty query, anchors unique across all `SettingsIndex*` tables, no entry text from config. `ControlMapTests` (§4.8): every `ControlMapLegacy` setting, action and menu item has a home, every home exists in `ControlCatalog`, reasons non-empty, catalog ids unique, the 46 `DisplayMenuItemID`s all present.
-- `MenuLayout`: presence × awake active × displays active × shortcut bound × shown at rest → plan (custom items, compact section, `sharedActiveGlyph = governing && showShared`, footer in own menus, Snaptic item existence incl. "no module enabled" → item and "everything Don't Show" → none); `.hidden` fallback when the shortcut is unbound; `MenuPresence.allowed(for:)`; `legacyPlacement`; slider never "inSubmenu"; ordering; compact mode. `MenuItemCatalog`: every legacy id maps to a spec with `showHide`.
-- `DisplaysConfig`: `changedSections` per field incl. every per-display subsection, M4/M5/M10 run once, legacy fields still encoded, `restoringDefaults(scope:)` per `DisplaysRestoreScope` leaves other scopes; `ModulesConfig` M2 (incl. Displays hide flag → Show When Active and the presence-absent round trip), M3, per-id defaults, `upgradeDefaults()` has Awake disabled, `newModuleCards` with an unknown id. `SafetyConfig` M6 pin.
-- `KitControl`: `ControlResponse.holding` lossy decode and encode; `maxHeldConnections`. `EventCategory.isExportedInDiagnostics` false for `.awake`.
+- `SettingsIndex`: ranking, synonyms, diacritic table, empty query, anchors unique across all `SettingsIndex*` tables, `id == anchor`, no entry text from config. `ControlRegistryTests` (§4.8 tests 1–6): every one of the 588 frozen ids has a home or a removal reason, never both; unique ids with surface prefixes; settings ↔ search entries; menu show/hide rows; the `ConfigFixtures` key cross-check; the registry list; the 46 `DisplayMenuItemID`s all present in §4.8.1; `menuSlider` specs never located in a submenu and never three-way.
+- `MenuLayout`: presence × awake active × displays active × shortcut bound × shown at rest → plan (custom items, compact section, `sharedActiveGlyph = governing && showShared`, footer in own menus, Snaptic item existence incl. "no module enabled" → item and "everything Don't Show" → none); `.hidden` fallback when the shortcut is unbound; `MenuPresence.allowed(for:)`; `legacyPlacement`. (r3's "slider never inSubmenu" moved to `ControlRegistryTests`, section ordering is `MenuConfig.orderedSections` in `ConfigMenuTests` (M), and compact mode has no Kit logic; r3 consistency m15.)
+- `DisplaysConfig`: `changedSections` per field incl. every per-display subsection, M4/M5/M10 run once, legacy fields still encoded, `restoringDefaults(scope:)` per `DisplaysRestoreScope` leaves other scopes; `ModulesConfig` M2 (incl. Displays hide flag → Show When Active and the presence-absent round trip), M3, per-id defaults, `upgradeDefaults()` has Awake disabled, `newModuleCards` with an unknown id (dropped alone) and `.awakeMigrated` kept through decode and `sanitized()` (r3 consistency M2); M10 writes `menu.items[.dDisconnectItem]`/`[.cDDCPower]`. `SafetyConfig` M6 pin.
+- `KitControl`: `ControlResponse` hand-written decode (an old reply without `holding` decodes, `holding` round-trips, `jsonReply` keeps it); `maxHeldConnections == 8`. `EventCategory.isExportedInDiagnostics` false for `.awake`.
+- `AwakeRefusal`: `exitCode` (4) and `text` per case, incl. `holdLimit` and the CLI-only cases (r3 consistency m15). `AwakeLogEvent`: fixed `text` per case, counted vs ring split, no case carries a name, pid or payload.
 
 ### 6.7 Hardware checks (first session; Beta labels depend on them)
 
@@ -2877,17 +3287,17 @@ Lint additions:
 | HW-10 | IOHIDDevice registry reads for Bluetooth input devices need no Input Monitoring |
 | HW-11 | Router MAC via routing-table `sysctl` on 15/26/27 triggers no Local Network prompt; `NET_RT_IFLIST2` counters at 10 GbE |
 | HW-12 | Removable Volumes prompt text and denial path; Drive Alive keeps a USB HDD spinning; eject not blocked; DMG and boot-container volumes refused |
-| HW-13 | IOPS notifications on desktop Macs (no battery) and on battery percent changes; LPM notification queue |
+| HW-13 | IOPS notifications on desktop Macs (no battery) and on battery percent changes; LPM notification queue; an underpowered USB-C charger/hub under load: `AC Power` with a falling percentage is treated as discharging (r3 security M3); `AppleSmartBattery` latch on every laptop model at hand |
 | HW-14 | Status item `autosaveName`, `isVisible` KVO after ⌘-drag on 14–27; create/remove with Show When Active; countdown width stability; 26 "Allow in the Menu Bar" off; 27 overflow; notched MacBook with 20 items: the Snaptic active glyph is visible when the Awake item lands behind the notch (parity M5) |
-| HW-15 | AppKit menu rows (MenuSliderRow, MenuSwitchHeader): alignment with native items, slider keyboard behavior, highlight drawn on arrow-key navigation, vibrancy on 26/27 material, `sectionHeader` look on 14/15/26/27; Option alternates on 27 and on 14.0–14.3 with title subtitles; arrow-key and VoiceOver navigation reach "Turn Off Keep Awake"; countdown and live slider values update while the menu stays open (`.common` mode) |
+| HW-15 | AppKit menu rows (MenuSliderRow, MenuSwitchHeader): alignment with native items, slider keyboard behavior, highlight drawn on arrow-key navigation, vibrancy on 26/27 material, `sectionHeader` look on 14/15/26/27; Option alternates on 27 and on 14.0–14.3 with title subtitles; arrow-key and VoiceOver navigation reach "Turn Off Keep Awake"; countdown and live slider values update while the menu stays open (`.common` mode); the Snaptic menu in the default setup stays within the §5.2 row budget (≤ 24 lines; r3 product minor 16) |
 | HW-16 | Settings: `.searchable(placement: .sidebar)` + `ScrollViewReader` scroll in grouped `Form` on 14; `NavigationStack(path:).id(root)` back button; next-turn push; `.toolbar(removing: .sidebarToggle)`; fixed 715 pt width |
 | HW-17 | `NumberField` commit on blur inside `Form`; Esc revert; VoiceOver values with units; small row switch size matches System Settings on 14–27 |
 | HW-18 | Thermal states (via a load generator) produce the toasts/ends; `CLOCK_MONOTONIC_RAW` advances across sleep |
-| HW-19 | `defaults write` of pointerNudge + a nudge preset, a Drive Alive volume, floor off and a forged `.menu` snapshot, while Snaptic is quit, stopped and running: no pointer movement for CLI, rule, restored or resumed sessions; the 5% floor still ends a session; Drive Alive writes only to eligible volumes |
+| HW-19 | `defaults write` of pointerNudge + a nudge preset, a Drive Alive volume, floor off, a forged `.menu` snapshot with `--pid` holds, and a rebound `awake.toggle` hotkey, while Snaptic is quit, stopped and running: no pointer movement for CLI, rule, hold, restored or resumed sessions, none for the hotkey start until Allow is clicked (and the toast appears once); the 5% floor still ends a session, also on a weak charger; Drive Alive writes only to eligible volumes; a snapshot written while running has no effect |
 | HW-20 | `NSMenuItem.subtitle` with the 15.5 SDK on 14.4, 15, 26, 27; fallback rows on 14.0–14.3 |
-| HW-21 | `awake hold`: kqueue `EVFILT_PROC`/`NOTE_EXIT` + `proc_pidinfo` start time; `LOCAL_PEERPID` on the CLI socket; client killed with SIGKILL / Control-C / terminal closed → session ends within 1 s; forked child holding the fd doesn't keep it; `--pid $$` in a script, in a `make` recipe line (ends at once, toast) and with `.ONESHELL`; PID reuse refused |
+| HW-21 | `awake hold`: kqueue `EVFILT_PROC`/`NOTE_EXIT` + `proc_pidinfo` start time; `LOCAL_PEERPID` on the CLI socket; client killed with SIGKILL / Control-C / terminal closed → its hold ends within 1 s; forked child holding the fd doesn't keep it; `--pid $$` in a script, in a `make` recipe line (ends at once, toast) and with `.ONESHELL`; PID reuse refused; a hold while a UI "For 2 Hours" session runs: both coexist, the Mac stays awake after the UI session ends, the menu says "Held by Terminal" (Terminal, iTerm, Xcode, VS Code terminal); 8 holds + normal CLI requests at the same time; a 9th hold refused; ping keeps an idle 12 h hold; no read timeout |
 | HW-22 | (r2 Keychain check withdrawn with N10) |
-| HW-23 | `untilIdle` defaults (top process 50%, total 15%, disk 1 MB/s, network 50 KB/s, 5 min) on a 10-core Mac: stays during a single-threaded build/link phase, a 20 GB copy to an external SSD, a large download and an archive extraction; ends after each; not kept alive by root Spotlight bursts; `proc_pid_rusage` of same-user processes needs no prompt and costs ≤ 5 ms per sample |
+| HW-23 | `untilIdle` defaults (top process 50%, 3 new processes, total 15%, disk 1 MB/s, network 50 KB/s, 5 min) on a 10-core Apple-silicon Mac and an Intel Mac: the timebase-scaled rusage reads ≈ 100% for one busy core; stays during a `make -j1` compile phase of 1–3 s `clang`s, a single-threaded link phase, a 20 GB copy to an external SSD, a large download and an archive extraction; ends after each. Root Spotlight and Time Machine **CPU** doesn't count (other users' processes are unreadable), but their **disk** I/O does (the IOBlockStorageDriver counters are system-wide), so a session may run on while they index; record how long. `proc_pid_rusage` of every pid needs no prompt and costs ≤ 5 ms per sample |
 
 ### 6.8 Open questions
 
@@ -2898,4 +3308,4 @@ Lint additions:
 - **OQ-5** Glyph families: confirm `cup.and.saucer`, `eye`, `lightbulb` and their `.fill` variants on macOS 14 (tested in Kit by name list; runtime fallback `cup`).
 - **OQ-6** Sticky-switcher menu item (C8) interaction with `releaseToSwitch` users; fallback is to omit the item.
 - **OQ-7** Default for "After the screen has been locked for…" (security L5). Default: Never; product may choose 12 h.
-- **OQ-8** `untilIdle` thresholds after HW-23. Default: top process 50% of one core / total 15% / disk 1 MB/s / network 50 KB/s / 5 min.
+- **OQ-8** `untilIdle` thresholds after HW-23. Default: top process 50% of one core / 3 new processes per 5 s / total 15% / disk 1 MB/s / network 50 KB/s / 5 min. (r3 code M2 proposed comparing the **sum** of same-user processes; rejected for now because many idle background apps add up and would keep sessions alive; churn and aggregate CPU cover the short-lived case. HW-23 may revisit.)
