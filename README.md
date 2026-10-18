@@ -195,7 +195,7 @@ Without installing: `/Applications/Snaptic.app/Contents/MacOS/Snaptic cli help`.
 | `layout list\|apply <name\|number>\|capture <name>` | Display layouts | Apply confirms trial content |
 | `virtual list\|connect <name>\|disconnect <name>` | Virtual screens | |
 | `smart-hidpi off [display\|all]`, `toggle smart-hidpi [display\|all]` | Smart HiDPI | Off only |
-| `pip list\|start <name\|id>\|stop <name\|id>\|stop-all\|hide-all\|show-all\|pause-all\|resume-all` | Picture in picture | Saved display configurations only; starts only while unlocked |
+| `pip list\|start <name\|id>\|stop <name\|id>\|stop-all\|hide-all\|show-all\|pause-all\|resume-all`, `pip start\|stop -d <display>` | Picture in picture | Saved display configurations only; starts only while unlocked. `-d` picks configurations by source display (`stop -d` also matches the target). Write `--display` only after `--`, e.g. `snaptic pip start -- --display 2` |
 | `action list`, `action run <name>` | Custom actions | Only actions marked for the command line |
 
 Verbs are case-insensitive, so `toggle nightShift` and `toggle smartHiDPI` work too.
