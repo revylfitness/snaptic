@@ -67,7 +67,7 @@ final class DisplaysMenuPlanTests: XCTestCase {
         let others = ControlRegistry.tables.filter {
             ![String(describing: DisplayMenuBlockControls.self), String(describing: DisplaysMenuBuilderControls.self),
               String(describing: CustomizeMenuSheetControls.self)].contains(String(describing: $0))
-        }.flatMap(\.controls)
+        }.flatMap { $0.controls }
         for spec in others {
             guard let placement = spec.menu, let legacy = placement.legacyMenuID else { continue }
             guard let home = mine.first(where: { $0.menu?.legacyMenuID == legacy })?.menu else { continue }
