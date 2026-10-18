@@ -116,7 +116,9 @@ private struct PanelPropsSection: View {
 
     private var anyOn: Bool { [.rotation, .underscan, .hdrToggle].contains { env.runtime.isEffective($0) } }
 
-    var body: some View {
+    var body: some View { ControllerRevisionReader(env.runtime.revision(.panelProps)) { content } }
+
+    @ViewBuilder private var content: some View {
         Section {
             ManagementFeatureNotice(env: env, feature: .rotation, title: L("Rotation"))
             ManagementFeatureNotice(env: env, feature: .hdrToggle, title: L("HDR switch"))
@@ -167,7 +169,9 @@ private struct PowerSection: View {
     @ObservedObject var env: DisplaysPageEnvironment
     let displays: [DisplayInfo]
 
-    var body: some View {
+    var body: some View { ControllerRevisionReader(env.runtime.revision(.power)) { content } }
+
+    @ViewBuilder private var content: some View {
         Section {
             ManagementFeatureNotice(env: env, feature: .disconnect, title: L("Disconnect"))
             if env.runtime.isEffective(.disconnect), let c = env.context?.connectPlanner.power {

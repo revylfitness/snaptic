@@ -81,3 +81,17 @@ enum ManagementText {
                 })
     }
 }
+
+/// Re-renders its content whenever a controller's revision publishes (PLAN 0.3 §4.5): sections that read controller
+/// state (busy, live, undo, protection) observe the one id they show.
+struct ControllerRevisionReader<Content: View>: View {
+    @ObservedObject private var revision: ControllerRevision
+    private let content: () -> Content
+
+    init(_ revision: ControllerRevision, @ViewBuilder content: @escaping () -> Content) {
+        self.revision = revision
+        self.content = content
+    }
+
+    var body: some View { content() }
+}

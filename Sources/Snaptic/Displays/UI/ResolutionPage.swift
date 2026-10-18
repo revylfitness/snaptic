@@ -61,7 +61,9 @@ private struct ResolutionDisplaySection: View {
     private var key: DisplayKey { display.key }
     private var current: ModeRef? { controller.currentMode(display) }
 
-    var body: some View {
+    var body: some View { ControllerRevisionReader(env.runtime.revision(.resolution)) { content } }
+
+    @ViewBuilder private var content: some View {
         Section {
             modePicker
             HStack {

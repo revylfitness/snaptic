@@ -139,7 +139,9 @@ private struct VirtualScreenRow: View {
     let index: Int
     let onEdit: () -> Void
 
-    var body: some View {
+    var body: some View { ControllerRevisionReader(env.runtime.revision(.virtual)) { content } }
+
+    @ViewBuilder private var content: some View {
         let c = env.context?.connectPlanner.virtual
         let live = c?.isLive(spec.id) ?? false
         HStack {
@@ -300,7 +302,9 @@ private struct SmartHiDPISection: View {
     @ObservedObject var env: DisplaysPageEnvironment
     let displays: [DisplayInfo]
 
-    var body: some View {
+    var body: some View { ControllerRevisionReader(env.runtime.revision(.smartHiDPI)) { content } }
+
+    @ViewBuilder private var content: some View {
         Section {
             ManagementFeatureNotice(env: env, feature: .smartHiDPI, title: L("Smart HiDPI"))
             if env.runtime.isEffective(.smartHiDPI), let c = env.context?.connectPlanner.smartHiDPI {

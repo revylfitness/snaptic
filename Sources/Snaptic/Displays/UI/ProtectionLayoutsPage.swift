@@ -21,7 +21,9 @@ private struct ProtectionSection: View {
 
     private var controller: ProtectionController? { env.context?.connectPlanner.protection }
 
-    var body: some View {
+    var body: some View { ControllerRevisionReader(env.runtime.revision(.protection)) { content } }
+
+    @ViewBuilder private var content: some View {
         Section {
             ManagementFeatureNotice(env: env, feature: .protection, title: L("Configuration protection"))
             if env.runtime.isEffective(.protection), let c = controller {
@@ -67,7 +69,9 @@ private struct LayoutsSection: View {
 
     private var controller: LayoutsController? { env.context?.connectPlanner.layouts }
 
-    var body: some View {
+    var body: some View { ControllerRevisionReader(env.runtime.revision(.layouts)) { content } }
+
+    @ViewBuilder private var content: some View {
         Section {
             ManagementFeatureNotice(env: env, feature: .layouts, title: L("Layouts"))
             if env.runtime.isEffective(.layouts), let c = controller {
