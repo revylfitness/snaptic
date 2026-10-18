@@ -1,6 +1,7 @@
 import Foundation
 
-// Stub (owner: G). Hand-written by the lead in step 0 from PLAN 0.3 §2.14 (kind S).
+// Awake status item settings (owner: G; PLAN 0.3 §2.14, §5.3). Edited on the Menu Bar page. Unknown legacy values
+// (r1 drafts' mug, sun, bolt) decode as the defaults (M9).
 
 /// Menu Bar page "Time" pop-up: Don't Show / Time Remaining / End Time (.icon = Don't Show).
 package enum AwakeIndicatorStyle: String, Codable, CaseIterable, Sendable { case icon, iconAndTime, iconAndEndTime }
@@ -38,5 +39,12 @@ package struct AwakeIndicatorConfig: ConfigModel {
         glyph = c.lossy(.glyph, .cup)
     }
 
+    /// Both fields are closed enums that decode lossily, so there is nothing left to clamp.
     package func sanitized() -> AwakeIndicatorConfig { self }
+
+    /// The SF Symbol for the item's current state.
+    package func symbol(active: Bool) -> String { active ? glyph.active : glyph.idle }
+
+    /// Whether the item shows text beside the glyph while a session with an end runs.
+    package var showsTime: Bool { style != .icon }
 }
