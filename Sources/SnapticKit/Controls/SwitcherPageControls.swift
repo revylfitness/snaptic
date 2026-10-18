@@ -38,6 +38,8 @@ package enum SwitcherPageControls: ControlTable {
                     search: SearchSpec("Include minimized and hidden windows", keywords: ["minimized", "hidden"], root: root)),
         ControlSpec("switcher.page.spaces", .setting, replaces: ["l.sw.shortcut.spaces"], keys: ["shortcuts.*.spaces"],
                     search: SearchSpec("Windows from", keywords: ["spaces", "desktops", "current space"], root: root)),
-        ControlSpec("switcher.page.advanced", .button),
+        ControlSpec("switcher.page.advanced", .button,
+                    search: SearchSpec("Window Switcher Advanced Settings", keywords: ["more", "features", "app lists"],
+                                       root: root)),
     ]
 }

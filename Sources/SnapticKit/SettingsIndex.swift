@@ -58,6 +58,161 @@ package enum SettingsIndex {
         }
         return result
     }
+
+    /// The whole Settings index: every root's entries in sidebar order (`roots`), each id once. Entries whose root
+    /// has no sidebar item are left out (nothing could reveal them).
+    package static func all(_ tables: [any ControlTable.Type], roots: [String] = SettingsRootID.all) -> [SettingsSearchEntry] {
+        var seen = Set<String>()
+        var result: [SettingsSearchEntry] = []
+        for root in roots {
+            for entry in entries(tables, root: root) where seen.insert(entry.id).inserted {
+                result.append(entry)
+            }
+        }
+        return result
+    }
+
+    /// The spec with `id`, first match.
+    package static func spec(_ id: String, in tables: [any ControlTable.Type]) -> ControlSpec? {
+        for table in tables {
+            if let spec = table.controls.first(where: { $0.id.rawValue == id }) { return spec }
+        }
+        return nil
+    }
+
+    /// The page header switch of a module root ("Use Window Switcher"): its searchable setting that edits
+    /// `modules.*.enabled` on the root page itself. A reveal into a module that is off highlights it.
+    package static func masterSwitch(root: String, in tables: [any ControlTable.Type]) -> String? {
+        for table in tables {
+            for spec in table.controls where spec.kind == .setting && spec.keys.contains("modules.*.enabled") {
+                guard let search = spec.search, search.root == root, search.route == nil, search.sheet == nil else {
+                    continue
+                }
+                return spec.id.rawValue
+            }
+        }
+        return nil
+    }
+
+    /// Where a reveal goes when its row isn't shown (a subordinate row whose parent is off): the `parentOn` chain,
+    /// nearest first, at most 8 deep, never repeating.
+    package static func revealFallbacks(for id: String, in tables: [any ControlTable.Type]) -> [String] {
+        var result: [String] = []
+        var current = id
+        while result.count < 8, let spec = spec(current, in: tables) {
+            var next: String?
+            for case .parentOn(let parent) in spec.when {
+                next = parent.rawValue
+                break
+            }
+            guard let parent = next, parent != id, !result.contains(parent) else { break }
+            result.append(parent)
+            current = parent
+        }
+        return result
+    }
+
+    /// Names of sub-pages and sheets for the result rows ("Thumbnail size — Window Switcher › Advanced"). Route ids
+    /// are the owners' table surfaces (F's `DisplaysSubpage`).
+    package static let pageTitles: [String: String] = [
+        "displays.brightness": L("Brightness and Dimming"),
+        "displays.color": L("Color"),
+        "displays.hardware": L("Hardware Controls"),
+        "displays.keyboard": L("Keyboard"),
+        "displays.layouts": L("Saved Layouts"),
+        "displays.virtual": L("Virtual Displays"),
+        "displays.pip": L("Picture in Picture"),
+        "displays.automations": L("Automations"),
+        "displays.info": L("Display Information"),
+        "awake.drives": L("Drives"),
+        "awake.history": L("History"),
+        "switcher.shortcuts": L("More Shortcuts"),
+        "displays.details": L("Display Details"),
+        "displays.arrange": L("Arrange Displays"),
+        "menubar.customize": L("Customize Displays Menu"),
+        "awake.sessions": L("Sessions"),
+    ]
+
+    /// A route's or sheet's title: the table, then "….advanced" → Advanced, "….shortcuts" → Keyboard Shortcuts.
+    package static func pageTitle(_ id: String) -> String? {
+        if let title = pageTitles[id] { return title }
+        if id.hasSuffix(".advanced") { return L("Advanced") }
+        if id.hasSuffix(".shortcuts") { return L("Keyboard Shortcuts") }
+        return nil
+    }
+
+    /// "Window Switcher › Advanced", "Displays › Color › Advanced": the root's title, then the route's and the
+    /// sheet's when they have one.
+    package static func location(of entry: SettingsSearchEntry, rootTitle: String,
+                                 routeTitle: String? = nil) -> String {
+        var parts = [rootTitle]
+        if let route = entry.route, let title = routeTitle ?? pageTitle(route.id) { parts.append(title) }
+        if let sheet = entry.sheet, let title = pageTitle(sheet) { parts.append(title) }
+        return parts.joined(separator: " › ")
+    }
+}
+
+/// "Every visible control is findable" (PLAN 0.3 step-3 exit), as data: which control specs must carry a search
+/// entry, and the few that deliberately don't. `SettingsIndexTests` checks the whole registry against it.
+package enum SettingsIndexCoverage {
+    /// Surfaces that aren't Settings pages: the menus, the floating panel, onboarding and the Custom session panel.
+    package static let otherSurfaces: [String] = ["menu", "onboarding", "displays.panel", "awake.custom"]
+
+    /// Editors of one list item (a rule, a preset, a hook, …): search can't know which item to open, so their rows
+    /// are reached through the list on the page.
+    package static let itemEditorSurfaces: Set<String> = [
+        "awake.rule", "awake.sessions", "displays.virtual.editor", "displays.pip.editor", "displays.automations.hook",
+        "displays.automations.action",
+    ]
+
+    /// Visible controls without a search entry, each with its reason.
+    package static let unsearchable: [String: String] = [
+        "about.page.displayInformation": "Opens Displays › Display Information, which has its own entry.",
+        "displays.advanced.confirm.useDefaultShortcut": "Part of the Restore All Displays shortcut row, which has an entry.",
+        "menubar.customize.needFeatures": "Groups dimmed items that each have their own entry.",
+    ]
+
+    /// Controls whose owners add a search entry in step 3 (lead: empty this list at the step-3 exit).
+    package static let awaitingSearch: Set<String> = [
+        "menubar.page.customize", "menubar.page.restoreDefaults", "menubar.customize.displays",
+        "menubar.customize.useDefaultOrder",
+    ]
+
+    package static func isSettingsSurface(_ surface: String) -> Bool {
+        !otherSurfaces.contains { surface == $0 || surface.hasPrefix($0 + ".") } && !itemEditorSurfaces.contains(surface)
+    }
+
+    /// A control on a Settings surface needs an entry when it is a setting, shortcut or navigation row, or a button
+    /// or list that isn't one list item's row action. Status-row actions (shown only while a state holds) and
+    /// controls repeated per list item (other than per display: those show for the selected display) don't.
+    package static func requiresSearch(_ spec: ControlSpec, surface: String) -> Bool {
+        guard isSettingsSurface(surface) else { return false }
+        var perItem: String?
+        for case .perItem(let item) in spec.when { perItem = item }
+        if let perItem, perItem != "display" { return false }
+        switch spec.kind {
+        case .setting, .shortcut, .navigation:
+            return true
+        case .button, .list:
+            return perItem == nil
+        case .statusAction, .menuItem, .menuSlider, .menuSubmenu, .menuSwitchHeader:
+            return false
+        }
+    }
+
+    /// "Table: id" for every control that needs a search entry and has none (nor an exclusion).
+    package static func missing(_ tables: [any ControlTable.Type]) -> [String] {
+        var result: [String] = []
+        for table in tables {
+            for spec in table.controls where spec.search == nil && requiresSearch(spec, surface: table.surface) {
+                let id = spec.id.rawValue
+                if unsearchable[id] == nil && !awaitingSearch.contains(id) {
+                    result.append(String(describing: table) + ": " + id)
+                }
+            }
+        }
+        return result
+    }
 }
 
 package enum SettingsSearch {
@@ -76,6 +231,12 @@ package enum SettingsSearch {
         ["osd", "brightness indicator"],
         ["hidpi", "sharper text"],
         ["xdr", "extra brightness"],
+        ["shortcut", "keyboard shortcut", "hotkey", "key combination"],
+        ["open at login", "launch at login", "start at login", "login items", "startup"],
+        ["reset", "restore defaults"],
+        ["volume", "sound", "audio"],
+        ["hdr", "high dynamic range"],
+        ["cli", "command line", "terminal"],
     ]
 
     /// Ranked matches (prefix of a word, case- and diacritic-insensitive): title words first, then title and

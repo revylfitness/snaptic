@@ -85,6 +85,7 @@ import SnapticKit
             guard let self, let window else { return false }
             return self.focusSearch(in: window)
         }
+        shell.windowHasSheet = { [weak window] in window?.attachedSheet != nil }
         self.window = window
         installEventMonitor()
         return window
