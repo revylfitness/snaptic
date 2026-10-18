@@ -133,7 +133,7 @@ private struct DisplaysRootContent: View {
 
     /// Connected displays in the menu order (hidden ones too: Settings shows every display).
     private var connectedDisplays: [DisplayInfo] {
-        DisplaysLive.ordered(runtime: runtime, config: env.config.value, includeHidden: true).filter(\.isOnline)
+        DisplaysLive.ordered(runtime: runtime, menu: menu.value, includeHidden: true).filter(\.isOnline)
     }
 
     // MARK: Status rows (only while true; parity minor 1)

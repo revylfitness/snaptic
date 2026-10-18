@@ -141,7 +141,7 @@ struct LiveBrightnessRow: View {
 
     var body: some View {
         if let value = live.brightnessPosition ?? live.brightness ?? model.brightnessReading {
-            let range = live.brightnessPosition == nil ? 0...1 : live.brightnessRange
+            let range: ClosedRange<Double> = live.brightnessPosition == nil ? 0...1 : live.brightnessRange
             SliderSetting(L("Brightness"), value: Binding(get: { min(max(value, range.lowerBound), range.upperBound) },
                                                           set: { model.set(.brightness, $0) }),
                           in: range, defaultValue: nil, format: .percent(of: 1), minSymbol: "sun.min",
@@ -234,10 +234,16 @@ struct LiveInputRow: View {
                           selection: Binding(get: { currentID ?? "" }, set: { id in
                               if let entry = inputs.first(where: { $0.id == id }) { model.setInput(entry) }
                           }),
-                          options: (currentID == nil ? [PickerOption("", L("Unknown"), enabled: false)] : [])
-                              + inputs.map { PickerOption($0.id, model.inputName($0)) },
+                          options: options(inputs, known: currentID != nil),
                           style: .popUp, defaultValue: nil)
         }
+    }
+
+    /// The inputs, after an "Unknown" placeholder while the current input isn't one of them.
+    private func options(_ inputs: [DDCInputEntry], known: Bool) -> [PickerOption<String>] {
+        var options: [PickerOption<String>] = known ? [] : [PickerOption("", L("Unknown"), enabled: false)]
+        for entry in inputs { options.append(PickerOption(entry.id, model.inputName(entry))) }
+        return options
     }
 }
 
@@ -354,7 +360,7 @@ struct DisplaysPanelContent: View, ControlDeclaring {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             status
-            let displays = DisplaysLive.ordered(runtime: runtime, config: config.value, includeHidden: false)
+            let displays = DisplaysLive.ordered(runtime: runtime, menu: config.value.menu, includeHidden: false)
             if displays.isEmpty {
                 Text(runtime.displays.isEmpty ? L("No displays are connected.")
                                               : L("Every display is hidden from the menu."))
@@ -428,10 +434,10 @@ struct DisplaysPanelActions {
 /// builder's internals).
 @MainActor enum DisplaysLive {
     /// Displays in the user's menu order (main first when set); hidden ones only with `includeHidden`.
-    static func ordered(runtime: DisplaysRuntimeState, config: DisplaysConfig, includeHidden: Bool) -> [DisplayInfo] {
+    static func ordered(runtime: DisplaysRuntimeState, menu: MenuConfig, includeHidden: Bool) -> [DisplayInfo] {
         let all = runtime.displays
         let main = all.first(where: \.isMain)?.key
-        let order = config.menu.orderedDisplays(all.map(\.key), main: main, includeHidden: includeHidden)
+        let order = menu.orderedDisplays(all.map(\.key), main: main, includeHidden: includeHidden)
         return order.compactMap { key in all.first { $0.key == key } }
     }
 

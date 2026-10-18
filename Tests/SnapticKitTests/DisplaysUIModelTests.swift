@@ -456,7 +456,7 @@ final class DisplaysRootModelTests: XCTestCase {
                                   depth: [8, 10][pick(2)]))
                 modes[modes.count - 1].ref.refreshMilliHz = rates[pick(rates.count)]
             }
-            let current = modes.isEmpty || pick(4) == 0 ? nil : modes[pick(modes.count)].ref
+            let current: ModeRef? = modes.isEmpty || pick(4) == 0 ? nil : modes[pick(modes.count)].ref
             let sizes = LiveResolution.sizes(modes, current: current)
             XCTAssertEqual(Set(sizes.map(\.id)).count, sizes.count)
             XCTAssertLessThanOrEqual(sizes.filter(\.isDefault).count, 1)
@@ -490,8 +490,8 @@ final class DisplaysRootModelTests: XCTestCase {
         let awake = EventCategory(rawValue: "awake")
         let entries: [(Int, EventCategory)] = [(1, .modules), (2, awake), (3, .ddc), (4, awake), (5, .registry)]
         let kept = DiagnosticsText.exportedEvents(entries, category: { $0.1 }, limit: 2)
-        XCTAssertEqual(kept.map(\.0), [3, 5])
-        XCTAssertEqual(DiagnosticsText.exportedEvents(entries, category: { $0.1 }, limit: 10).map(\.0), [1, 3, 5])
+        XCTAssertEqual(kept.map { $0.0 }, [3, 5])
+        XCTAssertEqual(DiagnosticsText.exportedEvents(entries, category: { $0.1 }, limit: 10).map { $0.0 }, [1, 3, 5])
         XCTAssertTrue(DiagnosticsText.exportedEvents(entries, category: { $0.1 }, limit: 0).isEmpty)
         XCTAssertTrue(DiagnosticsText.exportedEvents(entries, category: { $0.1 }, limit: -1).isEmpty)
     }
