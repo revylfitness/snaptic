@@ -11,8 +11,8 @@ import SnapticKit
 /// a custom action's checkbox is its Automations › "Show in menu" flag.
 ///
 /// `focus`: the display Display Details' "Customize Displays Menu…" link asked for (parity M6): the Displays group
-/// opens with that display's row marked. A search result opens the group holding its row, so the highlight is
-/// visible (the scroll is asked for again once the group has opened).
+/// opens with that display's row marked. A search result expands the group holding its row
+/// (`SettingsRevealExpansion`), and the sheet reports its appearance so the highlight shows at once.
 struct CustomizeMenuSheet: View, ControlDeclaring {
     typealias Controls = CustomizeMenuSheetControls
 
@@ -36,7 +36,6 @@ private struct CustomizeMenuContent: View {
     @ObservedObject var env: DisplaysPageEnvironment
     @ObservedObject var runtime: DisplaysRuntimeState
     let focus: DisplayKey?
-    @ObservedObject private var highlight = SettingsHighlight.shared
     @State private var filter = ""
     @State private var expanded: Set<String> = [DisplayMenuCustomizeGroup.perDisplay.rawValue]
 
@@ -55,69 +54,56 @@ private struct CustomizeMenuContent: View {
                 MenuFilterField(text: $filter, prompt: L("Filter menu items"))
             }
             Section {
-                DisclosureGroup(isExpanded: isExpanded(Self.displaysGroupID, hasMatch: displaysGroupMatches)) {
+                let open = isExpanded(Self.displaysGroupID, hasMatch: displaysGroupMatches)
+                DisclosureGroup(isExpanded: open) {
                     displaysGroup
                 } label: {
                     Text(L("Displays"))
                         .modifier(SettingsAnchor(ControlID("menubar.customize.displays")))
                 }
+                .modifier(SettingsRevealExpansion([
+                    ControlID("menubar.customize.displays"), ControlID("menubar.customize.useDefaultOrder"),
+                    ControlID("menubar.customize.sectionOrder"), ControlID("menubar.customize.showBadges"),
+                    ControlID("menubar.customize.headerForSingleDisplay"),
+                ], isExpanded: open))
             }
             ForEach(DisplayMenuCustomizeGroup.allCases, id: \.self) { group in
                 let rows = matchingRows(group)
                 let actions = group == .section ? matchingActions : []
                 if filter.isEmpty || !rows.isEmpty || !actions.isEmpty {
                     Section {
-                        DisclosureGroup(isExpanded: isExpanded(group.rawValue, hasMatch: !rows.isEmpty || !actions.isEmpty)) {
+                        let open = isExpanded(group.rawValue, hasMatch: !rows.isEmpty || !actions.isEmpty)
+                        DisclosureGroup(isExpanded: open) {
                             itemRows(rows, actions: actions, group: group)
                         } label: {
                             Text(group.title)
                         }
+                        .modifier(SettingsRevealExpansion(Self.anchors(in: group), isExpanded: open))
                     }
                 }
             }
         }
-        .onAppear { reveal() }
-        .onChange(of: highlight.token) { _, _ in reveal() }
-        .onChange(of: focus) { _, _ in reveal() }
+        // A search result's highlight is shown now that the sheet is up (each group above expands for its rows).
+        .onAppear {
+            SettingsShell.shared.sheetDidAppear()
+            revealFocus()
+        }
+        .onChange(of: focus) { _, _ in revealFocus() }
     }
 
     // MARK: Reveal
 
-    /// Opens the group holding the focused display or the searched row (and its "need features" list when the row
-    /// is in it). When that opened something, the highlight is shown again so the sheet scrolls to the row now that
-    /// it exists.
-    private func reveal() {
-        var open: Set<String> = []
-        if let focus, runtime.displays.contains(where: { $0.key == focus }) { open.insert(Self.displaysGroupID) }
-        if let anchor = highlight.anchor { open.formUnion(Self.groups(holding: anchor, featureOn: featureOn)) }
-        let added = open.subtracting(expanded)
-        guard !added.isEmpty else { return }
-        expanded.formUnion(added)
-        guard let anchor = highlight.anchor else { return }
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated {
-                if SettingsHighlight.shared.anchor == anchor { SettingsHighlight.shared.show(anchor) }
-            }
-        }
+    /// Opens the Displays group when Display Details asked for one of its displays.
+    private func revealFocus() {
+        guard let focus, runtime.displays.contains(where: { $0.key == focus }) else { return }
+        expanded.insert(Self.displaysGroupID)
     }
 
-    /// The disclosure ids that must be open for `anchor` to be on screen.
-    private static func groups(holding anchor: String, featureOn: (DisplayFeature) -> Bool) -> Set<String> {
-        if displaysGroupAnchors.contains(anchor) { return [displaysGroupID] }
-        if anchor == "menubar.customize.actions" { return [DisplayMenuCustomizeGroup.section.rawValue] }
-        for group in DisplayMenuCustomizeGroup.allCases {
-            let rows = DisplaysMenuPlan.customizeRows(group)
-            guard let info = rows.first(where: { control(for: $0.id)?.rawValue == anchor }) else { continue }
-            if let feature = info.feature, !featureOn(feature) { return [group.rawValue, needGroupID(group)] }
-            return [group.rawValue]
-        }
-        return []
+    /// The search anchors of a group's rows (its custom actions' row too).
+    private static func anchors(in group: DisplayMenuCustomizeGroup) -> [ControlID] {
+        let rows = DisplaysMenuPlan.customizeRows(group).compactMap { control(for: $0.id) }
+        return group == .section ? rows + [ControlID("menubar.customize.actions")] : rows
     }
-
-    private static let displaysGroupAnchors: Set<String> = [
-        "menubar.customize.displays", "menubar.customize.useDefaultOrder", "menubar.customize.sectionOrder",
-        "menubar.customize.showBadges", "menubar.customize.headerForSingleDisplay",
-    ]
 
     private static func needGroupID(_ group: DisplayMenuCustomizeGroup) -> String { "need." + group.rawValue }
 
@@ -287,7 +273,8 @@ private struct CustomizeMenuContent: View {
         }
         let off = needFeatureRows(split.needFeatures, actions: actions)
         if !off.isEmpty {
-            DisclosureGroup(isExpanded: isExpanded(Self.needGroupID(group), hasMatch: true)) {
+            let open = isExpanded(Self.needGroupID(group), hasMatch: true)
+            DisclosureGroup(isExpanded: open) {
                 ForEach(off) { info in
                     LabeledContent {
                         Button(L("Turn On in Settings…")) { openFeature(info.feature) }
@@ -303,6 +290,7 @@ private struct CustomizeMenuContent: View {
                 Text(DisplaysMenuPlan.needFeaturesTitle(off.count))
                     .foregroundStyle(.secondary)
             }
+            .modifier(SettingsRevealExpansion(off.compactMap { Self.control(for: $0.id) }, isExpanded: open))
         }
     }
 
