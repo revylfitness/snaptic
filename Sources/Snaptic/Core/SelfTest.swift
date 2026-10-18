@@ -55,13 +55,25 @@ enum SelfTest {
             let ready = ReadyCounter()
             var lines: [String] = []
             for _ in 0..<2 {
-                let handle: HelperHandle
-                do {
-                    handle = try spawner.spawn(.selftestChild, arguments: [], onLine: { line in
-                        if String(decoding: line, as: UTF8.self) == readyLine { ready.count += 1 }
-                    }, onExit: { status in ready.exits.append(status) })
-                } catch {
-                    say("spawn failed: \(error)\n")
+                // The spawner verifies each suspended child off main; the run loop delivers
+                // the result, as it does in the app.
+                let attempt = SpawnAttempt()
+                Task { @MainActor in
+                    do {
+                        attempt.handle = try await spawner.spawn(.selftestChild, arguments: [], onLine: { line in
+                            if String(decoding: line, as: UTF8.self) == readyLine { ready.count += 1 }
+                        }, onExit: { status in ready.exits.append(status) })
+                    } catch {
+                        attempt.failure = "\(error)"
+                    }
+                    attempt.done = true
+                }
+                let spawned = Date().addingTimeInterval(readySeconds)
+                while !attempt.done && Date() < spawned {
+                    _ = CFRunLoopRunInMode(.defaultMode, 0.05, false)
+                }
+                guard let handle = attempt.handle else {
+                    say("spawn failed: \(attempt.failure ?? "timed out")\n")
                     exit(1)
                 }
                 lines.append("child \(handle.pid) \(handle.startTime)\n")
@@ -110,6 +122,13 @@ enum SelfTest {
     private static func say(_ text: String) {
         text.withCString { pointer in _ = write(STDOUT_FILENO, pointer, strlen(pointer)) }
     }
+}
+
+/// One spawn's result for the self-test parent (main thread only).
+private final class SpawnAttempt {
+    var handle: HelperHandle?
+    var failure: String?
+    var done = false
 }
 
 /// Main-thread-only tallies for the self-test parent.

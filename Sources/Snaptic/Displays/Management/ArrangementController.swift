@@ -111,7 +111,8 @@ import SnapticKit
         return rects
     }
 
-    /// Mirrors `key` onto `source` (nil stops mirroring). A trial (§4.3).
+    /// Mirrors `key` onto `source` (nil stops mirroring). Mirroring is a trial (§4.3);
+    /// stopping only restores visibility, so it is low (the classifier agrees).
     func mirror(_ key: DisplayKey, of source: DisplayKey?) {
         guard effective.contains(.mirroring), let ctx = context, let d = ManagedDisplays.info(ctx, key: key) else { return }
         var sourceID: UInt32?
@@ -120,7 +121,8 @@ import SnapticKit
             sourceID = s.desktopID
         }
         if sourceID == nil && d.mirrorOf == nil { return }
-        submit(TransactionRequest(label: sourceID == nil ? L("Stop mirroring") : L("Mirror display"), risk: .trial,
+        submit(TransactionRequest(label: sourceID == nil ? L("Stop mirroring") : L("Mirror display"),
+                                  risk: sourceID == nil ? .low : .trial,
                                   changes: [.mirror(d.hardwareID, of: sourceID)], finalScope: .forSession))
     }
 
@@ -264,7 +266,8 @@ import SnapticKit
                 source = s.desktopID
             }
             return ManagedTransactions.response(await ManagedTransactions.run(
-                ctx, TransactionRequest(label: L("Mirror display"), risk: .trial, changes: [.mirror(d.hardwareID, of: source)],
+                ctx, TransactionRequest(label: source == nil ? L("Stop mirroring") : L("Mirror display"),
+                                        risk: source == nil ? .low : .trial, changes: [.mirror(d.hardwareID, of: source)],
                                         finalScope: .forSession)))
         }
     }

@@ -205,14 +205,28 @@ import SnapticShims
         let host = Host(specID: spec.id, backing: backing)
         hosts[spec.id] = host
         let specID = spec.id
+        let spawned: HelperHandle
         do {
-            host.handle = try ctx.helpers.spawn(
+            spawned = try await ctx.helpers.spawn(
                 .virtualHost, arguments: ["--protocol", String(VirtualHostProtocol.version)],
                 onLine: { [weak self] line in self?.handleLine(specID, line) },
                 onExit: { [weak self] status in self?.hostExited(specID, status: status) })
         } catch {
-            hosts[spec.id] = nil
+            if hosts[specID] === host { hosts[specID] = nil }
             throw HostError.unavailable(L("Restart Snaptic to finish updating"))
+        }
+        host.handle = spawned
+        // Stopped or destroyed while the suspended child was being verified (off main):
+        // retire it so its exit finds this record, not a newer host for the same spec.
+        guard context === ctx, hosts[specID] === host, !host.shuttingDown, !spawned.isReaped else {
+            host.shuttingDown = true
+            if hosts[specID] === host { hosts[specID] = nil }
+            if !spawned.isReaped {
+                retiring[specID] = host
+                spawned.terminate()
+            }
+            host.failAll(HostError.exited)
+            throw HostError.notRunning
         }
         do {
             let build = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "0"

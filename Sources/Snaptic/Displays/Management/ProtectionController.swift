@@ -171,7 +171,10 @@ import SnapticKit
             guard let self, let ctx = self.context, let lifetime = self.lifetime else { return }
             let list = self.changes(for: deltas, ctx: ctx)
             guard !list.isEmpty else { return }
-            ManagedTransactions.submit(ctx, TransactionRequest(label: L("Restore protected arrangement"), risk: .trial, changes: list,
+            // Only un-mirroring left to restore: that restores visibility, so it is low.
+            let unmirrorOnly = list.allSatisfy { if case .mirror(_, of: .none) = $0 { return true }; return false }
+            ManagedTransactions.submit(ctx, TransactionRequest(label: L("Restore protected arrangement"),
+                                                               risk: unmirrorOnly ? .low : .trial, changes: list,
                                                                finalScope: self.scope(ctx)), lifetime: lifetime)
         }, lifetime: lifetime)
     }

@@ -167,9 +167,13 @@ final class HelperHandle: @unchecked Sendable {
         prepare()
     }
 
-    /// Sinks are attached before the suspended child is resumed.
+    /// Sinks are attached before the suspended child is resumed. The post-spawn checks
+    /// (stopped, responsible pid, code identity; SecCode never runs on main) run off main
+    /// while the child is still suspended; on any failure it is killed and reaped there.
+    /// The exit source and SIGCONT follow on main. Callers re-check their own state after
+    /// the await: they may have stopped while the child was being verified.
     func spawn(_ kind: HelperKind, arguments: [String], onLine: @escaping @MainActor (Data) -> Void,
-               onExit: @escaping @MainActor (Int32) -> Void) throws -> HelperHandle {
+               onExit: @escaping @MainActor (Int32) -> Void) async throws -> HelperHandle {
         guard let flag = kind.modeFlag else { throw HelperSpawnError.unsupportedKind }
         if let reason = unavailableReason { throw HelperSpawnError.unavailable(reason) }
         guard let identity else {
@@ -191,22 +195,31 @@ final class HelperHandle: @unchecked Sendable {
         }
         let childIn = request.read, parentOut = request.write
         let parentIn = reply.read, childOut = reply.write
-        // ALWAYS, success or failure: otherwise no EOF ever reaches either side.
-        defer { close(childIn); close(childOut) }
 
         var pid: pid_t = 0
         do {
             try SNSpawn.spawnSuspended(path: identity.executable, arguments: argv, stdinFD: childIn,
                                        stdoutFD: childOut, options: [.disclaim], pid: &pid)
         } catch {
+            close(childIn); close(childOut)
             close(parentOut); close(parentIn)
             EventLog.shared.record(.modules, "Helper \(kind.rawValue) failed to spawn")
             throw HelperSpawnError.spawnFailed((error as NSError).localizedDescription)
         }
+        // ALWAYS, before any await: the child has its own copies, and ours left open would
+        // keep EOF from ever reaching either side.
+        close(childIn); close(childOut)
 
-        // Verify while suspended: the pid can't be reused until we reap it.
-        if let problem = Self.verify(pid: pid, requirement: identity.requirement) {
-            Self.killAndReap(pid)
+        // Verify while suspended (the pid can't be reused until we reap it), off main:
+        // stopped → responsible pid → identity; kill and reap there on any failure.
+        let child = pid
+        let requirement = identity.requirement
+        let verdict: Problem? = await Self.offMain {
+            let problem = HelperSpawner.verify(pid: child, requirement: requirement)
+            if problem != nil { HelperSpawner.killAndReap(child) }
+            return problem
+        }
+        if let problem = verdict {
             close(parentOut); close(parentIn)
             if problem == .identity {
                 unavailableReason = L("Restart Snaptic to finish updating")
@@ -220,9 +233,10 @@ final class HelperHandle: @unchecked Sendable {
         guard let writer = HelperPipeWriter(duplicating: parentOut, onBroken: {
             MainActor.assumeIsolated { box.handle?.terminate() }
         }) else {
-            Self.killAndReap(pid)
+            let saved = errno
+            await Self.offMain { HelperSpawner.killAndReap(child) }
             close(parentOut); close(parentIn)
-            throw HelperSpawnError.pipe(errno)
+            throw HelperSpawnError.pipe(saved)
         }
         close(parentOut)
         let handle = HelperHandle(kind: kind, pid: pid, startTime: startTime, writer: writer)
@@ -288,14 +302,18 @@ final class HelperHandle: @unchecked Sendable {
     /// path rules, never Snaptic's own code, a disclaimed suspended spawn in its own process
     /// group with a minimal environment, checked before SIGCONT, reaped exactly once, and
     /// SIGTERM then SIGKILL to the group after 30 s.
+    /// The path rules and every SecCode/SecStaticCode check run off main; the child stays
+    /// suspended until they pass. Callers re-check their own state after the await.
     func spawnHook(executable: String, arguments: [String], environment: [String: String],
-                   onExit: @escaping @MainActor (Int32) -> Void) throws -> HelperHandle {
+                   onExit: @escaping @MainActor (Int32) -> Void) async throws -> HelperHandle {
         if let reason = unavailableReason { throw HelperSpawnError.unavailable(reason) }
         guard let identity else {
             prepare()
             throw HelperSpawnError.unavailable(Self.notReadyMessage)
         }
-        if let refusal = Self.checkExecutable(executable) { throw HelperSpawnError.refused(refusal) }
+        if let refusal = await Self.offMain({ HelperSpawner.checkExecutable(executable) }) {
+            throw HelperSpawnError.refused(refusal)
+        }
         if let refusal = KitHookPolicy.checkArguments(arguments) { throw HelperSpawnError.refused(refusal) }
 
         var pid: pid_t = 0
@@ -306,15 +324,24 @@ final class HelperHandle: @unchecked Sendable {
         } catch {
             throw HelperSpawnError.spawnFailed((error as NSError).localizedDescription)
         }
-        guard SNSpawn.isStopped(pid), SNSpawn.responsiblePID(for: pid) == pid else {
-            Self.killAndReap(pid)
-            throw HelperSpawnError.verificationFailed("responsibility")
+        // Off main, while suspended: stopped → responsible pid → what actually runs (a script
+        // runs its interpreter). Killed and reaped there on any failure.
+        let child = pid
+        let requirement = identity.requirement
+        let failure: HelperSpawnError? = await Self.offMain {
+            guard SNSpawn.isStopped(child), SNSpawn.responsiblePID(for: child) == child else {
+                HelperSpawner.killAndReap(child)
+                return HelperSpawnError.verificationFailed("responsibility")
+            }
+            if let refusal = HelperSpawner.checkRunningHook(pid: child, ownRequirement: requirement) {
+                HelperSpawner.killAndReap(child)
+                return HelperSpawnError.refused(refusal)
+            }
+            return nil
         }
-        // What actually runs (a script runs its interpreter), checked while it is suspended.
-        if let refusal = Self.checkRunningHook(pid: pid, ownRequirement: identity.requirement) {
-            Self.killAndReap(pid)
-            EventLog.shared.record(.automation, "Hook refused after spawn")
-            throw HelperSpawnError.refused(refusal)
+        if let failure {
+            if case .refused = failure { EventLog.shared.record(.automation, "Hook refused after spawn") }
+            throw failure
         }
         let handle = HelperHandle(kind: .hook, pid: pid, startTime: SNProcess.startTime(for: pid), writer: nil)
         let exitSource = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
@@ -343,8 +370,9 @@ final class HelperHandle: @unchecked Sendable {
         return handle
     }
 
-    /// Path rules (lstat of every component) and "never Snaptic's own code".
-    static func checkExecutable(_ path: String) -> HookRefusal? {
+    /// Path rules (lstat of every component) and "never Snaptic's own code". Reads the file
+    /// system and the code signature: spawns call it off main.
+    nonisolated static func checkExecutable(_ path: String) -> HookRefusal? {
         if let refusal = KitHookPolicy.checkSyntax(path) { return refusal }
         let infos = KitHookPolicy.components(of: path).map { component -> PathComponentInfo in
             var info = stat()
@@ -462,7 +490,14 @@ final class HelperHandle: @unchecked Sendable {
 
     // MARK: Helpers
 
-    private enum Problem: String { case notStopped, notResponsible, identity }
+    private enum Problem: String, Sendable { case notStopped, notResponsible, identity }
+
+    /// Runs `work` on a background queue and resumes the caller with its result.
+    nonisolated private static func offMain<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
+        await withCheckedContinuation { (continuation: CheckedContinuation<T, Never>) in
+            DispatchQueue.global(qos: .userInitiated).async { continuation.resume(returning: work()) }
+        }
+    }
 
     nonisolated private static func verify(pid: pid_t, requirement: Data) -> Problem? {
         guard SNSpawn.isStopped(pid) else { return .notStopped }

@@ -153,7 +153,10 @@ import SnapticKit
         guard let ctx = context else { return }
         let environment = KitHookPolicy.environment(event: event, displayName: display?.name, displayKey: display?.key)
         // A refusal is kept in SpawnerService.lastProblem for the Automation page.
-        ctx.spawner.run(hook.command, environment: environment, throttleKey: hook.id.rawValue + "." + event.rawValue)
+        let spawner = ctx.spawner
+        let command = hook.command
+        let key = hook.id.rawValue + "." + event.rawValue
+        hooksLifetime?.spawn { _ = await spawner.run(command, environment: environment, throttleKey: key) }
     }
 
     // MARK: Custom actions
@@ -188,7 +191,8 @@ import SnapticKit
         }
         ctx.commands.register("action run", policy: .low, offOnly: false, cliAllowed: true,
                               summary: L("Run a custom action: action run <name>"), lifetime: life) { [weak self] request in
-            self?.runActionFromCLI(request) ?? .failure(ControlExit.unavailable, L("Custom actions are off."))
+            guard let self else { return .failure(ControlExit.unavailable, L("Custom actions are off.")) }
+            return await self.runActionFromCLI(request)
         }
     }
 
@@ -202,8 +206,10 @@ import SnapticKit
               let spec = ctx.config.value.automation.actions.first(where: { $0.id == id }) else { return }
         guard actionThrottle.allow(id.rawValue, now: ProcessInfo.processInfo.systemUptime) else { return }
         let environment = ["PATH": KitHookPolicy.searchPath, "SNAPTIC_EVENT": "action"]
-        if let problem = ctx.spawner.run(spec.command, environment: environment, throttleKey: nil) {
-            ctx.toasts.show(spec.name + ": " + problem, lifetime: actionsLifetime)
+        actionsLifetime?.spawn { [weak self] in
+            guard let problem = await ctx.spawner.run(spec.command, environment: environment, throttleKey: nil),
+                  let life = self?.actionsLifetime else { return }
+            ctx.toasts.show(spec.name + ": " + problem, lifetime: life)
         }
     }
 
@@ -217,7 +223,7 @@ import SnapticKit
         return .ok(names.isEmpty ? L("No actions are allowed from the command line.") : names.joined(separator: "\n"))
     }
 
-    private func runActionFromCLI(_ request: ControlRequest) -> ControlResponse {
+    private func runActionFromCLI(_ request: ControlRequest) async -> ControlResponse {
         guard let ctx = context else { return .failure(ControlExit.unavailable, L("Custom actions are off.")) }
         guard let name = request.arguments.first else { return .failure(ControlExit.usage, L("Usage: action run <name>")) }
         guard let spec = ctx.config.value.automation.action(cliName: name) else {
@@ -226,7 +232,7 @@ import SnapticKit
         // Only actions the user marked "Allow from the command line" (R5.4).
         guard spec.cliAllowed else { return .failure(ControlExit.refused, L("This action isn't allowed from the command line.")) }
         let environment = ["PATH": KitHookPolicy.searchPath, "SNAPTIC_EVENT": "action"]
-        if let problem = ctx.spawner.run(spec.command, environment: environment, throttleKey: "cli." + spec.id.rawValue) {
+        if let problem = await ctx.spawner.run(spec.command, environment: environment, throttleKey: "cli." + spec.id.rawValue) {
             return .failure(ControlExit.unavailable, problem)
         }
         return .ok()

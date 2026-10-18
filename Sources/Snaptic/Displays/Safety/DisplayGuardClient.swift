@@ -113,16 +113,31 @@ import SnapticKit
             }
             spawnTimes.append(now)
             let dir = JournalFiles.defaultDirectory() ?? ""
+            // The spawner verifies the suspended child off main; `starting` makes concurrent
+            // callers wait for `ready` instead of spawning a second guard meanwhile.
+            starting = true
+            let spawned: HelperHandle
             do {
-                handle = try ctx.helpers.spawn(.displayGuard,
-                                               arguments: ["--protocol", String(GuardProtocol.version), "--journal-dir", dir],
-                                               onLine: { [weak self] line in self?.receive(line) },
-                                               onExit: { [weak self] status in self?.exited(status) })
+                spawned = try await ctx.helpers.spawn(.displayGuard,
+                                                      arguments: ["--protocol", String(GuardProtocol.version), "--journal-dir", dir],
+                                                      onLine: { [weak self] line in self?.receive(line) },
+                                                      onExit: { [weak self] status in self?.exited(status) })
             } catch {
+                starting = false
                 lastFailure = (error as? HelperSpawnError).map { "\($0)" } ?? L("Couldn't start the safety helper")
                 EventLog.shared.record(.guardProcess, "Guard failed to start")
+                resolveReadyWaiters(false)
                 return false
             }
+            starting = false
+            // Stopped (or the child already died) while it was being verified.
+            guard active, context === ctx, !spawned.isReaped else {
+                spawned.terminate()
+                if active { lastFailure = L("Couldn't start the safety helper") }
+                resolveReadyWaiters(false)
+                return false
+            }
+            handle = spawned
             ready = false
             send(.hello(protocolVersion: GuardProtocol.version, build: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "dev"))
             startHeartbeat()
