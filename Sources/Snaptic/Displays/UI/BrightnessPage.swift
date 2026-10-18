@@ -77,6 +77,25 @@ struct CDisplayPicker: View {
 }
 
 /// A labeled slider with a value readout.
+/// A slider for a live hardware value (0.3 §4.5): it observes the display's `DisplayRuntime`, so a change from the
+/// keys, the menu, the CLI or a read-back shows while the page is open. Hidden while the value is unknown.
+struct CLiveSlider: View {
+    let title: String
+    @ObservedObject var live: DisplayRuntime
+    let value: KeyPath<DisplayRuntime, Double?>
+    var range: KeyPath<DisplayRuntime, ClosedRange<Double>>? = nil
+    let set: (Double) -> Void
+
+    var body: some View {
+        if let current = live[keyPath: value] {
+            let live = self.live
+            let value = self.value
+            CSlider(title: title, value: Binding(get: { live[keyPath: value] ?? current }, set: set),
+                    range: range.map { live[keyPath: $0] } ?? 0...1)
+        }
+    }
+}
+
 struct CSlider: View {
     let title: String
     @Binding var value: Double
@@ -156,10 +175,9 @@ struct BrightnessPage: View {
         let b = ctx.brightness
         let live = env.runtime.runtime(for: key)
         if b.value(for: key) != nil {
-            let range = b.range(for: key)
-            CSlider(title: L("Brightness"), value: Binding(get: { b.value(for: key) ?? (live.brightness ?? 1) },
-                                                          set: { b.set(b.scale(for: key)?.snapped($0) ?? $0, for: key, source: .user) }),
-                    range: range)
+            CLiveSlider(title: L("Brightness"), live: live, value: \.brightnessPosition, range: \.brightnessRange) {
+                b.set(b.scale(for: key)?.snapped($0) ?? $0, for: key, source: .user)
+            }
             if let scale = b.scale(for: key), !scale.snapMarks.isEmpty {
                 Text(L("Snap marks: ") + scale.snapMarks.map { $0 == 1 ? L("Max HW (100%)") : L("Min HW (\(VoiceOverAnnouncer.percent($0)))") }
                     .joined(separator: ", "))
