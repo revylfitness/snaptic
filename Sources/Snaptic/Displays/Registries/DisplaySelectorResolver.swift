@@ -47,7 +47,9 @@ import SnapticKit
             return .target(.display(d.key))
         case .name(let name):
             let lower = name.lowercased()
-            if let exact = displays.first(where: { $0.name.lowercased() == lower }) { return .target(.display(exact.key)) }
+            let exact = displays.filter { $0.name.lowercased() == lower }
+            if exact.count == 1 { return .target(.display(exact[0].key)) }
+            if exact.count > 1 { return .ambiguous(exact.map(\.name)) }
             let matches = displays.filter { $0.name.lowercased().hasPrefix(lower) }
             switch matches.count {
             case 0: return .notFound
