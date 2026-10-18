@@ -51,7 +51,7 @@ struct DrivesPage: View, ControlDeclaring {
                 FeatureHighlights(Self.highlights)
             } else if !runtime.isEffective(.driveAlive) {
                 Section {
-                    StatusRow(notEffectiveReason)
+                    notEffectiveRow
                 }
             } else {
                 volumesSection
@@ -78,11 +78,18 @@ struct DrivesPage: View, ControlDeclaring {
                 })
     }
 
-    private var notEffectiveReason: String {
+    /// Safe Mode, or the `Awake.disable.driveAlive` kill switch (ux m9: plain words, the lock symbol, and the
+    /// command that turns it back on).
+    @ViewBuilder private var notEffectiveRow: some View {
         if SettingsShell.shared.host?.safeMode.isActive == true {
-            return L("Drives aren’t kept awake in Safe Mode.")
+            StatusRow(L("Drives aren’t kept awake in Safe Mode."))
+        } else {
+            HStack(spacing: 6) {
+                StatusRow(L("Turned off for this Mac by an administrator or a Terminal command."), symbol: "lock.fill")
+                InfoButton(L("Turn Drive Alive Back On"),
+                           message: L("In Terminal, run “defaults delete \(ConfigStore<AwakeConfig>.persistentDomainName) Awake.disable.driveAlive”, then quit and reopen Snaptic. On a managed Mac, ask your administrator."))
+            }
         }
-        return L("Drives aren’t kept awake: this was turned off by a defaults setting.")
     }
 
     private static var highlights: [FeatureHighlight] {
@@ -260,10 +267,11 @@ private struct DriveRowView: View {
         if list != mounted { mounted = list }
     }
 
-    /// Security M1: the guards' verdict for background work (false while unknown).
+    /// Security M1: the guards' verdict for background work (false while unknown), with SessionController's
+    /// in-memory guard memory, never the outside-writable snapshot store (security S-1).
     func backgroundWorkAllowed(_ config: AwakeConfig) -> Bool {
         guard let context, let facts = context.power.facts else { return false }
-        return AwakeGuards.allowsBackgroundWork(facts, config: config.guards, memory: context.state.value.guardMemory)
+        return AwakeGuards.allowsBackgroundWork(facts, config: config.guards, memory: context.sessions.guardMemory)
     }
 
     /// The switch was turned on: store the volume (first write not done), then write to it right away.

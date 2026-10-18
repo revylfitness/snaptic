@@ -101,4 +101,45 @@ final class DriveAlivePolicyTests: XCTestCase {
             }
         }
     }
+
+    // MARK: Writing now (awake-correctness F1: preventDiskIdle follows this, not "a volume is turned on")
+
+    private func key(_ n: Int) -> VolumeUUIDKey {
+        VolumeUUIDKey(rawValue: "00000000-0000-0000-0000-00000000000\(n)")!
+    }
+
+    func testWritingNeedsAMountedEligibleTargetThatHasNotFailed() {
+        let a = key(1), b = key(2)
+        XCTAssertFalse(DriveAlivePolicy.isWriting(targets: [], eligibleMounted: [a, b], failed: []))
+        XCTAssertFalse(DriveAlivePolicy.isWriting(targets: [a], eligibleMounted: [], failed: []), "unmounted")
+        XCTAssertFalse(DriveAlivePolicy.isWriting(targets: [a], eligibleMounted: [b], failed: []), "other volume")
+        XCTAssertFalse(DriveAlivePolicy.isWriting(targets: [a], eligibleMounted: [a], failed: [a]), "failed mount")
+        XCTAssertTrue(DriveAlivePolicy.isWriting(targets: [a], eligibleMounted: [a], failed: []))
+        XCTAssertTrue(DriveAlivePolicy.isWriting(targets: [a, b], eligibleMounted: [a, b], failed: [a]))
+    }
+
+    /// The whole chain for the failing scenario: one turned-on, confirmed, mounted HDD; no session; "even without a
+    /// session" off. No target → not writing → the inactive plan holds no PreventDiskIdle.
+    func testNoSessionMeansNoDiskIdleAssertion() {
+        let a = key(1)
+        for (active, source, even, allowed) in [(false, AwakeSessionSource?.none, false, true),
+                                                (true, .commandLine, false, true),
+                                                (true, .menu, false, false),
+                                                (false, nil, true, false)] {
+            let write = DriveAlivePolicy.shouldWrite(sessionActive: active, sessionSource: source, evenWithoutSession: even,
+                                                     backgroundWorkAllowed: allowed, uiConfirmedFirstWrite: true)
+            XCTAssertFalse(write)
+            let writing = DriveAlivePolicy.isWriting(targets: write ? [a] : [], eligibleMounted: [a], failed: [])
+            let plan = AwakeArbiter.plan(AwakeArbiterInput(governing: .inactive, screenLocked: false, consoleActive: true,
+                                                           realIdleSeconds: nil, keepDisplayOnWhileLocked: false,
+                                                           driveAliveWriting: writing, guardsHold: false, sessionEnd: nil))
+            XCTAssertFalse(plan.preventDiskIdle)
+        }
+        // With the option on and guards allowing, an inactive Awake still keeps the drive awake (C9 opt-in).
+        let writing = DriveAlivePolicy.isWriting(targets: [a], eligibleMounted: [a], failed: [])
+        let plan = AwakeArbiter.plan(AwakeArbiterInput(governing: .inactive, screenLocked: false, consoleActive: true,
+                                                       realIdleSeconds: nil, keepDisplayOnWhileLocked: false,
+                                                       driveAliveWriting: writing, guardsHold: false, sessionEnd: nil))
+        XCTAssertTrue(plan.preventDiskIdle)
+    }
 }

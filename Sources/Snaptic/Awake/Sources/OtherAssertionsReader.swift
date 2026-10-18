@@ -37,8 +37,6 @@ import SnapticKit
     /// Keeps the list fresh while `lifetime` lives (one per visible view); reads at once.
     func keepUpdated(_ lifetime: Lifetime) { viewers.add(lifetime) }
 
-    var isUpdating: Bool { viewers.isNeeded }
-
     /// Reads now (coalesced: at most one read in flight, one queued behind it).
     func refresh() {
         guard !inFlight else {

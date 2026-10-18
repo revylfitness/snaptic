@@ -44,8 +44,6 @@ import SnapticKit
     /// Per-process sampling while `lifetime` lives (SessionController, for an untilIdle session; R5-4).
     func requestTaskSampling(_ lifetime: Lifetime) { taskRequests.add(lifetime) }
 
-    var isTaskSampling: Bool { taskRequests.isNeeded }
-
     // MARK: AwakeServiceLifecycle
 
     func activate(_ context: AwakeContext, lifetime: Lifetime) {

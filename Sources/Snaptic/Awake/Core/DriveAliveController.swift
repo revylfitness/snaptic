@@ -7,6 +7,9 @@ import SnapticKit
 // settings or system sleep change: never for command-line sessions or holds, never while guards forbid background
 // work (hard floor, user floor, unreadable battery, critical heat), never around system sleep, and never before the
 // UI-confirmed first write of a volume (`firstWriteDone`). Mirrors the service's per-volume state into the runtime.
+// The guard memory is SessionController's in-memory copy, never the outside-writable snapshot store (security S-1).
+// The PreventDiskIdle assertion follows the service's `isWriting` (awake-correctness F1): this controller
+// re-arbitrates whenever it flips, so the assertion exists only while a permitted target is mounted and eligible.
 
 @MainActor final class DriveAliveController: AwakeFeatureController {
     static var id: AwakeControllerID { .driveAlive }
@@ -34,12 +37,18 @@ import SnapticKit
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.apply() } }
             .store(in: &sinks)
-        context.state.$value
-            .map(\.guardMemory)
-            .removeDuplicates()
+        // SessionController sets `runtime.power` after every guard evaluation (its guard memory is current by then),
+        // so the main-queue hop re-decides with the evaluated memory.
+        context.runtime.$power
             .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.apply() } }
+            .store(in: &sinks)
+        context.driveAlive.$isWriting
+            .dropFirst()
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.writingChanged() } }
             .store(in: &sinks)
         context.driveAlive.$volumes
             .removeDuplicates()
@@ -63,15 +72,28 @@ import SnapticKit
     func stop() {
         guard lifetime != nil else { return }
         sinks.removeAll()
+        let wasWriting = context?.driveAlive.isWriting == true
         context?.driveAlive.setTargets([], interval: TimeInterval(DriveAliveConfig().intervalSeconds))
         context?.driveAlive.track([:])
         if context?.runtime.drives.isEmpty == false { context?.runtime.drives = [] }
+        if wasWriting, let sessions = context?.sessions {
+            // Drive Alive turned off while Awake keeps running: drop PreventDiskIdle. After the current pass, so a
+            // module stop (sessions stop right after this) arbitrates nothing.
+            let box = CallbackTarget(sessions)
+            DispatchQueue.main.async { MainActor.assumeIsolated { box.target?.arbitrate() } }
+        }
         lifetime = nil
         sleeping = false
         context = nil
     }
 
     // MARK: Deciding
+
+    /// The arbiter's `driveAliveWriting` input changed (awake-correctness F1).
+    private func writingChanged() {
+        guard let context, lifetime != nil else { return }
+        context.sessions.arbitrate()
+    }
 
     private func systemEvent(_ event: SystemEvent) {
         switch event {
@@ -112,6 +134,6 @@ import SnapticKit
     private func backgroundWorkAllowed(_ context: AwakeContext) -> Bool {
         guard let facts = context.power.facts else { return false }
         return AwakeGuards.allowsBackgroundWork(facts, config: context.config.value.guards,
-                                                memory: context.state.value.guardMemory)
+                                                memory: context.sessions.guardMemory)
     }
 }
