@@ -53,7 +53,7 @@ import SnapticShims
     init() {}
 
     func availability(of feature: DisplayFeature, context: DisplaysContext) -> FeatureAvailability {
-        SNDDC.isAvailable() ? .available : .unavailable(L("DDC isn't available on this Mac"))
+        SNDDC.isAvailable() ? .available : .unavailable(L("Hardware controls aren’t available on this Mac"))
     }
 
     func start(_ context: DisplaysContext, lifetime: Lifetime, effective: Set<DisplayFeature>) {
@@ -64,7 +64,7 @@ import SnapticShims
         self.effective = effective
         context.registerSession(self, lifetime: lifetime)
         context.ddc.controller = self
-        context.diagnostics.register(self, section: L("Monitor controls (DDC)"), lifetime: lifetime)
+        context.diagnostics.register(self, section: L("Hardware controls (DDC)"), lifetime: lifetime)
         let items = DDCMenuItems(context: context, controller: self)
         menuItems = items
         context.menus.register(items, lifetime: lifetime)
@@ -308,11 +308,11 @@ import SnapticShims
         var token: PreConfirmToken?
         switch tier {
         case .denied:
-            context.toasts.show(L("Snaptic never sends that command (it can reset or lock the monitor)."), lifetime: lifetime)
+            context.toasts.show(L("Snaptic never sends that command: it can reset or lock the display."), lifetime: lifetime)
             return .refused
         case .unlockable:
             guard context.config.value.perDisplay[key]?.ddc.isUnlocked(code) == true else {
-                context.toasts.show(L("Unlock VCP \(VCPPolicy.hex(code)) for this display in Monitor Controls first."),
+                context.toasts.show(L("Unlock \(VCPPolicy.hex(code)) for this display in Hardware Controls › Advanced first."),
                                     lifetime: lifetime)
                 return .refused
             }
@@ -389,7 +389,7 @@ import SnapticShims
             return false
         }
         let name = TextSanitizer.clean(display.name, maxScalars: 64)
-        let message = L("Switch “\(name)” to \(inputName(entry))? It shows that source until you switch back with the monitor's buttons or from Snaptic.")
+        let message = L("Switch “\(name)” to \(inputName(entry))? It shows that source until you switch back with the display’s buttons or from Snaptic.")
         let code = entry.lgAlt ? VCPPolicy.lgAlternateInput : VCPPolicy.input
         lifetime.spawn { [weak self] in
             guard let self else { return }
@@ -416,7 +416,7 @@ import SnapticShims
         if !on {
             let others = context.registry.displays.contains { $0.key != key && $0.isOnline && $0.isStronglyVisible }
             guard others else {
-                context.toasts.show(L("That's the only display you can see, so Snaptic won't put it on standby."), lifetime: lifetime)
+                context.toasts.show(L("That’s the only display you can see, so Snaptic won’t turn it off."), lifetime: lifetime)
                 return false
             }
         }
@@ -519,12 +519,12 @@ import SnapticShims
         }
         ctx.actions.register(Action(id: Self.muteAction, title: L("Mute"), feature: .ddcControls,
                                     cliAllowed: true) { [weak self] target in self?.toggleMute(target) }, lifetime: lifetime)
-        ctx.actions.register(Action(id: DisplayActionID(rawValue: "c.ddcPowerOn"), title: L("Wake Display (DDC)"),
+        ctx.actions.register(Action(id: DisplayActionID(rawValue: "c.ddcPowerOn"), title: L("Turn On Display"),
                                     feature: .ddcPower, cliAllowed: true) { [weak self] target in
             guard let self, let ctx = self.context else { return }
             for d in DisplayTargets.resolve(target, ctx) { self.setPower(true, on: d.key) }
         }, lifetime: lifetime)
-        ctx.actions.register(Action(id: DisplayActionID(rawValue: "c.ddcStandby"), title: L("Display Standby (DDC)"),
+        ctx.actions.register(Action(id: DisplayActionID(rawValue: "c.ddcStandby"), title: L("Turn Off Display"),
                                     feature: .ddcPower, cliAllowed: false) { [weak self] target in
             guard let self, let ctx = self.context else { return }
             for d in DisplayTargets.resolve(target, ctx) { self.setPower(false, on: d.key) }
@@ -645,7 +645,7 @@ import SnapticShims
                 let standard = VCPPolicy.continuousCodes.contains(code) && self.effective.contains(.ddcControls)
                 let power = code == VCPPolicy.power && self.effective.contains(.ddcPower)
                 guard standard || power || self.effective.contains(.ddcCustom) else {
-                    return .failure(ControlExit.unavailable, L("Turn on Custom DDC controls for raw writes"))
+                    return .failure(ControlExit.unavailable, L("Turn on Custom controls in Hardware Controls › Advanced for raw writes"))
                 }
                 if code == VCPPolicy.power, value != VCPPolicy.powerOn,
                    !ctx.registry.displays.contains(where: { $0.key != display.key && $0.isOnline && $0.isStronglyVisible }) {
@@ -677,7 +677,7 @@ import SnapticShims
         case .done: return ""
         case .refused: return L("Refused by the DDC safety policy")
         case .declined: return L("Not confirmed")
-        case .failed: return L("The monitor didn't accept it or didn't reply")
+        case .failed: return L("The display didn’t accept it or didn’t reply")
         }
     }
 

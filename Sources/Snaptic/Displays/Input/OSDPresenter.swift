@@ -65,7 +65,9 @@ enum VoiceOverAnnouncer {
         show(kind, value: value, max: max, on: desktopID, detail: nil)
     }
 
-    /// `detail`: optional second line (nits, "XDR paused", the display name).
+    /// `detail`: optional second line (nits, "Extra brightness", "Preview"). Callers decide: the brightness one
+    /// carries nits only while Brightness and Dimming › "Show brightness in nits" (`brightness.showNits`) is on; the
+    /// legacy `keys.osdShowNits` has no say (merged by migration M5).
     func show(_ kind: OSDKind, value: Double, max: Double, on desktopID: UInt32, detail: String?) {
         let v = value.isFinite ? value : 0
         let m = max.isFinite && max > 0 ? max : 1
@@ -78,7 +80,7 @@ enum VoiceOverAnnouncer {
         if kind == .mute { valueText = v > 0 ? L("Muted") : L("Unmuted") }
         let content = OSDHUDWindow.Content(symbol: Self.symbol(kind, value: v, max: m), fraction: kind == .mute ? nil : fraction,
                                            overflow: overflow, valueText: valueText,
-                                           detail: config.osdShowNits ? detail : (kind == .xdr ? detail : nil), title: nil,
+                                           detail: detail, title: nil,
                                            accessibilityText: valueText)
         let osMajor = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
         if config.usesNativeOSD(osMajor: osMajor, nativeAvailable: SNOSD.isAvailable()), let image = Self.nativeImage(kind, value: v) {

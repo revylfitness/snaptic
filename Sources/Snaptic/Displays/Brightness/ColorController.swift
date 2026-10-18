@@ -122,9 +122,9 @@ import SnapticKit
         if context.gamma.blockedByCustomProfile { return L("A custom color profile is active (see the safeguard below).") }
         if display.mirrorOf != nil { return L("Mirrored displays follow their source.") }
         if !(display.isBuiltin || display.transport == .wired || display.isSmartHiDPIPair) {
-            return L("Color tables don't apply to this connection.")
+            return L("Color tables don’t apply to this connection.")
         }
-        if context.gamma.hasGivenUp(display.key) { return L("Another app keeps changing this display's colors.") }
+        if context.gamma.hasGivenUp(display.key) { return L("Another app keeps changing this display’s colors.") }
         return nil
     }
 

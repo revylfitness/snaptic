@@ -27,11 +27,11 @@ package enum OSDPosition: String, Codable, CaseIterable, Sendable {
 
     package var title: String {
         switch self {
-        case .underIcon: return L("Under the menu-bar icon")
-        case .topRight: return L("Top right")
-        case .topCenter: return L("Top center")
+        case .underIcon: return L("Under the Menu Bar Icon")
+        case .topRight: return L("Top Right")
+        case .topCenter: return L("Top Center")
         case .center: return L("Center")
-        case .bottomCenter: return L("Bottom center")
+        case .bottomCenter: return L("Bottom Center")
         }
     }
 }
@@ -42,9 +42,9 @@ package enum OSDTarget: String, Codable, CaseIterable, Sendable {
 
     package var title: String {
         switch self {
-        case .affected: return L("The display that changed")
-        case .active: return L("The active display")
-        case .main: return L("The main display")
+        case .affected: return L("The Display That Changed")
+        case .active: return L("The Active Display")
+        case .main: return L("The Main Display")
         }
     }
 }
@@ -57,7 +57,7 @@ package enum KeyPolicy: String, Codable, CaseIterable, Sendable {
 
     package var title: String {
         switch self {
-        case .uncontrollableOnly: return L("Only for displays macOS can't control")
+        case .uncontrollableOnly: return L("Only for Displays macOS Can’t Control")
         case .always: return L("Always")
         }
     }
@@ -69,9 +69,9 @@ package enum KeyTarget: String, Codable, CaseIterable, Sendable {
 
     package var title: String {
         switch self {
-        case .pointer: return L("The display with the pointer")
-        case .focusedWindow: return L("The display with the focused window")
-        case .all: return L("All displays")
+        case .pointer: return L("The Display with the Pointer")
+        case .focusedWindow: return L("The Display with the Focused Window")
+        case .all: return L("All Displays")
         }
     }
 }
@@ -86,8 +86,8 @@ package enum VolumePolicy: String, Codable, CaseIterable, Sendable {
 
     package var title: String {
         switch self {
-        case .matchingOutput: return L("When the sound output is the display")
-        case .noVolumeControl: return L("When the sound output has no volume control")
+        case .matchingOutput: return L("When the Sound Output Is the Display")
+        case .noVolumeControl: return L("When the Sound Output Has No Volume Control")
         case .always: return L("Always")
         }
     }
@@ -185,7 +185,7 @@ package struct KeysConfig: ConfigModel {
         volumePolicy = c.lossy(.volumePolicy, d.volumePolicy)
         alternateKeys = c.lossy(.alternateKeys, true)
         shortcuts = c.lossy(.shortcuts, LossyMap())
-        inputSlots = c.lossy(.inputSlots, [LossyElement<InputSlot>]()).compactMap(\.value)
+        inputSlots = c.lossyArray(.inputSlots, [])
         osdStyle = c.lossy(.osdStyle, nil as OSDStyle?)
         osdPosition = c.lossy(.osdPosition, nil as OSDPosition?)
         osdTarget = c.lossy(.osdTarget, d.osdTarget)

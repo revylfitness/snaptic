@@ -195,7 +195,7 @@ import SnapticKit
     }
 
     private func registerActions(_ ctx: DisplaysContext, lifetime: Lifetime) {
-        ctx.actions.register(Action(id: Self.toggleAction, title: L("Toggle Extra Brightness (XDR)"), feature: .xdr,
+        ctx.actions.register(Action(id: Self.toggleAction, title: L("Toggle Extra Brightness"), feature: .xdr,
                                     cliAllowed: true) { [weak self] target in self?.toggle(target) }, lifetime: lifetime)
         ctx.actions.register(Action(id: Self.upAction, title: L("Extra Brightness Up"), feature: .xdr,
                                     cliAllowed: true) { [weak self] target in self?.step(target, up: true) }, lifetime: lifetime)

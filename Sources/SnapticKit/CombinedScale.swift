@@ -118,11 +118,6 @@ package struct CombinedScale: Equatable, Sendable {
         return Self.clamp(position, 0, xdrMax)
     }
 
-    /// One key press: `steps` per SDR range; XDR above 1 uses the same step size.
-    package func stepped(_ position: Double, by delta: Double) -> Double {
-        Self.clamp(position + delta, 0, xdrMax)
-    }
-
     /// XDR detent: a press that would cross 100% stops at 100% first; the second press
     /// within the hysteresis window continues (PLAN §6.4).
     package static func applyDetent(from old: Double, to new: Double, armed: Bool) -> (value: Double, armDetent: Bool) {

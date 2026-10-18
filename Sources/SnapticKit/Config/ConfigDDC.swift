@@ -244,9 +244,9 @@ package struct PerDisplayDDC: ConfigModel {
         writeCount = c.lossy(.writeCount, 1)
         ignoreChecksum = c.lossy(.ignoreChecksum, false)
         controls = c.lossy(.controls, LossyMap())
-        inputs = (c.lossy(.inputs, [LossyElement<DDCInputEntry>]())).compactMap(\.value)
-        unlockedCodes = (c.lossy(.unlockedCodes, [LossyElement<VCPKey>]())).compactMap(\.value)
-        customControls = (c.lossy(.customControls, [LossyElement<DDCCustomControl>]())).compactMap(\.value)
+        inputs = c.lossyArray(.inputs, [])
+        unlockedCodes = c.lossyArray(.unlockedCodes, [])
+        customControls = c.lossyArray(.customControls, [])
         standbyValue = c.lossy(.standbyValue, UInt16(4))
     }
 
@@ -288,10 +288,3 @@ package struct PerDisplayDDC: ConfigModel {
     package func isUnlocked(_ code: UInt8) -> Bool { unlockedCodes.contains(VCPKey(code)) }
 }
 
-/// Decodes one array element, or nil if it is malformed (so one bad entry doesn't drop the list).
-package struct LossyElement<T: Decodable>: Decodable {
-    package let value: T?
-    package init(from decoder: Decoder) throws {
-        value = try? T(from: decoder)
-    }
-}

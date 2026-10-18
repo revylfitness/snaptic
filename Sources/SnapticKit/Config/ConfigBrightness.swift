@@ -19,9 +19,9 @@ package enum BrightnessMethod: String, Codable, CaseIterable, Sendable {
 
     package var title: String {
         switch self {
-        case .apple: return L("Apple native")
-        case .ddc: return L("DDC (monitor hardware)")
-        case .gamma: return L("Color table (gamma)")
+        case .apple: return L("Apple Native")
+        case .ddc: return L("Hardware (DDC)")
+        case .gamma: return L("Color Table")
         case .overlay: return L("Overlay")
         }
     }
@@ -33,9 +33,9 @@ package enum BrightnessRestoreMode: String, Codable, CaseIterable, Sendable {
 
     package var title: String {
         switch self {
-        case .brightness: return L("Brightness and adjustments")
-        case .adjustmentsOnly: return L("Adjustments only")
-        case .off: return L("Don't restore")
+        case .brightness: return L("Brightness and Color")
+        case .adjustmentsOnly: return L("Color Adjustments Only")
+        case .off: return L("Off")
         }
     }
 }
@@ -52,7 +52,7 @@ package enum XDRMethod: String, Codable, CaseIterable, Sendable {
         switch self {
         case .automatic: return L("Automatic")
         case .overlay: return L("Overlay (A)")
-        case .gamma: return L("Color table (B)")
+        case .gamma: return L("Color Table (B)")
         }
     }
 }

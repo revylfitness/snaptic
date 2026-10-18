@@ -42,6 +42,7 @@ private struct BrightnessSubpageContent: View {
     @ObservedObject private var shell: SettingsShell
     @ObservedObject private var runtime: DisplaysRuntimeState
     @StateObject private var features: ConfigSlice<DisplaysConfig, [DisplayFeature: Bool]>
+    @StateObject private var showNits: ConfigSlice<DisplaysConfig, Bool>
     @StateObject private var switcher: DisplaysFeatureSwitcher
 
     init(env: DisplaysPageEnvironment, host: ModuleHost) {
@@ -50,6 +51,7 @@ private struct BrightnessSubpageContent: View {
         _shell = ObservedObject(wrappedValue: SettingsShell.shared)
         _runtime = ObservedObject(wrappedValue: env.runtime)
         _features = StateObject(wrappedValue: ConfigSlice(env.config, \.rawFeatures))
+        _showNits = StateObject(wrappedValue: ConfigSlice(env.config, \.brightness.showNits))
         _switcher = StateObject(wrappedValue: DisplaysFeatureSwitcher(env: env))
     }
 
@@ -60,7 +62,7 @@ private struct BrightnessSubpageContent: View {
         SettingsPageScaffold(route: SettingsRoute(BrightnessSubpageControls.surface)) {
             if let context, let display, runtime.isEffective(.brightness) {
                 BrightnessHeader(display: display, live: runtime.runtime(for: display.key), context: context,
-                                 showNits: runtime.isEffective(.nits))
+                                 showNits: NitsModel.shows(showNits: showNits.value, nitsEffective: runtime.isEffective(.nits)))
             } else {
                 SettingsPageHeader(BrightnessSubpage.title, summary: BrightnessSubpage.summary,
                                    symbol: BrightnessSubpage.symbol, tint: BrightnessSubpage.tint)

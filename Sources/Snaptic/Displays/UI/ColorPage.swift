@@ -194,7 +194,7 @@ private struct ColorPageContent: View {
         })
         return PickerSetting(L("Color profile"), help: L("A custom profile turns color-table dimming off unless you keep it in Advanced."),
                              selection: selection,
-                             options: [PickerOption<URL?>(nil, L("Factory profile"))]
+                             options: [PickerOption<URL?>(nil, L("Factory Profile"))]
                                  + profiles.map { PickerOption<URL?>($0.url, TextSanitizer.clean($0.name, maxScalars: 64)) },
                              style: .popUp, defaultValue: .some(nil), anchor: ControlID("displays.color.profile"))
     }
@@ -367,7 +367,7 @@ private struct ColorAdvancedSheet: View {
             ], primaryAction: nil, control: ControlID("displays.color.advanced.profileActions"))
         } label: {
             Text(L("Profile of “\(CDisplays.name(display))”"))
-            Text(current.map { TextSanitizer.clean($0.name, maxScalars: 64) } ?? L("Factory profile"))
+            Text(current.map { TextSanitizer.clean($0.name, maxScalars: 64) } ?? L("Factory Profile"))
         }
     }
 
