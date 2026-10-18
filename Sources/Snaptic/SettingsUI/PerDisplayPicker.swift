@@ -15,6 +15,7 @@ struct DisplayTile: Identifiable, Hashable {
 struct PerDisplayPicker: View {
     let displays: [DisplayTile]
     let selection: Binding<DisplayKey?>
+    @Environment(\.colorSchemeContrast) private var contrast
 
     init(_ displays: [DisplayTile], selection: Binding<DisplayKey?>) {
         self.displays = displays
@@ -65,7 +66,9 @@ struct PerDisplayPicker: View {
                     .font(.system(size: 32, weight: .light))
                     .frame(width: 76, height: 52)
                     .background(shape.fill(selected ? Color.accentColor.opacity(0.15) : Color.clear))
-                    .overlay(shape.strokeBorder(selected ? Color.accentColor : Color.clear, lineWidth: 2))
+                    .overlay(shape.strokeBorder(TileStroke.color(selected: selected, contrast: contrast, unselected: .clear),
+                                                lineWidth: TileStroke.width(selected: selected, contrast: contrast,
+                                                                 normalSelected: 2, normalUnselected: 2)))
                 Text(tile.name)
                     .font(.callout)
                     .lineLimit(1)

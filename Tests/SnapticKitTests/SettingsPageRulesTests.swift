@@ -159,6 +159,65 @@ final class SettingsPageRulesTests: XCTestCase {
         XCTAssertFalse(SwitcherPageRules.effectiveWindowless(false, featureOn: true))
     }
 
+    /// Round 2 ui F2 / parity Q1: the 0.2 user with other Spaces off and both shortcuts stored as All Spaces sets ⌥⇥ to
+    /// All Spaces; ⌥` keeps Current Space.
+    func testSpacesChoiceKeepsOtherShortcutsAsShown() {
+        let r = SwitcherPageRules.spacesChoice(["all", "all"], changed: 0, to: "all", otherSpacesOn: false)
+        XCTAssertTrue(r.turnsOn)
+        XCTAssertEqual(r.spaces, ["all", "current"])
+        let on = SwitcherPageRules.spacesChoice(["all", "others"], changed: 1, to: "current", otherSpacesOn: true)
+        XCTAssertFalse(on.turnsOn)
+        XCTAssertEqual(on.spaces, ["all", "current"])
+        let stayOff = SwitcherPageRules.spacesChoice(["others", "all"], changed: 1, to: "current", otherSpacesOn: false)
+        XCTAssertFalse(stayOff.turnsOn)
+        XCTAssertEqual(stayOff.spaces, ["others", "current"], "nothing turns on, so stored values stay")
+        XCTAssertEqual(SwitcherPageRules.spacesChoice(["all"], changed: 3, to: "all", otherSpacesOn: false).spaces, ["all"])
+    }
+
+    func testWindowlessChoiceKeepsOtherShortcutsAsShown() {
+        let r = SwitcherPageRules.windowlessChoice([false, true, true], changed: 0, to: true, featureOn: false)
+        XCTAssertTrue(r.turnsOn)
+        XCTAssertEqual(r.values, [true, false, false])
+        let on = SwitcherPageRules.windowlessChoice([false, true], changed: 0, to: true, featureOn: true)
+        XCTAssertFalse(on.turnsOn)
+        XCTAssertEqual(on.values, [true, true])
+        let off = SwitcherPageRules.windowlessChoice([true, true], changed: 1, to: false, featureOn: false)
+        XCTAssertFalse(off.turnsOn)
+        XCTAssertEqual(off.values, [true, false])
+    }
+
+    /// Any choice: every other shortcut reads exactly as before, and the chosen one reads as chosen whenever the
+    /// feature is on afterwards.
+    func testSeededSwitcherChoicesChangeOnlyTheChosenShortcut() {
+        var g = SeededGenerator(seed: 0x5_A1C3)
+        let raws = SwitcherPageRules.spaces + ["bogus"]
+        for _ in 0..<2000 {
+            let n = 1 + Int(g.next() % 5)
+            let stored = (0..<n).map { _ in raws[Int(g.next() % UInt64(raws.count))] }
+            let featureOn = g.next() % 2 == 0
+            let changed = Int(g.next() % UInt64(n))
+            let raw = SwitcherPageRules.spaces[Int(g.next() % 3)]
+            let r = SwitcherPageRules.spacesChoice(stored, changed: changed, to: raw, otherSpacesOn: featureOn)
+            let after = featureOn || r.turnsOn
+            for i in 0..<n where i != changed {
+                XCTAssertEqual(SwitcherPageRules.effectiveSpace(r.spaces[i], otherSpacesOn: after),
+                               SwitcherPageRules.effectiveSpace(stored[i], otherSpacesOn: featureOn))
+            }
+            XCTAssertEqual(r.spaces[changed], raw)
+            if raw != "current" { XCTAssertTrue(after) }
+
+            let flags = (0..<n).map { _ in g.next() % 2 == 0 }
+            let on = g.next() % 2 == 0
+            let w = SwitcherPageRules.windowlessChoice(flags, changed: changed, to: on, featureOn: featureOn)
+            let wAfter = featureOn || w.turnsOn
+            for i in 0..<n where i != changed {
+                XCTAssertEqual(SwitcherPageRules.effectiveWindowless(w.values[i], featureOn: wAfter),
+                               SwitcherPageRules.effectiveWindowless(flags[i], featureOn: featureOn))
+            }
+            XCTAssertEqual(SwitcherPageRules.effectiveWindowless(w.values[changed], featureOn: wAfter), on)
+        }
+    }
+
     func testStyleGating() {
         XCTAssertEqual(SwitcherPageRules.effectiveStyle("thumbnails", thumbnailsOn: false), "icons")
         XCTAssertEqual(SwitcherPageRules.effectiveStyle("titles", thumbnailsOn: false), "titles")
