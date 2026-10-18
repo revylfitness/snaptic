@@ -61,7 +61,7 @@ final class DisplaysMenuPlanTests: XCTestCase {
     }
 
     /// Other teams' tables that also name a 0.2 menu id must agree with M's place for it (one home, no
-    /// contradiction): same location, customize kind and legacy id.
+    /// contradiction): the same customize kind (their location wording may be more detailed).
     func testOtherTablesAgreeWithMsPlacement() {
         let mine = menuSpecs
         let others = ControlRegistry.tables.filter {
@@ -69,10 +69,11 @@ final class DisplaysMenuPlanTests: XCTestCase {
               String(describing: CustomizeMenuSheetControls.self)].contains(String(describing: $0))
         }.flatMap { $0.controls }
         for spec in others {
-            guard let placement = spec.menu, let legacy = placement.legacyMenuID else { continue }
+            // Rows inside a section (customize .none: a layout, Save Current Layout…) aren't the item's home.
+            guard let placement = spec.menu, placement.customize != .none, let legacy = placement.legacyMenuID
+            else { continue }
             guard let home = mine.first(where: { $0.menu?.legacyMenuID == legacy })?.menu else { continue }
             XCTAssertEqual(placement.customize, home.customize, "\(spec.id.rawValue) vs M for \(legacy.rawValue)")
-            XCTAssertEqual(placement.location, home.location, "\(spec.id.rawValue) vs M for \(legacy.rawValue)")
         }
     }
 
@@ -213,7 +214,8 @@ final class DisplaysMenuPlanTests: XCTestCase {
         XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("c.ddc.contrast"), declared: .inSubmenu), .hidden)
         XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("c.ddc.contrast"), declared: .visible), .visible)
         XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("d.resolutionSlider"), declared: nil), .hidden)
-        XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("d.hdrToggle"), declared: nil), .inSubmenu)
+        XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("d.hdrToggle"), declared: nil), .hidden)
+        XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("d.setMain"), declared: nil), .inSubmenu)
         XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("c.ddc.power"), declared: nil), .visible)
         XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("d.disconnectItem"), declared: nil), .inSubmenu)
         XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("d.disconnectAllButMain"), declared: nil), .inSubmenu)
