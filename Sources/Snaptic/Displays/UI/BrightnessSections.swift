@@ -97,7 +97,7 @@ struct BrightnessSections: View, ControlDeclaring {
                           isOn: SettingsBinding.store(env.config, \.brightness.smoothTransitions),
                           anchor: ControlID("displays.brightness.smoothTransitions"))
             ToggleSetting(L("Show brightness in nits"),
-                          help: L("The brightness indicator and this page show estimated nits next to the percent."),
+                          help: L("The brightness indicator and the Brightness slider on the Displays page show estimated nits next to the percent."),
                           isOn: showNits, anchor: ControlID("displays.brightness.showNits"),
                           disabledReason: switcher.unavailableReason([.nits]))
         } footer: {

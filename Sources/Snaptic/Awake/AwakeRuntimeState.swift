@@ -40,6 +40,9 @@ struct AwakeLastEnd: Equatable {
     @Published var lidWillSleep: Bool?
     /// Our status item exists and isVisible.
     @Published var indicatorVisible = false
+    /// Shortcuts whose combo failed to register (conflict or system refusal; AwakeAutomation publishes it here, as
+    /// the runtime outlives the controller). The menu bar treats a failed Keep Awake shortcut as unbound.
+    @Published var failedShortcuts: Set<AwakeActionID> = []
 
     init() {}
 
@@ -66,5 +69,6 @@ struct AwakeLastEnd: Equatable {
         drives = []
         lidWillSleep = nil
         indicatorVisible = false
+        failedShortcuts = []
     }
 }

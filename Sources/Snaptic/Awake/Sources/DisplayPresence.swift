@@ -85,11 +85,7 @@ import SnapticKit
 
     private func read() {
         guard active else { return }
-        var count: UInt32 = 0
-        guard CGGetOnlineDisplayList(0, nil, &count) == .success else { return publish(nil, nil, []) }
-        var ids = [CGDirectDisplayID](repeating: 0, count: Int(min(count, 64)))
-        guard CGGetOnlineDisplayList(UInt32(ids.count), &ids, &count) == .success else { return publish(nil, nil, []) }
-        ids = Array(ids.prefix(Int(count)))
+        guard let ids = CGDirectDisplayID.onlineOrNil() else { return publish(nil, nil, []) }
         let salt = DisplayIdentity.salt()
         let names = Self.screenNames()
         var facts: [DisplayFact] = []

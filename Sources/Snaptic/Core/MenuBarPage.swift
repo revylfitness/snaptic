@@ -22,7 +22,7 @@ struct MenuBarPage: View, ControlDeclaring {
     var body: some View {
         if let host = SettingsShell.shared.host {
             MenuBarPageContent(host: host, modules: host.modulesStore, displays: host.displaysStore,
-                               awake: host.awakeStore)
+                               awake: host.awakeStore, awakeRuntime: host.awake.runtime)
         } else {
             UnavailablePage()
         }
@@ -36,6 +36,8 @@ private struct MenuBarPageContent: View {
     @ObservedObject var modules: ConfigStore<ModulesConfig>
     @ObservedObject var displays: ConfigStore<DisplaysConfig>
     @ObservedObject var awake: ConfigStore<AwakeConfig>
+    /// For the Keep Awake shortcut's registration (a set but failed shortcut counts as unbound).
+    @ObservedObject var awakeRuntime: AwakeRuntimeState
     @ObservedObject private var shell = SettingsShell.shared
     /// The display the Customize sheet opens with (Display Details' "Customize Displays Menu…" link sets
     /// `SettingsShell.selectedDisplay`, then opens the sheet; parity M6). Nil when opened from this page or search.
@@ -166,7 +168,9 @@ private struct MenuBarPageContent: View {
         }
     }
 
-    private var awakeShortcutBound: Bool { MenuLayout.awakeShortcutBound(awake.value.shortcuts) }
+    private var awakeShortcutBound: Bool {
+        MenuLayout.awakeShortcutBound(awake.value.shortcuts, failed: awakeRuntime.failedShortcuts)
+    }
 
     /// Always Show in Menu Bar · Show When Active (Displays, Awake) · Show in Snaptic Menu · Don't Show; Awake's
     /// Don't Show only with a Keep Awake shortcut (parity M2).
@@ -192,7 +196,9 @@ private struct MenuBarPageContent: View {
     private var modulesFooter: String? {
         var lines: [String] = []
         if !awakeShortcutBound && modules.value.isEnabled(.awake) {
-            lines.append(L("To hide Awake, first set a Keep Awake shortcut."))
+            lines.append(MenuLayout.awakeShortcutBound(awake.value.shortcuts)
+                         ? L("To hide Awake, choose a Keep Awake shortcut that no other app or macOS uses.")
+                         : L("To hide Awake, first set a Keep Awake shortcut."))
         }
         if PermissionFlow.isMacOS27OrLater {
             lines.append(L("macOS can also hide icons in System Settings › Menu Bar. Opening Snaptic again always shows Settings."))

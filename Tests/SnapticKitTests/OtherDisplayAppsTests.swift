@@ -27,6 +27,7 @@ final class OtherDisplayAppsTests: XCTestCase {
         let apps = OtherDisplayApps.detect(bundleIDs: ["fyi.lunar.Lunar", "pro.betterdisplay.BetterDisplay"])
         XCTAssertEqual(OtherDisplayApps.paused(running: apps, policy: .pauseOverlapping)[.ddcControls]?.id, "betterdisplay")
         XCTAssertEqual(OtherDisplayApps.pauseReason(apps[0]), "Paused while BetterDisplay runs")
+        XCTAssertEqual(OtherDisplayApps.menuPauseReason(apps[0]), "Paused While BetterDisplay Runs")
     }
 
     func testKnownListIsWellFormed() {

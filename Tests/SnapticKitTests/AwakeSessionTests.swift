@@ -386,6 +386,8 @@ final class AwakeSessionTests: XCTestCase {
         }
         XCTAssertEqual(Set(all.map(\.text)).count, all.count, "every refusal reads differently")
         XCTAssertEqual(AwakeRefusal.holdLimit.text, "Snaptic is already holding for 8 commands.")
+        // A kill switch reads the same everywhere (review ux m9).
+        XCTAssertEqual(AwakeRefusal.unavailable(.turnedOffByDefaults).text, DefaultsLock.text)
         XCTAssertEqual(AwakeRefusal.uiSessionRunning.text,
                        "A session started in Snaptic is running. Stop it first with “snaptic awake stop”, or use “snaptic awake hold”.")
     }

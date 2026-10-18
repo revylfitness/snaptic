@@ -4,21 +4,25 @@ import SnapticKit
 /// Rows that can be reordered by dragging (`onMove`) and from the keyboard: each row's context menu has Edit…,
 /// Move Up, Move Down and Delete, and VoiceOver gets the same as named actions (design M4, m10). Place it inside a
 /// `Section` of a grouped form, or inside a `List`. With `confirmDelete` (the alert's question for an item, e.g.
-/// "Delete “Desk”?"), Delete asks first, like the editor sheets' Delete buttons (review ux m10).
+/// "Delete “Desk”?"), Delete asks first, like the editor sheets' Delete buttons (review ux m10). `deleteAsks` is for
+/// a caller whose `onDelete` shows its own alert: the menu item then reads "Delete…" too.
 struct ReorderableList<Item: Identifiable, Row: View>: View {
     let items: Binding<[Item]>
     let onEdit: ((Item) -> Void)?
     let onDelete: ((Item) -> Void)?
     let confirmDelete: ((Item) -> String)?
+    let deleteAsks: Bool
     let row: (Item) -> Row
     @State private var pendingDelete: Item.ID?
 
     init(_ items: Binding<[Item]>, onEdit: ((Item) -> Void)? = nil, onDelete: ((Item) -> Void)?,
-         confirmDelete: ((Item) -> String)? = nil, @ViewBuilder row: @escaping (Item) -> Row) {
+         confirmDelete: ((Item) -> String)? = nil, deleteAsks: Bool = false,
+         @ViewBuilder row: @escaping (Item) -> Row) {
         self.items = items
         self.onEdit = onEdit
         self.onDelete = onDelete
         self.confirmDelete = confirmDelete
+        self.deleteAsks = deleteAsks
         self.row = row
     }
 
@@ -57,7 +61,9 @@ struct ReorderableList<Item: Identifiable, Row: View>: View {
             .disabled(!canMove(item, by: 1))
         if onDelete != nil {
             Divider()
-            Button(confirmDelete == nil ? L("Delete") : L("Delete…"), role: .destructive) { requestDelete(item) }
+            Button(confirmDelete == nil && !deleteAsks ? L("Delete") : L("Delete…"), role: .destructive) {
+                requestDelete(item)
+            }
         }
     }
 

@@ -43,7 +43,7 @@ struct PresetEditorSheet: View, ControlDeclaring {
         }
         return Section {
             ReorderableList(SettingsBinding.store(env.config, \.sessions.presets), onEdit: onEdit,
-                            onDelete: onDelete) { (preset: AwakePreset) -> PresetRow in
+                            onDelete: onDelete, deleteAsks: true) { (preset: AwakePreset) -> PresetRow in
                 row(preset, first: presets.first?.id, canDelete: canDelete)
             }
         } header: {

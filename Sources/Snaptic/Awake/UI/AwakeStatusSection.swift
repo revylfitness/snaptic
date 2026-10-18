@@ -166,8 +166,8 @@ struct AwakeStatusSection: View, ControlDeclaring {
         return items
     }
 
-    /// Options ▾ (AwakeStatusPlan): Add 15 Minutes, Add 1 Hour, Add Time…, Keep Display On / Let Display Sleep, End
-    /// Command-Line Holds, Replace With ▸.
+    /// Options ▾ (AwakeStatusPlan): Add 15 Minutes, Add 1 Hour, Add Time…, ✓ Keep Display On (as in the menus),
+    /// End Command-Line Holds, Replace With ▸.
     private func optionItems(_ facts: AwakeStatusRowFacts) -> [ActionMenuItem] {
         var items: [ActionMenuItem] = []
         for (index, item) in AwakeStatusPlan.options(facts).enumerated() {
@@ -184,8 +184,8 @@ struct AwakeStatusSection: View, ControlDeclaring {
             case .separator:
                 items.append(.separator("separator.\(index)"))
             case .keepDisplayOn:
-                let on = context.sessions.keepsDisplayOn
-                items.append(ActionMenuItem(id: "display", title: on ? L("Let Display Sleep") : L("Keep Display On")) {
+                items.append(ActionMenuItem(id: "display", title: L("Keep Display On"),
+                                            checked: context.sessions.keepsDisplayOn) {
                     [weak sessions = context.sessions] in
                     guard let sessions else { return }
                     sessions.setKeepDisplayOn(!sessions.keepsDisplayOn)

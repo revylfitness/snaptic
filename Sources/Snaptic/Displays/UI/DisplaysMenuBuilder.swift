@@ -79,9 +79,9 @@ import SnapticKit
         return items
     }
 
-    /// Unique, sorted pause reasons ("Paused while MonitorControl runs").
+    /// Unique, sorted pause reasons in menu Title Case ("Paused While MonitorControl Runs").
     static func pauseReasons(_ paused: Set<DisplayFeature>, monitor: OtherAppsMonitor) -> [String] {
-        Array(Set(paused.compactMap { monitor.pauseReason(for: $0) })).sorted()
+        Array(Set(paused.compactMap { monitor.menuPauseReason(for: $0) })).sorted()
     }
 
     // MARK: Displays
