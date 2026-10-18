@@ -68,7 +68,7 @@ struct ArrangeContent: View {
                               isOn: SettingsBinding.store(env.config, \.management.snapArrangement),
                               anchor: ControlID("displays.arrange.snap"))
             } footer: {
-                Text(L("Drag a display to move it. The white bar marks the main display, which has the menu bar."))
+                Text(L("Drag a display to move it. The bar at the top marks the main display, which has the menu bar."))
             }
             Section {
                 DisclosureGroup(isExpanded: $keyboardExpanded) {

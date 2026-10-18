@@ -163,7 +163,7 @@ enum ManagedModes {
             let outcome = await ctx.transactions.submit(request)
             if lifetime.isEnded { return }
             if !quiet, let text = message(outcome) { ctx.toasts.show(text, lifetime: lifetime) }
-            EventLog.shared.record(.transaction, "\(request.label): \(outcomeName(outcome))")
+            EventLog.shared.record(.transaction, logLine(request, outcome))
             completion?(outcome)
         }
     }
@@ -176,7 +176,7 @@ enum ManagedModes {
         var request = request
         if request.automatic && request.planID == nil { request.planID = ctx.connectPlanner.currentPlanID }
         let outcome = await ctx.transactions.submit(request)
-        EventLog.shared.record(.transaction, "\(request.label): \(outcomeName(outcome))")
+        EventLog.shared.record(.transaction, logLine(request, outcome))
         if request.risk == .restore, case .refused(let violations) = outcome,
            violations.contains(where: { if case .onlyDisplayUnsupported = $0 { return true }; return false }) {
             promptTrial(ctx, request)
@@ -193,6 +193,13 @@ enum ManagedModes {
             guard let ctx = weakCtx else { return }
             submit(ctx, TransactionRequest(label: label, risk: .trial, changes: changes, finalScope: scope), lifetime: ctx.lifetime)
         }, lifetime: ctx.lifetime)
+    }
+
+    /// The event-log line for a request: change kinds and counts, never `request.label` (callers may name a
+    /// display in the label for the confirm panel; TEAMS rule 3 keeps names out of the log).
+    static func logLine(_ request: TransactionRequest, _ outcome: TransactionOutcome) -> String {
+        TransactionLogText.line(changes: request.changes, risk: "\(request.risk)", automatic: request.automatic,
+                                outcome: outcomeName(outcome))
     }
 
     static func outcomeName(_ o: TransactionOutcome) -> String {

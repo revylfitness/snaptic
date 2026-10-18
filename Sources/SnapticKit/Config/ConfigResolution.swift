@@ -141,7 +141,7 @@ package struct PerDisplayResolution: ConfigModel {
 
     package init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        favorites = (try? c.decodeIfPresent(TolerantArray<FavoriteMode>.self, forKey: .favorites))?.values ?? []
+        favorites = c.lossyArray(.favorites, [])
         minWidth = c.lossy(.minWidth, nil)
         maxWidth = c.lossy(.maxWidth, nil)
         dpiFilter = c.lossy(.dpiFilter, .all)

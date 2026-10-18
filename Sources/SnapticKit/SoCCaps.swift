@@ -45,7 +45,10 @@ package enum SoCCaps {
     /// An estimate shown on the Safety page and used for the total budget.
     package static func backingBytes(pixelsWide: Int, pixelsHigh: Int) -> UInt64 {
         guard pixelsWide > 0, pixelsHigh > 0 else { return 0 }
-        return UInt64(pixelsWide) * UInt64(pixelsHigh) * 4 * 3
+        // Saturates (an unsanitized size must not trap; the budget then simply refuses it).
+        let (area, o1) = UInt64(pixelsWide).multipliedReportingOverflow(by: UInt64(pixelsHigh))
+        let (bytes, o2) = area.multipliedReportingOverflow(by: 12)
+        return o1 || o2 ? UInt64.max : bytes
     }
 
     /// Total backing budget for all Snaptic virtual displays together: 1/16 of RAM,
