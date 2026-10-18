@@ -50,6 +50,8 @@ import SnapticKit
         effectiveFeatures = []
         availability = [:]
         perDisplay = [:]
+        isPanicLatched = false
+        lastPanicSummary = nil
     }
 }
 

@@ -35,6 +35,11 @@ struct Action {
     private var entries: [(serial: UInt64, action: Action)] = []
     private var serial: UInt64 = 0
 
+    /// Set by DisplaysModule: whether an action's feature is effective right now.
+    var isEffective: (@MainActor (DisplayFeature) -> Bool)?
+    /// Set by DisplaysModule: told when an action was refused because its feature is off.
+    var onRefused: (@MainActor (Action) -> Void)?
+
     init() {}
 
     func register(_ action: Action, lifetime: Lifetime) {
@@ -57,6 +62,12 @@ struct Action {
     @discardableResult
     func perform(_ id: DisplayActionID, on target: DisplayTarget) -> Bool {
         guard let action = action(id) else { return false }
+        // Shortcuts, menus, the panel and the CLI all land here: a feature that is off
+        // does no work, whoever asks.
+        if let isEffective, !isEffective(action.feature) {
+            onRefused?(action)
+            return false
+        }
         action.perform(target)
         return true
     }

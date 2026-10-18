@@ -120,6 +120,10 @@ import SnapticKit
             if !ctx.panic.isLatched { ctx.connectPlanner.trigger(.reconfigure) }
         }
         ctx.menus.onChange = { [weak self] in self?.moduleContext?.requestMenuRebuild() }
+        ctx.actions.isEffective = { [weak self] feature in self?.effective.contains(feature) ?? false }
+        ctx.actions.onRefused = { [weak ctx] action in
+            ctx?.toasts.show(L("“\(action.title)” isn't available right now: its feature is off."))
+        }
         paused = ctx.otherApps.pausedDisplayFeatures
         ctx.otherApps.onChange = { [weak self] in
             guard let self, let ctx = self.context else { return }

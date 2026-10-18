@@ -57,6 +57,7 @@ jobs:
   # Runs the repository's own code, so it only ever gets read access.
   build:
     runs-on: macos-15
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
@@ -95,6 +96,7 @@ jobs:
 
       # Helpers must not inherit pipe ends (PLAN §14.1): both children exit once we die.
       - name: Helper self-test (debug)
+        timeout-minutes: 2
         run: |
           set -o pipefail
           ./scripts/selftest-helpers.sh .build/debug/Snaptic 2>&1 | tee selftest.log
@@ -126,6 +128,7 @@ jobs:
 
       - name: Helper self-test (universal, and under Rosetta when available)
         if: github.event_name == 'push'
+        timeout-minutes: 3
         run: |
           set -o pipefail
           ./scripts/selftest-helpers.sh build/Snaptic.app/Contents/MacOS/Snaptic 2>&1 | tee -a selftest.log

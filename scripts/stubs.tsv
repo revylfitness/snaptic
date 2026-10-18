@@ -293,3 +293,4 @@ Tests/SnapticKitTests/ManagementIDsTests.swift	D	L	-	-
 Tests/SnapticKitTests/ArrangementMathTests.swift	D	L	-	-
 Sources/Snaptic/Displays/Management/ManagementSupport.swift	D	L	-	-
 Sources/Snaptic/Displays/UI/ManagementPageParts.swift	D	L	-	-
+Sources/Snaptic/Displays/Registries/DisplaySelectorResolver.swift	lead	L	-	-

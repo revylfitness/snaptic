@@ -37,14 +37,27 @@ with_timeout() {
 }
 
 start=$(date +%s)
-out=$(SNAPTIC_SELFTEST_TOKEN="$token" with_timeout 15 "${run[@]}" --selftest-helpers "$dir/token")
-status=$?
+# Output goes to a file, not a pipe: a leaked descriptor must not be able to hang us.
+SNAPTIC_SELFTEST_TOKEN="$token" "${run[@]}" --selftest-helpers "$dir/token" >"$dir/out" 2>"$dir/err" </dev/null &
+parent=$!
+status=""
+for _ in $(seq 1 150); do
+  if ! kill -0 "$parent" 2>/dev/null; then wait "$parent"; status=$?; break; fi
+  sleep 0.1
+done
+if [ -z "$status" ]; then
+  kill -9 "$parent" 2>/dev/null; wait "$parent" 2>/dev/null
+  status=124
+fi
+out=$(cat "$dir/out")
 elapsed=$(( $(date +%s) - start ))
 echo "selftest: exit $status after ${elapsed}s"
 echo "$out"
+[ -s "$dir/err" ] && { echo "selftest: stderr:"; head -50 "$dir/err"; }
 
 if [ "$status" -eq 124 ] || [ "$status" -eq 142 ]; then
-  echo "selftest: timed out: a child kept our stdout open (leaked descriptor)" >&2
+  echo "selftest: the parent did not finish within 15 s" >&2
+  pkill -9 -f -- "--selftest-child" 2>/dev/null || true
   exit 1
 fi
 if [ "$status" -ne 137 ]; then

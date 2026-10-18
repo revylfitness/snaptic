@@ -6,7 +6,7 @@ set -uo pipefail
 title=$1; shift
 tmp=$(mktemp)
 cat "$@" 2>/dev/null \
-  | grep -E ': error: |: error:|error: |FAILED|failed|lint: |XCTAssert|Fatal error|fatal error|Test Case .* failed' \
+  | grep -E ': error: |: error:|error: |FAILED|failed|lint: |selftest: |XCTAssert|Fatal error|fatal error|Test Case .* failed' \
   | grep -vE '^\s*$' | awk '!seen[$0]++' | head -400 > "$tmp" || true
 [ -s "$tmp" ] || { echo "no error lines found"; exit 0; }
 chunk=45; n=0

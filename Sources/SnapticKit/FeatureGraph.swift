@@ -83,7 +83,7 @@ package enum FeatureGraph {
                                  permissions: [.accessibility]),
         .shortcuts: FeatureSpec(.standard, controller: .keys, page: "keys"),
         .osd: FeatureSpec(.standard, uses: [.osd], controller: .osd, page: "osd"),
-        .osdBroadcast: FeatureSpec(.optIn, controller: .osd, page: "osd"),
+        .osdBroadcast: FeatureSpec(.optIn, uses: [.osd], controller: .osd, page: "osd"),
 
         .mainDisplay: FeatureSpec(.standard, uses: [.transactions], controller: .arrangement, page: "arrangement"),
         .arrangement: FeatureSpec(.standard, uses: [.transactions], controller: .arrangement, page: "arrangement"),
@@ -96,7 +96,7 @@ package enum FeatureGraph {
         .sleepPrevention: FeatureSpec(.optIn, controller: .power, page: "arrangement"),
 
         .protection: FeatureSpec(.optIn, uses: [.transactions], controller: .protection, page: "protection"),
-        .layouts: FeatureSpec(.optIn, uses: [.transactions, .brightness], controller: .layouts, page: "protection"),
+        .layouts: FeatureSpec(.optIn, uses: [.transactions], controller: .layouts, page: "protection"),
 
         .virtualScreens: FeatureSpec(.optIn, beta: true, uses: [.virtualHosts, .transactions], controller: .virtual, page: "virtual"),
         .smartHiDPI: FeatureSpec(.optIn, beta: true, uses: [.virtualHosts, .transactions, .guardProcess],
