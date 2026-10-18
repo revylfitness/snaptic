@@ -34,6 +34,14 @@ struct AutomationEditTarget: Identifiable {
     var newAction: CustomActionSpec? = nil
 
     var id: String { itemID.rawValue }
+
+    /// The shell's sheet id (`SettingsShell.sheetBinding`): the editor table's surface.
+    var sheetID: String {
+        switch kind {
+        case .hook: return HookEditorSheetControls.surface
+        case .action: return ActionEditorSheetControls.surface
+        }
+    }
 }
 
 private struct AutomationsContent: View {
@@ -44,9 +52,10 @@ private struct AutomationsContent: View {
     @StateObject private var switcher: DisplaysFeatureSwitcher
     @StateObject private var features: ConfigSlice<DisplaysConfig, [DisplayFeature: Bool]>
     @StateObject private var automation: ConfigSlice<DisplaysConfig, AutomationConfig>
-    @State private var editing: AutomationEditTarget?
-    /// The sheet's target, kept until `onDismiss` runs (SwiftUI clears `editing` first).
+    /// The open editor sheet's target; presented through the shell (`sheetBinding`), so a search reveal or a page
+    /// change closes it like every other Settings sheet. Kept until `onDismiss` has run.
     @State private var opened: AutomationEditTarget?
+    @ObservedObject private var shell: SettingsShell
 
     init(env: DisplaysPageEnvironment) {
         self.env = env
@@ -55,6 +64,7 @@ private struct AutomationsContent: View {
         _switcher = StateObject(wrappedValue: DisplaysFeatureSwitcher(env: env))
         _features = StateObject(wrappedValue: ConfigSlice(env.config, \.rawFeatures))
         _automation = StateObject(wrappedValue: ConfigSlice(env.config, \.automation))
+        _shell = ObservedObject(wrappedValue: SettingsShell.shared)
     }
 
     var body: some View {
@@ -68,10 +78,12 @@ private struct AutomationsContent: View {
                               restoreControl: ControlID("displays.automations.restore"))
         }
         .modifier(DisplaysFeatureOffAlert(switcher: switcher))
-        .sheet(item: $editing, onDismiss: dropUntouchedNewItem) { target in
-            switch target.kind {
-            case .hook: HookEditorSheet(env: env, hookID: target.itemID)
-            case .action: ActionEditorSheet(env: env, actionID: target.itemID)
+        .sheet(isPresented: sheetPresented, onDismiss: dropUntouchedNewItem) {
+            if let target = opened {
+                switch target.kind {
+                case .hook: HookEditorSheet(env: env, hookID: target.itemID)
+                case .action: ActionEditorSheet(env: env, actionID: target.itemID)
+                }
             }
         }
     }
@@ -285,7 +297,13 @@ private struct AutomationsContent: View {
 
     private func open(_ target: AutomationEditTarget) {
         opened = target
-        editing = target
+        shell.openSheet = target.sheetID
+    }
+
+    /// Open while the shell's sheet is the opened target's editor.
+    private var sheetPresented: Binding<Bool> {
+        guard let id = opened?.sheetID else { return .constant(false) }
+        return shell.sheetBinding(id)
     }
 
     /// A row added with Add… and closed without a change is removed again, so Cancel-like closing leaves nothing
