@@ -6,13 +6,17 @@ import SnapticKit
 @MainActor final class LayoutsController: DisplayFeatureController, DiagnosticsContributor {
     static var id: DisplayControllerID { .layouts }
     static var privateSymbols: [PrivateSymbol] { [] }
+    /// Saved layouts and their settings (0.3 §4.5).
+    static var observedSections: Set<DisplaysConfigSection> { [.layouts] }
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
     private var lifetime: Lifetime?
     private(set) var effective: Set<DisplayFeature> = []
     private var menu: LayoutsMenuItems?
     /// A matching layout whose toast may have been missed (R5.7).
-    private(set) var pendingMatch: StableID?
+    private(set) var pendingMatch: StableID? {
+        didSet { if pendingMatch != oldValue { changed() } }
+    }
     private var autoApplies = 0
 
     init() {}
@@ -35,13 +39,22 @@ import SnapticKit
         registerCommands(context, lifetime: lifetime)
     }
 
-    func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) { self.effective = effective }
+    func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) {
+        self.effective = effective
+        changed()
+    }
 
     func configDidChange(from old: DisplaysConfig, to new: DisplaysConfig) {
         if old.layouts != new.layouts {
             if let p = pendingMatch, new.layouts.layout(p) == nil { pendingMatch = nil }
-            context?.requestMenuRebuild()
+            changed()
         }
+    }
+
+    /// Page-visible state changed (the missed-prompt match, trust): one revision bump and a menu rebuild.
+    private func changed() {
+        context?.runtime.revision(Self.id).bump()
+        context?.requestMenuRebuild()
     }
 
     func stop() {
@@ -70,6 +83,27 @@ import SnapticKit
     }
 
     func matches(_ l: SavedLayout) -> LayoutMatch? { LayoutPresetModel.match(l, live: liveIdentities()) }
+
+    /// The menu's "Apply Matching Layout": the layout a missed prompt offered while it still matches, else the
+    /// most specific matching layout.
+    func matchingLayout() -> SavedLayout? {
+        if let p = pendingMatch, let l = layout(p), matches(l) != nil { return l }
+        return LayoutPresetModel.bestMatch(layouts, live: liveIdentities())
+    }
+
+    /// How the presented displays are arranged now (the menu's checkmarks; read once per menu build).
+    func liveStates() -> [DisplayKey: LayoutLiveState] {
+        guard let ctx = context else { return [:] }
+        let all = ctx.registry.displays.filter { $0.isActive && ($0.transport != .snapticVirtual || $0.isSmartHiDPIPair) }
+        var states: [DisplayKey: LayoutLiveState] = [:]
+        for d in all {
+            let r = ManagedDisplays.rect(d)
+            let mirror = d.mirrorOf.flatMap { src in all.first { $0.desktopID == src || $0.hardwareID == src }?.key }
+            states[d.key] = LayoutLiveState(mode: d.currentMode?.ref ?? ManagedModes.current(for: d.desktopID)?.ref,
+                                            x: r.x, y: r.y, isMain: d.isMain, rotation: d.rotation, mirrorOf: mirror)
+        }
+        return states
+    }
 
     private func update(_ id: StableID, _ change: (inout SavedLayout) -> Void) {
         guard let ctx = context, let i = ctx.config.value.layouts.layouts.firstIndex(where: { $0.id == id }) else { return }
@@ -255,7 +289,7 @@ import SnapticKit
         if !p.skipped.isEmpty {
             ctx.toasts.show(L("Applied '\(l.name)'; skipped \(p.skipped.joined(separator: ", ")) (feature off)"), lifetime: lifetime)
         }
-        if pendingMatch == id { pendingMatch = nil; ctx.requestMenuRebuild() }
+        if pendingMatch == id { pendingMatch = nil }
         if !trusted { offerTrust(id) }
         return outcome
     }
@@ -329,7 +363,6 @@ import SnapticKit
     func promptApply(_ id: StableID) {
         guard let ctx = context, let l = layout(id) else { return }
         pendingMatch = id
-        ctx.requestMenuRebuild()
         ctx.toasts.show(L("Apply '\(l.name)'?"), action: ToastAction(title: L("Apply")) { [weak self] in self?.apply(id) },
                         lifetime: lifetime)
     }

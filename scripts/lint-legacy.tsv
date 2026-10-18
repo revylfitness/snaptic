@@ -5,7 +5,6 @@ L5	Sources/Snaptic/Core/GeneralPages.swift	7	step
 L5	Sources/Snaptic/Core/Onboarding.swift	2	step
 L5	Sources/Snaptic/Core/PermissionFlow.swift	3	step
 L5	Sources/Snaptic/Core/ShortcutRecorder.swift	1	step
-L6	Sources/Snaptic/Displays/Management/ManagementSupport.swift	2	step
 L1	Sources/Snaptic/Displays/Management/PowerController.swift	2	step
 L6	Sources/Snaptic/Displays/PIP/PIPWindow.swift	2	permanent
 L5	Sources/Snaptic/Displays/UI/ArrangementCanvas.swift	1	permanent

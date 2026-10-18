@@ -5,10 +5,12 @@ import SnapticShims
 /// Smart HiDPI (PLAN §9.5, R5.6): a 2× virtual display per physical panel, mirrored onto
 /// it. First enable is a trial; kept pairs are re-established by the ConnectPlanner
 /// (`restore`), rebinding the mirror instead of recreating when the panel returns.
-@MainActor final class SmartHiDPIController: DisplayFeatureController, DisplayMenuContributor, PanicParticipant,
-    SessionParticipant, DiagnosticsContributor {
+@MainActor final class SmartHiDPIController: DisplayFeatureController, PanicParticipant, SessionParticipant,
+    DiagnosticsContributor {
     static var id: DisplayControllerID { .smartHiDPI }
     static var privateSymbols: [PrivateSymbol] { [] }
+    /// Pairs live in `virtualScreens.smartHiDPI` (0.3 §4.5).
+    static var observedSections: Set<DisplaysConfigSection> { [.virtualScreens] }
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
     private var lifetime: Lifetime?
@@ -16,7 +18,11 @@ import SnapticShims
     private var missingSince: [StableID: Double] = [:]
     private var busy: Set<DisplayKey> = []
     private var sessionPaused = false
-    private(set) var lastError: String?
+    private(set) var lastError: String? {
+        didSet { if lastError != oldValue { context?.runtime.revision(Self.id).bump() } }
+    }
+    /// Held here: the menu registry keeps contributors weakly.
+    private var menu: ManagementMenuItems?
 
     init() {}
 
@@ -30,13 +36,18 @@ import SnapticShims
         self.context = context
         self.lifetime = lifetime
         self.effective = effective
-        context.menus.register(self, lifetime: lifetime)
+        let items = ManagementMenuItems(context: context)
+        items.smartHiDPI = self
+        menu = items
+        context.menus.register(items, lifetime: lifetime)
         context.registerPanic(self, lifetime: lifetime)
         context.registerSession(self, lifetime: lifetime)
         context.diagnostics.register(self, section: L("Smart HiDPI"), lifetime: lifetime)
         context.connectPlanner.attach(self, lifetime: lifetime)
         context.virtualHosts.addExitListener(lifetime: lifetime) { [weak self] id, unexpected in
-            guard let self, unexpected, self.owns(id) else { return }
+            guard let self, self.owns(id) else { return }
+            self.changed()
+            guard unexpected else { return }
             // FIXES-R3 5: no respawn once the hosts speak another protocol (restart needed).
             guard self.context?.virtualHosts.restartRequired != true else { return }
             self.context?.connectPlanner.trigger(.reconfigure)
@@ -93,17 +104,29 @@ import SnapticShims
 
     func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) {
         self.effective = effective
-        context?.requestMenuRebuild()
+        changed()
     }
 
     func configDidChange(from old: DisplaysConfig, to new: DisplaysConfig) {
-        if old.virtualScreens.smartHiDPI != new.virtualScreens.smartHiDPI { context?.requestMenuRebuild() }
+        if old.virtualScreens.smartHiDPI != new.virtualScreens.smartHiDPI { changed() }
+    }
+
+    /// Page-visible state changed (pairs live or busy, errors): one revision bump and a menu rebuild.
+    private func changed() {
+        context?.runtime.revision(Self.id).bump()
+        context?.requestMenuRebuild()
+    }
+
+    private func setBusy(_ key: DisplayKey, _ on: Bool) {
+        let changedState = on ? busy.insert(key).inserted : busy.remove(key) != nil
+        if changedState { changed() }
     }
 
     func stop() {
         if let ctx = context { for p in pairs.values { ctx.virtualHosts.destroyNow(specID: p.specID) } }
         missingSince = [:]
         busy = []
+        menu = nil
         lifetime = nil
         context = nil
         effective = []
@@ -259,15 +282,12 @@ import SnapticShims
         pair.mode = initial
         pair.kept = false
         setPair(key, pair)
-        busy.insert(key)
+        setBusy(key, true)
         ctx.connectPlanner.beginUserChange()
         let specID = pair.specID
         lifetime.spawn { [weak self] in
             guard let self, let ctx = self.context else { return }
-            defer {
-                self.busy.remove(key)
-                ctx.requestMenuRebuild()
-            }
+            defer { self.setBusy(key, false) }
             do {
                 let vid = try await self.createHost(key, pair: pair)
                 guard let changes = self.bindChanges(key, virtualID: vid) else {
@@ -314,7 +334,7 @@ import SnapticShims
             }
         }
         await ctx.virtualHosts.destroy(specID: pair.specID)
-        ctx.requestMenuRebuild()
+        changed()
     }
 
     /// Slider: the virtual's own mode change (low risk when known-good).
@@ -368,8 +388,8 @@ import SnapticShims
     func reestablish(specID: StableID, physical key: DisplayKey) async {
         guard let ctx = context, !managementAutomationPaused(ctx), !sessionPaused, let pair = pairs[key], pair.specID == specID,
               pair.kept, !busy.contains(key) else { return }
-        busy.insert(key)
-        defer { busy.remove(key) }
+        setBusy(key, true)
+        defer { setBusy(key, false) }
         do {
             _ = try await createHost(key, pair: pair)
         } catch {
@@ -384,6 +404,7 @@ import SnapticShims
         let outcome = await ManagedTransactions.run(ctx, TransactionRequest(label: L("Restore Smart HiDPI"), risk: .restore,
                                                                            changes: changes, finalScope: .forSession, automatic: true))
         if outcome == .applied || outcome == .kept { markBound(key, specID: specID) }
+        changed()
     }
 
     /// No serial number to verify the panel: ask (trial).
@@ -435,29 +456,6 @@ import SnapticShims
         guard let ctx = context else { return }
         for p in pairs.values { ctx.virtualHosts.destroyNow(specID: p.specID) }
     }
-
-    // MARK: Menu
-
-    var descriptors: [DisplayMenuItemDescriptor] {
-        [DisplayMenuItemDescriptor(id: .dSmartHiDPI, title: L("Smart HiDPI"), slot: .display, defaultVisibility: .inSubmenu)]
-    }
-
-    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] {
-        guard effective.contains(.smartHiDPI), display.transport == .builtin || display.transport == .wired || display.isSmartHiDPIPair
-        else { return [] }
-        let key = display.key
-        let active = isActive(key)
-        var sub: [NSMenuItem] = [ManagedMenuItem(L("Smart HiDPI"), on: active, enabled: !isBusy(key)) { [weak self] in self?.toggle(key) }]
-        if active, let pair = pairs[key] {
-            sub.append(.separator())
-            for m in modeOptions(key) {
-                sub.append(ManagedMenuItem(m.label, on: m == pair.mode) { [weak self] in self?.setMode(key, m) })
-            }
-        }
-        return [(.dSmartHiDPI, ManagedMenuItem.submenu(L("Smart HiDPI"), items: sub))]
-    }
-
-    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
 
     func diagnostics() -> [(String, String)] {
         guard let ctx = context else { return [] }

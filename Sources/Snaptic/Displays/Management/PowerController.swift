@@ -7,9 +7,11 @@ import SnapticKit
 /// Soft disconnect, auto-disconnect of the built-in display and sleep prevention
 /// (PLAN §9.6, R5.7, R5.8). Disconnects are `.forSession` trials, long-armed by the queue;
 /// re-enabling is a visibility restore. Panic and stop reconnect everything Snaptic disabled.
-@MainActor final class PowerController: DisplayFeatureController, DisplayMenuContributor, PanicParticipant, DiagnosticsContributor {
+@MainActor final class PowerController: DisplayFeatureController, PanicParticipant, DiagnosticsContributor {
     static var id: DisplayControllerID { .power }
     static var privateSymbols: [PrivateSymbol] { [] }
+    /// Per-display management (sleep prevention, the auto-disconnect exclusion) and the auto-disconnect setting.
+    static var observedSections: Set<DisplaysConfigSection> { [.management, .perDisplayManagement] }
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
     private var lifetime: Lifetime?
@@ -25,6 +27,8 @@ import SnapticKit
     private var lastAutoDecision: String = ""
     /// Panic released the sleep assertion; it isn't re-taken until the latch clears (R5.4).
     private var heldByPanic = false
+    /// Held here: the menu registry keeps contributors weakly.
+    private var menu: ManagementMenuItems?
 
     var disabledKeys: Set<DisplayKey> { Set(disabled.keys) }
     var isPreventingSleep: Bool { assertion != 0 }
@@ -58,7 +62,10 @@ import SnapticKit
         self.context = context
         self.lifetime = lifetime
         self.effective = effective
-        context.menus.register(self, lifetime: lifetime)
+        let items = ManagementMenuItems(context: context)
+        items.power = self
+        menu = items
+        context.menus.register(items, lifetime: lifetime)
         context.registerPanic(self, lifetime: lifetime)
         context.diagnostics.register(self, section: L("Disconnect and sleep"), lifetime: lifetime)
         context.connectPlanner.attach(self, lifetime: lifetime)
@@ -88,12 +95,18 @@ import SnapticKit
         self.effective = effective
         if lostDisconnect { reconnectAllBestEffort() }
         updateSleepAssertion()
-        context?.requestMenuRebuild()
+        changed()
     }
 
     func configDidChange(from old: DisplaysConfig, to new: DisplaysConfig) {
         if old.perDisplay != new.perDisplay { updateSleepAssertion() }
-        if old.management != new.management || old.perDisplay != new.perDisplay { context?.requestMenuRebuild() }
+        if old.management != new.management || old.perDisplay != new.perDisplay { changed() }
+    }
+
+    /// Page-visible state changed (what Snaptic disconnected, sleep prevention): one revision bump and a menu rebuild.
+    private func changed() {
+        context?.runtime.revision(Self.id).bump()
+        context?.requestMenuRebuild()
     }
 
     /// Reverts session state: reconnect what Snaptic disconnected, release the assertion.
@@ -102,6 +115,7 @@ import SnapticKit
         releaseAssertion()
         heldByPanic = false
         sinks.removeAll()
+        menu = nil
         lifetime = nil
         context = nil
         effective = []
@@ -149,7 +163,7 @@ import SnapticKit
             let ok = outcome == .applied || outcome == .kept
             if ok { self?.disabled[key] = id }
             self?.context?.connectPlanner.endUserChange(changed: ok)
-            self?.context?.requestMenuRebuild()
+            self?.changed()
         }
     }
 
@@ -170,7 +184,7 @@ import SnapticKit
                 autoDisconnected.remove(k)
             }
         }
-        ctx.requestMenuRebuild()
+        changed()
     }
 
     func connectAll() {
@@ -190,6 +204,7 @@ import SnapticKit
         let changes = disabled.values.map { DisplayChange.enabled($0, true) }
         disabled = [:]
         autoDisconnected = []
+        ctx.runtime.revision(Self.id).bump()
         let queue = ctx.transactions
         Task { @MainActor in
             _ = await queue.submit(TransactionRequest(label: L("Reconnect displays"), risk: .restore, changes: changes,
@@ -209,6 +224,7 @@ import SnapticKit
             let ok = outcome == .applied || outcome == .kept
             if ok { ids.forEach { self?.disabled[$0.key] = $0.value } }
             self?.context?.connectPlanner.endUserChange(changed: ok)
+            self?.changed()
         }
     }
 
@@ -223,10 +239,12 @@ import SnapticKit
 
     private func displaysChanged(_ displays: [DisplayInfo]) {
         // Forget records of displays that came back on their own or left.
+        let before = disabled.count
         for (k, _) in disabled {
             guard let d = displays.first(where: { $0.key == k }) else { disabled[k] = nil; continue }
             if d.isActive { disabled[k] = nil; autoDisconnected.remove(k) }
         }
+        if disabled.count != before { context?.runtime.revision(Self.id).bump() }
         updateSleepAssertion()
     }
 
@@ -280,6 +298,7 @@ import SnapticKit
         if outcome == .applied || outcome == .kept {
             disabled[key] = d.hardwareID
             autoDisconnected.insert(key)
+            changed()
             ctx.toasts.show(L("Built-in display disconnected"), action: ToastAction(title: L("Reconnect")) { [weak self] in
                 self?.lifetime?.spawn { [weak self] in await self?.reenable([key], automatic: false) }
             }, lifetime: lifetime)
@@ -302,7 +321,7 @@ import SnapticKit
                                                 "Snaptic: prevent display sleep while a display is connected" as CFString, &id)
             if r == kIOReturnSuccess { assertion = id }
             ctx.runtime.sleepPreventionActive = assertion != 0
-            ctx.requestMenuRebuild()
+            changed()
         } else if !wanted {
             releaseAssertion()
         }
@@ -313,7 +332,7 @@ import SnapticKit
         guard assertion != 0 else { return }
         IOPMAssertionRelease(assertion)
         assertion = 0
-        context?.requestMenuRebuild()
+        changed()
     }
 
     func setPreventSleep(_ on: Bool, for key: DisplayKey) {
@@ -323,73 +342,6 @@ import SnapticKit
         pd.management.preventSleep = on
         value.perDisplay[key] = pd
         ctx.config.value = value
-    }
-
-    // MARK: Menu
-
-    var descriptors: [DisplayMenuItemDescriptor] {
-        var list: [DisplayMenuItemDescriptor] = []
-        if effective.contains(.disconnect) {
-            list += [DisplayMenuItemDescriptor(id: .dPowerSwitch, title: L("Header connect switch"), slot: .header, defaultVisibility: .visible),
-                     DisplayMenuItemDescriptor(id: .dDisconnectItem, title: Self.disconnectTitle, slot: .display, defaultVisibility: .inSubmenu),
-                     DisplayMenuItemDescriptor(id: .dConnectAll, title: L("Connect All Displays"), slot: .tools, defaultVisibility: .visible),
-                     DisplayMenuItemDescriptor(id: .dConnectAllQuick, title: L("Connect All Displays"), slot: .quick, defaultVisibility: .visible),
-                     DisplayMenuItemDescriptor(id: .dDisconnectAllButMain, title: L("Disconnect All But Main"), slot: .tools,
-                                               defaultVisibility: .inSubmenu)]
-        }
-        if effective.contains(.sleepPrevention) {
-            list.append(DisplayMenuItemDescriptor(id: .dSleepPrevention, title: L("Prevent Display Sleep"), slot: .display,
-                                                  defaultVisibility: .inSubmenu))
-        }
-        return list
-    }
-
-    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] {
-        guard let ctx = context else { return [] }
-        let key = display.key
-        var items: [(DisplayMenuItemID, NSMenuItem)] = []
-        if effective.contains(.disconnect) {
-            let isOff = disabled[key] != nil || !display.isActive
-            let pd = ctx.config.value.perDisplay[key]?.management ?? PerDisplayManagement()
-            if pd.powerSwitch == .disconnect {
-                let item = ManagedMenuItem(isOff ? L("Connect") : L("Disconnect"), on: !isOff,
-                                           enabled: isOff || disconnectRefusal(display) == nil) { [weak self] in
-                    if isOff { self?.connect(key) } else { self?.disconnect(key) }
-                }
-                if !isOff, let note = Self.disconnectNote { item.toolTip = note }
-                items.append((.dPowerSwitch, item))
-            }
-            if isOff {
-                items.append((.dDisconnectItem, ManagedMenuItem(L("Connect")) { [weak self] in self?.connect(key) }))
-            } else {
-                let refusal = disconnectRefusal(display)
-                let item = ManagedMenuItem(Self.disconnectTitle, enabled: refusal == nil) { [weak self] in self?.disconnect(key) }
-                item.toolTip = refusal ?? Self.disconnectNote
-                items.append((.dDisconnectItem, item))
-            }
-        }
-        if effective.contains(.sleepPrevention) {
-            let on = ctx.config.value.perDisplay[key]?.management.preventSleep ?? false
-            items.append((.dSleepPrevention, ManagedMenuItem(L("Prevent Display Sleep While Connected"), on: on) { [weak self] in
-                self?.setPreventSleep(!on, for: key)
-            }))
-        }
-        return items
-    }
-
-    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] {
-        guard effective.contains(.disconnect) else { return [] }
-        switch slot {
-        case .tools:
-            return [(.dConnectAll, ManagedMenuItem(L("Connect All Displays"), enabled: !disabled.isEmpty) { [weak self] in self?.connectAll() }),
-                    (.dDisconnectAllButMain, ManagedMenuItem(L("Disconnect All But Main")) { [weak self] in self?.disconnectAllButMain() })]
-        case .quick:
-            return [(.dConnectAllQuick, ManagedMenuItem(L("Connect All Displays"), enabled: !disabled.isEmpty) { [weak self] in
-                self?.connectAll()
-            })]
-        default:
-            return []
-        }
     }
 
     // MARK: Actions / CLI
@@ -446,7 +398,7 @@ import SnapticKit
             let ok = outcome == .applied || outcome == .kept
             if ok { self.disabled[d.key] = id }
             ctx.connectPlanner.endUserChange(changed: ok)
-            ctx.requestMenuRebuild()
+            self.changed()
             return ManagedTransactions.response(outcome)
         }
         // Off-only from the CLI (R5.4): sleep prevention can be released, never started.
