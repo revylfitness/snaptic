@@ -41,6 +41,82 @@ final class ConfigAwakeTests: XCTestCase {
         XCTAssertEqual(AwakeConfig().importable(current: c), c)
     }
 
+    // MARK: Restore keeps rules running (review parity P1); import strips only the file's own (review security S-2)
+
+    private static let routerHash = String(repeating: "ab", count: 32)
+
+    /// A Mac with a "Connected to this network" rule, a nudge preset and nudge default options.
+    private func ownMac() -> AwakeConfig {
+        var c = AwakeConfig()
+        c.features[.triggers] = true
+        c.features[.activity] = true
+        c.features[.pointerNudge] = true
+        let rule = AwakeTrigger(id: StableID(), name: "Office Wi-Fi",
+                                criteria: [AwakeCriterionEntry(.network(.router(hash: Self.routerHash, label: "Office"))),
+                                           AwakeCriterionEntry(.network(.vpnConnected), negated: true)])
+        c.triggers.triggers = [rule]
+        c.sessions.presets.append(AwakePreset(id: StableID(), name: "Nudge", kind: .duration(seconds: 1_800),
+                                              options: AwakeSessionOptions(activity: .nudge)))
+        c.sessions.defaultOptions.activity = .nudge
+        return c.sanitized()
+    }
+
+    private func ownBackup(_ c: AwakeConfig, includeTriggers: Bool) throws -> AwakeConfig {
+        let section = try XCTUnwrap(KitBackup.awakeSectionData(c, includeTriggers: includeTriggers))
+        return try XCTUnwrap(KitBackup.importAwake(current: c, imported: section))
+    }
+
+    func testRestoreDefaultsKeepsRulesRunning() {
+        let c = ownMac()
+        let restored = c.restoringDefaults()
+        XCTAssertEqual(restored.features[.triggers], true)
+        XCTAssertEqual(restored.triggers, c.triggers)
+        XCTAssertNotEqual(restored.features[.pointerNudge], true)
+        XCTAssertEqual(restored.sessions.presets, AwakeConfig().sanitized().sessions.presets)
+        var off = c
+        off.features[.triggers] = false
+        XCTAssertEqual(off.restoringDefaults().features[.triggers], false, "rules the user turned off stay off")
+    }
+
+    func testImportingOwnBackupKeepsTheMacsRulesAndPresets() throws {
+        let c = ownMac()
+        XCTAssertEqual(c.triggers.triggers.first?.criteria.count, 2)
+        for includeTriggers in [false, true] {
+            let result = try ownBackup(c, includeTriggers: includeTriggers)
+            XCTAssertEqual(result.triggers, c.triggers, "rules, includeTriggers \(includeTriggers)")
+            XCTAssertEqual(result.sessions.presets, c.sessions.presets, "presets, includeTriggers \(includeTriggers)")
+            XCTAssertEqual(result.sessions.defaultOptions, c.sessions.defaultOptions)
+            XCTAssertEqual(result.features[.pointerNudge], true)
+        }
+    }
+
+    func testImportStillStripsWhatTheFileBrings() {
+        let current = ownMac()
+        var file = current
+        // A rule this Mac doesn't have, with a salted hash; the Mac's own rule changed by the file; a preset the
+        // file turned into pointer movement; default options the file changed.
+        var foreign = AwakeTrigger(id: StableID(), name: "Their Wi-Fi",
+                                   criteria: [AwakeCriterionEntry(.network(.router(hash: Self.routerHash, label: "X"))),
+                                              AwakeCriterionEntry(.network(.vpnConnected))])
+        foreign.enabled = true
+        file.triggers.triggers[0].name = "Renamed"
+        file.triggers.triggers.append(foreign)
+        let plain = file.sessions.presets[0].id
+        file.sessions.presets[0].options = AwakeSessionOptions(activity: .nudge)
+        file.sessions.defaultOptions = AwakeSessionOptions(display: .maySleep, activity: .nudge)
+        let result = file.importable(current: current)
+        XCTAssertEqual(result.triggers.triggers.count, 2)
+        for t in result.triggers.triggers {
+            XCTAssertFalse(t.enabled, t.name)
+            XCTAssertEqual(t.criteria, [AwakeCriterionEntry(.network(.vpnConnected), negated: t.name == "Renamed")])
+        }
+        XCTAssertEqual(result.sessions.presets.first { $0.id == plain }?.options?.activity, .declare)
+        XCTAssertEqual(result.sessions.defaultOptions.activity, .declare)
+        XCTAssertEqual(result.sessions.defaultOptions.display, .maySleep)
+        // The Mac's own nudge preset, untouched by the file, keeps its pointer movement.
+        XCTAssertEqual(result.sessions.presets.last, current.sessions.presets.last)
+    }
+
     func testRulesDecodeElementWiseAndDuplicateIDsKeepTheFirst() throws {
         let a = StableID().rawValue, b = StableID().rawValue
         let json = #"{"triggers":{"triggers":[{"id":"\#(a)","name":"one"},{"id":"nope"},{"id":"\#(b)"},{"id":"\#(a)","name":"dup"}]}}"#

@@ -1,8 +1,8 @@
 import Foundation
 
 // Composition of the Awake settings (lead shell; 0.3 §2.14). Each section type lives in its owning team's file
-// (G: sessions, guards, triggers, indicator; J: activity, drives). Key SnapticAwakeV1. G fills
-// `restoringDefaults`, `exportable` and `importable` in step 2 (code M14); until then they are safe stubs.
+// (G: sessions, guards, triggers, indicator; J: activity, drives). Key SnapticAwakeV1. `restoringDefaults`,
+// `exportable` and `importable` hold G's rules (code M14).
 
 package struct AwakeConfig: ConfigModel {
     package static let key = "SnapticAwakeV1"
@@ -63,9 +63,11 @@ package struct AwakeConfig: ConfigModel {
     /// Page Restore Defaults (G, §4.6, r1 security L6): features, sessions (the default presets with their derived
     /// ids, default options, behavior), guards, activity and Drive Alive back to defaults, so pointer movement is off
     /// and no volume is kept awake. Kept: the rules (user content; every `nudge` → `declare`, as always), the indicator
-    /// (the Menu Bar page's scope), the shortcuts (the Keyboard Shortcuts sheet's scope) and the recent apps.
+    /// (the Menu Bar page's scope), the shortcuts (the Keyboard Shortcuts sheet's scope) and the recent apps. The
+    /// kept rules keep running: `features.triggers` (opt-in) is kept with them (review parity P1).
     package func restoringDefaults() -> AwakeConfig {
         var c = AwakeConfig()
+        c.features[.triggers] = features[.triggers]
         c.triggers = triggers.withoutNudge().sanitized()
         c.indicator = indicator.sanitized()
         c.shortcuts = shortcuts
@@ -85,17 +87,47 @@ package struct AwakeConfig: ConfigModel {
     /// Backup import (G, security M7/L5/L7), applied by KitBackup after its generic merge: the same stripping as
     /// export; guards may only become stricter than `current`; `features.pointerNudge`, `drives`, the recent apps
     /// and start-at-launch are kept from `current`, so a backup can't turn pointer movement on, pick volumes or
-    /// start a session at launch.
+    /// start a session at launch. The stripping applies to what came from the file: a rule, preset or default
+    /// options the merge left as this Mac has them (or as this Mac exports them) keep this Mac's value, salted
+    /// hashes and pointer movement included (review security S-2); nothing the Mac didn't already have gets through.
     package func importable(current: AwakeConfig) -> AwakeConfig {
-        var c = sanitized().strippedForBackup()
-        c.triggers = c.triggers.strippingHashes()
+        let merged = sanitized()
         let now = current.sanitized()
+        var c = merged.strippedForBackup()
+        let stripped = c.triggers.strippingHashes().triggers
+        c.triggers.triggers = zip(merged.triggers.triggers, stripped).map { incoming, safe in
+            now.triggers.triggers.first { $0.id == incoming.id && Self.isOwn(incoming, of: $0) } ?? safe
+        }
+        c.sessions.presets = zip(merged.sessions.presets, c.sessions.presets).map { incoming, safe in
+            now.sessions.presets.first { $0.id == incoming.id && Self.isOwn(incoming, of: $0) } ?? safe
+        }
+        if Self.isOwn(merged.sessions.defaultOptions, of: now.sessions.defaultOptions) {
+            c.sessions.defaultOptions = now.sessions.defaultOptions
+        }
         c.guards = c.guards.monotonic(over: now.guards)
         c.features[.pointerNudge] = now.features[.pointerNudge]
         c.drives = now.drives
         c.sessions.recentApps = now.sessions.recentApps
         c.sessions.behavior.startAtLaunch = now.sessions.behavior.startAtLaunch
         return c.sanitized()
+    }
+
+    /// `incoming` is this Mac's rule as it is or as `exportable` writes it.
+    private static func isOwn(_ incoming: AwakeTrigger, of own: AwakeTrigger) -> Bool {
+        if incoming == own { return true }
+        var one = AwakeTriggersConfig()
+        one.triggers = [own]
+        return one.withoutNudge().strippingHashes().sanitized().triggers.first == incoming
+    }
+
+    private static func isOwn(_ incoming: AwakePreset, of own: AwakePreset) -> Bool {
+        var exported = own
+        exported.options = own.options?.withoutNudge()
+        return incoming == own || incoming == exported
+    }
+
+    private static func isOwn(_ incoming: AwakeSessionOptions, of own: AwakeSessionOptions) -> Bool {
+        incoming == own || incoming == own.withoutNudge()
     }
 
     /// The fields no backup carries, and no pointer movement.
