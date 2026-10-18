@@ -138,11 +138,41 @@ final class MenuLayoutTests: XCTestCase {
         XCTAssertFalse(p.everythingHidden)
         XCTAssertEqual(p.shared, [.awake])
 
+        // Awake off: nothing to move (and no toast); the check runs again when it turns on.
+        XCTAssertNil(config(awake: .hidden, enabled: [.displays]).awakePresenceFallback(awakeShortcutBound: false))
+        // The toast names where Awake went and why (parity #2).
+        XCTAssertTrue(MenuLayout.awakeFallbackNotice.contains("menu bar"))
+        XCTAssertTrue(MenuLayout.awakeFallbackNotice.contains("shortcut"))
+
         XCTAssertFalse(MenuLayout.isSelectable(.hidden, for: .awake, awakeShortcutBound: false))
         XCTAssertTrue(MenuLayout.isSelectable(.hidden, for: .awake, awakeShortcutBound: true))
         XCTAssertTrue(MenuLayout.isSelectable(.hidden, for: .windowSwitcher, awakeShortcutBound: false))
         XCTAssertFalse(MenuLayout.isSelectable(.ownIconWhenActive, for: .windowSwitcher, awakeShortcutBound: true))
         XCTAssertTrue(MenuLayout.isSelectable(.ownIconWhenActive, for: .displays, awakeShortcutBound: false))
+    }
+
+    /// ux m16: the Snaptic item's default glyph is Window Switcher's; while that icon is shown on its own, the
+    /// Snaptic item uses the grid so the two are never identical. A stored choice always wins.
+    func testSnapticGlyphStepsAsideForAnOwnIconWithTheSameGlyph() {
+        let switcher = MenuLayout.snapticSymbol
+        XCTAssertEqual(MenuLayout.sharedSymbol(stored: "", ownIconSymbols: []), switcher)
+        XCTAssertEqual(MenuLayout.sharedSymbol(stored: "", ownIconSymbols: ["display.2"]), switcher)
+        XCTAssertEqual(MenuLayout.sharedSymbol(stored: "", ownIconSymbols: [switcher]), MenuLayout.snapticAlternateSymbol)
+        XCTAssertEqual(MenuLayout.sharedSymbol(stored: "circle.grid.cross", ownIconSymbols: [switcher]), "circle.grid.cross")
+        XCTAssertNotEqual(MenuLayout.snapticAlternateSymbol, switcher)
+
+        // Choosing: the plain default is stored as "" only while it doesn't collide.
+        XCTAssertEqual(MenuLayout.storedSharedSymbol(chosen: switcher, ownIconSymbols: []), "")
+        XCTAssertEqual(MenuLayout.storedSharedSymbol(chosen: switcher, ownIconSymbols: [switcher]), switcher)
+        XCTAssertEqual(MenuLayout.storedSharedSymbol(chosen: "square.grid.2x2", ownIconSymbols: [switcher]), "square.grid.2x2")
+        // Round trip: what the page shows after storing a choice is that choice.
+        for own in [[String](), [switcher], ["display.2"]] {
+            for chosen in [switcher, "square.grid.2x2", "circle.grid.cross"] {
+                let stored = MenuLayout.storedSharedSymbol(chosen: chosen, ownIconSymbols: own)
+                XCTAssertEqual(MenuLayout.sharedSymbol(stored: stored, ownIconSymbols: own), chosen)
+                XCTAssertTrue(ModulesConfig.isCuratedSymbol(stored))
+            }
+        }
     }
 
     func testKeepAwakeShortcutBinding() {

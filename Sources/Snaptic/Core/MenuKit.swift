@@ -81,7 +81,7 @@ import SnapticKit
         return item
     }
 
-    /// A disabled information row ("Safe Mode is on").
+    /// A disabled information row ("Safe Mode Is On").
     static func status(_ text: String, symbol: String? = nil, control: ControlID? = nil) -> NSMenuItem {
         let item = NSMenuItem(title: text, action: nil, keyEquivalent: "")
         item.isEnabled = false

@@ -9,7 +9,8 @@ import SnapticKit
 /// commit on `.ended` only (resolution).
 ///
 /// Phases: `.began` on mouse down, `.changed` while tracking, `.ended` after the slider's tracking loop returns;
-/// each scroll-wheel step (with "Scroll over a slider to adjust it") delivers a `.changed` + `.ended` pair.
+/// each scroll-wheel step (with "Scroll over a slider to adjust it") and each change made without a drag
+/// (VoiceOver increment/decrement, keyboard) delivers a `.changed` + `.ended` pair.
 @MainActor final class MenuSliderRow: NSMenuItem {
     /// "Scroll over a slider to adjust it" (Menu Bar page); the host sets it from `MenuConfig.scrollAdjustsSliders`.
     static var scrollToAdjust = true
@@ -25,8 +26,8 @@ import SnapticKit
     let discrete: Bool
     /// The current value; nil = unknown (slider disabled, value "—").
     private(set) var value: Double?
-    /// Custom value text (`setValueText`), e.g. "1512 × 982" for a discrete resolution index.
-    private var customText: (@MainActor (Double) -> String)?
+    /// Custom value text, e.g. "1512 × 982" for a discrete resolution index.
+    private let customText: (@MainActor (Double) -> String)?
 
     /// Never decoded from a nib: a decoded row is disabled, with no view and no handler; it never traps.
     required init(coder: NSCoder) {
@@ -83,15 +84,6 @@ import SnapticKit
         rowView?.show(snapped, text: valueText(snapped), spoken: spokenText(snapped), moveSlider: false)
         if discrete && phase == .changed { return }   // commits on release only
         onChange(snapped, phase)
-    }
-
-    /// Replaces the value label's text (backward-compatible with rows built without it) and, with `widest`,
-    /// widens the label to fit the longest text. Takes effect immediately, also while the menu is open.
-    func setValueText(_ text: @escaping @MainActor (Double) -> String, widest: String? = nil) {
-        customText = text
-        if let widest { rowView?.fitValue(widest) }
-        guard let rowView, !rowView.isTracking else { return }
-        rowView.show(value, text: valueText(value), spoken: spokenText(value), moveSlider: false)
     }
 
     // MARK: Text
@@ -237,9 +229,16 @@ import SnapticKit
     }
 
     @objc private func moved(_ sender: NSSlider) {
-        // Delivered while tracking; scroll steps and the end of a drag report their own phases.
-        guard slider.isTracking else { return }
-        onPhase?(sender.doubleValue, .changed)
+        // During a drag: `.changed` (mouse down and the end of the drag report their own phases). A change with no
+        // drag (VoiceOver increment/decrement, arrow keys) is one whole step, like a scroll step: `.changed` then
+        // `.ended`, so it is applied (a discrete slider commits it) and the label and spoken value follow (ux M1).
+        // Scroll steps set the value directly and never come through here.
+        if slider.isTracking {
+            onPhase?(sender.doubleValue, .changed)
+        } else {
+            onPhase?(sender.doubleValue, .changed)
+            onPhase?(sender.doubleValue, .ended)
+        }
     }
 }
 

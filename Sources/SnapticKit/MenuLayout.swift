@@ -13,6 +13,29 @@ package enum MenuLayout {
         shortcuts[keepAwakeAction] != nil
     }
 
+    /// The Snaptic item's default glyph (stored as ""), and the one it uses instead while a module's own icon
+    /// already shows the default (Window Switcher's glyph; ux m16: two identical icons side by side).
+    package static let snapticSymbol = "rectangle.on.rectangle"
+    package static let snapticAlternateSymbol = "square.grid.2x2"
+
+    /// The Snaptic item's glyph: the stored choice; else the default, or the alternate while one of the own icons
+    /// shown (`ownIconSymbols`) is the default glyph.
+    package static func sharedSymbol(stored: String, ownIconSymbols: [String]) -> String {
+        guard stored.isEmpty else { return stored }
+        return ownIconSymbols.contains(snapticSymbol) ? snapticAlternateSymbol : snapticSymbol
+    }
+
+    /// What the Menu Bar page stores for a chosen Snaptic glyph: "" (follow the default) only for the default
+    /// glyph while it doesn't collide; any other choice, or the default chosen while it collides, is kept as is.
+    package static func storedSharedSymbol(chosen: String, ownIconSymbols: [String]) -> String {
+        chosen == snapticSymbol && !ownIconSymbols.contains(snapticSymbol) ? "" : chosen
+    }
+
+    /// The toast the host shows when the Don't Show fallback (`awakePresenceFallback`) moves Awake back.
+    package static var awakeFallbackNotice: String {
+        L("Awake is back in the menu bar because its keyboard shortcut is no longer set.")
+    }
+
     /// Whether `presence` may be chosen for a module now: Awake's Don't Show needs a bound Keep Awake shortcut.
     package static func isSelectable(_ presence: MenuPresence, for id: ModuleID, awakeShortcutBound: Bool) -> Bool {
         guard MenuPresence.allowed(for: id).contains(presence) else { return false }
@@ -101,8 +124,9 @@ extension ModulesConfig {
     }
 
     /// The "Don't Show" fallback (§5.2, parity minor 11): Awake set to Don't Show while the Keep Awake shortcut is
-    /// unbound goes back to Show When Active (the host then says so in a toast). nil = nothing to change.
+    /// unbound goes back to Show When Active (the host then says so in `MenuLayout.awakeFallbackNotice`). nil =
+    /// nothing to change; also while Awake is off (it shows nothing anyway; the check runs again when it turns on).
     package func awakePresenceFallback(awakeShortcutBound: Bool) -> MenuPresence? {
-        presence(.awake) == .hidden && !awakeShortcutBound ? .ownIconWhenActive : nil
+        isEnabled(.awake) && presence(.awake) == .hidden && !awakeShortcutBound ? .ownIconWhenActive : nil
     }
 }
