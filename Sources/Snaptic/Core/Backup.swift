@@ -15,10 +15,10 @@ import UniformTypeIdentifiers
 
     // MARK: Export
 
-    /// `includeTriggers`: the export sheet's "Include automatic-session rules (contains app, device and network
-    /// names)" checkbox (off by default, 0.3 §4.3).
-    static func export(host: ModuleHost, includeTriggers: Bool = false) {
-        guard let document = makeDocument(host: host, includeTriggers: includeTriggers) else {
+    /// `includeAwakeRules`: General's "Include automatic-session rules (contains app, device and network names)"
+    /// checkbox (off by default, 0.3 §4.3); `AwakeConfig.exportable(includeTriggers:)`.
+    static func export(host: ModuleHost, includeAwakeRules: Bool = false) {
+        guard let document = makeDocument(host: host, includeAwakeRules: includeAwakeRules) else {
             host.toasts.show(L("The settings couldn't be exported."))
             return
         }
@@ -31,20 +31,20 @@ import UniformTypeIdentifiers
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try document.write(to: url, options: [.atomic])
-            EventLog.shared.record(.modules, includeTriggers ? "Settings exported with Awake rules" : "Settings exported")
+            EventLog.shared.record(.modules, includeAwakeRules ? "Settings exported with Awake rules" : "Settings exported")
             host.toasts.show(L("Settings exported."))
         } catch {
             host.toasts.show(L("The settings couldn't be saved there."))
         }
     }
 
-    static func makeDocument(host: ModuleHost, includeTriggers: Bool = false) -> Data? {
+    static func makeDocument(host: ModuleHost, includeAwakeRules: Bool = false) -> Data? {
         let encoder = JSONEncoder()
         var sections: [String: Data] = [:]
         if let data = try? encoder.encode(host.switcherSettings.config) { sections[KitBackup.switcherSection] = data }
         if let data = try? encoder.encode(host.modulesStore.value) { sections[KitBackup.modulesSection] = data }
         if let data = try? encoder.encode(host.displaysStore.value) { sections[KitBackup.displaysSection] = data }
-        if let data = KitBackup.awakeSectionData(host.awakeStore.value, includeTriggers: includeTriggers) {
+        if let data = KitBackup.awakeSectionData(host.awakeStore.value, includeTriggers: includeAwakeRules) {
             sections[KitBackup.awakeSection] = data
         }
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"

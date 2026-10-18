@@ -139,6 +139,11 @@ import SnapticKit
         return items
     }
 
+    /// The Window Switcher root (H's `SwitcherPages.root`, 0.3 §4.3).
+    func settingsRoot() -> SettingsRoot {
+        SwitcherPages.root(module: self)
+    }
+
     func settingsPages() -> [SettingsPage] {
         SwitcherPages.pages(module: self)
     }
