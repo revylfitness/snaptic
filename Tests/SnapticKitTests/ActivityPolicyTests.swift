@@ -239,4 +239,22 @@ final class ActivityPolicyTests: XCTestCase {
             XCTAssertLessThanOrEqual(out, max(previous, now))
         }
     }
+
+    // MARK: First-nudge notice
+
+    func testNudgeNoticeShowsOncePerManualSession() {
+        var notice = NudgeNotice()
+        let a = StableID(), b = StableID()
+        XCTAssertFalse(notice.noteAction(.declare, session: a))
+        XCTAssertFalse(notice.noteAction(.skip, session: a))
+        XCTAssertFalse(notice.noteAction(.nudge, session: nil), "no manual session: never")
+        XCTAssertTrue(notice.noteAction(.nudge, session: a))
+        XCTAssertFalse(notice.noteAction(.nudge, session: a))
+        XCTAssertFalse(notice.noteAction(.declare, session: a))
+        XCTAssertFalse(notice.noteAction(.nudge, session: a))
+        XCTAssertEqual(notice.shownFor, a)
+        XCTAssertTrue(notice.noteAction(.nudge, session: b), "a new session shows it again")
+        XCTAssertFalse(notice.noteAction(.nudge, session: b))
+        XCTAssertTrue(notice.noteAction(.nudge, session: a))
+    }
 }

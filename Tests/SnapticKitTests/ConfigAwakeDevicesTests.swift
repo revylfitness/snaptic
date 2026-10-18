@@ -111,4 +111,51 @@ final class ConfigAwakeDevicesTests: XCTestCase {
         XCTAssertEqual(AwakeHashMaterial.hex([0x00, 0x0F, 0xA0, 0xFF]), "000fa0ff")
         XCTAssertEqual(AwakeHashMaterial.hex([]), "")
     }
+
+    // MARK: Bluetooth (Beta, TCC-free)
+
+    func testBluetoothAudioMaterialJoinsInputAndOutput() {
+        let out = AwakeHashMaterial.bluetoothAudio(uid: "AC-1D-DF-00-11-22:output")
+        XCTAssertEqual(out, "btaudio:ac:1d:df:00:11:22")
+        XCTAssertEqual(AwakeHashMaterial.bluetoothAudio(uid: "ac-1d-df-00-11-22:input"), out)
+        XCTAssertEqual(AwakeHashMaterial.bluetoothAudio(uid: " AC-1D-DF-00-11-22 \u{0}"), out)
+        XCTAssertEqual(AwakeHashMaterial.bluetoothAudio(uid: "AC:1D:DF:00:11:22"), out)
+        XCTAssertNotEqual(AwakeHashMaterial.bluetoothAudio(uid: "AC-1D-DF-00-11-23:output"), out)
+    }
+
+    func testBluetoothAudioMaterialWithoutAnAddress() {
+        XCTAssertEqual(AwakeHashMaterial.bluetoothAudio(uid: "SpeakerUID:output"), "btaudio:SpeakerUID")
+        XCTAssertEqual(AwakeHashMaterial.bluetoothAudio(uid: "SpeakerUID:Input"), "btaudio:SpeakerUID")
+        XCTAssertEqual(AwakeHashMaterial.bluetoothAudio(uid: "AC-1D-DF-00-11-22x"), "btaudio:AC-1D-DF-00-11-22x",
+                       "an address followed by anything but a colon is not an address")
+        XCTAssertNil(AwakeHashMaterial.bluetoothAudio(uid: ""))
+        XCTAssertNil(AwakeHashMaterial.bluetoothAudio(uid: ":output"))
+        XCTAssertNil(AwakeHashMaterial.bluetoothAudio(uid: "  \u{0}"))
+        XCTAssertNil(AwakeHashMaterial.bluetoothAudio(uid: String(repeating: "x", count: 257)))
+    }
+
+    func testBluetoothInputMaterial() {
+        XCTAssertEqual(AwakeHashMaterial.bluetoothInput(address: "a4-83-e7-01-02-03", vendor: 76, product: 615),
+                       "bthid:a4:83:e7:01:02:03")
+        XCTAssertEqual(AwakeHashMaterial.bluetoothInput(address: "not an address", vendor: 76, product: 615),
+                       "bthid:v76p615")
+        XCTAssertEqual(AwakeHashMaterial.bluetoothInput(address: nil, vendor: 0, product: 3), "bthid:v0p3")
+        XCTAssertNil(AwakeHashMaterial.bluetoothInput(address: nil, vendor: 0, product: 0))
+        XCTAssertNil(AwakeHashMaterial.bluetoothInput(address: "", vendor: -1, product: 0))
+        XCTAssertNil(AwakeHashMaterial.bluetoothInput(address: nil, vendor: 0x1_0000, product: 1))
+    }
+
+    func testBluetoothTransportAndNames() {
+        XCTAssertTrue(BluetoothPresenceRules.isBluetoothTransport("Bluetooth"))
+        XCTAssertTrue(BluetoothPresenceRules.isBluetoothTransport("Bluetooth Low Energy"))
+        XCTAssertTrue(BluetoothPresenceRules.isBluetoothTransport(" bluetooth "))
+        for other in ["USB", "SPI", "Virtual", "", "FIFO", "AirPlay"] {
+            XCTAssertFalse(BluetoothPresenceRules.isBluetoothTransport(other), other)
+        }
+        XCTAssertFalse(BluetoothPresenceRules.isBluetoothTransport(nil))
+        XCTAssertEqual(BluetoothPresenceRules.audioTransportTypes, [0x626C_7565, 0x626C_6561])
+        XCTAssertEqual(BluetoothPresenceRules.displayName("  AirPods Pro \u{0}", fallback: "x"), "AirPods Pro")
+        XCTAssertEqual(BluetoothPresenceRules.displayName(nil, fallback: "Bluetooth Device"), "Bluetooth Device")
+        XCTAssertEqual(BluetoothPresenceRules.displayName(String(repeating: "a", count: 100), fallback: "x").count, 64)
+    }
 }

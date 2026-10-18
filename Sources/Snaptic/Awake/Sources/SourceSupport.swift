@@ -131,6 +131,11 @@ enum AwakeIdentity {
         AwakeHashMaterial.router(mac: mac).map { hash($0, salt: salt()) }
     }
 
+    /// The stored form of a Bluetooth device identity (`AwakeHashMaterial.bluetoothAudio` / `bluetoothInput`).
+    @MainActor static func bluetoothHash(_ material: String) -> String {
+        hash(material, salt: salt())
+    }
+
     /// The stored form of a USB serial; nil for devices without a usable serial.
     @MainActor static func usbSerialHash(_ serial: String) -> String? {
         AwakeHashMaterial.usbSerial(serial).map { hash($0, salt: salt()) }
