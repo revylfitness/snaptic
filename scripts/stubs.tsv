@@ -277,6 +277,10 @@ Tests/SnapticKitTests/ConfigBrightnessTests.swift	C	K3	ConfigBrightnessTests	-
 Tests/SnapticKitTests/ConfigDDCTests.swift	C	K3	ConfigDDCTests	-
 Tests/SnapticKitTests/ConfigKeysTests.swift	C	K3	ConfigKeysTests	-
 Tests/SnapticKitTests/ConfigColorTests.swift	C	K3	ConfigColorTests	-
+Sources/SnapticKit/MediaKeyPress.swift	C	L	-	-
+Sources/SnapticKit/BrightnessFirstRead.swift	C	L	-	-
+Tests/SnapticKitTests/MediaKeyPressTests.swift	C	L	-	-
+Tests/SnapticKitTests/BrightnessFirstReadTests.swift	C	L	-	-
 Tests/SnapticKitTests/SoCCapsTests.swift	D	K3	SoCCapsTests	-
 Tests/SnapticKitTests/ScaleMatchTests.swift	D	K3	ScaleMatchTests	-
 Tests/SnapticKitTests/LayoutPresetModelTests.swift	D	K3	LayoutPresetModelTests	-

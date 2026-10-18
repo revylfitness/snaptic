@@ -164,6 +164,10 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
     private(set) var hotkeyProblems: [DisplayActionID: String] = [:]
     private var detentArmed: [DisplayKey: TimeInterval] = [:]
     private var output: (name: String?, hasVolume: Bool) = (nil, true)
+    /// NSEvent monitors watching media keys while the tap can't run (no Accessibility).
+    private var pressMonitors: [Any] = []
+    /// Once per launch: the controller outlives module restarts.
+    private var untrustedNotice = UntrustedKeyNotice()
 
     init() {}
 
@@ -177,6 +181,11 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
         self.effective = effective
         context.diagnostics.register(self, section: L("Keys and shortcuts"), lifetime: lifetime)
         context.mediaKeys.keysController = self
+        // W4: a grant made in System Settings starts the tap without a relaunch.
+        context.permissions.observe(lifetime: lifetime) { [weak self] permission, granted in
+            guard permission == .accessibility else { return }
+            self?.accessibilityChanged(granted: granted)
+        }
         context.registry.changes
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.refreshSnapshot() } }
@@ -212,6 +221,7 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
     }
 
     func stop() {
+        removePressMonitors()
         sinks.removeAll()
         pollTimer?.invalidate()
         pollTimer = nil
@@ -241,6 +251,7 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
         let wanted = effective.contains(.brightnessKeys) || effective.contains(.volumeKeys)
         guard wanted else {
             context.mediaKeys.stop()
+            removePressMonitors()
             return
         }
         let snap = snapshot
@@ -253,11 +264,78 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
                             lifetime: self.lifetime)
         }
         if !context.mediaKeys.isRunning { context.mediaKeys.start() }
+        updatePressMonitor()
     }
 
-    /// Retries the tap after the permission was granted (Keys page button).
+    /// Accessibility changed (PermissionFlow): start the tap on a grant; on a revoke the tap
+    /// stops itself, and the press monitor explains the first ignored press.
+    private func accessibilityChanged(granted: Bool) {
+        guard context != nil else { return }
+        let wanted = effective.contains(.brightnessKeys) || effective.contains(.volumeKeys)
+        if granted, wanted, !tapRunning {
+            EventLog.shared.record(.keys, "Accessibility granted: starting the media key tap")
+            retryTap()
+        } else {
+            updatePressMonitor()
+        }
+    }
+
+    /// While the keys are wanted but the tap can't run, watch presses (NSEvent monitors
+    /// see them without Accessibility) to explain the first one Snaptic had to ignore.
+    private func updatePressMonitor() {
+        let wanted = effective.contains(.brightnessKeys) || effective.contains(.volumeKeys)
+        guard let context, wanted, !tapRunning,
+              untrustedNotice.wantsPresses(trusted: context.mediaKeys.isTrusted) else {
+            removePressMonitors()
+            return
+        }
+        guard pressMonitors.isEmpty else { return }
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: .systemDefined, handler: { [weak self] event in
+            MainActor.assumeIsolated { self?.observedPress(event) }
+        }) {
+            pressMonitors.append(global)
+        }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: .systemDefined, handler: { [weak self] event in
+            MainActor.assumeIsolated { self?.observedPress(event) }
+            return event
+        }) {
+            pressMonitors.append(local)
+        }
+    }
+
+    private func removePressMonitors() {
+        pressMonitors.forEach { NSEvent.removeMonitor($0) }
+        pressMonitors.removeAll()
+    }
+
+    /// A media key seen by the monitor: never acted on (macOS handles it), at most one toast.
+    private func observedPress(_ event: NSEvent) {
+        guard let context, event.type == .systemDefined,
+              let press = MediaKeyPress.parse(subtype: Int(event.subtype.rawValue), data1: event.data1) else { return }
+        let trusted = context.mediaKeys.isTrusted
+        if trusted {
+            // Granted without PermissionFlow noticing yet.
+            context.permissions.refresh()
+            if !tapRunning { retryTap() } else { removePressMonitors() }
+            return
+        }
+        refreshSnapshot()
+        let verdict = snapshot.verdict(press.key, flags: UInt64(event.modifierFlags.rawValue), location: Self.cgPointer())
+        guard untrustedNotice.shouldShow(press, trusted: trusted, wouldAct: verdict != .pass) else { return }
+        removePressMonitors()
+        let name = DisplaysUIText.permissionName(.accessibility, osMajor: ProcessInfo.processInfo.operatingSystemVersion.majorVersion)
+        let isBrightness = press.key == .brightnessUp || press.key == .brightnessDown
+        let message = isBrightness ? L("Brightness keys need \(name)") : L("Volume keys need \(name)")
+        EventLog.shared.record(.keys, "Media key ignored: Accessibility not granted")
+        context.toasts.show(message, action: ToastAction(title: L("Grant…")) { [weak self] in
+            self?.context?.permissions.presentGuide(.accessibility, reason: L("Brightness and volume keys for your displays"))
+        }, lifetime: lifetime)
+    }
+
+    /// Retries the tap after the permission was granted (Keys page button, PermissionFlow).
     func retryTap() {
         context?.mediaKeys.stop()
+        removePressMonitors()
         configureTap()
     }
 

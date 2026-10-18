@@ -13,6 +13,19 @@ final class ConfigKeysTests: XCTestCase {
         XCTAssertEqual(k.effectiveOSDPosition(osMajor: 27), .bottomCenter)
     }
 
+    func testNativeOSDOnlyBeforeMacOS26() {
+        var k = KeysConfig()
+        XCTAssertFalse(k.usesNativeOSD(osMajor: 15, nativeAvailable: true), "off by default")
+        k.osdNative = true
+        XCTAssertTrue(k.usesNativeOSD(osMajor: 14, nativeAvailable: true))
+        XCTAssertTrue(k.usesNativeOSD(osMajor: 15, nativeAvailable: true))
+        XCTAssertFalse(k.usesNativeOSD(osMajor: 15, nativeAvailable: false))
+        XCTAssertFalse(k.usesNativeOSD(osMajor: 26, nativeAvailable: true), "W11: saved on 15, ignored on 26")
+        XCTAssertFalse(k.usesNativeOSD(osMajor: 27, nativeAvailable: true))
+        XCTAssertTrue(KeysConfig.nativeOSDOffered(osMajor: 15))
+        XCTAssertFalse(KeysConfig.nativeOSDOffered(osMajor: 26))
+    }
+
     func testRoundTripWithShortcutsAndSlots() throws {
         var k = KeysConfig()
         k.shortcuts[DisplayActionID(rawValue: "c.brightnessUp")] = HotkeyCombo(keyCode: 0x7E, carbonModifiers: 0x1100)
