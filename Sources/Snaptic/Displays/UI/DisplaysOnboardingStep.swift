@@ -40,7 +40,7 @@ struct DisplaysOnboardingStep: View, ControlDeclaring {
         Set(DisplayFeature.allCases.filter { env.runtime.availability[$0]?.isAvailable ?? true })
     }
 
-    /// External displays with no HiDPI mode near their native width (Smart HiDPI helps them).
+    /// External displays with no HiDPI mode near their native width (Sharper text, `smartHiDPI`, helps them).
     private var displaysWantingSmartHiDPI: [DisplayInfo] {
         env.runtime.displays.filter { d in
             guard !d.isBuiltin, d.isActive, d.transport == .wired || d.transport == .displayLink else { return false }
@@ -121,8 +121,8 @@ struct DisplaysOnboardingStep: View, ControlDeclaring {
             Section {
                 Toggle(isOn: $useSmartHiDPI) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(L("Turn on Smart HiDPI (Beta)"))
-                        Text(L("\(candidates.map(\.name).joined(separator: ", ")) has no sharp HiDPI mode at a usable size. Smart HiDPI renders at twice the resolution and scales down. It turns off HDR on that display and uses more GPU memory."))
+                        Text(L("Turn on Sharper Text (Beta)"))
+                        Text(DisplaysOnboardingPlan.sharperTextNote(candidates.map(\.name)))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -138,7 +138,7 @@ struct DisplaysOnboardingStep: View, ControlDeclaring {
         let osMajor = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
         return Section(L("Summary")) {
             if on.isEmpty {
-                Text(L("Only the Displays panel, display names and diagnostics stay on."))
+                Text(L("Only the Displays panel, display names, and Display Information stay on."))
                     .foregroundStyle(.secondary)
             } else {
                 Text(L("Turns on: \(on.map(DisplaysUIText.title).joined(separator: ", ")).")).font(.callout)

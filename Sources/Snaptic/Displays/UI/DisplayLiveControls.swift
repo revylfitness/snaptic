@@ -55,6 +55,14 @@ import SnapticKit
 
     var isReadingBrightness: Bool { context?.brightness.isAwaitingFirstRead(key) ?? false }
 
+    /// "≈350 nits" under the Brightness slider when Brightness and Dimming › Show brightness in nits is on (PLAN 0.3
+    /// §4.3 Display row: "value in nits when Show nits is on"), else nil.
+    var nitsText: String? {
+        guard let ctx = context, ctx.runtime.isEffective(.nits), ctx.config.value.brightness.showNits,
+              let nits = ctx.brightness.nits(for: key) else { return nil }
+        return NitsModel.label(nits.value, estimate: nits.estimate)
+    }
+
     // MARK: Resolution (D)
 
     private var resolution: ResolutionController? { context?.connectPlanner.resolution }
@@ -70,7 +78,9 @@ import SnapticKit
 
     func apply(_ mode: ModeRef, display: DisplayInfo) {
         guard let resolution, mode != resolution.currentMode(display) else { return }
-        resolution.apply(mode, to: key, label: L("Resolution of “\(display.name)”"))
+        // D's default label ("Change resolution"): a transaction label is logged, and display names never are
+        // (TEAMS rule 3); the confirmation names the display itself.
+        resolution.apply(mode, to: key)
     }
 
     // MARK: Hardware controls (C)
@@ -143,7 +153,8 @@ struct LiveBrightnessRow: View {
     var body: some View {
         if let value = live.brightnessPosition ?? live.brightness ?? model.brightnessReading {
             let range: ClosedRange<Double> = live.brightnessPosition == nil ? 0...1 : live.brightnessRange
-            SliderSetting(L("Brightness"), value: Binding(get: { min(max(value, range.lowerBound), range.upperBound) },
+            SliderSetting(L("Brightness"), help: model.nitsText,
+                          value: Binding(get: { min(max(value, range.lowerBound), range.upperBound) },
                                                           set: { model.set(.brightness, $0) }),
                           in: range, defaultValue: nil, format: .percent(of: 1), minSymbol: "sun.min",
                           maxSymbol: "sun.max", commit: .live, anchor: anchor,
