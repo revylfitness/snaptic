@@ -4,7 +4,8 @@ import SnapticKit
 
 /// First-run onboarding (H; PLAN 0.3 §4.7): Welcome → Choose modules → Displays chips (F's
 /// `DisplaysOnboardingStep`, only while Displays is on) → Permissions (only what was chosen) → Done. One primary
-/// button, always in the window footer ("Continue" / "Done"), with Back beside it. The step is saved after every
+/// button, always in the window footer ("Continue" / "Done"; on the Displays step it applies the chips), with Back
+/// beside it. The step is saved after every
 /// move, so closing the window and relaunching resumes where it stopped.
 @MainActor final class Onboarding: NSObject, NSWindowDelegate, ControlDeclaring {
     typealias Controls = OnboardingControls
@@ -98,6 +99,8 @@ import SnapticKit
 
 @MainActor final class OnboardingModel: ObservableObject {
     @Published var step: OnboardingStep = .welcome
+    /// Bumped by the footer's Continue on the Displays step: F's step applies its chips and calls `onApply`.
+    @Published var displaysApplyToken = 0
 }
 
 private struct OnboardingView: View {
@@ -186,9 +189,10 @@ private struct OnboardingView: View {
         }
     }
 
-    /// F's chips. Until F's step takes its apply from this footer, its own button applies and moves on (§4.7).
+    /// F's chips; the footer's Continue applies them (one primary button, §4.7), then setup moves on.
     private var displays: some View {
-        DisplaysOnboardingStep(env: host.displays.pageEnvironment, hideMenuIcon: hideDisplaysIcon) { chosen in
+        DisplaysOnboardingStep(env: host.displays.pageEnvironment, hideMenuIcon: hideDisplaysIcon,
+                               applyToken: model.displaysApplyToken) { chosen in
             store.value.onboardingPermissions = Permission.allCases.filter { chosen.contains($0) }
             next()
         }
@@ -274,14 +278,14 @@ private struct OnboardingView: View {
                 Button(L("Back")) { back() }
             }
             Spacer()
-            if model.step == .displays {
-                Button(L("Skip")) { next() }
-            } else {
-                Button(model.step == .done ? L("Done") : L("Continue")) {
-                    model.step == .done ? finish() : next()
+            Button(model.step == .done ? L("Done") : L("Continue")) {
+                switch model.step {
+                case .done: finish()
+                case .displays: model.displaysApplyToken &+= 1
+                default: next()
                 }
-                .keyboardShortcut(.defaultAction)
             }
+            .keyboardShortcut(.defaultAction)
         }
         .padding(16)
     }
