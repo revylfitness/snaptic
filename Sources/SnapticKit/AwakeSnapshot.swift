@@ -106,7 +106,7 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
         if let p = pausedUntil, !p.isFinite { c.pausedUntil = nil }
         c.guardMemory = guardMemory.sanitized()
         if let st = stop, !st.isValid { c.stop = nil }
-        let ids = Set([c.manual?.id].compactMap { $0} + c.holds.map(\.id))
+        let ids = Set([c.manual?.id].compactMap { $0 } + c.holds.map(\.id))
         c.segmentStarts = LossyMap(segmentStarts.values.filter { ids.contains($0.key) && $0.value.isFinite && $0.value >= 0 })
         c.reminders = reminders.keeping(session: c.manual?.id)
         return c
@@ -140,8 +140,8 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
             c.pausedUntil = p
         }
         c.guardMemory = base.guardMemory.reloaded(sameBoot: sameBoot)
-        let kept = Set([c.manual?.id].compactMap { $0} + c.holds.map(\.id))
-        c.segmentStarts = LossyMap(base.segmentStarts.values.filter { kept.contains($0.key) })
+        let carried = Set([c.manual?.id].compactMap { $0 } + c.holds.map(\.id))
+        c.segmentStarts = LossyMap(base.segmentStarts.values.filter { carried.contains($0.key) })
         c.reminders = base.reminders.keeping(session: c.manual?.id)
         // The stamp is read once by restore (`awayEnds`, `restoreEnd`, `resumedSegment`) from the stored snapshot.
         c.stop = nil
