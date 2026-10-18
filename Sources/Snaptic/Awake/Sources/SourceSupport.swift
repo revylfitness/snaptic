@@ -141,24 +141,3 @@ enum AwakeIdentity {
         AwakeHashMaterial.usbSerial(serial).map { hash($0, salt: salt()) }
     }
 }
-
-/// The "Until Downloads and Tasks Finish" signals in one place (N9, R5-4), for SessionController: the `taskQuiet`
-/// dynamic need activates cpu, disk and network; `request` adds the per-process CPU walk and network throughput while
-/// the session's lifetime lives; `sample` reads the five signals now (unknown ones stay nil, which TaskQuiet treats as
-/// busy); `observe` fires after every 5 s CPU sample (and after a wake reset), the tick TaskQuiet.step runs on.
-@MainActor enum TaskActivityProbe {
-    static func request(_ context: AwakeContext, lifetime: Lifetime) {
-        context.cpu.requestTaskSampling(lifetime)
-        context.network.requestTaskSampling(lifetime)
-    }
-
-    static func sample(_ context: AwakeContext) -> TaskActivitySample {
-        TaskActivitySample(topProcessPercent: context.cpu.topProcessPercent, newProcesses: context.cpu.newProcesses,
-                           totalCPUPercent: context.cpu.totalPercent, diskKBps: context.disk.kBps,
-                           networkKBps: context.network.throughputKBps)
-    }
-
-    static func observe(_ context: AwakeContext, lifetime: Lifetime, _ handler: @escaping @MainActor () -> Void) {
-        context.cpu.observe(lifetime, handler)
-    }
-}

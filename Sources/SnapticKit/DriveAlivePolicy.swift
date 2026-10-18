@@ -82,6 +82,16 @@ package enum DriveAlivePolicy {
         return source != .commandLine
     }
 
+    /// "Writing now" (awake-correctness F1; the arbiter's `driveAliveWriting`, so `preventDiskIdle` follows it): at
+    /// least one write target — a volume `shouldWrite` allowed, chosen by DriveAliveController with writes stopped
+    /// around system sleep — is mounted and eligible right now and isn't skipped after a failure on that mount.
+    /// A turned-on volume alone never counts: no session (without "Also when no session is running"), guards,
+    /// sleep, an unmounted or failed volume all read as not writing.
+    package static func isWriting(targets: Set<VolumeUUIDKey>, eligibleMounted: Set<VolumeUUIDKey>,
+                                  failed: Set<VolumeUUIDKey>) -> Bool {
+        targets.contains { eligibleMounted.contains($0) && !failed.contains($0) }
+    }
+
     /// The interval DriveAliveService uses, clamped to `intervalRange`.
     package static func clampedInterval(_ seconds: Int) -> Int {
         min(intervalRange.upperBound, max(intervalRange.lowerBound, seconds))

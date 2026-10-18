@@ -161,11 +161,12 @@ import SnapticKit
     }
 
     /// Security M1: hard floor, user floor, unreadable battery and critical heat stop activity (fail-safe: no power
-    /// facts yet reads as "not allowed").
+    /// facts yet reads as "not allowed"). The guard memory is SessionController's in-memory copy, never the
+    /// outside-writable snapshot store (security S-1).
     private func backgroundWorkAllowed(_ context: AwakeContext) -> Bool {
         guard let facts = context.power.facts else { return false }
         return AwakeGuards.allowsBackgroundWork(facts, config: context.config.value.guards,
-                                                memory: context.state.value.guardMemory)
+                                                memory: context.sessions.guardMemory)
     }
 
     // MARK: First-nudge notice
