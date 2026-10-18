@@ -114,7 +114,7 @@ final class GuardProtocolTests: XCTestCase {
         XCTAssertEqual(GuardProtocol.extendedDeadline(current: 500, now: 100, seconds: 20), 500, "never shortened")
         XCTAssertEqual(GuardProtocol.extendedDeadline(current: 0, now: 100, seconds: 1000), 100 + GuardProtocol.maxExtendSeconds)
         XCTAssertEqual(GuardProtocol.extendedDeadline(current: 0, now: 100, seconds: .nan), 100)
-        XCTAssertNil(GuardProtocol.decodeMessage(GuardProtocol.encode(.extend(id: 1, seconds: 500))!))
+        XCTAssertNil(GuardProtocol.decodeMessage(GuardProtocol.encodeUnchecked(.extend(id: 1, seconds: 500))!))
     }
 
     func testFuzzDecodeNeverTraps() {
