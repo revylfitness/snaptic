@@ -60,6 +60,9 @@ import SnapticKit
     private var launchPermissionsRequested = false
     private var sinks: [AnyCancellable] = []
     private var isShutDown = false
+    /// The rules M1 made and the displays they name, while its one-time toast is due (§4.6, C7).
+    private var m1Toast: (ruleIDs: Set<StableID>, displayNames: [String])?
+    private var m1ToastSink: AnyCancellable?
 
     private(set) lazy var statusMenu = StatusMenu(host: self)
     private(set) lazy var settingsWindow = SettingsWindowHost(host: self)
@@ -97,8 +100,8 @@ import SnapticKit
         let awakeHistory = ConfigStore<AwakeHistory>(key: Self.awakeHistoryKey)
         let ledger = ConfigStore<MigrationLedger>(key: Self.ledgerKey)
         let disabled = Set(ModuleID.allCases.filter { (domain?[ModuleHost.disableKey($0)] as? Bool) == true })
-        Self.runMigrations(modules: store, modulesExisted: modulesExisted, displays: displaysConfig, awake: awakeConfig,
-                           ledger: ledger)
+        let m1 = Self.runMigrations(modules: store, modulesExisted: modulesExisted, displays: displaysConfig,
+                                    awake: awakeConfig, ledger: ledger, toasts: toasts)
         if disabled.contains(.awake) {
             // N14: nothing restores; a snapshot left from earlier is cleared at launch.
             awakeState.value = AwakeRuntimeSnapshot()
@@ -112,50 +115,92 @@ import SnapticKit
         switcher = WindowSwitcherModule()
         displays = DisplaysModule(config: displaysConfig)
         awake = AwakeModule(config: awakeConfig, state: awakeState, history: awakeHistory)
+        m1Toast = Self.pendingM1Toast(m1, ledger: ledger, awake: awakeConfig)
     }
 
     /// The one-time migrations, in the R5-2 order: ledger → M3 (modules) → M4, M5, M10 (displays) → Awake inserted
     /// off for upgraders (§2.13) → M1 → forced saves: modules, displays, Awake, then the ledger last (the commit
-    /// point; a crash before it re-runs migrations that are idempotent over what that run wrote).
+    /// point; a crash before it re-runs migrations that are idempotent over what that run wrote). Returns M1's
+    /// result when it ran in this launch.
     private static func runMigrations(modules: ConfigStore<ModulesConfig>, modulesExisted: Bool,
                                       displays: ConfigStore<DisplaysConfig>, awake: ConfigStore<AwakeConfig>,
-                                      ledger: ConfigStore<MigrationLedger>) {
+                                      ledger: ConfigStore<MigrationLedger>, toasts: ToastPresenter) -> AwakeMigrationResult? {
         var marks = ledger.value
         modules.value = modules.value.migrated(ledger: &marks)
         displays.value = displays.value.migrated(ledger: &marks)
         if modulesExisted && modules.value.modules[.awake] == nil {
             modules.value.modules[.awake] = ModulesConfig.awakeUpgradePreferences
         }
-        // M1 hook (§4.6). Step 0: G's stub returns `.nothing`, and the marker is recorded only when something
-        // migrated; the lead wires the full result (toast, hotkey move, marker always) in step 2.
+        // M1 (§4.6, R5-12): G's pure migration over the raw 0.2 JSON; the marker is recorded whatever it found.
+        var m1: AwakeMigrationResult?
         if !marks.has(.fromDisplays) {
-            let enabled = Set(modules.value.enabledModules)
             let result = AwakeMigration.fromDisplays(rawJSON: ConfigStore<DisplaysConfig>.persistentData(forKey: displaysKey),
-                                                     modulesEnabled: enabled, awakeShortcuts: awake.value.shortcuts)
+                                                     modulesEnabled: Set(modules.value.enabledModules),
+                                                     awakeShortcuts: awake.value.shortcuts)
             if result != .nothing {
-                apply(result, modules: modules, awake: awake)
-                marks.record(.fromDisplays)
+                var config = awake.value
+                var modulesConfig = modules.value
+                let enabled = result.apply(to: &config, modules: &modulesConfig)
+                awake.value = config
+                modules.value = modulesConfig
+                if result.droppedShortcut { toasts.addRecentNotice(MigrationNotices.droppedShortcutText) }
+                EventLog.shared.record(.modules, "Display sleep prevention moved to Awake: \(result.triggers.count) rules"
+                                       + (enabled ? ", on" : ", off")
+                                       + (result.pauseRulesShortcut != nil ? ", shortcut moved" : "")
+                                       + (result.droppedShortcut ? ", shortcut removed" : ""))
             }
+            marks.record(.fromDisplays)
+            m1 = result
         }
         ledger.value = marks.sanitized()
         modules.save(force: true)
         displays.save(force: true)
         awake.save(force: true)
         ledger.save(force: true)
+        return m1
     }
 
-    /// M1's writer: rules replaced by id (a re-run after a crash gives the same rules once).
-    private static func apply(_ result: AwakeMigrationResult, modules: ConfigStore<ModulesConfig>,
-                              awake: ConfigStore<AwakeConfig>) {
-        var config = awake.value
+    /// The M1 toast waits for the first activation of a rule M1 made. On later launches M1's result is computed
+    /// again from the same raw JSON (M1 is deterministic: same ids, same names). With no such rule configured the
+    /// toast can never show, and its marker is recorded so later launches skip this.
+    private static func pendingM1Toast(_ m1: AwakeMigrationResult?, ledger: ConfigStore<MigrationLedger>,
+                                       awake: ConfigStore<AwakeConfig>) -> (ruleIDs: Set<StableID>, displayNames: [String])? {
+        guard ledger.value.has(.fromDisplays), !ledger.value.has(.fromDisplaysToast) else { return nil }
+        let result = m1 ?? AwakeMigration.fromDisplays(
+            rawJSON: ConfigStore<DisplaysConfig>.persistentData(forKey: displaysKey), modulesEnabled: [],
+            awakeShortcuts: awake.value.shortcuts)
         let ids = Set(result.triggers.map(\.id))
-        config.triggers.triggers = config.triggers.triggers.filter { !ids.contains($0.id) } + result.triggers
-        if result.enableModule {
-            config.features[.triggers] = true
-            modules.value.modules[.awake] = ModulePreferences(enabled: true, presence: .ownIconWhenActive)
-            if !modules.value.newModuleCards.contains(.awakeMigrated) { modules.value.newModuleCards.append(.awakeMigrated) }
+        let configured = Set(awake.value.triggers.triggers.map(\.id))
+        guard MigrationNotices.needsToastWatch(ledger: ledger.value, migratedRuleIDs: ids, configuredRuleIDs: configured)
+        else {
+            ledger.value.record(.fromDisplaysToast)
+            ledger.flush()
+            return nil
         }
-        awake.value = config
+        return (ids, result.migratedDisplayNames)
+    }
+
+    /// Shows the M1 toast at the first activation of a migrated rule, once.
+    private func watchM1Toast() {
+        guard m1Toast != nil else { return }
+        m1ToastSink = awake.runtime.$activeTriggerIDs
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] active in MainActor.assumeIsolated { self?.m1RulesActive(active) } }
+    }
+
+    private func m1RulesActive(_ active: [StableID]) {
+        guard let pending = m1Toast,
+              MigrationNotices.toastDue(ledger: ledgerStore.value, migratedRuleIDs: pending.ruleIDs, activeRuleIDs: active)
+        else { return }
+        m1Toast = nil
+        m1ToastSink = nil
+        // Shown, or (while suppressed) in Recent Notices: either way it was said once.
+        toasts.show(MigrationNotices.movedText(displayNames: pending.displayNames),
+                    actions: [ToastAction(title: MigrationNotices.showInSettingsTitle) { [weak self] in
+                        self?.openSettings(page: MigrationNotices.awakePage)
+                    }], lifetime: lifetime)
+        ledgerStore.value.record(.fromDisplaysToast)
+        ledgerStore.flush()
     }
 
     // MARK: Lifecycle
@@ -182,6 +227,7 @@ import SnapticKit
             .removeDuplicates()
             .sink { on in MainActor.assumeIsolated { MenuSliderItem.scrollToAdjust = on } }
             .store(in: &sinks)
+        watchM1Toast()
         applyNow()
         statusMenu.install()
         _ = settingsWindow   // listens for "open this Settings page" from Displays UI
@@ -199,6 +245,7 @@ import SnapticKit
         applyWork?.cancel()
         applyWork = nil
         sinks.removeAll()
+        m1ToastSink = nil
         controlServer.stop()
         otherApps.stop()
         // Before any module stops (code M9): Awake keeps its snapshot so a relaunch resumes.
