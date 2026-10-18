@@ -140,6 +140,38 @@ package struct AwakeReminders: Equatable, Sendable {
     }
 }
 
+/// Persisted in the snapshot so a reminder shown before a relaunch isn't shown again (awake-correctness N1).
+extension AwakeReminders: Codable {
+    private enum CodingKeys: String, CodingKey { case fiveFor, fiveEnd, eightFor }
+
+    /// Lossy per field (rule 9).
+    package init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        fiveFor = c.lossy(.fiveFor, nil)
+        fiveEnd = c.lossy(.fiveEnd, nil)
+        eightFor = c.lossy(.eightFor, nil)
+    }
+
+    package func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(fiveFor, forKey: .fiveFor)
+        try c.encodeIfPresent(fiveEnd, forKey: .fiveEnd)
+        try c.encodeIfPresent(eightFor, forKey: .eightFor)
+    }
+
+    /// Only what was shown for `session` (another session's marks mean nothing); a non-finite end is dropped.
+    package func keeping(session id: StableID?) -> AwakeReminders {
+        var r = AwakeReminders()
+        guard let id else { return r }
+        if fiveFor == id, let end = fiveEnd, end.isFinite {
+            r.fiveFor = id
+            r.fiveEnd = end
+        }
+        if eightFor == id { r.eightFor = id }
+        return r
+    }
+}
+
 /// The SessionController tick (§2.5): the countdown's next change, the earliest expiry of the manual session or a
 /// hold, and the next reminder; never sooner than 0.25 s, never later than an hour (wake and clock checks cover the
 /// rest).

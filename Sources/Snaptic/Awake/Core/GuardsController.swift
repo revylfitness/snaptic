@@ -28,8 +28,10 @@ import SnapticKit
         case .warn:
             break
         case .batteryUnreadable:
-            ctx.host.toasts.show(L("Snaptic can't read the battery level, so it stopped appearing active and keeping drives awake."),
-                                 action: nil, lifetime: lifetime)
+            // Names only what stopped (F2); the status row and the menu header keep the reason while it lasts.
+            let use = AwakeMenuRows.backgroundUse(ctx)
+            guard let text = AwakeBackgroundText.unreadableToast(activity: use.activity, drives: use.drives) else { return }
+            ctx.host.toasts.show(text, action: nil, lifetime: lifetime)
         }
     }
 

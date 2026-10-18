@@ -125,7 +125,11 @@ final class AwakeGuardsTests: XCTestCase {
         let first = eval(f, memory: m)
         XCTAssertEqual(first.verdict, .allow, "sessions continue")
         XCTAssertEqual(first.memory.unreadableReads, 1)
-        XCTAssertFalse(AwakeGuards.batteryUnreadable(f, memory: first.memory))
+        // F2: the first read decides (PowerMonitor fires only on changed facts, so a second identical read never
+        // reaches evaluate): background work stops and the toast is due on the same read.
+        XCTAssertTrue(AwakeGuards.batteryUnreadable(f, memory: first.memory))
+        XCTAssertFalse(AwakeGuards.allowsBackgroundWork(f, config: AwakeGuardsConfig(), memory: first.memory))
+        XCTAssertEqual(AwakeGuards.backgroundBlock(f, config: AwakeGuardsConfig()), .batteryUnreadable)
         m = eval(f, memory: first.memory).memory
         XCTAssertEqual(m.unreadableReads, 2)
         XCTAssertTrue(AwakeGuards.batteryUnreadable(f, memory: m))
@@ -135,6 +139,19 @@ final class AwakeGuardsTests: XCTestCase {
         let readable = eval(facts(percent: 80), memory: m).memory
         XCTAssertEqual(readable.unreadableReads, 0)
         XCTAssertTrue(AwakeGuards.allowsBackgroundWork(facts(percent: 80), config: AwakeGuardsConfig(), memory: readable))
+        // Stale memory never blocks a readable battery.
+        XCTAssertTrue(AwakeGuards.allowsBackgroundWork(facts(percent: 80), config: AwakeGuardsConfig(), memory: m))
+        XCTAssertFalse(AwakeGuards.batteryUnreadable(facts(percent: 80), memory: m))
+        XCTAssertFalse(AwakeGuards.batteryUnreadable(facts(battery: false, percent: nil), memory: m), "desktop")
+    }
+
+    func testBackgroundBlockReasons() {
+        let c = AwakeGuardsConfig()
+        XCTAssertNil(AwakeGuards.backgroundBlock(facts(percent: 80), config: c))
+        XCTAssertEqual(AwakeGuards.backgroundBlock(facts(percent: 10), config: c), .batteryLow)
+        XCTAssertEqual(AwakeGuards.backgroundBlock(facts(battery: false, thermal: .critical), config: c), .heat)
+        XCTAssertEqual(AwakeGuards.backgroundBlock(facts(percent: nil, thermal: .critical), config: c), .heat)
+        XCTAssertNil(AwakeGuards.backgroundBlock(facts(battery: false, percent: nil), config: c))
     }
 
     // MARK: Adapter, Low Power Mode, heat
@@ -355,6 +372,9 @@ final class AwakeGuardsTests: XCTestCase {
             if f.thermal == .critical { XCTAssertFalse(background) }
             if f.discharging, let p = f.percent, p < AwakeGuards.hardFloorPercent { XCTAssertFalse(background) }
             if f.batteryPresent && f.percent == nil { XCTAssertFalse(background) }
+            XCTAssertEqual(background, AwakeGuards.backgroundBlock(f, config: config) == nil)
+            XCTAssertEqual(AwakeGuards.batteryUnreadable(f, memory: r.memory),
+                           f.batteryPresent && f.percent == nil && f.thermal != .critical)
             // Memory stays sane.
             XCTAssertEqual(r.memory.holding == nil, r.memory.heldSince == nil)
             if let h = r.memory.holding {
