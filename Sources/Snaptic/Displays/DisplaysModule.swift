@@ -120,6 +120,12 @@ import SnapticKit
             if !ctx.panic.isLatched { ctx.connectPlanner.trigger(.reconfigure) }
         }
         ctx.menus.onChange = { [weak self] in self?.moduleContext?.requestMenuRebuild() }
+        // A permission granted or revoked while running can change what's available.
+        ctx.permissions.observe(lifetime: lifetime) { [weak self] _, _ in
+            guard let self, let ctx = self.context else { return }
+            self.computeAvailability(ctx)
+            self.reresolve()
+        }
         ctx.actions.isEffective = { [weak self] feature in self?.effective.contains(feature) ?? false }
         ctx.actions.onRefused = { [weak ctx] action in
             ctx?.toasts.show(L("“\(action.title)” isn't available right now: its feature is off."))
@@ -239,7 +245,7 @@ import SnapticKit
         let privateMissing = ctx.privateAPI.unavailableFeatures()
         for feature in DisplayFeature.allCases {
             var a = controllers[FeatureGraph.controller(of: feature)]?.availability(of: feature, context: ctx)
-                ?? .unavailable(L("Not built yet"))
+                ?? .unavailable(L("Not available on this Mac"))
             if a.isAvailable, let reason = privateMissing[feature] { a = .unavailable(reason) }
             if killSwitches.contains(feature) { a = .unavailable(L("Turned off by a defaults setting")) }
             table[feature] = a
