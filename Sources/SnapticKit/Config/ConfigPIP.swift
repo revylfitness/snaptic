@@ -288,12 +288,7 @@ package struct PIPConfig: ConfigModel {
         var seen = Set<StableID>()
         c.luts = luts.compactMap { $0.sanitized() }.filter { seen.insert($0.id).inserted }
         c.luts = Array(c.luts.prefix(Self.maxLUTs))
-        var prefixes: [String] = []
-        for p in protectedBundlePrefixes where PIPPrivacy.isValidPrefix(p) && !prefixes.contains(p) {
-            prefixes.append(p)
-            if prefixes.count == Self.maxProtectedPrefixes { break }
-        }
-        c.protectedBundlePrefixes = prefixes
+        c.protectedBundlePrefixes = PIPPrivacy.sanitizedPrefixes(protectedBundlePrefixes)
         return c
     }
 
@@ -460,6 +455,69 @@ package struct PIPLossyList<Element: Codable>: Codable {
     }
 }
 
+// MARK: - Settings (0.3 §4.3 "Picture in Picture")
+
+/// Names, subtitles and limits the Picture in Picture page and editor show. Plain text, so it's tested here.
+package enum PIPSettingsText {
+    /// A new configuration's name: "Built-in Display PIP", "Window PIP", "Built-in Display → DELL U2720Q".
+    package static func defaultName(sourceName: String?, kind: PIPKind, targetName: String?) -> String {
+        let source = sourceName.map { PIPConfiguration.cleanName($0) } ?? L("Window")
+        if kind == .fullScreen, let targetName {
+            return PIPConfiguration.cleanName(L("\(source) → \(PIPConfiguration.cleanName(targetName))"))
+        }
+        return PIPConfiguration.cleanName(L("\(source) PIP"))
+    }
+
+    /// The saved list's subtitle: where it comes from, then what's special about it, in a fixed order.
+    /// `sourceName` nil = a window picked when it starts; `targetName` nil for a stream = nowhere to stream yet.
+    package static func subtitle(_ c: PIPConfiguration, sourceName: String?, targetName: String?) -> String {
+        var parts: [String] = []
+        parts.append(sourceName ?? L("A window you choose"))
+        if c.kind == .fullScreen {
+            parts.append(targetName.map { L("Full screen on \($0)") } ?? L("Choose a display to stream onto"))
+        }
+        if c.fps != 0 { parts.append(L("\(c.fps) fps")) }
+        if c.crop != nil { parts.append(L("Cropped")) }
+        if c.rotation != 0 { parts.append(L("Rotated \(c.rotation)°")) }
+        if c.flipHorizontal || c.flipVertical { parts.append(L("Flipped")) }
+        if !c.filters.filter(\.enabled).isEmpty || c.lutID != nil { parts.append(L("Filters")) }
+        if c.autoStart { parts.append(L("Offers to start")) }
+        return parts.joined(separator: " · ")
+    }
+
+    /// "50% × 40% at 10%, 20%" for a crop, "None" without one.
+    package static func crop(_ crop: PIPRect?) -> String {
+        guard let c = crop?.normalizedCrop() else { return L("None") }
+        func pct(_ v: Double) -> Int { Int((v * 100).rounded()) }
+        return L("\(pct(c.width))% × \(pct(c.height))% at \(pct(c.x))%, \(pct(c.y))%")
+    }
+
+    /// Room for one more saved configuration of this source.
+    package static func canAdd(source: PIPSourceRef, in config: DisplaysConfig) -> Bool {
+        switch source {
+        case .display(let key):
+            return (config.perDisplay[key]?.pip.configurations.count ?? 0) < PerDisplayPIP.maxConfigurations
+        case .window:
+            return config.pip.windowConfigurations.count < PIPConfig.maxWindowConfigurations
+        }
+    }
+
+    /// Why a new configuration can't be added as drafted, or nil: the source is full, or a stream has nowhere to
+    /// go (no target, or the target is its own source).
+    package static func addRefusal(_ c: PIPConfiguration, source: PIPSourceRef, in config: DisplaysConfig) -> String? {
+        guard canAdd(source: source, in: config) else {
+            return L("This source already has the most saved pictures in picture. Delete one first.")
+        }
+        if c.kind == .fullScreen {
+            guard let target = c.target else { return L("Choose a display to stream onto.") }
+            if case .display(let key) = source, key == target {
+                return L("A display can’t stream onto itself.")
+            }
+        }
+        return nil
+    }
+}
+
 // MARK: - Privacy (PLAN §4.10(5))
 
 package enum PIPPrivacy {
@@ -495,6 +553,22 @@ package enum PIPPrivacy {
             ($0.value >= 0x61 && $0.value <= 0x7A) || ($0.value >= 0x41 && $0.value <= 0x5A)
                 || ($0.value >= 0x30 && $0.value <= 0x39) || $0 == "." || $0 == "-" || $0 == "_"
         }
+    }
+
+    /// Valid entries only, each once, in order, at most `PIPConfig.maxProtectedPrefixes` (the config's sanitizer and
+    /// Settings' "Never capture these apps" list).
+    package static func sanitizedPrefixes(_ list: [String]) -> [String] {
+        var prefixes: [String] = []
+        for p in list where isValidPrefix(p) && !prefixes.contains(p) {
+            prefixes.append(p)
+            if prefixes.count == PIPConfig.maxProtectedPrefixes { break }
+        }
+        return prefixes
+    }
+
+    /// The list holds exactly the default entries (any order): Settings then hides "Restore Default Apps".
+    package static func isDefaultList(_ list: [String]) -> Bool {
+        Set(list) == Set(defaultProtectedPrefixes) && list.count == defaultProtectedPrefixes.count
     }
 
     /// The id itself, or anything under it (`com.lastpass` matches `com.lastpass.LastPass`).

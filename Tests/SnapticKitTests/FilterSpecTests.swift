@@ -156,4 +156,47 @@ final class FilterSpecTests: XCTestCase {
             }
         }
     }
+
+    // MARK: Settings sliders (0.3 §4.1)
+
+    func testSliderStylesReachTheDefaultAndFitTheRange() {
+        for descriptor in FilterSpec.all {
+            for p in descriptor.parameters {
+                let style = p.sliderStyle
+                XCTAssertFalse(style.title.isEmpty, "\(descriptor.kind) \(p.key)")
+                if let step = style.step {
+                    XCTAssertGreaterThan(step, 0)
+                    XCTAssertLessThan(step, p.max - p.min)
+                    let snapped = SliderMath.clampSnap(p.defaultValue, range: p.min...p.max, step: step)
+                    XCTAssertEqual(snapped, p.defaultValue, accuracy: 1e-9, "\(descriptor.kind) \(p.key)")
+                }
+                XCTAssertTrue(SliderMath.isDefault(value: p.defaultValue, default: p.defaultValue, step: style.step))
+                let shown = SliderMath.format(p.defaultValue, style.format, decimalSeparator: ".")
+                XCTAssertEqual(SliderMath.parse(shown, style.format, decimalSeparator: ".") ?? .nan, p.defaultValue,
+                               accuracy: 0.051, "\(descriptor.kind) \(p.key): \(shown)")
+            }
+        }
+    }
+
+    func testSliderStylesByUnit() {
+        func param(_ unit: FilterUnit, _ min: Double, _ max: Double, _ value: Double) -> FilterParameter {
+            FilterParameter("k", "Amount", min, max, value, unit: unit, binding: .scalar("inputK"))
+        }
+        XCTAssertEqual(param(.degrees, -180, 180, 0).sliderStyle,
+                       FilterSliderStyle(title: "Amount (°)", format: .plain(digits: 0), step: 1))
+        XCTAssertEqual(param(.kelvin, 2000, 20000, 6500).sliderStyle,
+                       FilterSliderStyle(title: "Amount", format: .kelvin, step: 50))
+        XCTAssertEqual(param(.pixels, 0, 25, 2.5).sliderStyle,
+                       FilterSliderStyle(title: "Amount (px)", format: .plain(digits: 1), step: 0.5))
+        XCTAssertEqual(param(.ev, -3, 3, 0).sliderStyle,
+                       FilterSliderStyle(title: "Amount (EV)", format: .plain(digits: 2), step: 0.05))
+        XCTAssertEqual(param(.none, 2, 30, 6).sliderStyle,
+                       FilterSliderStyle(title: "Amount", format: .plain(digits: 0), step: 1))
+        XCTAssertEqual(param(.none, 0, 1, 0.7).sliderStyle,
+                       FilterSliderStyle(title: "Amount", format: .plain(digits: 2), step: 0.01))
+        // A default off the grid drops the step (and whole-number display) so the default stays reachable.
+        XCTAssertEqual(param(.degrees, -180, 180, 0.5).sliderStyle,
+                       FilterSliderStyle(title: "Amount (°)", format: .plain(digits: 1), step: nil))
+        XCTAssertNil(param(.pixels, 0, 0.3, 0.1).sliderStyle.step)
+    }
 }
