@@ -204,14 +204,14 @@ package struct ModulesConfig: ConfigModel {
     package static let awakeUpgradePreferences = ModulePreferences(enabled: false, presence: .ownIconWhenActive)
 
     /// An existing 0.1 user without module settings (PLAN §3.4): the switcher stays on,
-    /// Displays is off, and the "New: Displays" card is shown. Awake is inserted off (0.3 C7).
+    /// Displays is off, and the "New: Displays" card is shown. Awake is inserted off with its "New: Awake" card (0.3 C7).
     package static func upgradeDefaults() -> ModulesConfig {
         var c = ModulesConfig()
         c.modules[.windowSwitcher] = ModulePreferences(enabled: true)
         c.modules[.displays] = ModulePreferences(enabled: false)
         c.modules[.awake] = awakeUpgradePreferences
         c.showNewDisplaysCard = true
-        c.newModuleCards = [.displays]
+        c.newModuleCards = [.displays, .awake]
         c.onboarding = .done
         return c
     }

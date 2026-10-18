@@ -28,7 +28,7 @@ final class ConfigModulesTests: XCTestCase {
         XCTAssertTrue(c.isEnabled(.windowSwitcher))
         XCTAssertFalse(c.isEnabled(.displays))
         XCTAssertTrue(c.showNewDisplaysCard)
-        XCTAssertEqual(c.newModuleCards, [.displays])
+        XCTAssertEqual(c.newModuleCards, [.displays, .awake])
         // 0.3 C7: upgraders get Awake off, shown when active.
         XCTAssertFalse(c.isEnabled(.awake))
         XCTAssertEqual(c.presence(.awake), .ownIconWhenActive)

@@ -130,6 +130,8 @@ import SnapticKit
         displays.value = displays.value.migrated(ledger: &marks)
         if modulesExisted && modules.value.modules[.awake] == nil {
             modules.value.modules[.awake] = ModulesConfig.awakeUpgradePreferences
+            // C7: upgraders see "New: Awake" on General (hidden by H's card rules once M1 migrated or Awake is on).
+            if !modules.value.newModuleCards.contains(.awake) { modules.value.newModuleCards.append(.awake) }
         }
         // M1 (§4.6, R5-12): G's pure migration over the raw 0.2 JSON; the marker is recorded whatever it found.
         var m1: AwakeMigrationResult?
