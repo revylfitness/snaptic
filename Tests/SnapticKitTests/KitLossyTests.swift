@@ -69,4 +69,57 @@ final class KitLossyTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(S.self, from: Data(#"{"a":null}"#.utf8)).a, 7)
         XCTAssertEqual(try JSONDecoder().decode(S.self, from: Data(#"{"a":3}"#.utf8)).a, 3)
     }
+
+    // MARK: LossyArray and helpers (R5-3)
+
+    private struct Item: Codable, Equatable, Identifiable {
+        var id: Int
+        var name: String
+    }
+
+    private struct ListHolder: Codable, Equatable {
+        var list: LossyArray<Item>
+    }
+
+    func testLossyArrayDropsOneBadElementAndKeepsTheRest() throws {
+        let json = #"{"list":[{"id":1,"name":"a"},{"id":"x"},null,7,{"id":2,"name":"b"}]}"#
+        let decoded = try JSONDecoder().decode(ListHolder.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.list.items, [Item(id: 1, name: "a"), Item(id: 2, name: "b")])
+        let again = try JSONDecoder().decode(ListHolder.self, from: JSONEncoder().encode(decoded))
+        XCTAssertEqual(again, decoded)
+    }
+
+    func testLossyArrayCapsElements() throws {
+        let body = (0..<1_100).map { "{\"id\":\($0),\"name\":\"n\"}" }.joined(separator: ",")
+        let decoded = try JSONDecoder().decode(ListHolder.self, from: Data(("{\"list\":[" + body + "]}").utf8))
+        XCTAssertEqual(decoded.list.items.count, LossyArray<Item>.maxElements)
+    }
+
+    private struct Fields: Decodable {
+        var items: [Item]
+        var unique: [Item]
+        enum CodingKeys: String, CodingKey { case items, unique }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            items = c.lossyArray(.items, [Item(id: 9, name: "default")])
+            unique = c.lossyUniqueArray(.unique, [])
+        }
+    }
+
+    func testLossyArrayFieldFallsBackOnlyWhenMissingOrNotAList() throws {
+        XCTAssertEqual(try JSONDecoder().decode(Fields.self, from: Data("{}".utf8)).items, [Item(id: 9, name: "default")])
+        XCTAssertEqual(try JSONDecoder().decode(Fields.self, from: Data(#"{"items":5}"#.utf8)).items,
+                       [Item(id: 9, name: "default")])
+        XCTAssertEqual(try JSONDecoder().decode(Fields.self, from: Data(#"{"items":[]}"#.utf8)).items, [])
+        XCTAssertEqual(try JSONDecoder().decode(Fields.self, from: Data(#"{"items":[{"id":1}]}"#.utf8)).items, [])
+    }
+
+    func testDuplicateIDsKeepTheFirstAndNeverTrap() throws {
+        let json = #"{"unique":[{"id":1,"name":"first"},{"id":2,"name":"b"},{"id":1,"name":"second"}]}"#
+        let f = try JSONDecoder().decode(Fields.self, from: Data(json.utf8))
+        XCTAssertEqual(f.unique, [Item(id: 1, name: "first"), Item(id: 2, name: "b")])
+        XCTAssertEqual([Item(id: 3, name: "x"), Item(id: 3, name: "y")].uniquedByID(), [Item(id: 3, name: "x")])
+        XCTAssertEqual([3, 1, 3, 2, 1].uniqued(), [3, 1, 2])
+        XCTAssertEqual([Int]().uniqued(), [])
+    }
 }

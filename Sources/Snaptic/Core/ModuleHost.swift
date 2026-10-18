@@ -3,8 +3,10 @@ import Combine
 import SnapticKit
 
 /// Owns the modules, their config stores and the host services they share (PLAN §3.3).
-/// - one ConfigStore per key for the app's lifetime (`SnapticModulesV1`,
-///   `SnapticDisplaysV1`; the switcher keeps `SnapticConfig.v1` through AppSettings);
+/// - one ConfigStore per key for the app's lifetime (`SnapticModulesV1`, `SnapticDisplaysV1`, the three Awake
+///   stores and the migration ledger `SnapticMigrationsV1`; the switcher keeps `SnapticConfig.v1` through
+///   AppSettings);
+/// - runs the one-time migrations in a fixed order before any module starts (0.3 R5-2);
 /// - starts and stops modules per ModulesConfig, collapsing toggle storms (300 ms);
 /// - one permission request per launch, through PermissionFlow;
 /// - stops modules in reverse start order and flushes every store on quit.
@@ -12,13 +14,26 @@ import SnapticKit
     static let modulesKey = "SnapticModulesV1"
     static let displaysKey = "SnapticDisplaysV1"
     static let didLaunchBeforeKey = "SnapticDidLaunchBefore"
+    static let awakeKey = AwakeConfig.key
+    static let awakeStateKey = AwakeRuntimeSnapshot.key
+    static let awakeHistoryKey = "SnapticAwakeHistoryV1"
+    static let ledgerKey = MigrationLedger.key
+    /// `Modules.disable.<id>` (N14): a module with this key set to true in Snaptic's persistent domain never starts.
+    static func disableKey(_ id: ModuleID) -> String { "Modules.disable." + id.rawValue }
     /// Collapses quick on/off/on toggles into one transition.
     static let applyDelay: TimeInterval = 0.3
 
     let safeMode: SafeModeState
     let modulesStore: ConfigStore<ModulesConfig>
     let displaysStore: ConfigStore<DisplaysConfig>
+    let awakeStore: ConfigStore<AwakeConfig>
+    let awakeStateStore: ConfigStore<AwakeRuntimeSnapshot>
+    let awakeHistoryStore: ConfigStore<AwakeHistory>
+    let ledgerStore: ConfigStore<MigrationLedger>
     let switcherSettings = AppSettings.shared
+    let signals = HostSignals()
+    /// Modules turned off by `Modules.disable.<id>`, read once at launch (N14).
+    let disabledByDefaults: Set<ModuleID>
 
     let hotkeys = GlobalHotkeys()
     let commands = ControlCommandRegistry()
@@ -30,6 +45,7 @@ import SnapticKit
 
     let switcher: WindowSwitcherModule
     let displays: DisplaysModule
+    let awake: AwakeModule
 
     /// This is the first launch ever (no earlier Snaptic ran for this user).
     let isFirstLaunch: Bool
@@ -76,8 +92,70 @@ import SnapticKit
 
         let displaysConfig = ConfigStore<DisplaysConfig>(key: Self.displaysKey)
         displaysStore = displaysConfig
+        let awakeConfig = ConfigStore<AwakeConfig>(key: Self.awakeKey)
+        let awakeState = ConfigStore<AwakeRuntimeSnapshot>(key: Self.awakeStateKey)
+        let awakeHistory = ConfigStore<AwakeHistory>(key: Self.awakeHistoryKey)
+        let ledger = ConfigStore<MigrationLedger>(key: Self.ledgerKey)
+        let disabled = Set(ModuleID.allCases.filter { (domain?[ModuleHost.disableKey($0)] as? Bool) == true })
+        Self.runMigrations(modules: store, modulesExisted: modulesExisted, displays: displaysConfig, awake: awakeConfig,
+                           ledger: ledger)
+        if disabled.contains(.awake) {
+            // N14: nothing restores; a snapshot left from earlier is cleared at launch.
+            awakeState.value = AwakeRuntimeSnapshot()
+            awakeState.flush()
+        }
+        awakeStore = awakeConfig
+        awakeStateStore = awakeState
+        awakeHistoryStore = awakeHistory
+        ledgerStore = ledger
+        disabledByDefaults = disabled
         switcher = WindowSwitcherModule()
         displays = DisplaysModule(config: displaysConfig)
+        awake = AwakeModule(config: awakeConfig, state: awakeState, history: awakeHistory)
+    }
+
+    /// The one-time migrations, in the R5-2 order: ledger → M3 (modules) → M4, M5, M10 (displays) → Awake inserted
+    /// off for upgraders (§2.13) → M1 → forced saves: modules, displays, Awake, then the ledger last (the commit
+    /// point; a crash before it re-runs migrations that are idempotent over what that run wrote).
+    private static func runMigrations(modules: ConfigStore<ModulesConfig>, modulesExisted: Bool,
+                                      displays: ConfigStore<DisplaysConfig>, awake: ConfigStore<AwakeConfig>,
+                                      ledger: ConfigStore<MigrationLedger>) {
+        var marks = ledger.value
+        modules.value = modules.value.migrated(ledger: &marks)
+        displays.value = displays.value.migrated(ledger: &marks)
+        if modulesExisted && modules.value.modules[.awake] == nil {
+            modules.value.modules[.awake] = ModulesConfig.awakeUpgradePreferences
+        }
+        // M1 hook (§4.6). Step 0: G's stub returns `.nothing`, and the marker is recorded only when something
+        // migrated; the lead wires the full result (toast, hotkey move, marker always) in step 2.
+        if !marks.has(.fromDisplays) {
+            let enabled = Set(modules.value.enabledModules)
+            let result = AwakeMigration.fromDisplays(rawJSON: ConfigStore<DisplaysConfig>.persistentData(forKey: displaysKey),
+                                                     modulesEnabled: enabled, awakeShortcuts: awake.value.shortcuts)
+            if result != .nothing {
+                apply(result, modules: modules, awake: awake)
+                marks.record(.fromDisplays)
+            }
+        }
+        ledger.value = marks.sanitized()
+        modules.save(force: true)
+        displays.save(force: true)
+        awake.save(force: true)
+        ledger.save(force: true)
+    }
+
+    /// M1's writer: rules replaced by id (a re-run after a crash gives the same rules once).
+    private static func apply(_ result: AwakeMigrationResult, modules: ConfigStore<ModulesConfig>,
+                              awake: ConfigStore<AwakeConfig>) {
+        var config = awake.value
+        let ids = Set(result.triggers.map(\.id))
+        config.triggers.triggers = config.triggers.triggers.filter { !ids.contains($0.id) } + result.triggers
+        if result.enableModule {
+            config.features[.triggers] = true
+            modules.value.modules[.awake] = ModulePreferences(enabled: true, presence: .ownIconWhenActive)
+            if !modules.value.newModuleCards.contains(.awakeMigrated) { modules.value.newModuleCards.append(.awakeMigrated) }
+        }
+        awake.value = config
     }
 
     // MARK: Lifecycle
@@ -123,9 +201,15 @@ import SnapticKit
         sinks.removeAll()
         controlServer.stop()
         otherApps.stop()
+        // Before any module stops (code M9): Awake keeps its snapshot so a relaunch resumes.
+        signals.isTerminating = true
         for id in ModuleID.allCases.reversed() where running[id] != nil { stopModule(id) }
         modulesStore.flush()
         displaysStore.flush()
+        awakeStore.flush()
+        awakeStateStore.flush()
+        awakeHistoryStore.flush()
+        ledgerStore.flush()
         switcherSettings.flush()
         lifetime.end()
         statusMenu.remove()
@@ -138,6 +222,7 @@ import SnapticKit
         switch id {
         case .windowSwitcher: return switcher
         case .displays: return displays
+        case .awake: return awake
         }
     }
 
@@ -176,8 +261,8 @@ import SnapticKit
         let config = modulesStore.value
         otherApps.policy = config.otherApps
         if config.commandLine.enabled { controlServer.start() } else { controlServer.stop() }
-        let transitions = ModuleTransitions.plan(order: ModuleID.allCases, running: runningModules,
-                                                 desired: Set(config.enabledModules))
+        let desired = Set(config.enabledModules).subtracting(disabledByDefaults)
+        let transitions = ModuleTransitions.plan(order: ModuleID.allCases, running: runningModules, desired: desired)
         for id in transitions.stop { stopModule(id) }
         for id in transitions.start { startModule(id) }
         if !transitions.start.isEmpty && launchPermissionsRequested { requestPermissions(for: transitions.start) }
@@ -194,7 +279,13 @@ import SnapticKit
             spawner: spawner, relauncher: relauncher, otherApps: otherApps, lifetime: life,
             requestMenuRebuild: { [weak self] in self?.statusMenu.requestRebuild() },
             requestSettingsRefresh: { [weak self] in self?.revision &+= 1 },
-            openSettings: { [weak self] page in self?.openSettings(page: page) })
+            openSettings: { [weak self] page in self?.openSettings(page: page) },
+            requestStatusPlan: { [weak self] in
+                guard let self, !self.isShutDown else { return }
+                self.statusMenu.applyPlan()
+            },
+            setPresence: { [weak self] id, presence in self?.modulesStore.value.setPresence(presence, for: id) },
+            hostSignals: signals)
         module(id).start(context)
         EventLog.shared.record(.modules, "Module \(id.rawValue) started")
     }
@@ -264,7 +355,7 @@ import SnapticKit
             return .ok(rows.map { $0.0 + "\t" + $0.1 }.joined(separator: "\n"))
         }
         commands.register("module disable", policy: .low, offOnly: true, cliAllowed: true,
-                          summary: L("Turn a module off: module disable <windowSwitcher|displays>"),
+                          summary: L("Turn a module off: module disable <windowSwitcher|displays|awake>"),
                           lifetime: lifetime) { [weak self] request in
             guard let self else { return .failure(ControlExit.unavailable, "") }
             guard let name = request.arguments.first?.lowercased(),
@@ -420,13 +511,21 @@ import SnapticKit
         alert.addButton(withTitle: L("Cancel"))
         alert.alertStyle = .warning
         guard alert.runModal() == .alertFirstButtonReturn else { return }
+        signals.isTerminating = false
         for id in ModuleID.allCases.reversed() where running[id] != nil { stopModule(id) }
         sinks.removeAll()
         modulesStore.value = ModulesConfig()
         displaysStore.value = DisplaysConfig()
+        // Awake: all three stores (history and state too); defaults keep pointer movement and Drive Alive off.
+        awakeStore.value = AwakeConfig().restoringDefaults()
+        awakeStateStore.value = AwakeRuntimeSnapshot()
+        awakeHistoryStore.value = AwakeHistory()
         switcherSettings.reset()
         modulesStore.flush()
         displaysStore.flush()
+        awakeStore.flush()
+        awakeStateStore.flush()
+        awakeHistoryStore.flush()
         switcherSettings.flush()
         EventLog.shared.record(.modules, "All settings reset")
         relauncher.relaunch(reason: "settings reset")

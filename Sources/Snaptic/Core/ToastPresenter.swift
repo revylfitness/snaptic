@@ -3,10 +3,30 @@ import SwiftUI
 import SnapticKit
 
 /// An optional button on a toast ("Undo", "Gather"). It can't run after its toast's
-/// lifetime ends or after the toast expires.
+/// lifetime ends or after the toast expires. 0.3 (R5-1): extended, not redeclared, so every
+/// `ToastAction(title:perform:)` call site keeps compiling.
 struct ToastAction {
     let title: String
     let perform: @MainActor () -> Void
+    /// R5-1: the bold default button; at most one per toast.
+    var isDefault: Bool = false
+
+    init(title: String, isDefault: Bool = false, perform: @escaping @MainActor () -> Void) {
+        self.title = title
+        self.isDefault = isDefault
+        self.perform = perform
+    }
+}
+
+/// Why a toast went away without one of its actions having run (R5-1).
+enum ToastDismissal: Equatable, Sendable { case expired, closed, lifetimeEnded, evicted, dismissedAll }
+
+/// Click arming for toasts whose action grants something (security L2, R5-1).
+struct ToastClickGuard: Equatable, Sendable {
+    /// From the moment the panel shows THIS content (re-armed on every content change).
+    var armDelay: TimeInterval = 0.3
+    var refuseWhenOverlapped: Bool = true
+    static let confirmation = ToastClickGuard()
 }
 
 /// Snaptic's only notices (PLAN §3.3, R5.8, R4C §4.7): a non-activating HUD, one at a
@@ -59,6 +79,21 @@ struct ToastAction {
         }
         queue.append(pending)
         pump()
+    }
+
+    /// R5-1: up to 2 actions. Returns false when nothing was presented or queued (suppressed, merged with an
+    /// identical text, empty, or lifetime already ended). With `remember: false` the toast never reaches Recent
+    /// Notices. `onDismiss` runs exactly once, on main, when the toast goes away without one of its actions having
+    /// run.
+    ///
+    /// Step-0 stub (lead fills it in step 2, §6.4): forwards the first action to the 0.2 path and returns true;
+    /// `remember`, `clickGuard` and `onDismiss` are not applied yet, and no step-0 caller uses them.
+    @discardableResult
+    func show(_ message: String, actions: [ToastAction], lifetime: Lifetime? = nil, remember: Bool = true,
+              clickGuard: ToastClickGuard? = nil, onDismiss: (@MainActor (ToastDismissal) -> Void)? = nil) -> Bool {
+        if let lifetime, lifetime.isEnded { return false }
+        show(message, action: actions.first, lifetime: lifetime)
+        return true
     }
 
     /// Removes every toast (quit, Safe Mode relaunch).

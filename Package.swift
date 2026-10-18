@@ -26,7 +26,14 @@ targets += [
     .executableTarget(
         name: "Snaptic",
         dependencies: ["SnapticKit", "SnapticShims"],
-        path: "Sources/Snaptic"
+        path: "Sources/Snaptic",
+        // Awake (0.3): audio state (AudioMonitor, BluetoothPresence), network state (NetworkMonitor) and volume
+        // facts for Drive Alive (VolumeMonitor). All public frameworks.
+        linkerSettings: [
+            .linkedFramework("CoreAudio"),
+            .linkedFramework("SystemConfiguration"),
+            .linkedFramework("DiskArbitration"),
+        ]
     ),
 ]
 #endif

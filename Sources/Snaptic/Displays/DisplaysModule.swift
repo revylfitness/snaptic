@@ -269,8 +269,10 @@ import SnapticKit
         let before = controllerLifetimes
         if new.rawFeatures != old.rawFeatures { apply(resolveEffective(new)) }
         // Step 5: controllers that were already running hear about the change; newly
-        // started ones read the new value in start().
+        // started ones read the new value in start(). 0.3 §4.5: only those observing a changed section.
+        let changed = DisplaysConfig.changedSections(old: old, new: new)
         for type in Self.controllerTypes where before[type.id] != nil && controllerLifetimes[type.id] != nil {
+            guard !type.observedSections.isDisjoint(with: changed) else { continue }
             controllers[type.id]?.configDidChange(from: old, to: new)
         }
     }

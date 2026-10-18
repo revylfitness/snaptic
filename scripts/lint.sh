@@ -4,6 +4,19 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# 0.3 options: --write-ratchet regenerates scripts/lint-legacy.tsv from the tree (lead only);
+# --strict also fails on ratchet rows whose count went down (CI from the 0.3 step-3 exit on).
+LINT_MODE=check
+LINT_STRICT=0
+for arg in "$@"; do
+    case "$arg" in
+        --write-ratchet) LINT_MODE=write ;;
+        --strict) LINT_STRICT=1 ;;
+        *) echo "usage: lint.sh [--strict] [--write-ratchet]" >&2; exit 64 ;;
+    esac
+done
+export LINT_MODE LINT_STRICT
+
 status=0
 fail() { echo "lint: $*" >&2; status=1; }
 
@@ -138,5 +151,9 @@ fi
 if grep -rnE '\bfatalError\(|\bdebugPrint\(|\bdump\(|os_log|\bLogger\(' Sources --include='*.swift'; then
     fail "fatalError/debugPrint/dump/os_log/Logger are banned (use safe returns and EventLog)"
 fi
+
+# 14. PLAN 0.3 §6.3 lints L1–L17 (L3, L8, L11 were dropped). L1–L14 are ratcheted by
+#     scripts/lint-legacy.tsv (rule, path, occurrences, permanent|step); L15–L17 have no ratchet.
+python3 scripts/lint03.py || status=1
 
 exit $status
