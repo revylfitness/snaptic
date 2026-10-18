@@ -1,4 +1,5 @@
 import Foundation
+import SnapticKit
 
 /// The only way to write to a helper's stdin (R3C §5.1). Owns a CLOEXEC, non-blocking
 /// duplicate of the descriptor, never blocks the caller, coalesces heartbeats, and reports
@@ -8,11 +9,6 @@ final class HelperPipeWriter: @unchecked Sendable {
     /// Bytes that may wait for a slow reader before the pipe counts as broken.
     static let maxQueuedBytes = 1 << 20
 
-    private struct Chunk {
-        let data: Data
-        let isHeartbeat: Bool
-    }
-
     private let fd: Int32
     private let queue = DispatchQueue(label: "app.snaptic.helper-writer")
     /// Guards everything below. Writes are non-blocking, so holding it across one is short.
@@ -21,10 +17,8 @@ final class HelperPipeWriter: @unchecked Sendable {
     private var accepting = true
     private var closed = false
     private var broken = false
-    private var chunks: [Chunk] = []
-    /// Bytes of `chunks[0]` already written.
-    private var offset = 0
-    private var queuedBytes = 0
+    /// Lines waiting, partial writes, heartbeat coalescing and the cap (Kit, tested).
+    private var pending = PipeWriteQueue(capacity: HelperPipeWriter.maxQueuedBytes)
     /// Fires while the pipe is full and something waits; suspended otherwise.
     private var writeSource: DispatchSourceWrite?
     private var sourceRunning = false
@@ -49,7 +43,7 @@ final class HelperPipeWriter: @unchecked Sendable {
     /// Bytes waiting to be written (diagnostics, tests).
     var pendingBytes: Int {
         lock.lock(); defer { lock.unlock() }
-        return queuedBytes
+        return pending.queuedBytes
     }
 
     var isBroken: Bool {
@@ -58,28 +52,23 @@ final class HelperPipeWriter: @unchecked Sendable {
     }
 
     func send(_ line: Data, isHeartbeat: Bool = false) {
-        var payload = line
-        if payload.last != 0x0A { payload.append(0x0A) }
         lock.lock()
         if !accepting || broken {
             lock.unlock()
             return
         }
-        // A heartbeat that hasn't started going out yet says the same as a new one.
-        if isHeartbeat && chunks.indices.contains(where: { chunks[$0].isHeartbeat && !($0 == 0 && offset > 0) }) {
+        switch pending.enqueue(line, isHeartbeat: isHeartbeat) {
+        case .queued:
             lock.unlock()
-            return
-        }
-        if queuedBytes + payload.count > Self.maxQueuedBytes {
+            queue.async { [self] in pump() }
+        case .coalesced:
+            lock.unlock()
+        case .overCap:
+            // The reader stopped reading: as good as a broken pipe.
             let first = markBrokenLocked()
             lock.unlock()
             if first { DispatchQueue.main.async(execute: onBroken) }
-            return
         }
-        chunks.append(Chunk(data: payload, isHeartbeat: isHeartbeat))
-        queuedBytes += payload.count
-        lock.unlock()
-        queue.async { [self] in pump() }
     }
 
     /// Idempotent. Pending writes drain first, then the descriptor closes.
@@ -97,7 +86,7 @@ final class HelperPipeWriter: @unchecked Sendable {
     func flush(timeout: DispatchTimeInterval) -> Bool {
         let done = DispatchSemaphore(value: 0)
         lock.lock()
-        if chunks.isEmpty || broken || closed {
+        if pending.isEmpty || broken || closed {
             lock.unlock()
             return true
         }
@@ -126,7 +115,7 @@ final class HelperPipeWriter: @unchecked Sendable {
             pauseSourceLocked()
         }
         var waiters: [DispatchSemaphore] = []
-        if chunks.isEmpty {
+        if pending.isEmpty {
             waiters = drainWaiters
             drainWaiters = []
             if !accepting { closeLocked() }
@@ -137,19 +126,13 @@ final class HelperPipeWriter: @unchecked Sendable {
     }
 
     private func drainLocked() -> Drain {
-        while let first = chunks.first {
-            let total = first.data.count
-            let n = first.data.withUnsafeBytes { raw -> Int in
+        while let head = pending.head {
+            let n = head.withUnsafeBytes { raw -> Int in
                 guard let base = raw.baseAddress else { return 0 }
-                return Darwin.write(fd, base + offset, total - offset)
+                return Darwin.write(fd, base, raw.count)
             }
             if n > 0 {
-                offset += n
-                queuedBytes -= n
-                if offset >= total {
-                    chunks.removeFirst()
-                    offset = 0
-                }
+                pending.consume(n)
             } else if n < 0 && errno == EINTR {
                 continue
             } else if n < 0 && errno == EAGAIN {
@@ -165,9 +148,7 @@ final class HelperPipeWriter: @unchecked Sendable {
     private func markBrokenLocked() -> Bool {
         let first = !broken
         broken = true
-        chunks = []
-        offset = 0
-        queuedBytes = 0
+        pending.removeAll()
         return first
     }
 
