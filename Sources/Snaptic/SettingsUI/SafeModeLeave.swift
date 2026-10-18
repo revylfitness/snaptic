@@ -18,10 +18,18 @@ import SnapticKit
         alert.alertStyle = .warning
         alert.addButton(withTitle: L("Restart"))
         alert.addButton(withTitle: L("Cancel"))
-        let finish: @MainActor (NSApplication.ModalResponse) -> Void = { response in
+        SettingsAlert.present(alert) { response in
             guard response == .alertFirstButtonReturn else { return }
             relauncher.relaunch(reason: "leave safe mode")
         }
+    }
+}
+
+/// Where an AppKit alert goes: a sheet on the key window when that is a visible window without a sheet of its own
+/// (Settings or one of its sheets), else a standalone alert with Snaptic in front (never on a floating panel, which
+/// closes when it resigns key).
+@MainActor enum SettingsAlert {
+    static func present(_ alert: NSAlert, finish: @escaping @MainActor (NSApplication.ModalResponse) -> Void) {
         NSApp.activate()
         if let window = NSApp.keyWindow, window.isVisible, window.attachedSheet == nil, !(window is NSPanel) {
             alert.beginSheetModal(for: window) { response in

@@ -460,11 +460,13 @@ struct PIPEditorSheet: View, ControlDeclaring {
     }
 
     private func close() {
+        FocusedField.commit()
         commitName()
         dismiss()
     }
 
     private func add() {
+        FocusedField.commit()
         var c = configuration
         let typed = (typedName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         c.name = PIPConfiguration.cleanName(typed.isEmpty ? defaultName : typed)

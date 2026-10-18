@@ -674,5 +674,79 @@ final class DisplaysRootModelTests: XCTestCase {
     func testCopySettingsConfirmationNamesTheSourceAndKeepsIt() {
         XCTAssertEqual(DisplaySettingsCopy.question(source: "LG HDR 4K"), "Copy the settings of “LG HDR 4K” to this display?")
         XCTAssertTrue(DisplaySettingsCopy.message(source: "LG HDR 4K").contains("keeps remembering “LG HDR 4K”"))
+        XCTAssertEqual(DisplaySettingsCopy.movePIPTitle, "Also move its Picture in Picture setups")
+    }
+
+    /// Round 3 ui N2: the help and the alert name everything a copy replaces (DDC tuning, keys with their audio
+    /// device, connection), not only brightness, color and resolution.
+    func testCopySettingsTextNamesEverythingItCopies() throws {
+        for text in [DisplaySettingsCopy.help, DisplaySettingsCopy.message(source: "LG")] {
+            for part in ["brightness", "color", "resolution", "hardware control tuning", "keys", "connection"] {
+                XCTAssertTrue(text.contains(part), "\(part) missing from: \(text)")
+            }
+        }
+        XCTAssertTrue(DisplaySettingsCopy.message(source: "LG").contains("audio device"))
+        // What the text says matches the copy: DDC tuning, keys and connection travel; the learned framing doesn't.
+        let source = key("a"), target = key("b")
+        var lg = tuned(name: "LG", brightness: 0.3, contrast: 1.4, measured: true)
+        lg.ddc.replyDelayMs = 80
+        lg.keys.audioDeviceName = "LG Speakers"
+        lg.management.preventSleep = !PerDisplayConfig().management.preventSleep
+        lg.ddc.framing = DDCFraming.allCases.first
+        let copied = try XCTUnwrap(DisplaySettingsCopy.copying(from: source, to: target, in: LossyMap([source: lg]))?[target])
+        XCTAssertEqual(copied.ddc.replyDelayMs, 80)
+        XCTAssertEqual(copied.keys.audioDeviceName, "LG Speakers")
+        XCTAssertEqual(copied.management.preventSleep, lg.management.preventSleep)
+        XCTAssertNil(copied.ddc.framing, "the learned framing belongs to the source's panel")
+    }
+
+    /// Round 3 parity R1: "Also move its Picture in Picture setups" moves the remembered display's setups here
+    /// (after this display's own, up to the cap) and off the remembered display, so each id stays in one place; a
+    /// stream that pointed at this display loses its target. Off, nothing moves.
+    func testCopySettingsCanMovePictureInPictureSetups() throws {
+        let source = key("a"), target = key("b")
+        var lg = tuned(name: "LG", brightness: 0.3, contrast: 1.4, measured: true)
+        var stream = PIPConfiguration(name: "LG → DELL", kind: .fullScreen)
+        stream.target = target
+        lg.pip.configurations.append(stream)
+        let dell = tuned(name: "DELL", brightness: 0.8, contrast: 1, measured: false)
+        let map = LossyMap([source: lg, target: dell])
+        XCTAssertEqual(DisplaySettingsCopy.movablePIPCount(from: source, to: target, in: map), 2)
+
+        let plain = try XCTUnwrap(DisplaySettingsCopy.copying(from: source, to: target, in: map))
+        XCTAssertEqual(plain[source], lg)
+        XCTAssertEqual(plain[target]?.pip, dell.pip)
+
+        let moved = try XCTUnwrap(DisplaySettingsCopy.copying(from: source, to: target, in: map, movePIP: true))
+        let here = try XCTUnwrap(moved[target]).pip.configurations
+        XCTAssertEqual(here.map(\.id), dell.pip.configurations.map(\.id) + lg.pip.configurations.map(\.id))
+        XCTAssertNil(here.last?.target, "a display can't stream onto itself")
+        XCTAssertEqual(moved[source]?.pip.configurations, [])
+        // Everything else about the remembered display stays.
+        var rest = try XCTUnwrap(moved[source])
+        rest.pip = lg.pip
+        XCTAssertEqual(rest, lg)
+        // Nothing left to move, and the settings already match: nothing to do.
+        XCTAssertEqual(DisplaySettingsCopy.movablePIPCount(from: source, to: target, in: moved), 0)
+        XCTAssertNil(DisplaySettingsCopy.copying(from: source, to: target, in: moved, movePIP: true))
+    }
+
+    /// The cap: only what fits moves; the rest stays with the remembered display. Settings already copied with setups
+    /// left to move still move them.
+    func testCopySettingsMovesOnlyWhatFits() throws {
+        let source = key("a"), target = key("b")
+        var lg = PerDisplayConfig()
+        lg.pip.configurations = (0..<3).map { PIPConfiguration(name: "LG \($0)") }
+        var dell = PerDisplayConfig()
+        dell.pip.configurations = (0..<(PerDisplayPIP.maxConfigurations - 1)).map { PIPConfiguration(name: "DELL \($0)") }
+        let map = LossyMap([source: lg, target: dell])
+        XCTAssertEqual(DisplaySettingsCopy.movablePIPCount(from: source, to: target, in: map), 1)
+        let moved = try XCTUnwrap(DisplaySettingsCopy.copying(from: source, to: target, in: map, movePIP: true))
+        XCTAssertEqual(moved[target]?.pip.configurations.count, PerDisplayPIP.maxConfigurations)
+        XCTAssertEqual(moved[target]?.pip.configurations.last?.id, lg.pip.configurations[0].id)
+        XCTAssertEqual(moved[source]?.pip.configurations.map(\.id), lg.pip.configurations.dropFirst().map(\.id))
+        XCTAssertEqual(DisplaySettingsCopy.movablePIPCount(from: source, to: target, in: moved), 0)
+        XCTAssertNil(DisplaySettingsCopy.copying(from: source, to: target, in: moved, movePIP: true))
+        XCTAssertEqual(DisplaySettingsCopy.movablePIPCount(from: source, to: source, in: map), 0)
     }
 }

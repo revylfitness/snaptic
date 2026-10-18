@@ -165,6 +165,7 @@ private struct MatchTextSizeRows: View {
         if proposals.isEmpty {
             ButtonRow(L("Preview"), help: L("Shows the resolutions that would change."),
                       control: ControlID("displays.matchTextSize.preview")) {
+                FocusedField.commit()
                 preview = nil
                 proposals = c.scaleMatchProposals()
                 if proposals.isEmpty {

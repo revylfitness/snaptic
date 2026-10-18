@@ -16,8 +16,6 @@ struct DisplayDetailsSheet: View, ControlDeclaring {
     @StateObject private var perDisplay: ConfigSlice<DisplaysConfig, LossyMap<DisplayKey, PerDisplayConfig>>
     @Environment(\.dismiss) private var dismiss
     @State private var confirmForget = false
-    /// The remembered display whose settings Copy Settings From asks to copy (ux N3).
-    @State private var copySource: DisplayKey?
 
     init(env: DisplaysPageEnvironment, key: DisplayKey?) {
         self.env = env
@@ -128,19 +126,13 @@ struct DisplayDetailsSheet: View, ControlDeclaring {
             if !remembered.isEmpty {
                 LabeledContent {
                     ActionMenuButton(L("Choose Display"), items: remembered.map { source in
-                        ActionMenuItem(id: source.rawValue, title: rememberedName(source) + "…") { copySource = source }
+                        ActionMenuItem(id: source.rawValue, title: rememberedName(source) + "…") {
+                            confirmCopy(from: source, to: display.key)
+                        }
                     }, primaryAction: nil, control: ControlID("displays.details.copySettings"))
                 } label: {
                     Text(L("Copy settings from"))
-                    Text(L("Replaces this display’s brightness, color, and resolution with a remembered display’s."))
-                }
-                .alert(DisplaySettingsCopy.question(source: copySource.map { rememberedName($0) } ?? ""),
-                       isPresented: Binding(get: { copySource != nil }, set: { if !$0 { copySource = nil } }),
-                       presenting: copySource) { source in
-                    Button(L("Copy Settings")) { copySettings(from: source, to: display.key) }
-                    Button(L("Cancel"), role: .cancel) {}
-                } message: { source in
-                    Text(DisplaySettingsCopy.message(source: rememberedName(source)))
+                    Text(DisplaySettingsCopy.help)
                 }
             }
             if let persisted {
@@ -171,14 +163,41 @@ struct DisplayDetailsSheet: View, ControlDeclaring {
         DisplayInformationText.name(key, identity: perDisplay.value[key]?.identity)
     }
 
+    /// Asks before copying: the alert names the remembered display and what is replaced and, when that display has
+    /// Picture in Picture setups that fit here, offers "Also move its Picture in Picture setups" (off by default,
+    /// review round 3 parity R1). An AppKit alert because a SwiftUI alert can't hold a checkbox.
+    private func confirmCopy(from source: DisplayKey, to target: DisplayKey) {
+        let name = rememberedName(source)
+        let alert = NSAlert()
+        alert.messageText = DisplaySettingsCopy.question(source: name)
+        alert.informativeText = DisplaySettingsCopy.message(source: name)
+        alert.addButton(withTitle: L("Copy Settings"))
+        alert.addButton(withTitle: L("Cancel"))
+        let offersMove = DisplaySettingsCopy.movablePIPCount(from: source, to: target, in: env.config.value.perDisplay) > 0
+        let checkbox = offersMove ? NSButton(checkboxWithTitle: DisplaySettingsCopy.movePIPTitle, target: nil, action: nil) : nil
+        if let checkbox {
+            checkbox.state = .off
+            checkbox.sizeToFit()
+            alert.accessoryView = checkbox
+        }
+        SettingsAlert.present(alert) { response in
+            guard response == .alertFirstButtonReturn else { return }
+            copySettings(from: source, to: target, movePIP: checkbox?.state == .on)
+        }
+    }
+
     /// Copies a remembered display's settings onto this one after the alert (Kit `DisplaySettingsCopy`: this
-    /// display keeps its own name, icon and Picture in Picture setups; the remembered display stays remembered).
-    private func copySettings(from source: DisplayKey, to target: DisplayKey) {
+    /// display keeps its own name, icon and Picture in Picture setups; the remembered display stays remembered, and
+    /// gives its setups to this display only when the user asked).
+    private func copySettings(from source: DisplayKey, to target: DisplayKey, movePIP: Bool) {
         var value = env.config.value
-        guard let copied = DisplaySettingsCopy.copying(from: source, to: target, in: value.perDisplay) else { return }
+        guard let copied = DisplaySettingsCopy.copying(from: source, to: target, in: value.perDisplay,
+                                                       movePIP: movePIP) else { return }
         value.perDisplay = copied
         env.config.value = value
-        EventLog.shared.record(.registry, "Copied a remembered display's settings")
+        EventLog.shared.record(.registry, movePIP
+            ? "Copied a remembered display's settings and moved its Picture in Picture setups"
+            : "Copied a remembered display's settings")
     }
 
     private func forgetResolution(_ key: DisplayKey) {

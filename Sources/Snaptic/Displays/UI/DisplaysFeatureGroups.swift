@@ -183,9 +183,12 @@ struct DisplaysFeatureGroups: View, ControlDeclaring {
     @ViewBuilder private func row(_ item: DisplayFeatureSwitch, _ anchor: ControlID) -> some View {
         let reason = switcher.unavailableReason(item.features)
         let isOn = item.isOn(raw: features.value)
+        // A kill switch says so once, in its DefaultsLockRow with how to turn it back on (ux round 2 Nit 1, review
+        // round 3 ui N1); any other reason is the switch's note.
+        let killed = reason == DefaultsLock.text
         ToggleSetting(item.title, help: help(item), isOn: switcher.binding(item), anchor: anchor,
-                      badge: badge(item), disabledReason: isOn ? nil : reason)
-        // A kill switch also says how to turn it back on (ux round 2 Nit 1).
+                      badge: badge(item), disabledReason: isOn || killed ? nil : reason)
+            .disabled(!isOn && killed)
         if let locked = switcher.lockedFeature(item.features) {
             DefaultsLockRow(key: KillSwitches.key(prefix: "Displays", id: locked.rawValue))
                 .padding(.leading, 20)

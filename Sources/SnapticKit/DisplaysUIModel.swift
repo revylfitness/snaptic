@@ -835,16 +835,23 @@ package enum DisplayInformationText {
 
 // MARK: - Display Details › Copy settings from (ux N3; owner F)
 
-/// "Copy settings from" is a real copy: this display takes a remembered display's brightness, hardware controls,
-/// keys, color, resolution and connection settings, and the remembered display stays as it was. This display keeps
-/// what is its own: name, icon and fingerprint, what Snaptic measured about its panel, and its Picture in Picture
-/// setups (their ids name Keyboard Shortcuts actions, so they are never duplicated).
+/// "Copy settings from" is a real copy: this display takes a remembered display's brightness, color, resolution,
+/// hardware control tuning (DDC timing, custom controls, input names, unlocked codes), keys (with their audio
+/// device) and connection settings, and the remembered display stays as it was. This display keeps what is its own:
+/// name, icon and fingerprint, what Snaptic measured about its panel (the gamma and XDR answers, the learned DDC
+/// framing), and its Picture in Picture setups (their ids name Keyboard Shortcuts actions, so they are never
+/// duplicated). `movePIP` (off by default, review round 3 parity R1) also moves the remembered display's setups here,
+/// as 0.2's transfer did: appended after this display's own, up to `PerDisplayPIP.maxConfigurations`, and removed
+/// from the remembered display, so every id stays in one place. A moved stream that pointed at this display has no
+/// target anymore (a display can't stream onto itself).
 package enum DisplaySettingsCopy {
     /// The new per-display map, or nil when there is nothing to copy (no such source, the same display, or this
-    /// display already has those settings). Every other entry, the source's included, is unchanged.
+    /// display already has those settings and nothing moves). Every other entry is unchanged; the source's changes
+    /// only when its Picture in Picture setups move.
     package static func copying(from source: DisplayKey, to target: DisplayKey,
-                                in perDisplay: LossyMap<DisplayKey, PerDisplayConfig>) -> LossyMap<DisplayKey, PerDisplayConfig>? {
-        guard source != target, let settings = perDisplay[source] else { return nil }
+                                in perDisplay: LossyMap<DisplayKey, PerDisplayConfig>,
+                                movePIP: Bool = false) -> LossyMap<DisplayKey, PerDisplayConfig>? {
+        guard source != target, var settings = perDisplay[source] else { return nil }
         let own = perDisplay[target] ?? PerDisplayConfig()
         var copied = settings
         copied.identity = own.identity
@@ -852,10 +859,43 @@ package enum DisplaySettingsCopy {
         copied.brightness.gammaWorks = own.brightness.gammaWorks
         copied.brightness.xdrOverlayWorks = own.brightness.xdrOverlayWorks
         copied.brightness.xdrGammaWorks = own.brightness.xdrGammaWorks
-        guard copied != own else { return nil }
+        copied.ddc.framing = own.ddc.framing
+        var moved = false
+        if movePIP {
+            let present = Set(copied.pip.configurations.map(\.id))
+            var kept: [PIPConfiguration] = []
+            for var item in settings.pip.configurations {
+                guard copied.pip.configurations.count < PerDisplayPIP.maxConfigurations,
+                      !present.contains(item.id) else {
+                    kept.append(item)
+                    continue
+                }
+                if item.target == target { item.target = nil }
+                copied.pip.configurations.append(item)
+                moved = true
+            }
+            settings.pip.configurations = kept
+        }
+        guard moved || copied != own else { return nil }
         var result = perDisplay
         result[target] = copied
+        if moved { result[source] = settings }
         return result
+    }
+
+    /// How many of the remembered display's Picture in Picture setups `movePIP` would move here (0 = don't offer it).
+    package static func movablePIPCount(from source: DisplayKey, to target: DisplayKey,
+                                        in perDisplay: LossyMap<DisplayKey, PerDisplayConfig>) -> Int {
+        guard source != target, let settings = perDisplay[source] else { return 0 }
+        let own = perDisplay[target]?.pip.configurations ?? []
+        let present = Set(own.map(\.id))
+        let candidates = settings.pip.configurations.filter { !present.contains($0.id) }.count
+        return min(candidates, max(0, PerDisplayPIP.maxConfigurations - own.count))
+    }
+
+    /// The "Copy settings from" row's help: what is replaced.
+    package static var help: String {
+        L("Replaces this display’s brightness, color, resolution, hardware control tuning, keys and connection settings with a remembered display’s.")
     }
 
     /// The confirmation's title, naming the remembered display.
@@ -863,6 +903,9 @@ package enum DisplaySettingsCopy {
 
     /// The confirmation's message: what is replaced, and that the remembered display stays.
     package static func message(source: String) -> String {
-        L("This display’s brightness, color, and resolution settings are replaced. Snaptic keeps remembering “\(source)”.")
+        L("This display’s brightness, color, resolution, hardware control tuning (such as DDC timing and custom controls), keys (with their audio device) and connection settings are replaced. Snaptic keeps remembering “\(source)”.")
     }
+
+    /// The confirmation's checkbox, shown when the remembered display has setups that can move (off by default).
+    package static var movePIPTitle: String { L("Also move its Picture in Picture setups") }
 }

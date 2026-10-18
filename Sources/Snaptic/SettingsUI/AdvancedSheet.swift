@@ -45,8 +45,12 @@ struct AdvancedSheet<Content: View>: View {
                     .modifier(OptionalSettingsAnchor(restoreControl))
                 }
                 Spacer(minLength: 8)
-                Button(L("Done")) { dismiss() }
-                    .keyboardShortcut(.defaultAction)
+                Button(L("Done")) {
+                    // A field typed in without Return still holds its text (review round 3 ui F2).
+                    FocusedField.commit()
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
             }
             .padding(16)
         }
