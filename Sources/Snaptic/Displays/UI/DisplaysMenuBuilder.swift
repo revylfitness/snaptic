@@ -64,7 +64,7 @@ import SnapticKit
             item.toolTip = paused.map(DisplaysUIText.title).sorted().joined(separator: ", ")
             items.append(item)
         }
-        if let reason = Self.unprotectedReason(ctx) {
+        if let reason = DisplaysLive.unprotectedReason(ctx) {
             let title = ctx.helpers.unavailable != nil ? L("Unprotected: Snaptic's helpers can't run")
                 : L("Unprotected: the safety helper isn't running")
             let item = MenuKit.status(title, symbol: "exclamationmark.shield", control: ControlID("menu.displays.status"))
@@ -82,21 +82,6 @@ import SnapticKit
     /// Unique, sorted pause reasons ("Paused while MonitorControl runs").
     static func pauseReasons(_ paused: Set<DisplayFeature>, monitor: OtherAppsMonitor) -> [String] {
         Array(Set(paused.compactMap { monitor.pauseReason(for: $0) })).sorted()
-    }
-
-    /// PLAN §3.5 "Unprotected": the guard isn't alive while something it must undo is armed (B's
-    /// `isUnprotected`), or helpers can't be spawned at all (A's spawner).
-    static func isUnprotected(_ ctx: DisplaysContext) -> Bool { unprotectedReason(ctx) != nil }
-
-    /// What the Unprotected row says, or nil when protected.
-    static func unprotectedReason(_ ctx: DisplaysContext) -> String? {
-        if let reason = ctx.helpers.unavailable {
-            return L("Snaptic's helpers can't run (\(reason)), so risky display changes can't be reverted automatically.")
-        }
-        if ctx.guardClient.isUnprotected {
-            return L("The safety helper that reverts risky display changes isn't running.")
-        }
-        return nil
     }
 
     // MARK: Displays

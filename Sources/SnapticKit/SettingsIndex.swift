@@ -131,6 +131,10 @@ package enum SettingsIndex {
         "displays.arrange": L("Arrange Displays"),
         "menubar.customize": L("Customize Displays Menu"),
         "awake.sessions": L("Sessions"),
+        "displays.resolution": L("Resolution"),
+        "displays.connection": L("Connection"),
+        "displays.matchTextSize": L("Match Text Size"),
+        "displays.virtual.editor": L("Virtual Display"),
     ]
 
     /// A route's or sheet's title: the table, then "….advanced" → Advanced, "….shortcuts" → Keyboard Shortcuts.

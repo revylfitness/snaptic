@@ -57,7 +57,7 @@ import SnapticKit
 struct AwakePage: View, ControlDeclaring {
     typealias Controls = AwakePageControls
 
-    private let env: AwakePageEnvironment?
+    private let env: AwakePageEnvironment
 
     static let title = L("Awake")
     static let summary = L("Keep your Mac awake for a while, or automatically when certain conditions are met.")
@@ -75,10 +75,6 @@ struct AwakePage: View, ControlDeclaring {
     ]
 
     init(env: AwakePageEnvironment) { self.env = env }
-
-    /// The 0.2 hub's row (`AwakeModule.settingsPages()`) until the module returns `settingsRoot(env:)`; without the
-    /// module's environment the page shows its settings but no live status.
-    init() { env = nil }
 
     /// The Settings sidebar root (`AwakeModule.settingsRoot()`).
     @MainActor static func settingsRoot(env: AwakePageEnvironment) -> SettingsRoot {
@@ -100,30 +96,11 @@ struct AwakePage: View, ControlDeclaring {
 
     var body: some View {
         if let host = SettingsShell.shared.host {
-            if let env {
-                AwakeRootContent(env: env, host: host)
-            } else {
-                AwakeInterimPage(host: host)
-            }
+            AwakeRootContent(env: env, host: host)
         } else {
             UnavailablePage()
         }
     }
-}
-
-/// The page without the module's environment (only reached through the 0.2 hub row).
-private struct AwakeInterimPage: View {
-    let host: ModuleHost
-    @StateObject private var env: AwakePageEnvironment
-
-    init(host: ModuleHost) {
-        self.host = host
-        let module = host.awake
-        _env = StateObject(wrappedValue: AwakePageEnvironment(config: module.config, history: module.historyStore,
-                                                              runtime: module.runtime, context: { nil }))
-    }
-
-    var body: some View { AwakeRootContent(env: env, host: host) }
 }
 
 /// A rule the editor works on.

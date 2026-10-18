@@ -38,7 +38,7 @@ import SnapticKit
         context.actions.register(Action(id: Self.toggleAction, title: L("Toggle Brightness Sync"), feature: .sync,
                                         cliAllowed: true) { [weak self] _ in self?.togglePaused() }, lifetime: lifetime)
         context.commands.register("toggle sync", policy: .low, offOnly: false, cliAllowed: true,
-                                  summary: L("Pause or resume brightness sync"), lifetime: lifetime) { [weak self] _ in
+                                  summary: L("Pause or resume brightness sync"), lifetime: lifetime) { [weak self] _, _ in
             guard let self else { return DisplayTargets.notRunning() }
             let paused = self.togglePaused()
             return .ok(paused ? L("Brightness sync paused") : L("Brightness sync on"))

@@ -37,7 +37,7 @@ jobs:
         run: |
           command -v python3 >/dev/null || { apt-get update -qq && apt-get install -y -qq python3 >/dev/null; }
           set -o pipefail
-          ./scripts/lint.sh 2>&1 | tee lint.log
+          ./scripts/lint.sh --strict 2>&1 | tee lint.log
 
       - name: Build SnapticKit and tests
         run: |
@@ -82,7 +82,7 @@ jobs:
       - name: Lint
         run: |
           set -o pipefail
-          ./scripts/lint.sh 2>&1 | tee lint.log
+          ./scripts/lint.sh --strict 2>&1 | tee lint.log
 
       - name: Build (debug, with tests)
         run: |

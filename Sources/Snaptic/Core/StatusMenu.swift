@@ -2,25 +2,6 @@ import AppKit
 import Combine
 import SnapticKit
 
-/// A menu item that runs a closure (0.2 factory). Every menu uses `MenuKit`; only the app's main menu (AppDelegate)
-/// still builds two of these, and the step-3b merge moves it over and deletes this class (PLAN 0.3 §5.1).
-@MainActor final class ClosureMenuItem: NSMenuItem {
-    private let handler: @MainActor () -> Void
-
-    init(title: String, keyEquivalent: String = "", handler: @escaping @MainActor () -> Void) {
-        self.handler = handler
-        super.init(title: title, action: #selector(fire), keyEquivalent: keyEquivalent)
-        target = self
-    }
-
-    required init(coder: NSCoder) {
-        handler = {}
-        super.init(coder: coder)
-    }
-
-    @objc private func fire() { handler() }
-}
-
 /// The status items (PLAN 0.3 §5.2): the Snaptic item, one item per module shown on its own, and the items modules
 /// build themselves (`StatusItemProvider`, Awake), all from the Kit plan (`ModulesConfig.statusItemPlan`).
 ///

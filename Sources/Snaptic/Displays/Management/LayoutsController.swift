@@ -387,7 +387,7 @@ import SnapticKit
 
     private func registerCommands(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("layout", policy: .trial, offOnly: false, cliAllowed: true,
-                              summary: L("layout list | apply <name|number> | capture <name>"), lifetime: lifetime) { [weak self] req in
+                              summary: L("layout list | apply <name|number> | capture <name>"), lifetime: lifetime) { [weak self] req, _ in
             guard let self, self.effective.contains(.layouts) else { return .failure(ControlExit.unavailable, L("Layouts are off")) }
             let a = req.arguments
             switch a.first?.lowercased() {

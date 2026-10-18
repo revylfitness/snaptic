@@ -240,7 +240,7 @@ import SnapticKit
         ]
         for (verb, summary, range, path) in setters {
             ctx.commands.register(verb, policy: .low, offOnly: false, cliAllowed: true, summary: summary,
-                                  lifetime: lifetime) { [weak self] request in
+                                  lifetime: lifetime) { [weak self] request, _ in
                 guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
                 let usage = L("Usage: ") + summary
                 let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 1, usage: usage, ctx)
@@ -260,7 +260,7 @@ import SnapticKit
             }
         }
         ctx.commands.register("color", policy: .low, offOnly: false, cliAllowed: true,
-                              summary: L("color reset|invert|suspend [display]"), lifetime: lifetime) { [weak self] request in
+                              summary: L("color reset|invert|suspend [display]"), lifetime: lifetime) { [weak self] request, _ in
             guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
             let usage = L("Usage: color reset|invert|suspend [display]")
             let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 1, usage: usage, ctx)

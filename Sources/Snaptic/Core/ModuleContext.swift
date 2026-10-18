@@ -13,7 +13,7 @@ import SnapticKit
     let otherApps: OtherAppsMonitor
     let lifetime: Lifetime
     let requestMenuRebuild: @MainActor () -> Void
-    /// The module's settingsPages() changed (e.g. a feature turned on or off).
+    /// What the module's Settings pages show changed (e.g. a feature turned on or off).
     let requestSettingsRefresh: @MainActor () -> Void
     /// Opens Settings, optionally at a page id.
     let openSettings: @MainActor (String?) -> Void

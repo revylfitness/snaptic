@@ -84,7 +84,6 @@ import SnapticKit
         self.config = config
         self.runtime = runtime
         self.enableFeature = enableFeature
-        forward.append(config.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() })
         forward.append(runtime.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() })
     }
 

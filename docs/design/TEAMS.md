@@ -33,11 +33,10 @@ code on `feature/v03` is the contract (R5 rule carried forward).
   add the line yourself in your branch, and say so in the report).
 - **Exceptions to "`scripts/**` and the contract files are the lead's"** (0.3):
   - `scripts/stubs.tsv`: add rows for your own new files (above).
-  - `scripts/lint-legacy.tsv` (the ratchet): you may **lower or delete** rows for paths you
-    own, in your own branch. Never raise a count or add a row; a new violation is fixed, not
-    ratcheted. Rows are sorted by path, so parallel edits touch different lines. A row whose
-    count went down only warns until the step-3 exit; from then on CI runs `lint.sh --strict`
-    and only the three permanent rows remain.
+  - `scripts/lint-legacy.tsv` (the ratchet): only the three permanent rows remain (`AppDelegate.swift`
+    L6, `PIPWindow.swift` L6, `ArrangementCanvas.swift` L5), and **strict mode is on**: CI runs
+    `lint.sh --strict`, which also fails when a row's count went down. Never raise a count or add a
+    row; a new violation is fixed, not ratcheted. Run `./scripts/lint.sh --strict` before you push.
   - Control tables (PLAN 0.3 §4.8.2, R5-13): each `Sources/SnapticKit/Controls/<Type>Controls.swift`
     belongs to the owner of `<Type>` (see `stubs.tsv`); fill `controls` as your views and
     builders land. A table you add needs a `stubs.tsv` row for its file and **one appended
@@ -54,7 +53,7 @@ code on `feature/v03` is the contract (R5 rule carried forward).
   `/tmp/claude-0/-home-claude/d64e05c1-6336-52a5-bd62-2efc57ca1f12/scratchpad/ci/ci.sh <FULL sha> 40`
   (run it in the background; it prints job results and error lines; logs land next to
   the script in `logs-<sha>/`). Each round takes about 3–6 minutes.
-- Run `./scripts/lint.sh` locally before every push (python3 is available).
+- Run `./scripts/lint.sh --strict` locally before every push (python3 is available).
 - macOS 14 deployment target, Xcode 16.4 (Swift 6.1 compiler in Swift 5 language mode),
   universal binary. No macOS 15+/26/27 SDK symbols without `#available` (and prefer none).
 - SnapticKit builds and tests on Linux (swift 5.10): Foundation only, `package` on every
@@ -112,7 +111,7 @@ code on `feature/v03` is the contract (R5 rule carried forward).
   listed), and wired to availability, kill switch, Safe Mode, panic, session gate and
   diagnostics.
 - Kit logic has meaningful unit tests (edge cases, fuzzing for parsers).
-- `./scripts/lint.sh` passes and the CI run for your final commit is green on all jobs.
+- `./scripts/lint.sh --strict` passes and the CI run for your final commit is green on all jobs.
 - Final report: branch name, final full SHA, CI run result, files added (with owner and
   kind), any contract changes you need from the lead, hardware assumptions to verify
   (Appendix D), and known limitations. Keep it under 400 words.

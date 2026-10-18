@@ -4,11 +4,9 @@ import SnapticKit
 
 /// The Window Switcher's place in Settings (H; PLAN 0.3 §4.3): one root page, its Advanced sheet and the More
 /// Shortcuts sheet. The 0.2 sub-pages (Features, Shortcuts, Behavior, Thumbnails, App Lists, Privacy) are merged
-/// into them, so `pages(module:)` is empty.
+/// into them.
 enum SwitcherPages {
-    @MainActor static func pages(module: WindowSwitcherModule) -> [SettingsPage] { [] }
-
-    /// The sidebar root; the shell uses it in place of the module's default hub.
+    /// The sidebar root (`WindowSwitcherModule.settingsRoot()`).
     @MainActor static func root(module: WindowSwitcherModule) -> SettingsRoot {
         SettingsRoot(id: SettingsRootID.windowSwitcher, title: module.title, symbol: "rectangle.on.rectangle",
                      tint: .indigo) { [weak module] in

@@ -63,7 +63,7 @@ import SnapticShims
         }, lifetime: lifetime)
         // Off-only from the CLI (R5.4).
         context.commands.register("smart-hidpi", policy: .low, offOnly: true, cliAllowed: true, summary: L("smart-hidpi off <display>|all"),
-                                  lifetime: lifetime) { [weak self] req in
+                                  lifetime: lifetime) { [weak self] req, _ in
             guard let self else { return .failure(ControlExit.unavailable, "") }
             let a = req.arguments
             guard a.first?.lowercased() == "off" else { return .failure(ControlExit.refused, L("Only 'off' is allowed")) }
@@ -74,7 +74,7 @@ import SnapticShims
         for verb in ["toggle smarthidpi", "toggle smart-hidpi"] {
             context.commands.register(verb, policy: .low, offOnly: true, cliAllowed: true,
                                       summary: L("toggle smartHiDPI [<display>|all]: turn Smart HiDPI off"),
-                                      lifetime: lifetime) { [weak self] req in
+                                      lifetime: lifetime) { [weak self] req, _ in
                 guard let self else { return .failure(ControlExit.unavailable, "") }
                 let sel = req.arguments.first.map { $0.lowercased() == "off" ? (req.arguments.dropFirst().first ?? "all") : $0 } ?? "all"
                 return await self.turnOffCommand(sel, requireOn: true)

@@ -563,12 +563,12 @@ import SnapticKit
     private func registerCommands(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("mode", policy: .trial, offOnly: false, cliAllowed: true,
                               summary: L("mode list|up|down|hidpi|native|default|halved|undo|redo|notch [display] | mode set <display> WxH[@Hz] [hidpi|lodpi] | mode favorite N [display]"),
-                              lifetime: lifetime) { [weak self] request in
+                              lifetime: lifetime) { [weak self] request, _ in
             guard let self else { return .failure(ControlExit.unavailable, L("Resolution is off")) }
             return await self.handleMode(request)
         }
         ctx.commands.register("match-ui", policy: .trial, offOnly: false, cliAllowed: true, summary: L("Match UI size across displays"),
-                              lifetime: lifetime) { [weak self] request in
+                              lifetime: lifetime) { [weak self] request, _ in
             guard let self, self.effective.contains(.scaleMatch) else { return .failure(ControlExit.unavailable, L("Match UI size is off")) }
             let proposals = self.scaleMatchProposals()
             guard !proposals.isEmpty else { return .ok(L("Text already looks the same size on every display")) }

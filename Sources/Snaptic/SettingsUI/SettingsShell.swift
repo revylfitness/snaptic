@@ -152,25 +152,14 @@ import SnapticKit
         if routeTitles.count < 512 || routeTitles[route.id] != nil { routeTitles[route.id] = title }
     }
 
-    func title(for route: SettingsRoute) -> String? {
-        if let t = routeTitles[route.id] { return t }
-        return legacyPage(route, root: root)?.title
-    }
+    func title(for route: SettingsRoute) -> String? { routeTitles[route.id] }
 
-    /// The page a route shows: the module's `settingsDestination`, or (until each module provides its own) the
-    /// module's 0.2 page with that id while it runs. The host roots (General, Menu Bar, Permissions, About) have no
-    /// sub-pages.
+    /// The page a route shows: the module's `settingsDestination`. The host roots (General, Menu Bar, Permissions,
+    /// About) have no sub-pages.
     func destination(_ route: SettingsRoute, root: String) -> AnyView? {
         guard let host else { return nil }
         guard let module = host.modules.first(where: { $0.id.rawValue == root }) else { return nil }
-        if let view = module.settingsDestination(route) { return view }
-        return legacyPage(route, root: root)?.makeView()
-    }
-
-    private func legacyPage(_ route: SettingsRoute, root: String) -> SettingsPage? {
-        guard let host, let module = host.modules.first(where: { $0.id.rawValue == root }),
-              host.isRunning(module.id) else { return nil }
-        return module.settingsPages().first { $0.id == route.id }
+        return module.settingsDestination(route)
     }
 
     // MARK: Opening
@@ -188,7 +177,7 @@ import SnapticKit
             restored = true
             if let text = UserDefaults.standard.string(forKey: Self.lastRouteKey),
                var location = SettingsLocation(encoded: text, roots: rootIDs) {
-                // A route remembered from the interim hubs ("general general.menu") opens its 0.3 root.
+                // A route remembered from the 0.3 betas' interim hubs ("general general.menu") opens its 0.3 root.
                 if let id = location.route?.id, let root = SettingsRootID.legacyPages[id], rootIDs.contains(root) {
                     location = SettingsLocation(root: root)
                 }
@@ -469,74 +458,5 @@ struct UnavailablePage: View {
     var body: some View {
         ContentUnavailableView(L("This Page Isn’t Available"), systemImage: "rectangle.dashed",
                                description: Text(L("Turn on the module or feature it belongs to.")))
-    }
-}
-
-// MARK: - Interim module hub
-
-/// The root page of a module that still shows its 0.2 pages (the `SnapticModule.settingsRoot()` default until the
-/// module's own root lands): header with the master switch ("Use Displays"), the off-state highlights or the
-/// "Turned off by a defaults setting." state, and one navigation row per 0.2 page while the module runs.
-struct LegacyModuleHub: View {
-    let moduleID: ModuleID
-    let pages: [SettingsPage]
-
-    var body: some View {
-        if let host = SettingsShell.shared.host {
-            LegacyModuleHubContent(moduleID: moduleID, pages: pages, host: host, modules: host.modulesStore)
-        } else {
-            UnavailablePage()
-        }
-    }
-}
-
-private struct LegacyModuleHubContent: View {
-    let moduleID: ModuleID
-    let pages: [SettingsPage]
-    @ObservedObject var host: ModuleHost
-    @ObservedObject var modules: ConfigStore<ModulesConfig>
-
-    var body: some View {
-        let module = host.module(moduleID)
-        let style = SettingsShell.sidebarStyle[moduleID.rawValue] ?? (module.symbolName, module.tint)
-        let blocked = host.disabledByDefaults.contains(moduleID)
-        let enabled = !blocked && modules.value.isEnabled(moduleID)
-        SettingsPageScaffold(route: SettingsRoute(moduleID.rawValue)) {
-            SettingsPageHeader(module.title, summary: module.summary, symbol: style.symbol, tint: style.tint,
-                               isOn: SettingsShell.shared.moduleEnabled(moduleID), switchLabel: L("Use \(module.title)"))
-                .disabled(blocked)
-            if blocked {
-                Section {
-                    StatusRow(L("Turned off by a defaults setting."), style: .warning)
-                }
-            }
-            if moduleID == .displays && host.safeMode.isActive {
-                Section {
-                    StatusRow(L("Safe Mode is on."), style: .warning, actions: [
-                        StatusAction(title: L("Leave Safe Mode")) { [weak host] in
-                            host?.relauncher.relaunch(reason: "leave safe mode")
-                        },
-                    ])
-                }
-            }
-            if !enabled {
-                FeatureHighlights(module.highlights)
-            } else if host.isRunning(moduleID) {
-                if case .degraded(let reason) = module.state {
-                    Section { StatusRow(reason, style: .warning) }
-                }
-                if !pages.isEmpty {
-                    Section {
-                        ForEach(pages) { page in
-                            NavigationRow(page.title, symbol: page.symbol, tint: style.tint, route: SettingsRoute(page.id))
-                        }
-                    }
-                }
-            } else {
-                Section {
-                    StatusRow(L("Starting…"))
-                }
-            }
-        }
     }
 }

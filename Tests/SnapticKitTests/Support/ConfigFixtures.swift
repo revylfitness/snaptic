@@ -2,8 +2,7 @@ import Foundation
 @testable import SnapticKit
 
 /// Full config values for the control key cross-check (lead; PLAN 0.3 §4.8 test 5, R5-13): every feature on, one
-/// per-display entry, the optionals set. Step 0 sets the top-level and per-display optionals; lists get one element
-/// each when the cross-check is turned on (step-3 exit).
+/// per-display entry, the optionals set, one element in every list and map (step-3 exit).
 enum ConfigFixtures {
     static let displayKey = DisplayKey(rawValue: String(repeating: "c", count: 32))!
     static let combo = HotkeyCombo(keyCode: 3, carbonModifiers: 0x0100)
@@ -23,7 +22,33 @@ enum ConfigFixtures {
         entry.brightness.gammaWorks = true
         entry.brightness.xdrOverlayWorks = true
         entry.brightness.xdrGammaWorks = true
+        entry.brightness.nits = NitsRange(minimum: 0.5, maximum: 500, peak: 1_000, isEstimate: true)
         entry.keys.audioDeviceName = "Speakers"
+        entry.ddc.framing = DDCFraming.allCases.first
+        var tuning = DDCControlTuning()
+        tuning.enabled = true
+        tuning.maximum = 100
+        tuning.showInMenu = true
+        entry.ddc.controls[VCPKey(0x10)] = tuning
+        entry.ddc.inputs = [DDCInputEntry(value: 0x0F, name: "DisplayPort")]
+        entry.ddc.unlockedCodes = [VCPKey(0xE0)]
+        entry.ddc.customControls = [DDCCustomControl(name: "Sharpness", code: 0x87, kind: .range)]
+        let mode = ModeRef(ioModeID: 1, pixelWidth: 3_840, pixelHeight: 2_160, pointWidth: 1_920, pointHeight: 1_080,
+                           refreshMilliHz: 60_000)
+        entry.resolution.favorites = [FavoriteMode(mode)]
+        entry.resolution.minWidth = 1_024
+        entry.resolution.maxWidth = 3_840
+        entry.resolution.refreshFilter = 60
+        entry.resolution.bitDepthFilter = 10
+        entry.resolution.persisted = PersistedModeChoice(mode: mode, preKeepMode: mode, recordedAt: 1)
+        entry.identity.fingerprint = FingerprintRecord(t1: "1", t2: "2", t3: "3", t4: "4", t5: "5")
+        var pip = PIPConfiguration(name: "Stream", kind: .fullScreen)
+        pip.target = displayKey
+        pip.windowFrame = PIPRect(x: 0, y: 0, width: 640, height: 360)
+        pip.crop = PIPRect(x: 0, y: 0, width: 1, height: 1)
+        pip.filters = [FilterInstance(kind: FilterKind.allCases[0])]
+        pip.lutID = StableID()
+        entry.pip.configurations = [pip]
         c.perDisplay[displayKey] = entry
         c.brightness.syncSource = displayKey
         c.resolution.scaleMatchReference = displayKey
@@ -33,6 +58,36 @@ enum ConfigFixtures {
         c.safety.panicHotkey = combo
         c.menu.showPanelShortcut = combo
         c.menu.identifyShortcut = HotkeyCombo(keyCode: 4, carbonModifiers: 0x0100)
+        c.menu.items[DisplayMenuItemID(rawValue: "c.brightness.slider")] = .visible
+        c.menu.hiddenDisplays = [displayKey]
+        c.menu.displayOrder = [displayKey]
+        c.menu.collapsedDisplays = [displayKey]
+        c.keys.inputSlots = [InputSlot(display: displayKey, value: 0x11)]
+        let spec = VirtualScreenSpec(name: "Virtual", aspectWidth: 16, aspectHeight: 9, sizeInches: 27, hiDPI: true,
+                                     modes: [VirtualMode(width: 2_560, height: 1_440, hiDPI: true)],
+                                     primaries: VirtualPrimaries(redX: 0.68, redY: 0.32, greenX: 0.265, greenY: 0.69,
+                                                                 blueX: 0.15, blueY: 0.06, whiteX: 0.3127, whiteY: 0.329),
+                                     associations: [VirtualAssociation(target: displayKey)])
+        c.virtualScreens.screens = [spec]
+        c.virtualScreens.connected[spec.id] = true
+        c.virtualScreens.smartHiDPI[displayKey] = SmartHiDPIPair(mode: VirtualMode(width: 2_560, height: 1_440, hiDPI: true))
+        c.virtualScreens.lastOrigins[spec.id] = VirtualOrigin(x: 0, y: 0)
+        let state = ProtectedDisplayState(mode: mode, x: 0, y: 0, rotation: 0, mirrorOf: displayKey, isMain: true)
+        c.management.protection[DisplaySetKey(keys: [displayKey])!] = ProtectionProfile(displays: [displayKey: state],
+                                                                                        capturedAt: 1)
+        let saved = SavedDisplaySettings(mode: mode, x: 0, y: 0, isMain: true, rotation: 0, mirrorOf: displayKey,
+                                         brightness: 0.5, adjustments: ["gamma": 1], ddcInput: 0x0F, volume: 0.5,
+                                         identity: LayoutDisplayIdentity(tier1: "1", tier2: "2"))
+        c.layouts.layouts = [SavedLayout(name: "Desk", displays: [displayKey: saved], nightShift: true,
+                                         virtualScreens: [spec.id: true], trust: TrustStamp(digest: "d", osMajor: 15))]
+        c.pip.windowConfigurations = [PIPConfiguration(name: "Window")]
+        c.pip.luts = [PIPLUTReference(name: "Film", size: 33)]
+        c.automation.hooks = [HookSpec(name: "Hook", display: displayKey,
+                                       command: CommandSpec(executable: "/usr/bin/true", arguments: ["-x"]))]
+        c.automation.actions = [CustomActionSpec(name: "Action", command: CommandSpec(executable: "/usr/bin/true"),
+                                                 shortcut: combo)]
+        c.safety.preConfirmAllowed[displayKey] = PreConfirmAllowList(entries: ["mode"])
+        c.safety.keptModes[displayKey] = KeptModes(modes: [mode])
         return c
     }
 
@@ -56,6 +111,14 @@ enum ConfigFixtures {
         c.shortcuts[AwakeActionID(rawValue: "awake.toggle")] = combo
         c.drives.volumes[VolumeUUIDKey(rawValue: "1B4E28BA-2FA1-11D2-883F-0016D3CCA427")!] =
             DriveAliveVolume(name: "Backup", enabled: true, firstWriteDone: true)
+        c.sessions.presets.append(AwakePreset(id: StableID.derived(namespace: "awake.preset.test", name: "idle"),
+                                              name: "Until idle", kind: .untilIdle(UntilIdleSpec(), maxSeconds: 7_200),
+                                              options: AwakeSessionOptions()))
+        var trigger = AwakeTrigger(id: StableID.derived(namespace: "awake.trigger.test", name: "dock"), name: "Dock",
+                                   criteria: [AwakeCriterionEntry(.usbDevice(vendor: 1, product: 2, serialHash: "h",
+                                                                             name: "Dock"))])
+        trigger.resumeAfterManualEndMinutes = 30
+        c.triggers.triggers = [trigger]
         return c
     }
 

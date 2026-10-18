@@ -153,11 +153,6 @@ import SnapticKit
     /// The Awake section of the shared diagnostics report (G's AwakeDiagnostics; §3.6: no names or identifiers).
     func diagnosticsLines() -> [String] { AwakeDiagnostics().lines(context) }
 
-    func settingsPages() -> [SettingsPage] {
-        let env = pageEnvironment
-        return [SettingsPage(id: "awake", title: L("Awake"), symbol: "cup.and.saucer.fill") { AnyView(AwakePage(env: env)) }]
-    }
-
     var tint: SettingsTint { .orange }
     var highlights: [FeatureHighlight] { AwakePage.highlights }
     func settingsRoot() -> SettingsRoot { AwakePage.settingsRoot(env: pageEnvironment) }
