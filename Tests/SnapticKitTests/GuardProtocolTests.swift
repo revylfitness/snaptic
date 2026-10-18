@@ -43,6 +43,28 @@ final class GuardProtocolTests: XCTestCase {
         XCTAssertEqual(GuardProtocol.trialDeadline(panelSeconds: 15), 30)
     }
 
+    /// FIXES-R1 B4: `extend` right before the panel makes the deadline now + panel + 10,
+    /// however long the staged apply and settle took; it never shortens a deadline.
+    func testExtendBeforePanel() throws {
+        for panel in [10.0, 15, 60] {
+            let ext = GuardProtocol.panelExtension(panelSeconds: panel)
+            XCTAssertEqual(ext, panel + 10)
+            XCTAssertNotNil(GuardProtocol.decodeMessage(try XCTUnwrap(GuardProtocol.encode(.extend(id: 1, seconds: ext)))),
+                            "the panel extension must pass the protocol bounds")
+            let armedAt = 100.0
+            let deadline = armedAt + GuardProtocol.trialDeadline(panelSeconds: panel)
+            // A slow apply (rotation + HDR) used most of the original deadline.
+            let panelAt = armedAt + 24
+            let extended = GuardProtocol.extendedDeadline(current: deadline, now: panelAt, seconds: ext)
+            XCTAssertEqual(extended, max(deadline, panelAt + panel + 10))
+            XCTAssertGreaterThanOrEqual(extended - panelAt, panel + 10, "the whole countdown fits before the guard acts")
+        }
+        XCTAssertEqual(GuardProtocol.extendedDeadline(current: 500, now: 100, seconds: 20), 500, "never shortened")
+        XCTAssertEqual(GuardProtocol.extendedDeadline(current: 0, now: 100, seconds: 1000), 100 + GuardProtocol.maxExtendSeconds)
+        XCTAssertEqual(GuardProtocol.extendedDeadline(current: 0, now: 100, seconds: .nan), 100)
+        XCTAssertNil(GuardProtocol.decodeMessage(GuardProtocol.encode(.extend(id: 1, seconds: 500))!))
+    }
+
     func testFuzzDecodeNeverTraps() {
         var rng = SeededGenerator(seed: 0x6A4D)
         let seed = GuardProtocol.encode(.armTrial(id: 7, undo: [op], deadlineSeconds: 30))!

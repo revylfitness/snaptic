@@ -48,4 +48,37 @@ final class RiskClassifierTests: XCTestCase {
         XCTAssertEqual(RiskClassifier.classify([], current: s, facts: { _ in facts }, setting: .always), .low)
         XCTAssertTrue(RiskLevel.low < .restore && RiskLevel.restore < .trial)
     }
+
+    /// FIXES-R1 B3: a user reconnect or "stop mirroring" is never a trial, whatever the live state.
+    func testVisibilityRestoringChangesAreLow() {
+        let s = L.snapshot([L.display(1, .builtin), L.display(2, active: false, disabledBySnaptic: true),
+                            L.display(3, mirrorOf: 1), L.display(4, active: false)])
+        let facts = ModeFacts()
+        for setting in ConfirmResolutionChanges.allCases {
+            func risk(_ c: DisplayChange) -> RiskLevel { RiskClassifier.classify(c, current: s, facts: facts, setting: setting) }
+            XCTAssertEqual(risk(.enabled(2, true)), .low, "reconnecting a Snaptic-disabled display")
+            XCTAssertEqual(risk(.enabled(4, true)), .low, "reconnecting any disabled display")
+            XCTAssertEqual(risk(.enabled(9, true)), .low, "unknown display: still visibility-restoring")
+            XCTAssertEqual(risk(.mirror(3, of: nil)), .low, "stop mirroring")
+            XCTAssertEqual(risk(.mirror(9, of: nil)), .low)
+            XCTAssertEqual(risk(.enabled(1, false)), .trial, "disconnecting stays a trial")
+            XCTAssertEqual(risk(.mirror(1, of: 3)), .trial, "starting a mirror stays a trial")
+            XCTAssertEqual(risk(.mirror(3, of: 1)), .low, "unchanged mirror")
+            XCTAssertEqual(RiskClassifier.classify([.enabled(2, true), .mirror(3, of: nil)], current: s,
+                                                   facts: { _ in facts }, setting: setting), .low)
+            XCTAssertEqual(RiskClassifier.classify([.enabled(2, true), .enabled(1, false)], current: s,
+                                                   facts: { _ in facts }, setting: setting), .trial)
+        }
+        // Every visibility-restoring change classifies low on random layouts.
+        var rng = SeededGenerator(seed: 0xB3)
+        for _ in 0..<300 {
+            let layout = L.random(&rng)
+            for e in layout.entries {
+                for c in [DisplayChange.enabled(e.id, true), .mirror(e.id, of: nil)] {
+                    XCTAssertTrue(c.isVisibilityRestoring)
+                    XCTAssertEqual(RiskClassifier.classify(c, current: layout, facts: ModeFacts(), setting: .always), .low)
+                }
+            }
+        }
+    }
 }

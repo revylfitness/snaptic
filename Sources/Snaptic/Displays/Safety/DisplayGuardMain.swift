@@ -114,7 +114,7 @@ enum DisplayGuardMain {
             reply(.ack(id: id))
         case .extend(let id, let seconds):
             if var t = trials[id], !t.committing {
-                t.deadline = min(t.deadline + seconds, now + GuardProtocol.maxDeadlineSeconds)
+                t.deadline = GuardProtocol.extendedDeadline(current: t.deadline, now: now, seconds: seconds)
                 trials[id] = t
             }
             reply(.ack(id: id))

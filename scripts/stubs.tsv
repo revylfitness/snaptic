@@ -24,6 +24,7 @@ Sources/SnapticKit/LayoutModel.swift	B	L	-	-
 Sources/SnapticKit/Invariants.swift	B	K1	Invariants	-
 Sources/SnapticKit/UndoPlanner.swift	B	L	-	-
 Sources/SnapticKit/RiskClassifier.swift	B	K1	RiskClassifier	-
+Sources/SnapticKit/TrialLifecycle.swift	B	L	-	-
 Sources/SnapticKit/Fingerprint.swift	B	K1	Fingerprint	-
 Sources/SnapticKit/DisplayModeDescriptor.swift	B	L	-	-
 Sources/SnapticKit/ModeCandidates.swift	B	K1	ModeCandidates	-
@@ -248,6 +249,7 @@ Tests/SnapticKitTests/LayoutModelTests.swift	B	K3	LayoutModelTests	-
 Tests/SnapticKitTests/InvariantsTests.swift	B	K3	InvariantsTests	-
 Tests/SnapticKitTests/UndoPlannerTests.swift	B	K3	UndoPlannerTests	-
 Tests/SnapticKitTests/RiskClassifierTests.swift	B	K3	RiskClassifierTests	-
+Tests/SnapticKitTests/TrialLifecycleTests.swift	B	L	-	-
 Tests/SnapticKitTests/FingerprintTests.swift	B	K3	FingerprintTests	-
 Tests/SnapticKitTests/DisplayModeDescriptorTests.swift	B	K3	DisplayModeDescriptorTests	-
 Tests/SnapticKitTests/ModeCandidatesTests.swift	B	K3	ModeCandidatesTests	-

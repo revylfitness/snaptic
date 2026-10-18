@@ -6,6 +6,8 @@ import Foundation
 package enum GuardMessage: Codable, Equatable, Sendable {
     case hello(protocolVersion: Int, build: String)
     case armTrial(id: UInt64, undo: [UndoOp], deadlineSeconds: Double)
+    /// The trial's deadline becomes at least now + `seconds` (never shortened; capped at
+    /// now + `maxDeadlineSeconds`). Sent right before the confirm panel shows (FIXES-R1 B4).
     case extend(id: UInt64, seconds: Double)
     case commitIntent(id: UInt64)
     case commit(id: UInt64)
@@ -33,7 +35,8 @@ package enum GuardProtocol {
     package static let maxUndoOps = 256
     package static let maxDisplays = 64
     package static let maxDeadlineSeconds = 120.0
-    package static let maxExtendSeconds = 60.0
+    /// Panel (≤ 60 s) + 10 s, with room to spare.
+    package static let maxExtendSeconds = 90.0
     package static let maxBusySeconds = 10.0
     package static let maxFailureLength = 256
 
@@ -48,6 +51,15 @@ package enum GuardProtocol {
     package static let ackTimeoutSeconds = 1.0
     /// Trial deadline = panel + settle (≤ 5 s) + 10 s (R5.2).
     package static func trialDeadline(panelSeconds: Double) -> Double { panelSeconds + 5 + 10 }
+    /// What the app extends a trial by right before the panel shows: panel + 10 s (FIXES-R1 B4).
+    package static func panelExtension(panelSeconds: Double) -> Double {
+        min(max(panelSeconds, 0) + 10, maxExtendSeconds)
+    }
+    /// The guard's `extend` rule: at least now + seconds, never earlier than before, capped.
+    package static func extendedDeadline(current: Double, now: Double, seconds: Double) -> Double {
+        let s = min(max(seconds.isFinite ? seconds : 0, 0), maxExtendSeconds)
+        return max(current, min(now + s, now + maxDeadlineSeconds))
+    }
 
     // MARK: Coding (one JSON object per line; JSONEncoder never emits a raw newline)
 
