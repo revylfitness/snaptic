@@ -155,6 +155,51 @@ final class SettingsHelpAnchorsTests: XCTestCase {
         }
     }
 
+    func testSlug() {
+        XCTAssertEqual(SettingsHelpAnchors.slug("Menu Bar"), "menu-bar")
+        XCTAssertEqual(SettingsHelpAnchors.slug("Brightness and Dimming"), "brightness-and-dimming")
+        XCTAssertEqual(SettingsHelpAnchors.slug("Install and build"), "install-and-build")
+        XCTAssertEqual(SettingsHelpAnchors.slug("Privacy & security"), "privacy--security")
+        XCTAssertEqual(SettingsHelpAnchors.slug("Display Information (DDC)"), "display-information-ddc")
+        XCTAssertEqual(SettingsHelpAnchors.anchors[SettingsRootID.about], "snaptic")
+    }
+
+    /// Headings the README doesn't have yet: the docs step (lead, step 5) adds them, then removes them here. Once a
+    /// heading exists this test fails until it is removed from the list, so the list only shrinks.
+    private static let awaitingREADME: Set<String> = [
+        "General", "Menu Bar", "Brightness and Dimming", "Hardware Controls", "Color", "Keyboard",
+        "Display Information", "Awake",
+    ]
+
+    /// Review round 2 ux N4: every (?) anchor is a real heading of README.md (no "#anchor" that lands on the top).
+    func testEveryAnchorIsAReadmeHeading() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let readme = root.appendingPathComponent("README.md")
+        guard let text = try? String(contentsOf: readme, encoding: .utf8) else {
+            throw XCTSkip("README.md isn't next to the sources")
+        }
+        var slugs: [String: Int] = [:]
+        var inFence = false
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            if line.hasPrefix("```") { inFence.toggle() }
+            guard !inFence, line.hasPrefix("#") else { continue }
+            let heading = line.drop { $0 == "#" }
+            guard heading.first == " " else { continue }
+            slugs[SettingsHelpAnchors.slug(String(heading)), default: 0] += 1
+        }
+        for (route, heading) in SettingsHelpAnchors.headings {
+            let slug = SettingsHelpAnchors.slug(heading)
+            XCTAssertEqual(SettingsHelpAnchors.anchors[route], slug)
+            if Self.awaitingREADME.contains(heading) {
+                XCTAssertNil(slugs[slug], "README now has “\(heading)”: remove it from awaitingREADME")
+            } else {
+                XCTAssertEqual(slugs[slug], 1, "README.md needs exactly one heading “\(heading)” for \(route)'s (?)")
+            }
+        }
+        XCTAssertTrue(Self.awaitingREADME.isSubset(of: Set(SettingsHelpAnchors.headings.values)))
+    }
+
     /// Each page that shows (?) has its own anchor (the README headings these name are listed for the docs).
     func testPagesWithHelpHaveSpecificAnchors() {
         for page in ["displays.brightness", "displays.hardware", "displays.color", "displays.keyboard", "displays.info"] {

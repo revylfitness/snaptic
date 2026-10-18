@@ -1,6 +1,21 @@
 import SwiftUI
 import SnapticKit
 
+/// Tile borders for Settings' tile pickers (glyph, display and icon tiles; review round 2 ux Nit 10): hairline
+/// borders normally; with Increase Contrast, a 0.5-opacity border on every tile and a 2 pt selected border.
+enum TileStroke {
+    static func color(selected: Bool, contrast: ColorSchemeContrast, unselected: Color = Color.primary.opacity(0.1)) -> Color {
+        if selected { return .accentColor }
+        return contrast == .increased ? Color.primary.opacity(0.5) : unselected
+    }
+
+    static func width(selected: Bool, contrast: ColorSchemeContrast, normalSelected: CGFloat = 1.5,
+                      normalUnselected: CGFloat = 0.5) -> CGFloat {
+        if contrast == .increased { return selected ? 2 : 1 }
+        return selected ? normalSelected : normalUnselected
+    }
+}
+
 /// Glyph tiles (Snaptic/module/Awake icons, display icons): rendered symbols with the `.isSelected` trait, never
 /// raw names. A radio group: the row title is the group label; ← and → move the selection (design m10). VoiceOver
 /// names each tile from `labels`, or from the symbol's words ("Cup and saucer").
@@ -10,6 +25,7 @@ struct GlyphTilePicker: View {
     let selection: Binding<String>
     let anchor: ControlID?
     let labels: [String: String]
+    @Environment(\.colorSchemeContrast) private var contrast
 
     init(_ title: String, symbols: [String], selection: Binding<String>, anchor: ControlID? = nil) {
         self.init(title, symbols: symbols, labels: [:], selection: selection, anchor: anchor)
@@ -52,8 +68,8 @@ struct GlyphTilePicker: View {
                 .font(.system(size: 14))
                 .frame(width: 32, height: 26)
                 .background(shape.fill(selected ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.05)))
-                .overlay(shape.strokeBorder(selected ? Color.accentColor : Color.primary.opacity(0.1),
-                                            lineWidth: selected ? 1.5 : 0.5))
+                .overlay(shape.strokeBorder(TileStroke.color(selected: selected, contrast: contrast),
+                                            lineWidth: TileStroke.width(selected: selected, contrast: contrast)))
                 .contentShape(shape)
         }
         .buttonStyle(.plain)
