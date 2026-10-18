@@ -10,7 +10,9 @@ package enum AutomationMenuItemsControls: ControlTable {
     package static let controls: [ControlSpec] = [
         ControlSpec("menu.display.a.action", .menuItem,
                     when: [.displayFeature(.customActions), .perItem("customAction")],
-                    replaces: ["l.menu.a.custom.*"],
+                    // The item runs the action registered as `a.custom.<id>` (its hotkey's home is the action's
+                    // Shortcut in ActionEditorSheet).
+                    replaces: ["l.menu.a.custom.*", "l.action.a.custom.*"],
                     menu: MenuPlacementSpec("Displays section, Actions submenu", customize: .checkbox)),
     ]
 }

@@ -217,11 +217,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let appItem = NSMenuItem()
         let appMenu = NSMenu(title: "Snaptic")
-        appMenu.addItem(ClosureMenuItem(title: L("About Snaptic")) { [weak self] in
+        appMenu.addItem(MenuKit.action(L("About Snaptic")) { [weak self] in
             self?.host?.openSettings(page: GeneralPages.aboutID)
         })
         appMenu.addItem(.separator())
-        appMenu.addItem(ClosureMenuItem(title: L("Settings…"), keyEquivalent: ",") { [weak self] in
+        appMenu.addItem(MenuKit.action(L("Settings…"), key: ",") { [weak self] in
             self?.host?.openSettings()
         })
         appMenu.addItem(.separator())
