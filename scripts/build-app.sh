@@ -4,7 +4,7 @@
 #   ./scripts/build-app.sh                     # build for this Mac
 #   ARCHS="arm64 x86_64" ./scripts/build-app.sh   # universal build (needs full Xcode)
 #   SIGN_IDENTITY="Apple Development: You (TEAMID)" ./scripts/build-app.sh
-#   INSTALL=1 ./scripts/build-app.sh           # also copy to /Applications
+#   INSTALL=1 ./scripts/build-app.sh           # also install to /Applications, owned by root (asks for your password)
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -46,10 +46,14 @@ if ! grep -q 'flags=.*runtime' <<< "$SIGNATURE_INFO"; then
 fi
 
 if [[ "${INSTALL:-0}" == "1" ]]; then
-  echo "==> Installing to /Applications"
+  # Root-owned so another process running as you can't swap the binary that holds
+  # your Accessibility/Screen Recording grants (PLAN R5.7).
+  echo "==> Installing to /Applications (root-owned; sudo will ask for your password)"
   pkill -x Snaptic 2>/dev/null || true
-  rm -rf /Applications/Snaptic.app
-  cp -R "$APP" /Applications/Snaptic.app
+  sudo rm -rf /Applications/Snaptic.app
+  sudo ditto "$APP" /Applications/Snaptic.app
+  sudo chown -R root:wheel /Applications/Snaptic.app
+  sudo chmod -R go-w /Applications/Snaptic.app
   echo "Done. Open /Applications/Snaptic.app"
 else
   echo "Done. Open $APP"

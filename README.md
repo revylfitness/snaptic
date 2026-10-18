@@ -233,19 +233,13 @@ Snaptic isn't notarized by Apple yet, so the first time you open it macOS will b
 ```bash
 git clone https://github.com/revylfitness/snaptic.git
 cd snaptic
-INSTALL=1 ./scripts/build-app.sh      # builds and copies Snaptic.app to /Applications
+INSTALL=1 ./scripts/build-app.sh      # builds and installs Snaptic.app to /Applications, owned by root
 open /Applications/Snaptic.app
 ```
 
 Leave out `INSTALL=1` to build only (`build/Snaptic.app`). For a universal Apple silicon + Intel build, which needs full Xcode, add `ARCHS="arm64 x86_64"`.
 
-`INSTALL=1` copies the app as your own user, so your account (and any program running as you) can replace it. Snaptic warns about that before you grant a permission. To install it owned by root instead:
-
-```bash
-./scripts/build-app.sh
-sudo ditto build/Snaptic.app /Applications/Snaptic.app
-sudo chown -R root:wheel /Applications/Snaptic.app
-```
+`INSTALL=1` installs the app owned by root (it runs `sudo ditto` and `chown -R root:wheel`, so it asks for your password). That way your account, and any program running as you, can't replace the binary that holds Snaptic's permissions. Snaptic warns before you grant a permission if its bundle is writable by you.
 
 GitHub Actions compiles every push and pull request. Pushes to `main` and version tags also upload a universal `Snaptic.zip` as a workflow artifact. On public repositories a separate job, which never runs repository code, adds a build-provenance attestation. Verify that it came from this workflow on `main`:
 
