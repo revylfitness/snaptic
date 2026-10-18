@@ -360,7 +360,7 @@ Feature ids: `resolution`, `hiddenModes`, `scaleMatch`, `brightness`, `brightnes
 | `Sources/Snaptic/Core/` | The host: modules, settings, menus, permissions, onboarding, Safe Mode, the command-line server and client, helper spawning. |
 | `Sources/Snaptic/Switcher/` | The window switcher (event tap, window list, thumbnails, switcher UI). |
 | `Sources/Snaptic/Displays/` | The Displays module: services, one controller per feature group, the safety helper, transactions and journals, settings pages. |
-| `site/` | The project website at [snaptic.dev](https://snaptic.dev). |
+| `site/` | The project website at [snaptic.dev](https://snaptic.dev), deployed by Vercel on every push to `main`. |
 | `docs/design/` | The 0.2 plan and platform research. |
 
 ### Undocumented APIs
