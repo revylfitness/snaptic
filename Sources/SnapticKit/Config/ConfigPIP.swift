@@ -607,6 +607,85 @@ package enum PIPLookup {
     }
 }
 
+// MARK: - Menu (0.3 §5.2: the Displays section's "Picture in Picture ›" submenu)
+
+/// What the "Picture in Picture ›" submenu lists: saved configurations with a checkmark on the running ones (a
+/// click starts or stops one), then Stop All. The submenu exists only while something is saved; it keeps to
+/// `maxRows` saved rows (§5.1: ≤ ~12 items) and then ends with one "More…" that opens Settings.
+package enum PIPMenuPlan {
+    package static let maxRows = 10
+
+    package struct Row: Equatable, Sendable {
+        package let id: StableID
+        package let name: String
+        package let kind: PIPKind
+        package let running: Bool
+        /// False while its source (or a stream's target) display isn't connected and it isn't running.
+        package let available: Bool
+
+        package init(id: StableID, name: String, kind: PIPKind, running: Bool, available: Bool) {
+            self.id = id
+            self.name = name
+            self.kind = kind
+            self.running = running
+            self.available = available
+        }
+    }
+
+    package struct Plan: Equatable, Sendable {
+        package let rows: [Row]
+        /// Some saved configurations were left out: the submenu ends with "More…".
+        package let truncated: Bool
+        /// Stop All is enabled.
+        package let anyRunning: Bool
+
+        package init(rows: [Row], truncated: Bool, anyRunning: Bool) {
+            self.rows = rows
+            self.truncated = truncated
+            self.anyRunning = anyRunning
+        }
+    }
+
+    /// The submenu for `entries` (`PIPConfig.entries(in:)` order); nil when nothing is saved (no submenu).
+    /// With more than `limit` entries the running ones are always kept (up to `limit`), the rest fill up in
+    /// saved order, and the rows stay in saved order.
+    package static func plan(entries: [PIPEntry], running: Set<StableID>, connected: Set<DisplayKey>,
+                             limit: Int = maxRows) -> Plan? {
+        guard !entries.isEmpty else { return nil }
+        let limit = max(1, limit)
+        var keep = Set<Int>()
+        for (i, e) in entries.enumerated() where running.contains(e.configuration.id) && keep.count < limit {
+            keep.insert(i)
+        }
+        for i in entries.indices where keep.count < limit { keep.insert(i) }
+        let rows = entries.enumerated().filter { keep.contains($0.offset) }.map { pair -> Row in
+            let c = pair.element.configuration
+            let isRunning = running.contains(c.id)
+            return Row(id: c.id, name: c.name, kind: c.kind, running: isRunning,
+                       available: isRunning || isAvailable(pair.element, connected: connected))
+        }
+        let anyRunning = entries.contains { running.contains($0.configuration.id) }
+        return Plan(rows: rows, truncated: rows.count < entries.count, anyRunning: anyRunning)
+    }
+
+    /// A saved configuration can start from the menu: its source display (if any) is connected, and a stream's
+    /// target is connected and isn't its source. Deeper checks (mirroring, the session limit) run at start.
+    package static func isAvailable(_ entry: PIPEntry, connected: Set<DisplayKey>) -> Bool {
+        let c = entry.configuration
+        if case .display(let key) = entry.source {
+            guard connected.contains(key) else { return false }
+            if c.kind == .fullScreen {
+                guard let target = c.target, target != key, connected.contains(target) else { return false }
+            }
+            return true
+        }
+        if c.kind == .fullScreen {
+            guard let target = c.target, connected.contains(target) else { return false }
+        }
+        return true
+    }
+}
+
 // MARK: - Geometry (plain numbers: Kit can't use the CoreGraphics overlay)
 
 package struct PIPSize: Equatable, Sendable {

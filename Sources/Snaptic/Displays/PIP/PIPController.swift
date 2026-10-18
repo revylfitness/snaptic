@@ -81,6 +81,9 @@ fileprivate extension DisplayActionID {
 @MainActor final class PIPController: DisplayFeatureController, PanicParticipant, SessionParticipant, DiagnosticsContributor {
     static var id: DisplayControllerID { .pip }
     static var privateSymbols: [PrivateSymbol] { [] }
+    /// 0.3 §4.5: saved configurations, privacy, options (`pip`) and each display's saved PIPs (`perDisplayPIP`).
+    /// Feature changes arrive through `effectiveFeaturesDidChange`; display names are read from the registry.
+    static var observedSections: Set<DisplaysConfigSection> { [.pip, .perDisplayPIP] }
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
 
@@ -214,6 +217,7 @@ fileprivate extension DisplayActionID {
         context?.capture.cancelPick()
         context?.capture.publish([])
         if context?.capture.controller === self { context?.capture.controller = nil }
+        context?.runtime.revision(.pip).bump()
         menuItems = nil
         sessionPaused = false
         displaysAsleep = false
@@ -890,6 +894,12 @@ fileprivate extension DisplayActionID {
 
     func isRunning(_ id: StableID) -> Bool { sessions[id] != nil }
 
+    /// A window PIP of this display is running (the display submenu's "Show in Picture in Picture" checkmark;
+    /// `toggleDisplay` stops exactly these).
+    func isShowingDisplay(_ key: DisplayKey) -> Bool {
+        sessions.values.contains { $0.source == .display(key) && $0.configuration.kind == .window }
+    }
+
     func toggle(_ id: StableID) {
         if sessions[id] != nil { endSession(id, reason: nil) } else { userStart(id) }
     }
@@ -1275,6 +1285,8 @@ fileprivate extension DisplayActionID {
             return PIPSessionInfo(id: id, name: s.configuration.name, kind: s.configuration.kind, source: s.source, state: s.publicState)
         }
         context?.capture.publish(infos)
+        // 0.3 §4.5: pages observe `revision(.pip)` for session state (running, paused, hidden, suspended).
+        context?.runtime.revision(.pip).bump()
         context?.requestMenuRebuild()
     }
 
