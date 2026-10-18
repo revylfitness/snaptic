@@ -78,7 +78,8 @@ package enum KeyboardPageControls: ControlTable {
                     search: search("Indicator position", ["OSD", "HUD", "on-screen display"])),
         ControlSpec("displays.keyboard.shortcutsButton", .button, when: [.module(.displays)],
                     search: search("Keyboard Shortcuts", ["shortcut", "hotkey", "key combination"])),
-        ControlSpec("displays.keyboard.advancedButton", .button, when: [.module(.displays)]),
+        ControlSpec("displays.keyboard.advancedButton", .button, when: [.module(.displays)],
+                    search: search("Keyboard Advanced Settings", ["steps", "F14", "input slots", "indicator"])),
 
         // Keyboard Shortcuts sheet
         ControlSpec("displays.keyboard.shortcuts.list", .list, when: [.displayFeature(.shortcuts)],
@@ -89,8 +90,12 @@ package enum KeyboardPageControls: ControlTable {
                                                                    "identify", "input slot", "custom action"],
                                    sheet: shortcutsSheet)),
         ControlSpec("displays.keyboard.shortcuts.action", .shortcut, when: [.displayFeature(.shortcuts), .perItem("action")]),
-        ControlSpec("displays.keyboard.shortcuts.restoreAll", .shortcut, when: [.module(.displays)]),
-        ControlSpec("displays.keyboard.shortcuts.useDefaultRestoreAll", .button, when: [.module(.displays)]),
+        ControlSpec("displays.keyboard.shortcuts.restoreAll", .shortcut, when: [.module(.displays)],
+                    search: search("Restore All Displays shortcut in Keyboard Shortcuts", ["panic", "escape"],
+                                   sheet: shortcutsSheet)),
+        ControlSpec("displays.keyboard.shortcuts.useDefaultRestoreAll", .button, when: [.module(.displays)],
+                    search: search("Use the default Restore All Displays shortcut", ["panic", "default shortcut"],
+                                   sheet: shortcutsSheet)),
 
         // Advanced
         ControlSpec("displays.keyboard.advanced.brightnessPolicy", .setting, when: brightnessKeys,

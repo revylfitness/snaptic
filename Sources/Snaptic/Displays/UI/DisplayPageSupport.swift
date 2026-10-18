@@ -134,3 +134,25 @@ struct CFeatureOffSection: View {
         }
     }
 }
+
+/// A disclosure that search opens when it reveals `ids` (the anchors of the rows inside it), through
+/// `SettingsRevealExpansion`.
+struct CRevealDisclosure<Content: View>: View {
+    let title: String
+    let ids: [ControlID]
+    let content: Content
+    @State private var isExpanded = false
+
+    init(_ title: String, ids: [ControlID], @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.ids = ids
+        self.content = content()
+    }
+
+    var body: some View {
+        DisclosureGroup(title, isExpanded: $isExpanded) {
+            content
+        }
+        .modifier(SettingsRevealExpansion(ids, isExpanded: $isExpanded))
+    }
+}

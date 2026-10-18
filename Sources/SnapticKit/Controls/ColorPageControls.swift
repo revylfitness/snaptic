@@ -62,7 +62,8 @@ package enum ColorPageControls: ControlTable {
                     when: [.displayFeature(.applePresets), .hardware(.appleDisplay), .perItem("display")],
                     replaces: ["l.d.color.applePreset"],
                     search: search("Apple display preset", ["reference mode", "preset", "Studio Display", "XDR"])),
-        ControlSpec("displays.color.advancedButton", .button, when: [.module(.displays)]),
+        ControlSpec("displays.color.advancedButton", .button, when: [.module(.displays)],
+                    search: search("Color Advanced Settings", ["RGB", "gain", "Night Shift"])),
 
         // Advanced
         ControlSpec("displays.color.advanced.colorProfiles", .setting, when: [.module(.displays)],

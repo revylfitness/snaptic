@@ -85,6 +85,7 @@ package enum BrightnessSubpageControls: ControlTable {
                     replaces: ["l.dfeat.nits", "l.d.brightness.showNits", "l.d.osd.showNits"],
                     keys: ["brightness.showNits", "keys.osdShowNits"],
                     search: search("Show brightness in nits", ["nits", "luminance", "candela", "brightness indicator"])),
-        ControlSpec("displays.brightness.advancedButton", .button, when: [.module(.displays)]),
+        ControlSpec("displays.brightness.advancedButton", .button, when: [.module(.displays)],
+                    search: search("Brightness Advanced Settings", ["brightness methods", "nits range", "XDR"])),
     ]
 }

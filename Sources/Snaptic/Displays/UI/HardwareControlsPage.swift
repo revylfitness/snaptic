@@ -387,7 +387,8 @@ private struct HardwareAdvancedSheet: View {
         let per = perDisplay.value[key]?.ddc ?? PerDisplayDDC()
         Section {
             ForEach(knownCodes(context, key), id: \.self) { code in
-                DisclosureGroup(VCPPolicy.name(code) + " (" + VCPPolicy.hex(code) + ")") {
+                CRevealDisclosure(VCPPolicy.name(code) + " (" + VCPPolicy.hex(code) + ")",
+                                  ids: [ControlID("displays.hardware.advanced.tuning")]) {
                     tuningRows(context, key, code)
                 }
                 .modifier(SettingsAnchor(ControlID("displays.hardware.advanced.tuning")))
@@ -610,7 +611,7 @@ private struct HardwareAdvancedSheet: View {
     private func rawSection(_ context: DisplaysContext, _ controller: DDCController, _ key: DisplayKey,
                             _ per: PerDisplayDDC) -> some View {
         Section {
-            DisclosureGroup(L("Raw commands")) {
+            CRevealDisclosure(L("Raw commands"), ids: [ControlID("displays.hardware.advanced.raw")]) {
                 HStack {
                     TextField(L("Code"), text: $rawCode)
                         .frame(width: 72)
@@ -723,7 +724,7 @@ private struct HardwareAdvancedSheet: View {
     private func informationSection(_ context: DisplaysContext, _ key: DisplayKey) -> some View {
         let ddc = context.ddc
         Section {
-            DisclosureGroup(L("Hardware information")) {
+            CRevealDisclosure(L("Hardware information"), ids: [ControlID("displays.hardware.advanced.information")]) {
                 LabeledContent(L("Status")) {
                     switch ddc.linkStatus(key) {
                     case .ok: Text(L("Responding"))

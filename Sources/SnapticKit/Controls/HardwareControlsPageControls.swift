@@ -51,7 +51,8 @@ package enum HardwareControlsPageControls: ControlTable {
         ControlSpec("displays.hardware.customControl", .setting,
                     when: perDisplay + [.displayFeature(.ddcCustom), .perItem("customControl")],
                     search: search("Custom hardware controls", ["VCP", "custom slider", "DDC"])),
-        ControlSpec("displays.hardware.advancedButton", .button, when: [.module(.displays)]),
+        ControlSpec("displays.hardware.advancedButton", .button, when: [.module(.displays)],
+                    search: search("Hardware Controls Advanced Settings", ["DDC", "timing", "raw", "tuning"])),
 
         // Advanced
         ControlSpec("displays.hardware.advanced.inputSwitching", .setting, when: [.module(.displays)],
