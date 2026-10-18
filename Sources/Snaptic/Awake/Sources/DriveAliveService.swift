@@ -10,6 +10,7 @@ import SnapticKit
 // 1. open(root, O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC)
 // 2. fstatfs: f_mntonname == root, allowlisted f_fstypename, MNT_LOCAL, neither MNT_RDONLY nor MNT_ROOTFS,
 //    f_mntfromname == /dev/<the BSD name DiskArbitration judged eligible>; fgetattrlist ATTR_VOL_UUID == the key
+// 2b. a `.snaptic-keepalive.removing` left by a removal cut short is deleted if it is still ours (security r2 S2-1)
 // 3. openat(fileName, O_WRONLY|O_CREAT|O_NOFOLLOW|O_CLOEXEC|O_NONBLOCK, 0600); fstat: regular, ours, one link,
 //    ≤ 64 bytes, same device as the root
 // 4. 8 bytes at offset 0, ftruncate(8), F_FULLFSYNC (fsync where unsupported); both fds closed; result hops to main.
@@ -43,6 +44,9 @@ import SnapticKit
     private var inFlight: Set<VolumeUUIDKey> = []
     /// Completions waiting for the write already in flight on that volume.
     private var waiters: [VolumeUUIDKey: [@MainActor (DriveAliveError?) -> Void]] = [:]
+    /// Completions of removals in flight, by token.
+    private var removals: [Int: @MainActor (DriveAliveError?) -> Void] = [:]
+    private var nextRemoval = 0
     /// Continuous instant of the last attempt per volume (this activation).
     private var lastAttempt: [VolumeUUIDKey: Double] = [:]
     /// Failed volumes and the mount they failed on: skipped until that mount goes away.
@@ -101,13 +105,31 @@ import SnapticKit
     }
 
     /// When the user turns a volume off: the same mount checks, then the file is unlinked only if it is still ours
-    /// (regular, our uid, one link, exactly 8 bytes, same device). Nothing happens for an unmounted volume.
-    func removeKeepAliveFile(_ uuid: VolumeUUIDKey) {
+    /// (regular, our uid, one link, exactly 8 bytes, same device). Nothing happens for an unmounted volume. The result
+    /// (nil = removed or nothing to remove) reaches `completion` on main, so the Drives page can show a failure.
+    func removeKeepAliveFile(_ uuid: VolumeUUIDKey, completion: (@MainActor (DriveAliveError?) -> Void)? = nil) {
         targets.remove(uuid)
         updateWriting()
-        guard active, let mount = context?.volumes.volume(uuid), mount.isEligible else { return }
+        guard active, let mount = context?.volumes.volume(uuid), mount.isEligible else {
+            completion?(nil)
+            return
+        }
         let root = mount.path, bsd = mount.facts.bsdName
-        queue.async { _ = DriveAliveIO.remove(root: root, bsdName: bsd, uuid: uuid) }
+        // As with writes, the completion waits here and only Sendable values cross to the queue.
+        let token = nextRemoval
+        nextRemoval &+= 1
+        if let completion { removals[token] = completion }
+        let box = CallbackTarget(self)
+        queue.async {
+            let error = DriveAliveIO.remove(root: root, bsdName: bsd, uuid: uuid)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { box.target?.removed(token, error: error) }
+            }
+        }
+    }
+
+    private func removed(_ token: Int, error: DriveAliveError?) {
+        removals.removeValue(forKey: token)?(error)
     }
 
     // MARK: AwakeServiceLifecycle
@@ -255,6 +277,9 @@ private enum DriveAliveIO {
         case .failed(let error): return error
         }
         defer { close(dir.fd) }
+        // A removal cut short (crash, I/O error, unplugged) left its temp name behind: delete it if it is still ours.
+        // Its failure never blocks the write.
+        _ = removeLeftover(dir)
         let fd = openat(dir.fd, DriveAlivePolicy.fileName, O_WRONLY | O_CREAT | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK,
                         mode_t(0o600))
         guard fd >= 0 else { return openError(errno) }
@@ -270,10 +295,13 @@ private enum DriveAliveIO {
         return nil
     }
 
-    /// Security N-3: the unlink must hit the very file that was checked, not one swapped in under the same name.
-    /// macOS has no fd-based unlink, so the name is first moved to a fresh random name in the same directory and the
-    /// moved entry's inode is compared with the checked file's (via its open fd) before the random name is unlinked.
-    /// Anything else under the name is put back (never over a file that took the name meanwhile) and left alone.
+    /// Security N-3 and r2 S2-1: the unlink must hit the very file that was checked, not one swapped in under the same
+    /// name. macOS has no fd-based unlink, so the name is first moved to the one fixed temp name
+    /// (`removingFileName`, never over an existing entry) and the moved entry is compared with the checked file
+    /// (`DriveAlivePolicy.isSameFile`: the inode, or on exFAT/FAT, whose ids may change on rename, the size,
+    /// modification time and 8 bytes) before the temp name is unlinked. Anything else is put back (never over a file
+    /// that took the name meanwhile) and left alone. A leftover temp from a removal cut short is deleted first (and
+    /// by every write), so at most that one fixed name can ever stay behind.
     static func remove(root: String, bsdName: String, uuid: VolumeUUIDKey) -> DriveAliveError? {
         let dir: Root
         switch openRoot(root: root, bsdName: bsdName, uuid: uuid) {
@@ -281,7 +309,9 @@ private enum DriveAliveIO {
         case .failed(let error): return error
         }
         defer { close(dir.fd) }
-        let name = DriveAlivePolicy.fileName
+        // Something that isn't ours under the temp name blocks the removal (the exclusive move would fail anyway).
+        if let error = removeLeftover(dir) { return error }
+        let name = DriveAlivePolicy.fileName, temp = DriveAlivePolicy.removingFileName
         // A regular file before it is opened at all (opening a device node or FIFO can have side effects).
         var named = stat()
         guard fstatat(dir.fd, name, &named, AT_SYMLINK_NOFOLLOW) == 0 else { return errno == ENOENT ? nil : .ioError }
@@ -293,32 +323,93 @@ private enum DriveAliveIO {
         guard fstat(fd, &checked) == 0 else { return .ioError }
         guard isOurFile(checked, device: dir.device), Int64(checked.st_size) == Int64(DriveAlivePolicy.fileSize),
               checked.st_ino == named.st_ino else { return .notOurFile }
-        let moved = name + "-" + randomSuffix()
-        guard renameat(dir.fd, name, dir.fd, moved) == 0 else { return errno == ENOENT ? nil : .ioError }
+        guard let content = readContent(fd) else { return .ioError }
+        let before = identity(checked, content: content)
+        switch moveExclusive(dir: dir.fd, from: name, to: temp) {
+        case 0: break
+        case ENOENT: return nil
+        case EEXIST: return .notOurFile
+        default: return .ioError
+        }
         var entry = stat()
-        guard fstatat(dir.fd, moved, &entry, AT_SYMLINK_NOFOLLOW) == 0 else { return .ioError }
-        guard entry.st_dev == checked.st_dev, entry.st_ino == checked.st_ino else {
-            putBack(dir: dir.fd, from: moved, to: name)
+        guard fstatat(dir.fd, temp, &entry, AT_SYMLINK_NOFOLLOW) == 0 else { return .ioError }
+        var after = identity(entry, content: nil)
+        if entry.st_ino != checked.st_ino, DriveAlivePolicy.renameMayChangeInode.contains(dir.fileSystem),
+           isOurFile(entry, device: dir.device) {
+            after = movedIdentity(dir: dir, name: temp, entry: entry) ?? after
+        }
+        guard DriveAlivePolicy.isSameFile(checked: before, moved: after, fileSystem: dir.fileSystem) else {
+            putBack(dir: dir.fd, from: temp, to: name)
             return .notOurFile
         }
-        guard unlinkat(dir.fd, moved, 0) == 0 || errno == ENOENT else { return .ioError }
+        // On failure the temp stays; the next write or removal on this volume deletes it.
+        guard unlinkat(dir.fd, temp, 0) == 0 || errno == ENOENT else { return .ioError }
         return nil
+    }
+
+    /// Deletes a `removingFileName` left by a removal cut short, when it passes the same checks as our file (regular,
+    /// ours, one link, same device, exactly 8 bytes, and the opened fd is the entry checked). nil = nothing left or
+    /// deleted. The window between that check and the unlink by name is open only to processes of the same user, which
+    /// could delete the file anyway; no other app has a reason to use this name.
+    private static func removeLeftover(_ dir: Root) -> DriveAliveError? {
+        let temp = DriveAlivePolicy.removingFileName
+        var named = stat()
+        guard fstatat(dir.fd, temp, &named, AT_SYMLINK_NOFOLLOW) == 0 else { return errno == ENOENT ? nil : .ioError }
+        guard isOurFile(named, device: dir.device), Int64(named.st_size) == Int64(DriveAlivePolicy.fileSize) else {
+            return .notOurFile
+        }
+        let fd = openat(dir.fd, temp, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
+        guard fd >= 0 else { return errno == ENOENT ? nil : openError(errno) }
+        defer { close(fd) }
+        var opened = stat()
+        guard fstat(fd, &opened) == 0 else { return .ioError }
+        guard isOurFile(opened, device: dir.device), Int64(opened.st_size) == Int64(DriveAlivePolicy.fileSize),
+              opened.st_ino == named.st_ino else { return .notOurFile }
+        guard unlinkat(dir.fd, temp, 0) == 0 || errno == ENOENT else { return .ioError }
+        return nil
+    }
+
+    /// The moved entry's identity with its 8 bytes, read through an fd that is verified to be that entry; nil when it
+    /// can't be read or isn't an 8-byte file of ours.
+    private static func movedIdentity(dir: Root, name: String, entry: stat) -> DriveAlivePolicy.FileIdentity? {
+        let fd = openat(dir.fd, name, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
+        guard fd >= 0 else { return nil }
+        defer { close(fd) }
+        var opened = stat()
+        guard fstat(fd, &opened) == 0, opened.st_dev == entry.st_dev, opened.st_ino == entry.st_ino,
+              isOurFile(opened, device: dir.device), Int64(opened.st_size) == Int64(DriveAlivePolicy.fileSize),
+              let content = readContent(fd) else { return nil }
+        return identity(opened, content: content)
+    }
+
+    private static func readContent(_ fd: Int32) -> [UInt8]? {
+        let size = DriveAlivePolicy.fileSize
+        var bytes = [UInt8](repeating: 0, count: size)
+        let read = bytes.withUnsafeMutableBytes { raw in pread(fd, raw.baseAddress, size, 0) }
+        return read == size ? bytes : nil
+    }
+
+    private static func identity(_ st: stat, content: [UInt8]?) -> DriveAlivePolicy.FileIdentity {
+        DriveAlivePolicy.FileIdentity(device: Int64(st.st_dev), inode: UInt64(st.st_ino), size: Int64(st.st_size),
+                                      modifiedSeconds: Int64(st.st_mtimespec.tv_sec),
+                                      modifiedNanoseconds: Int64(st.st_mtimespec.tv_nsec), content: content)
+    }
+
+    /// Renames without replacing anything: RENAME_EXCL, or where a file system lacks it (ENOTSUP/EINVAL: exFAT, FAT)
+    /// a plain rename only while the target name is free. 0 on success, else the errno (EEXIST when taken).
+    private static func moveExclusive(dir: Int32, from: String, to: String) -> Int32 {
+        if renameatx_np(dir, from, dir, to, UInt32(RENAME_EXCL)) == 0 { return 0 }
+        let code = errno
+        guard code == ENOTSUP || code == EINVAL else { return code }
+        var existing = stat()
+        if fstatat(dir, to, &existing, AT_SYMLINK_NOFOLLOW) == 0 { return EEXIST }
+        guard errno == ENOENT else { return errno }
+        return renameat(dir, from, dir, to) == 0 ? 0 : errno
     }
 
     /// Moves a file that turned out not to be ours back to its name, never replacing a file that has that name now.
     private static func putBack(dir: Int32, from: String, to: String) {
-        if renameatx_np(dir, from, dir, to, UInt32(RENAME_EXCL)) == 0 { return }
-        guard errno == ENOTSUP || errno == EINVAL else { return }
-        // File systems without RENAME_EXCL (exFAT, FAT): only when the name is still free.
-        var existing = stat()
-        if fstatat(dir, to, &existing, AT_SYMLINK_NOFOLLOW) != 0, errno == ENOENT { _ = renameat(dir, from, dir, to) }
-    }
-
-    /// 16 hex digits from the system CSPRNG, so the moved name can't be predicted.
-    private static func randomSuffix() -> String {
-        var bytes = [UInt8](repeating: 0, count: 8)
-        arc4random_buf(&bytes, bytes.count)
-        return bytes.map { String(format: "%02x", $0) }.joined()
+        _ = moveExclusive(dir: dir, from: from, to: to)
     }
 
     // MARK: Checks
@@ -326,6 +417,8 @@ private enum DriveAliveIO {
     private struct Root {
         let fd: Int32
         let device: dev_t
+        /// f_fstypename ("apfs", "exfat", …).
+        let fileSystem: String
     }
 
     private enum Opened {
@@ -346,8 +439,9 @@ private enum DriveAliveIO {
             return .failed(.mountChanged)
         }
         let flags = UInt32(fs.f_flags)
+        let fileSystem = cString(fs.f_fstypename)
         let matches = cString(fs.f_mntonname) == root
-            && DriveAlivePolicy.allowedFileSystems.contains(cString(fs.f_fstypename))
+            && DriveAlivePolicy.allowedFileSystems.contains(fileSystem)
             && flags & UInt32(MNT_LOCAL) != 0
             && flags & UInt32(MNT_RDONLY) == 0
             && flags & UInt32(MNT_ROOTFS) == 0
@@ -357,7 +451,7 @@ private enum DriveAliveIO {
             close(fd)
             return .failed(.mountChanged)
         }
-        return .opened(Root(fd: fd, device: st.st_dev))
+        return .opened(Root(fd: fd, device: st.st_dev, fileSystem: fileSystem))
     }
 
     /// A regular file we own with one link on the root's device.

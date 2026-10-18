@@ -115,6 +115,7 @@ struct DrivesPage: View, ControlDeclaring {
                                                          backgroundWorkAllowed: true, uiConfirmedFirstWrite: true)
         return DrivesPageModel.Inputs(mounted: model.mounted, config: drives, results: results,
                                       firstWriteRunning: model.firstWriteRunning, firstWriteFailures: model.failures,
+                                      removeFailures: model.removeFailures,
                                       sessionAllowsWrites: sessionAllows,
                                       backgroundWorkAllowed: model.backgroundWorkAllowed(config.value))
     }
@@ -229,6 +230,8 @@ private struct DriveRowView: View {
     @Published private(set) var mounted: [DriveCandidate]?
     @Published private(set) var firstWriteRunning: Set<VolumeUUIDKey> = []
     @Published private(set) var failures: [VolumeUUIDKey: DriveAliveError] = [:]
+    /// Turn-offs whose file removal failed (shown on the off row until the volume is turned on again).
+    @Published private(set) var removeFailures: [VolumeUUIDKey: DriveAliveError] = [:]
     @Published private(set) var limitReached = false
 
     private weak var context: AwakeContext?
@@ -279,6 +282,7 @@ private struct DriveRowView: View {
             return
         }
         limitReached = false
+        removeFailures[uuid] = nil
         if store.value.drives != next { store.value.drives = next }
         firstWrite(uuid)
     }
@@ -289,8 +293,12 @@ private struct DriveRowView: View {
         let next = DrivesPageModel.turningOff(uuid, in: store.value.drives)
         if store.value.drives != next { store.value.drives = next }
         failures[uuid] = nil
+        removeFailures[uuid] = nil
         limitReached = false
-        context?.driveAlive.removeKeepAliveFile(uuid)
+        context?.driveAlive.removeKeepAliveFile(uuid) { [weak self] error in
+            guard let self, store.value.drives.volumes[uuid]?.enabled != true else { return }
+            self.removeFailures[uuid] = error
+        }
     }
 
     /// The UI-confirmed first write (§2.9); on success the service sets `firstWriteDone`.

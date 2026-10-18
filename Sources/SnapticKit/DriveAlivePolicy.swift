@@ -68,7 +68,49 @@ package enum DriveAlivePolicy {
     /// The device path statfs reports in f_mntfromname for a BSD name.
     package static func devicePath(_ bsdName: String) -> String { "/dev/" + bsdName }
     package static let fileName = ".snaptic-keepalive"
+    /// The one name a removal moves `fileName` to before unlinking it (security r2 S2-1: fixed, so a removal cut short
+    /// leaves at most this one file, which the next write or removal on that volume deletes).
+    package static let removingFileName = ".snaptic-keepalive.removing"
     package static let fileSize = 8
+
+    /// What the removal compares between the checked file (via its open fd) and the entry found under
+    /// `removingFileName` after the rename.
+    package struct FileIdentity: Equatable, Sendable {
+        package var device: Int64
+        package var inode: UInt64
+        package var size: Int64
+        package var modifiedSeconds: Int64
+        package var modifiedNanoseconds: Int64
+        /// The first `fileSize` bytes; nil when not read.
+        package var content: [UInt8]?
+
+        package init(device: Int64, inode: UInt64, size: Int64, modifiedSeconds: Int64, modifiedNanoseconds: Int64,
+                     content: [UInt8]?) {
+            self.device = device
+            self.inode = inode
+            self.size = size
+            self.modifiedSeconds = modifiedSeconds
+            self.modifiedNanoseconds = modifiedNanoseconds
+            self.content = content
+        }
+    }
+
+    /// File systems whose file ids may change when a file is renamed (Apple's msdosfs derives some ids from the
+    /// directory entry; exFAT is undocumented). APFS and HFS+ keep the inode across a rename.
+    package static let renameMayChangeInode: Set<String> = ["exfat", "msdos"]
+
+    /// The moved entry is the checked file: same device and inode; or, only where a rename may change the inode, an
+    /// 8-byte file with the same size, modification time and content as the checked one.
+    package static func isSameFile(checked: FileIdentity, moved: FileIdentity, fileSystem: String) -> Bool {
+        guard checked.device == moved.device else { return false }
+        if checked.inode == moved.inode { return true }
+        guard renameMayChangeInode.contains(fileSystem),
+              let before = checked.content, let after = moved.content, before.count == fileSize, before == after
+        else { return false }
+        return checked.size == Int64(fileSize) && moved.size == checked.size
+            && checked.modifiedSeconds == moved.modifiedSeconds
+            && checked.modifiedNanoseconds == moved.modifiedNanoseconds
+    }
     package static let intervalRange: ClosedRange<Int> = 30...600
     /// C9 + N1 + security M1/L1 (R5-14: a trigger session passes `.rule`, the holds-only state `.commandLine`, nothing
     /// governing nil). Never when guards forbid background work (hard floor, user floor, unreadable battery, critical

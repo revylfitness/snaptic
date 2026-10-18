@@ -193,6 +193,25 @@ final class DrivesPageModelTests: XCTestCase {
         XCTAssertEqual(made.sanitized().volumes.values.count, DriveAliveConfig.maxVolumes)
     }
 
+    // MARK: A failed removal (security r2 S2-1)
+
+    func testAFailedRemovalShowsOnTheOffRowOnly() {
+        let mounted = [drive(a, "Backup"), drive(b, "Photos")]
+        var i = inputs(mounted, config([b: DriveAliveVolume(name: "Photos", enabled: true, firstWriteDone: true)]))
+        i.removeFailures = [a: .notOurFile, b: .ioError]
+        let rows = DrivesPageModel.rows(i)
+        XCTAssertEqual(rows.map(\.status), [.removeFailed(.notOurFile), .active(lastWrite: nil)],
+                       "an on row ignores an old removal failure")
+        XCTAssertEqual(rows.first?.canToggle, true)
+        XCTAssertEqual(rows.first?.offersWrite, false)
+        XCTAssertEqual(DrivesPageModel.statusText(.removeFailed(.ioError), time: { _ in "" }),
+                       "Turned off. Snaptic couldn’t delete its hidden .snaptic-keepalive file from the drive.")
+        // An unsupported volume keeps its own reason.
+        var j = inputs([drive(a, "Backup") { $0.isReadOnly = true }], config([:]))
+        j.removeFailures = [a: .ioError]
+        XCTAssertEqual(DrivesPageModel.rows(j).first?.status, .unsupported(.readOnly))
+    }
+
     // MARK: Text
 
     func testEveryStatusHasSentenceText() {
@@ -202,6 +221,7 @@ final class DrivesPageModelTests: XCTestCase {
         ] + [DriveAliveError.notEligible, .mountChanged, .notOurFile, .ioError, .denied].map(DriveRowStatus.failed)
           + [DriveUnsupportedReason.readOnly, .fileSystem("NTFS"), .timeMachine, .noIdentifier, .other]
             .map(DriveRowStatus.unsupported)
+          + [DriveAliveError.notEligible, .mountChanged, .notOurFile, .ioError, .denied].map(DriveRowStatus.removeFailed)
         for status in statuses {
             let text = DrivesPageModel.statusText(status, time: { _ in "3:12 PM" })
             XCTAssertNotNil(text, "\(status)")
@@ -249,11 +269,21 @@ final class DrivesPageModelTests: XCTestCase {
                            background: rng.next() % 2 == 0)
             for key in keys where rng.next() % 4 == 0 { i.firstWriteRunning.insert(key) }
             for key in keys where rng.next() % 4 == 0 { i.firstWriteFailures[key] = errors[Int(rng.next() % 5)] }
+            for key in keys where rng.next() % 4 == 0 { i.removeFailures[key] = errors[Int(rng.next() % 5)] }
             let rows = DrivesPageModel.rows(i)
             XCTAssertEqual(rows.count, Set(rows.map(\.id)).count, "unique ids")
             for row in rows {
                 if row.isOn { XCTAssertTrue(row.canToggle) }
-                if !row.isOn { XCTAssertTrue(row.status == .off || { if case .unsupported = row.status { return true }; return false }()) }
+                if !row.isOn {
+                    XCTAssertTrue(row.status == .off || {
+                        switch row.status {
+                        case .unsupported, .removeFailed: return true
+                        default: return false
+                        }
+                    }())
+                    XCTAssertFalse(row.offersWrite)
+                }
+                if case .removeFailed = row.status { XCTAssertFalse(row.isOn) }
                 if row.offersWrite { XCTAssertNotNil(row.uuid) }
             }
             // Every enabled volume is shown once the mounts are known.
