@@ -11,6 +11,8 @@ import SnapticKit
     DiagnosticsContributor {
     static var id: DisplayControllerID { .automation }
     static var privateSymbols: [PrivateSymbol] { [] }
+    /// Only `automation` (0.3 §4.5): feature changes arrive through `effectiveFeaturesDidChange`.
+    static var observedSections: Set<DisplaysConfigSection> { [.automation] }
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
 
@@ -22,6 +24,8 @@ import SnapticKit
     private var sinks: [AnyCancellable] = []
     private var tokens: [NSObjectProtocol] = []
     private var actionThrottle = HookThrottle(interval: 1)
+    /// The custom actions' menu items (R5-13), registered while custom actions run.
+    private var actionMenu: AutomationMenuItems?
 
     init() {}
 
@@ -165,10 +169,6 @@ import SnapticKit
         DisplayActionID(rawValue: "a.custom." + spec.id.rawValue)
     }
 
-    private static func menuID(_ spec: CustomActionSpec) -> DisplayMenuItemID {
-        DisplayMenuItemID(rawValue: "a.custom." + spec.id.rawValue)
-    }
-
     private func startActions() {
         guard let ctx = context, let lifetime, actionsLifetime == nil else { return }
         let life = lifetime.child()
@@ -184,7 +184,10 @@ import SnapticKit
                 }
             }
         }
-        ctx.menus.register(self, lifetime: life)
+        let items = AutomationMenuItems(context: ctx)
+        items.controller = self
+        actionMenu = items
+        ctx.menus.register(items, lifetime: life)
         ctx.commands.register("action list", policy: .read, offOnly: false, cliAllowed: true,
                               summary: L("List the custom actions the command line may run"), lifetime: life) { [weak self] request in
             self?.listActions(json: request.json) ?? .failure(ControlExit.unavailable, L("Custom actions are off."))
@@ -199,9 +202,12 @@ import SnapticKit
     private func stopActions() {
         actionsLifetime?.end()
         actionsLifetime = nil
+        actionMenu = nil
     }
 
-    private func runAction(_ id: StableID) {
+    /// Runs a custom action (its menu item, hotkey or action), at most once a second each; only while custom
+    /// actions run.
+    func runAction(_ id: StableID) {
         guard let ctx = context, actionsLifetime != nil,
               let spec = ctx.config.value.automation.actions.first(where: { $0.id == id }) else { return }
         guard actionThrottle.allow(id.rawValue, now: ProcessInfo.processInfo.systemUptime) else { return }
@@ -257,21 +263,12 @@ import SnapticKit
 
     // MARK: DisplayMenuContributor
 
-    var descriptors: [DisplayMenuItemDescriptor] {
-        guard let ctx = context, actionsLifetime != nil else { return [] }
-        return ctx.config.value.automation.actions.filter { $0.showInMenu && !$0.name.isEmpty }.map {
-            DisplayMenuItemDescriptor(id: Self.menuID($0), title: $0.name, slot: .tools, defaultVisibility: .visible)
-        }
-    }
+    // The items moved to `AutomationMenuItems` (R5-13: table `menu.display.a`), which this controller registers while
+    // custom actions run. The conformance stays while `DisplaysModule.menuContributorTypes` lists this class.
+
+    var descriptors: [DisplayMenuItemDescriptor] { [] }
 
     func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
 
-    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] {
-        guard slot == .tools, let ctx = context, actionsLifetime != nil else { return [] }
-        return ctx.config.value.automation.actions.filter { $0.showInMenu && !$0.name.isEmpty }.map { spec in
-            let id = spec.id
-            let item = ClosureMenuItem(title: spec.name) { [weak self] in self?.runAction(id) }
-            return (Self.menuID(spec), item)
-        }
-    }
+    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
 }
