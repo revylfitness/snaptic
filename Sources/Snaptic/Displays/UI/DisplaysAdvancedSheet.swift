@@ -2,7 +2,7 @@ import SwiftUI
 import SnapticKit
 
 /// Displays › Advanced (owner F; PLAN 0.3 §4.3): the cross-cutting groups. "Use Snaptic for" and "Experimental"
-/// (`DisplaysFeatureGroups`), Confirm display changes (B's `ConfirmChangesSection`), the permissions those features
+/// (`DisplaysFeatureGroups`), Confirm display changes (B's `ConfirmChangesSection`), Other display apps, the permissions those features
 /// need, and the settings whose 0.3 sections land in step 3 (resolution options, display names), reached by closing
 /// the sheet and opening their page (a sheet never presents another one). Footer: Restore Displays Defaults… · Done.
 struct DisplaysAdvancedSheet: View, ControlDeclaring {
@@ -25,6 +25,9 @@ struct DisplaysAdvancedSheet: View, ControlDeclaring {
         AdvancedSheet(L("Displays Advanced Settings"), restoreDefaults: restore) {
             DisplaysFeatureGroups(switcher: switcher, runtime: runtime, features: features)
             ConfirmChangesSection(env: env)
+            if let host = SettingsShell.shared.host {
+                OtherDisplayAppsSection(host: host, store: host.modulesStore)
+            }
             permissions
             Section {
                 link(L("Resolution Options"), help: L("Favorites, filters, and the resolution slider."),
@@ -89,6 +92,42 @@ struct DisplaysAdvancedSheet: View, ControlDeclaring {
         return RestoreDefaults(scopeName: L("Displays"), destructive: true) {
             config.value = config.value.restoringDefaults(scope: .all)
             EventLog.shared.record(.modules, "Displays settings restored to their defaults")
+        }
+    }
+}
+
+/// Displays › Advanced › Other display apps (PLAN 0.3 §4.3 group 3; moved from General): what Snaptic does while
+/// BetterDisplay, MonitorControl or Lunar runs, and which of them run now.
+private struct OtherDisplayAppsSection: View {
+    @ObservedObject var host: ModuleHost
+    @ObservedObject var store: ConfigStore<ModulesConfig>
+
+    var body: some View {
+        Section {
+            PickerSetting(L("While another display app runs"),
+                          selection: Binding(get: { store.value.otherApps }, set: { store.value.otherApps = $0 }),
+                          options: [
+                              PickerOption(OtherAppsPolicy.pauseOverlapping, L("Pause overlapping features"),
+                                           help: L("Snaptic leaves brightness, hardware controls, and keys to the other app.")),
+                              PickerOption(OtherAppsPolicy.runBoth, L("Run both"),
+                                           help: L("Both apps may change the same display and undo each other’s changes.")),
+                          ],
+                          style: .radio, defaultValue: .pauseOverlapping,
+                          anchor: ControlID("displays.advanced.otherApps"))
+            let running = host.otherApps.running
+            if !running.isEmpty {
+                let paused = host.otherApps.pausedDisplayFeatures
+                ForEach(running) { app in
+                    StatusRow(paused.isDisjoint(with: app.overlapping)
+                              ? L("\(app.name) is running.")
+                              : L("\(app.name) is running, so some Snaptic features are paused."),
+                              symbol: "app.badge")
+                }
+            }
+        } header: {
+            Text(L("Other display apps"))
+        } footer: {
+            Text(L("BetterDisplay, MonitorControl, and Lunar also control brightness and hardware settings."))
         }
     }
 }
