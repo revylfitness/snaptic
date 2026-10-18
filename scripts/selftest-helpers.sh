@@ -23,7 +23,7 @@ fi
 
 dir=$(mktemp -d)
 trap 'rm -rf "$dir"' EXIT
-token=$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 40)
+token=$(head -c 30 /dev/urandom | od -An -tx1 | tr -d ' \n')
 printf '%s\n' "$token" > "$dir/token"
 chmod 600 "$dir/token"
 
