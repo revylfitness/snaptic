@@ -1,7 +1,8 @@
 import Foundation
 
-// SessionController's pure decisions (owner: G; PLAN 0.3 §2.5, §2.10, R5-1, R5-10): start admission, the CLI rate
-// limit, Turn Off targets and their notices, reminders, the tick schedule and the pointer-confirmation prompt. The app
+// SessionController's pure decisions (owner: G; PLAN 0.3 §2.5, §2.10, R5-1, R5-10): start admission, Turn Off targets
+// and their notices, reminders, the tick schedule and the pointer-confirmation prompt (the CLI rate limit is the
+// host's ControlCommandRegistry window). The app
 // controller only performs the side effects these return, so every rule here is tested on Linux.
 
 /// Start admission (§2.5 rules, §2.10 CLI table).
@@ -50,22 +51,6 @@ package enum AwakeStartRules {
         case .duration(let s)?: return .duration(seconds: s)
         case .untilClock?: return untilUnix.flatMap { $0.isFinite ? .until(unixTime: $0) : nil }
         }
-    }
-}
-
-/// `start`, `hold`, `stop` and `extend` share one request per second (security L3), on Snaptic's continuous clock.
-package struct AwakeRateLimiter: Equatable, Sendable {
-    package static let intervalSeconds: Double = 1
-    package private(set) var last: Double?
-
-    package init() {}
-
-    /// true (and remembers `now`) when at least a second passed since the last allowed request.
-    package mutating func allow(now: Double) -> Bool {
-        guard now.isFinite else { return false }
-        if let l = last, now >= l, now - l < Self.intervalSeconds { return false }
-        last = now
-        return true
     }
 }
 

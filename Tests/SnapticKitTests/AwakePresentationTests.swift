@@ -246,4 +246,80 @@ final class AwakePresentationTests: XCTestCase {
             "Awake event awake.hold.started: 2",
         ])
     }
+
+    // MARK: Settings status row
+
+    private func facts(_ g: AwakeGoverning, holds: Bool = false, rules: Bool = false, paused: Bool = false) -> AwakeStatusFacts {
+        AwakeStatusFacts(governing: g, holdsExist: holds, rulesExist: rules, rulesPaused: paused)
+    }
+
+    func testStatusButtons() {
+        XCTAssertEqual(AwakeStatusPlan.buttons(facts(.inactive)), [.keepAwake])
+        XCTAssertEqual(AwakeStatusPlan.buttons(facts(.inactive, rules: true)), [.pauseRules, .keepAwake])
+        XCTAssertEqual(AwakeStatusPlan.buttons(facts(.inactive, rules: true, paused: true)), [.resumeRules, .keepAwake])
+        XCTAssertEqual(AwakeStatusPlan.buttons(facts(.manual(session(.indefinite)))), [.options, .turnOff])
+        XCTAssertEqual(AwakeStatusPlan.buttons(facts(.trigger(top), rules: true)), [.pauseRules, .options, .turnOff])
+        XCTAssertEqual(AwakeStatusPlan.buttons(facts(.holds([hold]), holds: true)), [.turnOff], "R5-10: holds only")
+        XCTAssertEqual(AwakeStatusPlan.buttons(facts(.inactive, paused: true)), [.keepAwake], "no rule: no pause slot")
+        for g: AwakeGoverning in [.inactive, .manual(session(.indefinite)), .trigger(top), .holds([hold])] {
+            for rules in [false, true] {
+                let b = AwakeStatusPlan.buttons(facts(g, rules: rules))
+                XCTAssertEqual(b.contains(.keepAwake), !g.isActive)
+                XCTAssertEqual(b.contains(.turnOff), g.isActive)
+                XCTAssertEqual(b.filter { $0 == .pauseRules || $0 == .resumeRules }.count, rules ? 1 : 0)
+            }
+        }
+    }
+
+    func testStatusOptions() {
+        XCTAssertEqual(AwakeStatusPlan.options(facts(.inactive)), [])
+        XCTAssertEqual(AwakeStatusPlan.options(facts(.holds([hold]), holds: true)), [])
+        XCTAssertEqual(AwakeStatusPlan.options(facts(.manual(session(.duration(seconds: 3_600))))),
+                       [.addTime(seconds: 900), .addTime(seconds: 3_600), .addTimeCustom, .separator, .keepDisplayOn,
+                        .separator, .replaceWith])
+        XCTAssertEqual(AwakeStatusPlan.options(facts(.manual(session(.indefinite)), holds: true)),
+                       [.keepDisplayOn, .endHolds, .separator, .replaceWith])
+        XCTAssertEqual(AwakeStatusPlan.options(facts(.manual(session(.whileApp(bundleID: "com.apple.Xcode", maxSeconds: nil))))),
+                       [.keepDisplayOn, .separator, .replaceWith], "an uncapped app session can't be extended")
+        XCTAssertTrue(AwakeStatusPlan.options(facts(.manual(session(.untilIdle(UntilIdleSpec(), maxSeconds: 7_200)))))
+            .contains(.addTimeCustom), "a capped task session can")
+        XCTAssertEqual(AwakeStatusPlan.options(facts(.trigger(top))), [.keepDisplayOn, .separator, .replaceWith])
+    }
+
+    func testStatusText() {
+        var i = AwakeDetailInput(governing: .inactive, now: now(0))
+        XCTAssertEqual(AwakeStatusText.primary(i), "Your Mac can sleep as usual.")
+        XCTAssertEqual(AwakeStatusText.details(i, pausedUntilClock: nil), [])
+        i.idleNote = "Ended at 3:12 AM: battery below 20%."
+        XCTAssertEqual(AwakeStatusText.details(i, pausedUntilClock: "4:00 PM"),
+                       ["Ended at 3:12 AM: battery below 20%.", "Rules are paused until 4:00 PM."])
+        i = AwakeDetailInput(governing: .manual(session(.duration(seconds: 4_320))), now: now(0), endClock: "3:45 PM",
+                             activity: .declare)
+        XCTAssertEqual(AwakeStatusText.primary(i), "Keeping your Mac awake until 3:45 PM")
+        XCTAssertEqual(AwakeStatusText.details(i, pausedUntilClock: nil), ["1h 12m left", "Appearing active"])
+        i.idleNote = "ignored while active"
+        XCTAssertFalse(AwakeStatusText.details(i, pausedUntilClock: nil).contains("ignored while active"))
+        i = AwakeDetailInput(governing: .manual(session(.indefinite)), now: now(0))
+        XCTAssertEqual(AwakeStatusText.primary(i), "Keeping your Mac awake until turned off")
+        i = AwakeDetailInput(governing: .manual(session(.whileApp(bundleID: "com.apple.Xcode", maxSeconds: 3_600))),
+                             now: now(0), appName: "Xcode")
+        XCTAssertEqual(AwakeStatusText.primary(i), "Keeping your Mac awake while Xcode is running")
+        XCTAssertEqual(AwakeStatusText.details(i, pausedUntilClock: nil), ["At most 1h left"])
+        i = AwakeDetailInput(governing: .manual(session(.untilIdle(UntilIdleSpec(), maxSeconds: nil))), now: now(0))
+        XCTAssertEqual(AwakeStatusText.primary(i), "Keeping your Mac awake until downloads and tasks finish")
+        XCTAssertEqual(AwakeStatusText.details(i, pausedUntilClock: nil).first, "Ends after 5 min with no activity")
+        i = AwakeDetailInput(governing: .trigger(top), now: now(0), ruleName: "Desk dock", holderSummary: "Held by Terminal (2)")
+        XCTAssertEqual(AwakeStatusText.primary(i), "Keeping your Mac awake while “Desk dock” applies")
+        XCTAssertEqual(AwakeStatusText.details(i, pausedUntilClock: nil), ["Held by Terminal (2)"])
+        i = AwakeDetailInput(governing: .holds([hold]), now: now(0), holderSummary: "Held by Terminal (2)")
+        XCTAssertEqual(AwakeStatusText.primary(i), "Held by Terminal (2)")
+        XCTAssertEqual(AwakeStatusText.details(i, pausedUntilClock: nil), [], "the holders are the primary line")
+    }
+
+    func testRuleRowState() {
+        XCTAssertEqual(AwakeRuleRowText.state(enabled: false, active: true, waiting: false), "Off")
+        XCTAssertEqual(AwakeRuleRowText.state(enabled: true, active: true, waiting: true), "Active")
+        XCTAssertEqual(AwakeRuleRowText.state(enabled: true, active: false, waiting: true), "Waiting")
+        XCTAssertNil(AwakeRuleRowText.state(enabled: true, active: false, waiting: false))
+    }
 }

@@ -450,3 +450,140 @@ package enum AwakeDiagnosticsReport {
         return out
     }
 }
+
+// MARK: - Settings status row (§4.3 Awake "Status", R5-9, R5-10, R5-11)
+
+/// A button of the status row on the Awake page, in order. None is a default button (r3 security L8).
+package enum AwakeStatusButton: Equatable, Sendable {
+    /// Pause Rules ▾ (For 1 Hour / Until Tomorrow): whenever a rule exists and rules aren't paused.
+    case pauseRules
+    /// Resume: in Pause Rules ▾'s slot while rules are paused (R5-11).
+    case resumeRules
+    /// Keep Awake ▾: click = the default session, ▾ = presets, While an App Is Running ▸, Custom… (R5-9).
+    case keepAwake
+    /// Options ▾ while a session or rule governs.
+    case options
+    /// Turn Off, also in the holds-only state, where it ends the hold stack (R5-10).
+    case turnOff
+}
+
+/// One entry of the status row's Options ▾.
+package enum AwakeOptionsItem: Equatable, Sendable {
+    case addTime(seconds: Int)
+    /// Add Time… (the custom panel in extend mode).
+    case addTimeCustom
+    case separator
+    /// ✓ Keep Display On, always while a session or rule governs.
+    case keepDisplayOn
+    /// End Command-Line Holds: only while holds exist under another governing source (R5-10).
+    case endHolds
+    /// Replace With ▸: the Keep Awake list (R5-9).
+    case replaceWith
+}
+
+package struct AwakeStatusFacts: Equatable, Sendable {
+    package var governing: AwakeGoverning
+    /// Holds exist (under any source).
+    package var holdsExist: Bool
+    /// ≥ 1 rule exists and `triggers` is effective.
+    package var rulesExist: Bool
+    package var rulesPaused: Bool
+
+    package init(governing: AwakeGoverning, holdsExist: Bool, rulesExist: Bool, rulesPaused: Bool) {
+        self.governing = governing
+        self.holdsExist = holdsExist
+        self.rulesExist = rulesExist
+        self.rulesPaused = rulesPaused
+    }
+}
+
+package enum AwakeStatusPlan {
+    /// Idle: [Pause Rules ▾] [Keep Awake ▾]. Session or rule: [Pause Rules ▾] [Options ▾] [Turn Off]. Holds only:
+    /// [Pause Rules ▾] [Turn Off]. Paused: Resume in Pause Rules ▾'s slot.
+    package static func buttons(_ f: AwakeStatusFacts) -> [AwakeStatusButton] {
+        var out: [AwakeStatusButton] = []
+        if f.rulesExist { out.append(f.rulesPaused ? .resumeRules : .pauseRules) }
+        switch f.governing {
+        case .inactive: out.append(.keepAwake)
+        case .holds: out.append(.turnOff)
+        case .manual, .trigger: out += [.options, .turnOff]
+        }
+        return out
+    }
+
+    /// Options ▾: Add 15 Minutes, Add 1 Hour, Add Time… (timed and capped manual sessions); ─; ✓ Keep Display On;
+    /// End Command-Line Holds (holds under this source); ─; Replace With ▸. Empty while idle or holds-only.
+    package static func options(_ f: AwakeStatusFacts) -> [AwakeOptionsItem] {
+        var out: [AwakeOptionsItem] = []
+        switch f.governing {
+        case .inactive, .holds:
+            return []
+        case .manual(let s):
+            if AwakeClock.canExtend(s) {
+                out += AwakeMenuModel.addSteps.map { AwakeOptionsItem.addTime(seconds: $0) }
+                out += [.addTimeCustom, .separator]
+            }
+        case .trigger:
+            break
+        }
+        out.append(.keepDisplayOn)
+        if f.holdsExist { out.append(.endHolds) }
+        out += [.separator, .replaceWith]
+        return out
+    }
+}
+
+/// The status row's text: one primary line and secondary details, each only while true.
+package enum AwakeStatusText {
+    package static let idle = L("Your Mac can sleep as usual.")
+
+    /// "Keeping your Mac awake until 3:45 PM", "…until turned off", "…while Xcode is running", "…until downloads
+    /// and tasks finish", "…while “Desk dock” applies", "Held by Terminal (2)"; idle: "Your Mac can sleep as usual."
+    package static func primary(_ i: AwakeDetailInput) -> String {
+        let keeping = L("Keeping your Mac awake")
+        switch i.governing {
+        case .inactive:
+            return idle
+        case .manual(let s):
+            switch s.kind {
+            case .indefinite: return keeping + L(" until turned off")
+            case .duration, .until: return i.endClock.map { keeping + L(" until ") + $0 } ?? keeping
+            case .whileApp: return keeping + L(" while ") + (i.appName ?? L("the app")) + L(" is running")
+            case .untilIdle: return keeping + L(" until downloads and tasks finish")
+            }
+        case .trigger:
+            return keeping + L(" while ") + AwakeDetail.quoted(i.ruleName) + L(" applies")
+        case .holds:
+            return i.holderSummary ?? L("Held by the command line")
+        }
+    }
+
+    /// "1h 12m left" (timed) or "At most 1h 12m left" (capped app and task sessions), then the extras of the switch
+    /// header (quiet time, the rule that takes over, holders, activity, lid), the paused line, and while idle the
+    /// last end or guard line.
+    package static func details(_ i: AwakeDetailInput, pausedUntilClock: String?) -> [String] {
+        var out: [String] = []
+        if case .manual(let s) = i.governing, let r = AwakeClock.remaining(s, now: i.now) {
+            let left = AwakeCountdown.short(max(0, r)) + L(" left")
+            switch s.kind {
+            case .whileApp, .untilIdle: out.append(L("At most ") + left)
+            case .indefinite, .duration, .until: out.append(left)
+            }
+        }
+        out += AwakeDetail.extras(i)
+        if !i.governing.isActive, let note = i.idleNote { out.append(note) }
+        if let p = pausedUntilClock { out.append(L("Rules are paused until ") + p + ".") }
+        return out
+    }
+}
+
+/// A rule row's trailing state on the Awake page: "Active", "Waiting" or "Off" (nothing while it simply waits for
+/// its conditions).
+package enum AwakeRuleRowText {
+    package static func state(enabled: Bool, active: Bool, waiting: Bool) -> String? {
+        if !enabled { return L("Off") }
+        if active { return L("Active") }
+        if waiting { return L("Waiting") }
+        return nil
+    }
+}

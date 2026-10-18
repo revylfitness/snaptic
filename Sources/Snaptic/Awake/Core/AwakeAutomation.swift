@@ -6,6 +6,8 @@ import SnapticKit
 // movement). The verbs (`commandLine`) parse with Kit's AwakeCommandGrammar and never name apps, holders or rules.
 // `awake hold` binds a holder to the client's own connection (the default) or to `--pid N`: the binding is resolved
 // here from the server's peer facts, never from the request, and ProcessWatch is armed in SessionController.addHold.
+// The one-per-second limit of `start`, `hold`, `extend` and `stop` (security L3) is the host's: ControlCommandRegistry's
+// shared window for `KitControl.awakeVerbRules`' `sessionLimited` verbs; Awake keeps no second limiter.
 
 @MainActor final class AwakeAutomation: AwakeFeatureController {
     static var id: AwakeControllerID { .automation }
@@ -16,7 +18,6 @@ import SnapticKit
     private var hotkeysLifetime: Lifetime?
     private var verbsLifetime: Lifetime?
     private var effective: Set<AwakeFeature> = []
-    private var limiter = AwakeRateLimiter()
     /// Connection holds and their held connections (finished with the hold's final line).
     private var connections: [StableID: ControlHold] = [:]
     /// Combos that failed to register (conflict or system refusal), for Settings.
@@ -114,9 +115,6 @@ import SnapticKit
         AwakeCommandGrammar.parse(verb: verb, args: request.arguments)
     }
 
-    /// `start`, `hold`, `stop` and `extend` share one request per second (security L3).
-    private func rateLimited() -> Bool { !limiter.allow(now: AwakeModule.clockNow().continuous) }
-
     private func status(_ request: ControlRequest) -> ControlResponse {
         guard let ctx = context, case .status(let json)? = command("status", request) else { return Self.usage }
         let facts = AwakeStatusFacts(governing: ctx.runtime.governing, holds: ctx.sessions.holds,
@@ -126,7 +124,6 @@ import SnapticKit
 
     private func startVerb(_ request: ControlRequest) -> ControlResponse {
         guard let ctx = context, case .start(let duration, let maySleep)? = command("start", request) else { return Self.usage }
-        if rateLimited() { return refused(.rateLimited) }
         var until: Double?
         if case .untilClock(let h, let m)? = duration { until = AwakeFormat.nextUnix(hour: h, minute: m) }
         guard let kind = AwakeStartRules.cliKind(duration, untilUnix: until) else { return refused(.invalid) }
@@ -144,7 +141,6 @@ import SnapticKit
 
     private func presetVerb(_ request: ControlRequest) -> ControlResponse {
         guard let ctx = context, case .preset(let selector)? = command("preset", request) else { return Self.usage }
-        if rateLimited() { return refused(.rateLimited) }
         let presets = ctx.config.value.sessions.presets
         let preset: AwakePreset?
         switch selector {
@@ -162,7 +158,6 @@ import SnapticKit
 
     private func extendVerb(_ request: ControlRequest) -> ControlResponse {
         guard let ctx = context, case .extend(let seconds)? = command("extend", request) else { return Self.usage }
-        if rateLimited() { return refused(.rateLimited) }
         switch ctx.sessions.extend(by: seconds, source: .commandLine) {
         case .success(let s): return .ok(startedText(s))
         case .failure(let r): return refused(r)
@@ -171,7 +166,6 @@ import SnapticKit
 
     private func stopVerb(_ request: ControlRequest) -> ControlResponse {
         guard let ctx = context, case .stop? = command("stop", request) else { return Self.usage }
-        if rateLimited() { return refused(.rateLimited) }
         if ctx.sessions.manual != nil || ctx.triggers.top != nil {
             ctx.sessions.end(.user)
             return .ok(L("Awake session ended."))
@@ -199,7 +193,6 @@ import SnapticKit
 
     private func holdVerb(_ request: ControlRequest, _ control: ControlContext) -> ControlResponse {
         guard let ctx = context, case .hold(let pid, let maxSeconds)? = command("hold", request) else { return Self.usage }
-        if rateLimited() { return refused(.rateLimited) }
         let cap = maxSeconds ?? AwakeClock.holdDefaultCapSeconds
         if let pid {
             // --pid N: a same-user process the caller names; the reply closes the connection at once.

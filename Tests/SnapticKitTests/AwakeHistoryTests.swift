@@ -99,4 +99,57 @@ final class AwakeHistoryTests: XCTestCase {
         XCTAssertEqual(s.entries.last?.start, 519)
         XCTAssertEqual(AwakeHistory.key, "SnapticAwakeHistoryV1")
     }
+
+    // MARK: History page
+
+    func testStartAgainPrefersTheExistingPreset() {
+        let presets = AwakeSessionsConfig.defaultPresets
+        var e = entry(0, 3_600)
+        e.presetID = presets[2].id
+        XCTAssertEqual(e.startAgain(presets: presets), .preset(presets[2].id))
+        e.presetID = StableID.derived(namespace: "test", name: "gone")
+        XCTAssertEqual(e.startAgain(presets: presets), .kind(.duration(seconds: 3_600)), "a deleted preset: its length")
+        XCTAssertEqual(entry(0, 61, kind: .until).startAgain(presets: []), .kind(.duration(seconds: 120)),
+                       "rounded up to the minute")
+        XCTAssertEqual(entry(0, 5, kind: .duration).startAgain(presets: []), .kind(.duration(seconds: 60)), "at least 1 minute")
+        XCTAssertEqual(entry(0, 1e12, kind: .duration).startAgain(presets: []),
+                       .kind(.duration(seconds: AwakeClock.maxSessionSeconds)), "at most 30 days")
+        XCTAssertEqual(entry(0, 9, kind: .indefinite).startAgain(presets: []), .kind(.indefinite))
+        XCTAssertEqual(entry(0, 9, kind: .idle).startAgain(presets: []), .kind(.untilIdle(UntilIdleSpec(), maxSeconds: nil)))
+        XCTAssertEqual(entry(0, 9, kind: .app, bundleID: "com.apple.Xcode").startAgain(presets: []),
+                       .kind(.whileApp(bundleID: "com.apple.Xcode", maxSeconds: nil)))
+    }
+
+    func testStartAgainIsNeverOfferedWhereTheRowHidesIt() {
+        XCTAssertNil(entry(0, 9, kind: .app).startAgain(presets: []), "no bundle id")
+        XCTAssertNil(entry(0, 9, kind: .process, source: .commandLine).startAgain(presets: []))
+        XCTAssertNil(entry(0, 9, kind: .automatic, source: .rule).startAgain(presets: []))
+        XCTAssertNil(entry(0, 9, kind: .duration, source: .commandLine).startAgain(presets: []))
+        var e = entry(0, 9, source: .rule)
+        e.presetID = AwakeSessionsConfig.defaultPresets[0].id
+        XCTAssertNil(e.startAgain(presets: AwakeSessionsConfig.defaultPresets), "a rule source never starts again")
+    }
+
+    func testHistoryTexts() {
+        XCTAssertEqual(AwakeHistoryText.title(entry(0, 3_600), presetTitle: "For 1 Hour", appName: nil, ruleName: nil),
+                       "For 1 Hour")
+        XCTAssertEqual(AwakeHistoryText.title(entry(0, 5_400), presetTitle: nil, appName: nil, ruleName: nil),
+                       "For 1 Hour 30 Minutes")
+        XCTAssertEqual(AwakeHistoryText.title(entry(0, 9, kind: .app), presetTitle: nil, appName: "Xcode", ruleName: nil),
+                       "While Xcode Was Running")
+        XCTAssertEqual(AwakeHistoryText.title(entry(0, 9, kind: .automatic, source: .rule), presetTitle: "For 1 Hour",
+                                              appName: nil, ruleName: "Desk dock"), "Rule “Desk dock”")
+        XCTAssertEqual(AwakeHistoryText.title(entry(0, 9, kind: .automatic, source: .rule), presetTitle: nil, appName: nil,
+                                              ruleName: nil), "Rule")
+        XCTAssertEqual(AwakeHistoryText.title(entry(0, 9, kind: .process, source: .commandLine), presetTitle: nil,
+                                              appName: nil, ruleName: nil), "Command Line")
+        XCTAssertEqual(AwakeHistoryText.subtitle(entry(0, 3_780), startClock: "3:12 PM", endClock: "4:15 PM", floor: 20),
+                       "3:12 PM – 4:15 PM · 1h 3m")
+        XCTAssertEqual(AwakeHistoryText.subtitle(entry(0, 600, reason: .batteryLow), startClock: "1:00 AM",
+                                                 endClock: "1:10 AM", floor: 20),
+                       "1:00 AM – 1:10 AM · 10m · Ended: battery below 20%")
+        XCTAssertEqual(AwakeHistoryText.total(0), "None")
+        XCTAssertEqual(AwakeHistoryText.total(.nan), "None")
+        XCTAssertEqual(AwakeHistoryText.total(7_800), "2h 10m")
+    }
 }
