@@ -12,7 +12,8 @@ import SnapticShims
 /// 0.3 §2.10 connection holds: a `holds: true` verb may answer `holding`, which moves the connection from the 4
 /// request slots to a separate pool of 8 held connections. A held connection has no read timeout; it ends on EOF,
 /// on any byte after the request, on a failed ping or final line, when its handler finishes it, or when the server
-/// stops. Pings (`{"ping":true}`) go out every `holdPingInterval`.
+/// stops. Pings (`{"ping":true}`) go out every `holdPingInterval`. On stop a held client always gets a final line
+/// (its handler's within `KitControl.heldStopGraceSeconds`, else `KitControl.serverStopFinal`), never a bare EOF.
 @MainActor final class ControlServer {
     enum Status: Equatable {
         case off
@@ -100,7 +101,11 @@ import SnapticShims
         EventLog.shared.record(.control, "Control server listening")
     }
 
-    /// Idempotent; removes the socket. Held connections close (their holds' `onClose` runs).
+    /// Idempotent; removes the socket and stops accepting at once. Requests still running are cancelled. Held
+    /// connections stay open for `KitControl.heldStopGraceSeconds` so their handlers can `finish` them with their own
+    /// final line (Awake: "Command-line control was turned off.", exit 0, when `HostSignals.commandLineEnabled`
+    /// falls, R5-14a); a hold still open then gets `KitControl.serverStopFinal` and closes `.server` (its
+    /// `onClose` runs).
     func stop() {
         guard let listener else { return }
         listener.stop()
@@ -381,15 +386,26 @@ private final class ControlListener: @unchecked Sendable {
         return nil
     }
 
-    /// The socket file goes away now; the descriptors close on the queue, and every hold ends (`server`).
-    func stop() {
+    /// The socket file goes away now and nothing new is accepted; the descriptors close on the queue. Requests in
+    /// flight are abandoned at once. Held connections keep their read sources (EOF or a stray byte still ends them)
+    /// for `grace` seconds, during which their handlers' `finish` is written as usual; the rest then get `final`
+    /// and close (`server`). Strong `self` until then: ControlServer has already dropped its reference.
+    func stop(grace: TimeInterval = KitControl.heldStopGraceSeconds, final: ControlResponse = KitControl.serverStopFinal) {
         unlink(path)
         queue.async { [self] in
             source?.cancel()
             source = nil
             pingTimer?.cancel()
             pingTimer = nil
-            for connection in connections.values { connection.abandon() }
+            var held: [ControlConnection] = []
+            for connection in connections.values {
+                if connection.isHeldOpen { held.append(connection) } else { connection.abandon() }
+            }
+            guard !held.isEmpty else { return }
+            queue.asyncAfter(deadline: .now() + max(0, grace)) { [self] in
+                for connection in held { connection.abandon(final: final) }
+                withExtendedLifetime(self) {}
+            }
         }
     }
 
@@ -689,10 +705,17 @@ private final class ControlConnection: @unchecked Sendable {
         releaseIfDone()
     }
 
-    /// Server stop: the handler is cancelled, the hold ends and the slot is freed when the handler returns.
-    func abandon() {
+    /// Held and still open (server stop gives these a grace for their handler's final line).
+    var isHeldOpen: Bool { isHeld && !finished }
+
+    /// Server stop: the handler is cancelled, the hold ends and the slot is freed when the handler returns. A held
+    /// connection still open (its handler wrote no final line within the grace) gets `final` first, so the client
+    /// prints it and exits with its code instead of seeing EOF.
+    func abandon(final: ControlResponse? = nil) {
+        guard !finished else { return }
         cancellation?.cancel()
         hold.close(.server)
+        if isHeld, let final { _ = ControlServer.sendHeld(fd, wrapped(final)) }
         finish()
     }
 }

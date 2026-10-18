@@ -198,6 +198,13 @@ enum SelfTest {
         for rule in KitControl.awakeVerbRules where !help.output.contains(rule.verb) {
             problems.append("help doesn't list " + rule.verb)
         }
+        // Security S-4: the Awake requests above were only counted; no exported `.control` line names one.
+        let timeline = EventLog.shared.recent(500).filter { $0.category == .control && $0.message.hasPrefix("CLI awake") }
+        if let first = timeline.first { problems.append("\(timeline.count) Awake request(s) logged with a time: " + first.message) }
+        for key in ["cli.awake.hold.holding", "cli.awake.stop.refused.offonly", "cli.awake.hold.refused.rate"]
+        where (EventLog.shared.awakeCounts[key] ?? 0) == 0 {
+            problems.append(key + " wasn't counted")
+        }
         problems += await retiredVerbProblems(registry, peer: peer, lifetime: lifetime)
         return problems
     }
@@ -280,6 +287,8 @@ enum SelfTest {
     /// A watched pid's exit finishes its hold this much later, so a client's own EOF (kill -9 closes the socket at
     /// the same moment) is reported as `eof`, and only a hold whose fd outlived the process says `pid`.
     static let pidGraceSeconds: Double = 0.2
+    /// The final line `selftest hold`'s handler writes when the server stops on SIGUSR1.
+    static let stopFinalLine = "Hold ended by its handler."
 
     private static func runControlServer(_ arguments: [String]) -> Never {
         guard arguments.count == 3, tokenMatches(file: arguments[2]) else { exit(KitArgs.exitUsage) }
@@ -332,6 +341,21 @@ enum SelfTest {
                 }
             }
             term.resume()
+            // SIGUSR1: the server stops but the process stays (command-line control turned off, R5-14a). Like Awake,
+            // the first open hold's handler writes its own final line a turn later; the others get the server's
+            // after the grace. Either way the client exits 0 with a final line, never on a bare EOF.
+            signal(SIGUSR1, SIG_IGN)
+            let usr1 = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
+            usr1.setEventHandler {
+                MainActor.assumeIsolated {
+                    say("stopping\n")
+                    server.stop()
+                    DispatchQueue.main.async {
+                        MainActor.assumeIsolated { watches.finishFirstOpen(.ok(stopFinalLine)) }
+                    }
+                }
+            }
+            usr1.resume()
             DispatchQueue.main.asyncAfter(deadline: .now() + controlServerSeconds) {
                 MainActor.assumeIsolated {
                     say("selftest: control server timed out after \(Int(controlServerSeconds)) s\n")
@@ -339,7 +363,7 @@ enum SelfTest {
                     exit(0)
                 }
             }
-            withExtendedLifetime((lifetime, registry, watches, server, term)) {
+            withExtendedLifetime((lifetime, registry, watches, server, term, usr1)) {
                 CFRunLoopRun()
             }
         }
@@ -368,6 +392,7 @@ enum SelfTest {
             }
             source.resume()
             let id = watches.add(source)
+            watches.track(hold)
             // Armed first, then re-verified (security M4): the same process, still there, and the client still on.
             guard !hold.isClosed, SNProcess.startTime(for: pid) == started else {
                 watches.remove(id)
@@ -652,6 +677,18 @@ private final class SpawnAttempt {
 
     func remove(_ id: UInt64) {
         sources.removeValue(forKey: id)?.cancel()
+    }
+
+    /// Every `selftest hold` hold, for the SIGUSR1 stop check (a test process: they are never released).
+    private var holds: [ControlHold] = []
+
+    func track(_ hold: ControlHold) {
+        holds.append(hold)
+    }
+
+    /// Finishes the oldest hold that is still open (the other open ones are left to the server's grace).
+    func finishFirstOpen(_ final: ControlResponse) {
+        holds.first { !$0.isClosed }?.finish(final)
     }
 }
 

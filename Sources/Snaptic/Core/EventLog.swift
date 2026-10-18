@@ -38,6 +38,13 @@ final class EventLog: @unchecked Sendable {
         counts[event.text] = min((counts[event.text] ?? 0), Int.max - 1) + 1
     }
 
+    /// Bumps a fixed counter (security S-4: `KitControl.counterKey` for the Awake verbs) instead of a timestamped
+    /// ring line. Keys come only from closed sets, so the map stays small.
+    func count(_ key: String) {
+        lock.lock(); defer { lock.unlock() }
+        counts[key] = min((counts[key] ?? 0), Int.max - 1) + 1
+    }
+
     /// Awake event counts per counted case's text, for `AwakeDiagnostics` (no timestamps).
     var awakeCounts: [String: Int] {
         lock.lock(); defer { lock.unlock() }
