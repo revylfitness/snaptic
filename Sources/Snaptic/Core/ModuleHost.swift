@@ -103,7 +103,10 @@ import SnapticKit
         let m1 = Self.runMigrations(modules: store, modulesExisted: modulesExisted, displays: displaysConfig,
                                     awake: awakeConfig, ledger: ledger, toasts: toasts)
         if disabled.contains(.awake) {
-            // N14: nothing restores; a snapshot left from earlier is cleared at launch.
+            // N14: nothing restores; a snapshot left from earlier is cleared at launch, after its sessions are
+            // recorded in History (review5 awake F1).
+            HistoryController.recordDiscardedSnapshot(awakeState, history: awakeHistory, config: awakeConfig.value)
+            awakeHistory.flush()
             awakeState.value = AwakeRuntimeSnapshot()
             awakeState.flush()
         }
