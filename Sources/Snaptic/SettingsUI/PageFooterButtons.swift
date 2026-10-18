@@ -12,6 +12,9 @@ struct RestoreDefaults {
     private let customQuestion: String?
     private let customMessage: String?
     private let customButton: String?
+    /// False when `action` shows its own confirmation (Reset All Settings…, whose alert the host owns): the button
+    /// then calls it directly, so nobody is asked twice.
+    let asksFirst: Bool
 
     init(scopeName: String, destructive: Bool, action: @escaping @MainActor () -> Void) {
         self.scopeName = scopeName
@@ -21,6 +24,7 @@ struct RestoreDefaults {
         customQuestion = nil
         customMessage = nil
         customButton = nil
+        asksFirst = true
     }
 
     /// Own wording, e.g. "Reset All Settings…" / "Reset all Snaptic settings?" / [Reset].
@@ -33,6 +37,24 @@ struct RestoreDefaults {
         customQuestion = question
         customMessage = message
         customButton = button
+        asksFirst = true
+    }
+
+    /// A button whose action confirms by itself ("Reset All Settings…").
+    init(title: String, destructive: Bool, confirmsItself action: @escaping @MainActor () -> Void) {
+        scopeName = ""
+        self.destructive = destructive
+        self.action = action
+        customTitle = title
+        customQuestion = nil
+        customMessage = nil
+        customButton = nil
+        asksFirst = false
+    }
+
+    /// What the footer button does: ask first, or run the self-confirming action.
+    @MainActor func press(confirm: () -> Void) {
+        if asksFirst { confirm() } else { action() }
     }
 
     var title: String { customTitle ?? L("Restore \(scopeName) Defaults…") }
@@ -94,8 +116,10 @@ struct PageFooterButtons: View {
         } footer: {
             HStack(spacing: 8) {
                 if let restoreDefaults {
-                    Button(restoreDefaults.title) { confirming = true }
-                        .modifier(OptionalSettingsAnchor(restoreControl))
+                    Button(restoreDefaults.title, role: restoreDefaults.destructive ? .destructive : nil) {
+                        restoreDefaults.press { confirming = true }
+                    }
+                    .modifier(OptionalSettingsAnchor(restoreControl))
                 }
                 Spacer(minLength: 8)
                 if let advanced {

@@ -2,10 +2,14 @@ import AppKit
 import SwiftUI
 import SnapticKit
 
-/// First-run onboarding (PLAN §3.7): welcome, modules, the Displays chips (team F's
-/// DisplaysOnboardingStep), then permissions for what was chosen. The step is saved in
-/// ModulesConfig after every move, so onboarding resumes after a relaunch.
-@MainActor final class Onboarding: NSObject, NSWindowDelegate {
+/// First-run onboarding (H; PLAN 0.3 §4.7): Welcome → Choose modules → Displays chips (F's
+/// `DisplaysOnboardingStep`, only while Displays is on) → Permissions (only what was chosen) → Done. One primary
+/// button, always in the window footer ("Continue" / "Done"), with Back beside it. The step is saved after every
+/// move, so closing the window and relaunching resumes where it stopped.
+@MainActor final class Onboarding: NSObject, NSWindowDelegate, ControlDeclaring {
+    typealias Controls = OnboardingControls
+    static let size = NSSize(width: 600, height: 580)
+
     private weak var host: ModuleHost?
     private var window: NSWindow?
     private let model = OnboardingModel()
@@ -30,15 +34,16 @@ import SnapticKit
         if model.step == .done { model.step = .welcome }
         save()
         if window == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 600),
-                                  styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+            let window = NSWindow(contentRect: NSRect(origin: .zero, size: Self.size),
+                                  styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
             window.title = L("Welcome to Snaptic")
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = true
             window.isReleasedWhenClosed = false
-            window.minSize = NSSize(width: 560, height: 520)
             window.contentView = NSHostingView(rootView: OnboardingView(
                 host: host, store: host.modulesStore, permissions: host.permissions, model: model,
-                next: { [weak self] in self?.advance() }, finish: { [weak self] in self?.finish() },
-                finishLater: { [weak self] in self?.finishLater() }))
+                next: { [weak self] in self?.advance() }, back: { [weak self] in self?.goBack() },
+                finish: { [weak self] in self?.finish() }))
             window.delegate = self
             window.center()
             self.window = window
@@ -51,8 +56,15 @@ import SnapticKit
     private func advance() {
         guard let host else { return }
         guard model.step != .done else { finish(); return }
-        let next = host.modulesStore.value.step(after: model.step)
-        model.step = next
+        model.step = host.modulesStore.value.step(after: model.step)
+        save()
+    }
+
+    private func goBack() {
+        guard let host else { return }
+        let steps = host.modulesStore.value.onboardingSteps()
+        guard let index = steps.firstIndex(of: model.step), index > 0 else { return }
+        model.step = steps[index - 1]
         save()
     }
 
@@ -67,13 +79,6 @@ import SnapticKit
         host.requestLaunchPermissions()
     }
 
-    /// "Finish Later": closes this window (never whichever window is key, such as a
-    /// permission guide); the saved step stays and onboarding resumes next launch.
-    private func finishLater() {
-        host?.modulesStore.flush()
-        window?.close()
-    }
-
     private func save() {
         host?.modulesStore.value.onboarding = model.step
         host?.modulesStore.flush()
@@ -82,6 +87,7 @@ import SnapticKit
     func windowWillClose(_ notification: Notification) {
         // Closed early: the saved step stays, and onboarding resumes next launch.
         host?.permissions.holdAutomaticGuides = false
+        host?.modulesStore.flush()
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
                 if !(self.host?.settingsWindow.isOpen ?? false) { NSApp.setActivationPolicy(.accessory) }
@@ -100,13 +106,12 @@ private struct OnboardingView: View {
     @ObservedObject var permissions: PermissionFlow
     @ObservedObject var model: OnboardingModel
     let next: () -> Void
+    let back: () -> Void
     let finish: () -> Void
-    let finishLater: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
             progress
-            Divider()
             Group {
                 switch model.step {
                 case .welcome: welcome
@@ -117,124 +122,196 @@ private struct OnboardingView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            Divider()
+            footer
         }
-        .frame(minWidth: 560, minHeight: 520)
+        .frame(width: Onboarding.size.width, height: Onboarding.size.height)
     }
 
     private var steps: [OnboardingStep] { store.value.onboardingSteps() }
 
+    /// A page indicator: one dot per step.
     private var progress: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             ForEach(steps, id: \.self) { step in
-                Capsule()
+                Circle()
                     .fill(step == model.step ? Color.accentColor : Color.secondary.opacity(0.3))
-                    .frame(height: 4)
+                    .frame(width: 7, height: 7)
             }
         }
-        .padding(16)
+        .padding(.top, 36)
+        .padding(.bottom, 8)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(L("Step ") + String((steps.firstIndex(of: model.step) ?? 0) + 1) + L(" of ") + String(steps.count))
+        .accessibilityLabel(L("Step \((steps.firstIndex(of: model.step) ?? 0) + 1) of \(steps.count)"))
     }
 
+    // MARK: Steps
+
     private var welcome: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(L("Welcome to Snaptic")).font(.largeTitle.weight(.semibold))
-            Text(L("Snaptic is a small set of menu bar tools. Pick the ones you want; everything you don't pick stays off and costs nothing."))
-            Text(L("You can change every choice later in Settings."))
+        VStack(spacing: 12) {
+            Spacer(minLength: 0)
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 112, height: 112)
+                .accessibilityHidden(true)
+            Text(L("Welcome to Snaptic"))
+                .font(.largeTitle.weight(.semibold))
+            Text(L("A window switcher, display controls, and Keep Awake, in your menu bar. Turn on only what you want; everything else stays off."))
                 .foregroundStyle(.secondary)
-            Spacer()
-            footer(primary: L("Get Started"))
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
+            Spacer(minLength: 0)
         }
-        .padding(24)
+        .padding(.horizontal, 40)
     }
 
     private var modules: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(L("Choose your tools")).font(.title.weight(.semibold))
-            ForEach(ModuleID.allCases, id: \.self) { id in
-                let module = host.module(id)
-                Toggle(isOn: Binding(get: { store.value.isEnabled(id) }, set: { host.setEnabled($0, id) })) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(module.title).fontWeight(.medium)
-                        Text(module.summary).font(.caption).foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            heading(L("Choose What Snaptic Does"),
+                    L("A feature that's off adds nothing to the menu bar and doesn't run. You can change this in Settings."))
+            Form {
+                Section {
+                    ForEach(ModuleID.allCases, id: \.self) { id in
+                        let blocked = host.disabledByDefaults.contains(id)
+                        ModuleSwitchRow(id, title: host.module(id).title,
+                                        isOn: Binding(get: { store.value.isEnabled(id) },
+                                                      set: { on in if !blocked { host.setEnabled(on, id) } }),
+                                        blocked: blocked,
+                                        anchor: ControlID("onboarding.modules"))
                     }
                 }
-                .toggleStyle(.switch)
             }
-            Spacer()
-            footer(primary: L("Continue"))
+            .formStyle(.grouped)
+            .scrollDisabled(true)
         }
-        .padding(24)
     }
 
+    /// F's chips. Until F's step takes its apply from this footer, its own button applies and moves on (§4.7).
     private var displays: some View {
-        VStack(spacing: 0) {
-            DisplaysOnboardingStep(env: host.displays.pageEnvironment, hideMenuIcon: hideDisplaysIcon) { chosen in
-                store.value.onboardingPermissions = Permission.allCases.filter { chosen.contains($0) }
-                next()
-            }
-            HStack {
-                Spacer()
-                Button(L("Skip")) { next() }
-            }
-            .padding(16)
+        DisplaysOnboardingStep(env: host.displays.pageEnvironment, hideMenuIcon: hideDisplaysIcon) { chosen in
+            store.value.onboardingPermissions = Permission.allCases.filter { chosen.contains($0) }
+            next()
         }
     }
 
     private var hideDisplaysIcon: Binding<Bool> {
-        Binding(get: { store.value.placement(.displays) == .hidden },
-                set: { store.value.setPlacement($0 ? .hidden : .shared, for: .displays) })
+        Binding(get: { store.value.presence(.displays) == .hidden },
+                set: { store.value.setPresence($0 ? .hidden : .inSnapticMenu, for: .displays) })
     }
 
     /// What the chosen modules and display features need.
     private var needed: [Permission] {
         var set = Set(store.value.onboardingPermissions)
-        if store.value.isEnabled(.windowSwitcher) { set.formUnion(host.switcher.requiredPermissions) }
+        if store.value.isEnabled(.windowSwitcher) && !host.disabledByDefaults.contains(.windowSwitcher) {
+            set.formUnion(host.switcher.requiredPermissions)
+        }
         return Permission.allCases.filter { set.contains($0) }
     }
 
     private var permissionsStep: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(L("Permissions")).font(.title.weight(.semibold))
-            if needed.isEmpty {
-                Text(L("Nothing you chose needs a permission."))
-                    .foregroundStyle(.secondary)
-            } else {
-                Text(L("macOS asks you to allow these for what you chose. Snaptic never asks for anything else."))
-                ForEach(needed, id: \.self) { permission in
-                    PermissionRow(title: PermissionFlow.paneName(permission), detail: PermissionFlow.purpose(permission),
-                                  granted: permissions.granted.contains(permission),
-                                  open: { permissions.presentGuide(permission) })
+        VStack(spacing: 0) {
+            heading(L("Allow Access"),
+                    needed.isEmpty ? L("Nothing you chose needs a permission.")
+                        : L("macOS asks you to allow these for the features you chose. Snaptic asks for nothing else."))
+            if !needed.isEmpty {
+                Form {
+                    Section {
+                        ForEach(needed, id: \.self) { permission in
+                            OnboardingPermissionRow(permission: permission, granted: permissions.granted.contains(permission)) {
+                                permissions.presentGuide(permission)
+                            }
+                        }
+                    } footer: {
+                        Text(L("After you allow something, macOS may ask Snaptic to quit and reopen. Setup continues where you left off."))
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                Text(L("After a grant, macOS may ask Snaptic to relaunch; onboarding picks up where you left off."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .formStyle(.grouped)
+                .scrollDisabled(true)
             }
-            Spacer()
-            footer(primary: L("Continue"))
         }
-        .padding(24)
         .onAppear { permissions.refresh() }
     }
 
     private var done: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(L("You're all set")).font(.title.weight(.semibold))
-            Text(L("Snaptic lives in the menu bar. Open it again from Finder or Spotlight any time to get to Settings."))
-            Spacer()
-            footer(primary: L("Finish"))
+        VStack(spacing: 12) {
+            Spacer(minLength: 0)
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 64))
+                .foregroundStyle(.green)
+                .accessibilityHidden(true)
+            Text(L("You're All Set"))
+                .font(.largeTitle.weight(.semibold))
+            Text(L("Snaptic is in the menu bar. To change settings later, choose Snaptic Settings… from its menu, or open Snaptic again from Finder."))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
+            Spacer(minLength: 0)
         }
-        .padding(24)
+        .padding(.horizontal, 40)
     }
 
-    private func footer(primary: String) -> some View {
-        HStack {
-            if model.step != .welcome {
-                Button(L("Finish Later")) { finishLater() }
+    private func heading(_ title: String, _ text: String) -> some View {
+        VStack(spacing: 6) {
+            Text(title)
+                .font(.title.weight(.semibold))
+            Text(text)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: 460)
+        .padding(.horizontal, 40)
+        .padding(.top, 12)
+        .padding(.bottom, 4)
+    }
+
+    // MARK: Footer
+
+    private var footer: some View {
+        HStack(spacing: 8) {
+            if model.step != .welcome && model.step != .done {
+                Button(L("Back")) { back() }
             }
             Spacer()
-            Button(primary) { model.step == .done ? finish() : next() }
+            if model.step == .displays {
+                Button(L("Skip")) { next() }
+            } else {
+                Button(model.step == .done ? L("Done") : L("Continue")) {
+                    model.step == .done ? finish() : next()
+                }
                 .keyboardShortcut(.defaultAction)
+            }
         }
+        .padding(16)
+    }
+}
+
+/// A permission in onboarding: its System Settings name, what it allows, and its state or the button that opens
+/// Snaptic's guide.
+private struct OnboardingPermissionRow: View {
+    let permission: Permission
+    let granted: Bool
+    let open: () -> Void
+
+    var body: some View {
+        LabeledContent {
+            if granted {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .accessibilityHidden(true)
+                    Text(L("Allowed"))
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Button(L("Open Privacy Settings…"), action: open)
+                    .fixedSize()
+            }
+        } label: {
+            Text(PermissionFlow.paneName(permission))
+            Text(PermissionFlow.purpose(permission))
+        }
+        .accessibilityValue(granted ? L("Allowed") : L("Not allowed"))
     }
 }
