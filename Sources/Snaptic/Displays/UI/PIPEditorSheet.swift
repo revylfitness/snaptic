@@ -104,7 +104,7 @@ struct PIPEditorSheet: View, ControlDeclaring {
             if !isNew && entry == nil {
                 Form {
                     Section {
-                        StatusRow(L("This picture in picture was deleted."))
+                        StatusRow(L("This Picture in Picture was deleted."))
                     }
                 }
                 .formStyle(.grouped)

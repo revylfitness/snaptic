@@ -116,7 +116,7 @@ final class FilterSpecTests: XCTestCase {
          {"kind":"edges","enabled":"yes","values":"bad"},
          7]
         """
-        let list = try JSONDecoder().decode(PIPLossyList<FilterInstance>.self, from: Data(json.utf8))
+        let list = try JSONDecoder().decode(LossyArray<FilterInstance>.self, from: Data(json.utf8))
         XCTAssertEqual(list.items.count, 2)
         XCTAssertEqual(list.items[0].kind, .sepia)
         XCTAssertFalse(list.items[0].enabled)

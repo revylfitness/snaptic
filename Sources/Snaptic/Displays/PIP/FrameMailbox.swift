@@ -11,9 +11,6 @@ struct PIPFrame: @unchecked Sendable {
     let sequence: UInt64
 
     var surface: IOSurface? { CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue() }
-    var pixelSize: CGSize {
-        CGSize(width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer))
-    }
 }
 
 /// Latest-frame mailbox between a capture queue and the main thread (nonisolated,
