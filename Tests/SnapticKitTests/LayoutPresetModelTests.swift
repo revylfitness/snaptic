@@ -136,6 +136,53 @@ final class LayoutPresetModelTests: XCTestCase {
         XCTAssertEqual(l.trust, TrustStamp(digest: "abc", osMajor: 26))
         XCTAssertEqual(try JSONDecoder().decode(SavedLayout.self, from: JSONEncoder().encode(l)), l)
     }
+
+    // MARK: Menu (0.3 §5.2)
+
+    func testBestMatchIgnoresAutoApply() {
+        let a = layout(1, [key("a"): SavedDisplaySettings(identity: ident("t1a"))], auto: .never, name: "Desk")
+        let b = layout(2, [key("a"): SavedDisplaySettings(identity: ident("t1a")), key("b"): SavedDisplaySettings(identity: ident("t1b"))],
+                       auto: .never, name: "Dock")
+        let live = [LiveLayoutDisplay(key: key("a"), identity: ident("t1a")), LiveLayoutDisplay(key: key("b"), identity: ident("t1b"))]
+        // Never auto-applies, but the menu still offers the most specific match, unchanged.
+        XCTAssertNil(LayoutPresetModel.select([a, b], live: live))
+        XCTAssertEqual(LayoutPresetModel.bestMatch([a, b], live: live), b)
+        XCTAssertEqual(LayoutPresetModel.bestMatch([a, b], live: [live[0]]), a)
+        XCTAssertNil(LayoutPresetModel.bestMatch([b], live: [live[0]]))
+        XCTAssertNil(LayoutPresetModel.bestMatch([], live: live))
+    }
+
+    func testIsCurrentComparesOnlySavedFields() {
+        let s = SavedDisplaySettings(mode: mode, x: 0, y: 0, isMain: true, rotation: 0, identity: ident("t1a"))
+        let mirrored = SavedDisplaySettings(x: 99, y: 99, mirrorOf: key("a"), mirrorSet: true, identity: ident("t1b"))
+        let l = layout(1, [key("a"): s, key("b"): mirrored])
+        let otherRefresh = ModeRef(ioModeID: 9, pixelWidth: 3024, pixelHeight: 1964, pointWidth: 1512, pointHeight: 982,
+                                   refreshMilliHz: 120_005)
+        var states: [DisplayKey: LayoutLiveState] = [
+            key("a"): LayoutLiveState(mode: otherRefresh, x: 0, y: 0, isMain: true, rotation: 0, mirrorOf: nil),
+            // A mirrored display's saved origin is not compared.
+            key("b"): LayoutLiveState(mode: nil, x: 5, y: 5, isMain: false, rotation: 0, mirrorOf: key("a")),
+        ]
+        XCTAssertTrue(LayoutPresetModel.isCurrent(l, states: states))
+        states[key("b")]?.mirrorOf = nil
+        XCTAssertFalse(LayoutPresetModel.isCurrent(l, states: states))
+        states[key("b")]?.mirrorOf = key("a")
+        states[key("a")]?.x = 1
+        XCTAssertFalse(LayoutPresetModel.isCurrent(l, states: states))
+        states[key("a")]?.x = 0
+        states[key("a")]?.rotation = 90
+        XCTAssertFalse(LayoutPresetModel.isCurrent(l, states: states))
+        states[key("a")]?.rotation = 0
+        states[key("a")]?.isMain = false
+        XCTAssertFalse(LayoutPresetModel.isCurrent(l, states: states))
+        states[key("a")]?.isMain = true
+        states[key("a")]?.mode = nil
+        XCTAssertFalse(LayoutPresetModel.isCurrent(l, states: states))
+        // A missing display, an empty layout, or one that saves nothing comparable is never current.
+        XCTAssertFalse(LayoutPresetModel.isCurrent(l, states: [:]))
+        XCTAssertFalse(LayoutPresetModel.isCurrent(layout(2, [:]), states: states))
+        XCTAssertFalse(LayoutPresetModel.isCurrent(layout(3, [key("a"): SavedDisplaySettings(identity: ident("t1a"))]), states: states))
+    }
 }
 
 private extension SavedLayout {

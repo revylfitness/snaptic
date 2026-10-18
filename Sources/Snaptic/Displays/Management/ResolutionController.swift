@@ -7,6 +7,8 @@ import SnapticKit
     DiagnosticsContributor {
     static var id: DisplayControllerID { .resolution }
     static var privateSymbols: [PrivateSymbol] { [] }
+    /// Resolution settings and each display's filters, favorites and remembered choice (0.3 §4.5).
+    static var observedSections: Set<DisplaysConfigSection> { [.resolution, .perDisplayResolution] }
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
 
@@ -80,11 +82,17 @@ import SnapticKit
 
     func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) {
         self.effective = effective
-        context?.requestMenuRebuild()
+        changed()
     }
 
     func configDidChange(from old: DisplaysConfig, to new: DisplaysConfig) {
-        if old.resolution != new.resolution || old.perDisplay != new.perDisplay { context?.requestMenuRebuild() }
+        if old.resolution != new.resolution || old.perDisplay != new.perDisplay { changed() }
+    }
+
+    /// Page-visible state changed (mode lists, undo and redo, favorites): one revision bump and a menu rebuild.
+    private func changed() {
+        context?.runtime.revision(Self.id).bump()
+        context?.requestMenuRebuild()
     }
 
     func stop() {
@@ -287,7 +295,7 @@ import SnapticKit
         }
         lastSeen[key] = applied
         if let d = info(key) { ctx.osd.show(.resolution, text: label(applied, markers: false), on: d.desktopID) }
-        ctx.requestMenuRebuild()
+        changed()
     }
 
     /// "Show all modes": a hidden (CGS) mode, always a trial, never persisted or learned.
@@ -307,12 +315,14 @@ import SnapticKit
     func undo(_ key: DisplayKey) {
         guard var h = history[key], let target = h.undo.popLast() else { return }
         history[key] = h
+        changed()
         apply(target, to: key, label: L("Undo resolution change"), move: .undo)
     }
 
     func redo(_ key: DisplayKey) {
         guard var h = history[key], let target = h.redo.popLast() else { return }
         history[key] = h
+        changed()
         apply(target, to: key, label: L("Redo resolution change"), move: .redo)
     }
 
@@ -486,6 +496,8 @@ import SnapticKit
     private func observe(_ displays: [DisplayInfo]) {
         guard let ctx = context else { return }
         modeCache = [:]
+        // Mode lists, the current mode and what Undo would do may all have changed.
+        ctx.runtime.revision(Self.id).bump()
         let now = managementUptime()
         for d in displays where d.isActive {
             guard let m = currentMode(d) else { continue }

@@ -307,6 +307,8 @@ Sources/SnapticKit/ManagementIDs.swift	D	L	-	-
 Sources/SnapticKit/ArrangementMath.swift	D	L	-	-
 Tests/SnapticKitTests/ManagementIDsTests.swift	D	L	-	-
 Tests/SnapticKitTests/ArrangementMathTests.swift	D	L	-	-
+Sources/SnapticKit/ResolutionMenuPicks.swift	D	L	-	-
+Tests/SnapticKitTests/ResolutionMenuPicksTests.swift	D	L	-	-
 Sources/Snaptic/Displays/Management/ManagementSupport.swift	D	L	-	-
 Sources/Snaptic/Displays/UI/ManagementPageParts.swift	D	L	-	-
 Sources/Snaptic/Displays/Registries/DisplaySelectorResolver.swift	lead	L	-	-

@@ -3,14 +3,18 @@ import SnapticKit
 
 /// Main display, arrangement and mirroring (PLAN §9.6). Origins and main are low risk;
 /// mirroring is a trial with `.forSession` scope.
-@MainActor final class ArrangementController: DisplayFeatureController, DisplayMenuContributor, DiagnosticsContributor {
+@MainActor final class ArrangementController: DisplayFeatureController, DiagnosticsContributor {
     static var id: DisplayControllerID { .arrangement }
     static var privateSymbols: [PrivateSymbol] { [] }
+    /// Reads no config: the registry and transactions drive it (0.3 §4.5).
+    static var observedSections: Set<DisplaysConfigSection> { [] }
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
     private var lifetime: Lifetime?
     private(set) var effective: Set<DisplayFeature> = []
     private var changes = 0
+    /// Held here: the menu registry keeps contributors weakly.
+    private var menu: ManagementMenuItems?
 
     init() {}
 
@@ -22,7 +26,10 @@ import SnapticKit
         self.context = context
         self.lifetime = lifetime
         self.effective = effective
-        context.menus.register(self, lifetime: lifetime)
+        let items = ManagementMenuItems(context: context)
+        items.arrangement = self
+        menu = items
+        context.menus.register(items, lifetime: lifetime)
         context.diagnostics.register(self, section: L("Arrangement"), lifetime: lifetime)
         context.connectPlanner.attach(self, lifetime: lifetime)
         registerActions(context, lifetime: lifetime)
@@ -31,12 +38,13 @@ import SnapticKit
 
     func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) {
         self.effective = effective
-        context?.requestMenuRebuild()
+        changed()
     }
 
     func configDidChange(from old: DisplaysConfig, to new: DisplaysConfig) {}
 
     func stop() {
+        menu = nil
         lifetime = nil
         context = nil
         effective = []
@@ -51,8 +59,15 @@ import SnapticKit
             let ok = outcome == .applied || outcome == .kept
             if ok { self?.changes += 1 }
             self?.context?.connectPlanner.endUserChange(changed: ok)
+            self?.changed()
             completion?(outcome)
         }
+    }
+
+    /// Page-visible state changed: one revision bump (sections observing `.arrangement` re-read) and a menu rebuild.
+    private func changed() {
+        context?.runtime.revision(Self.id).bump()
+        context?.requestMenuRebuild()
     }
 
     /// Why a display can't become main, or nil (invariant 7).
@@ -134,46 +149,6 @@ import SnapticKit
         } else if let main = ctx.registry.displays.first(where: { $0.isMain && $0.key != key }) {
             mirror(key, of: main.key)
         }
-    }
-
-    // MARK: Menu
-
-    var descriptors: [DisplayMenuItemDescriptor] {
-        var list = [DisplayMenuItemDescriptor(id: .dSetMain, title: L("Set as Main Display"), slot: .display, defaultVisibility: .inSubmenu),
-                    DisplayMenuItemDescriptor(id: .dMirrorMenu, title: L("Mirroring"), slot: .display, defaultVisibility: .inSubmenu)]
-        if effective.contains(.arrangement) {
-            list.append(DisplayMenuItemDescriptor(id: .dArrange, title: L("Arrange…"), slot: .tools, defaultVisibility: .visible))
-        }
-        return list
-    }
-
-    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] {
-        guard let ctx = context else { return [] }
-        let key = display.key
-        var items: [(DisplayMenuItemID, NSMenuItem)] = []
-        if effective.contains(.mainDisplay), !display.isMain, setMainRefusal(key) == nil {
-            items.append((.dSetMain, ManagedMenuItem(L("Set as Main Display")) { [weak self] in self?.setMain(key) }))
-        }
-        if effective.contains(.mirroring) {
-            var sub: [NSMenuItem] = []
-            if display.mirrorOf != nil {
-                sub.append(ManagedMenuItem(L("Stop Mirroring")) { [weak self] in self?.mirror(key, of: nil) })
-            }
-            for other in ManagedDisplays.all(ctx) where other.key != key && other.isActive && other.mirrorOf == nil {
-                let on = display.mirrorOf == other.desktopID
-                let source = other.key
-                sub.append(ManagedMenuItem(L("Mirror \(other.name)"), on: on) { [weak self] in self?.mirror(key, of: source) })
-            }
-            if !sub.isEmpty { items.append((.dMirrorMenu, ManagedMenuItem.submenu(L("Mirroring"), items: sub))) }
-        }
-        return items
-    }
-
-    /// Tools › "Arrange…" opens the Arrangement page (PLAN §3.7 Tools list).
-    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] {
-        guard slot == .tools, effective.contains(.arrangement), let ctx = context else { return [] }
-        weak var weakCtx = ctx
-        return [(.dArrange, ManagedMenuItem(L("Arrange…")) { weakCtx?.openSettings("displays.arrangement") })]
     }
 
     // MARK: Actions / CLI

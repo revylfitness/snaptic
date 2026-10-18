@@ -217,43 +217,6 @@ enum ManagedModes {
     }
 }
 
-// MARK: Menu items
-
-/// A menu item that runs a closure. Captures `DisplayKey`s, never display ids (R3C §5.6).
-@MainActor final class ManagedMenuItem: NSMenuItem {
-    private let handler: @MainActor () -> Void
-
-    init(_ title: String, on: Bool = false, enabled: Bool = true, handler: @escaping @MainActor () -> Void) {
-        self.handler = handler
-        super.init(title: title, action: #selector(fire(_:)), keyEquivalent: "")
-        target = self
-        state = on ? .on : .off
-        isEnabled = enabled
-    }
-
-    required init(coder: NSCoder) {
-        handler = {}
-        super.init(coder: coder)
-    }
-
-    @objc private func fire(_ sender: Any?) { handler() }
-
-    /// A submenu holder item.
-    static func submenu(_ title: String, items: [NSMenuItem]) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        let menu = NSMenu(title: title)
-        items.forEach { menu.addItem($0) }
-        item.submenu = menu
-        return item
-    }
-
-    static func disabled(_ title: String) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        return item
-    }
-}
-
 // MARK: Identity and digests
 
 enum ManagedIdentity {

@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SnapticKit
 import SnapticShims
 
@@ -7,6 +8,8 @@ import SnapticShims
 @MainActor final class VirtualController: DisplayFeatureController, PanicParticipant, SessionParticipant, DiagnosticsContributor {
     static var id: DisplayControllerID { .virtual }
     static var privateSymbols: [PrivateSymbol] { [] }
+    /// Virtual display specs, behavior and connected state (0.3 §4.5).
+    static var observedSections: Set<DisplaysConfigSection> { [.virtualScreens] }
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
     private var lifetime: Lifetime?
@@ -16,9 +19,14 @@ import SnapticShims
     private var limited: Set<StableID> = []
     /// Screens shut down for a locked/switched-out session, recreated on resume.
     private var pausedScreens: Set<StableID> = []
+    private var sinks: [AnyCancellable] = []
     private var stoppedAfterFailures = false
-    private(set) var lastError: String?
-    private var busy: Set<StableID> = []
+    private(set) var lastError: String? {
+        didSet { if lastError != oldValue { context?.runtime.revision(Self.id).bump() } }
+    }
+    private var busy: Set<StableID> = [] {
+        didSet { if busy != oldValue { context?.runtime.revision(Self.id).bump() } }
+    }
 
     init() {}
 
@@ -48,6 +56,11 @@ import SnapticShims
         context.virtualHosts.addExitListener(lifetime: lifetime) { [weak self] id, unexpected in
             self?.hostExited(id, unexpected: unexpected)
         }
+        // Live/busy state shows on Virtual Displays and in the menu; screens also come and go with the registry.
+        context.registry.changes
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.context?.runtime.revision(Self.id).bump() } }
+            .store(in: &sinks)
         // Lock (opt-in) and session resign shut screens down; sleep alone keeps them (§4.9, §9.4).
         context.sessionGate.observeEvents(lifetime: lifetime) { [weak self] event in
             self?.sessionEvent(event)
@@ -58,6 +71,12 @@ import SnapticShims
 
     func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) {
         self.effective = effective
+        changed()
+    }
+
+    /// Page-visible state changed: one revision bump and a menu rebuild.
+    private func changed() {
+        context?.runtime.revision(Self.id).bump()
         context?.requestMenuRebuild()
     }
 
@@ -66,7 +85,7 @@ import SnapticShims
         // Removed screens go away.
         let ids = Set(new.virtualScreens.screens.map(\.id))
         for s in old.virtualScreens.screens where !ids.contains(s.id) { ctx.virtualHosts.destroyNow(specID: s.id) }
-        ctx.requestMenuRebuild()
+        changed()
     }
 
     /// Shuts down this controller's hosts (Smart HiDPI hosts belong to their own controller).
@@ -74,6 +93,7 @@ import SnapticShims
         if let ctx = context {
             for s in ctx.config.value.virtualScreens.screens { ctx.virtualHosts.destroyNow(specID: s.id) }
         }
+        sinks.removeAll()
         menu = nil
         lifetime = nil
         context = nil
@@ -169,7 +189,10 @@ import SnapticShims
         guard let ctx = context, effective.contains(.virtualScreens), let spec = screen(id), !isLive(id), !busy.contains(id),
               let initial = spec.initialMode else { return }
         busy.insert(id)
-        defer { busy.remove(id); context?.requestMenuRebuild() }
+        defer {
+            busy.remove(id)
+            changed()
+        }
         ctx.virtualHosts.setHeadless(id, spec.headlessPrimary)
         do {
             var displayID = try await ctx.virtualHosts.create(spec: spec, initialMode: initial, limitToInitial: limited.contains(id))
@@ -237,7 +260,7 @@ import SnapticShims
             }
         }
         await ctx.virtualHosts.destroy(specID: id)
-        ctx.requestMenuRebuild()
+        changed()
     }
 
     func toggle(_ id: StableID) {
@@ -366,13 +389,14 @@ import SnapticShims
     }
 
     private func hostExited(_ id: StableID, unexpected: Bool) {
-        guard let ctx = context, screen(id) != nil, unexpected else { return }
+        guard let ctx = context, screen(id) != nil else { return }
+        guard unexpected else { return changed() }
         // FIXES-R3 5: a host that speaks another protocol means Snaptic was updated on disk;
         // re-creating would only fail again.
         if ctx.virtualHosts.restartRequired {
             lastError = L("Restart Snaptic to finish updating")
             ctx.toasts.show(L("Restart Snaptic to finish updating"), lifetime: lifetime)
-            ctx.requestMenuRebuild()
+            changed()
             return
         }
         if ctx.virtualHosts.recentFailures >= 3 {
@@ -381,7 +405,7 @@ import SnapticShims
         } else {
             ctx.connectPlanner.trigger(.reconfigure)
         }
-        ctx.requestMenuRebuild()
+        changed()
     }
 
     // MARK: Actions / CLI
