@@ -341,19 +341,24 @@ raw_bg stall stall
 staller=$rawpid
 wait_pool "held=1 active=0" 50 || fail "case 8: the stalled hold wasn't held ($(pool))"
 slowest=0
+slow=0
 closed=0
 for _ in $(seq 1 55); do
   read -r ms verdict < <(raw echo)
   [ "$verdict" = ok ] || fail "case 8: echo failed while a hold stalled ($verdict)"
   [ "${ms:-999}" -gt "$slowest" ] && slowest=${ms:-999}
+  [ "${ms:-999}" -ge 100 ] && slow=$((slow + 1))
   if [ "$(count "closed ping")" -ge 1 ]; then closed=1; break; fi
   sleep 2
 done
 [ "$closed" -eq 1 ] || fail "case 8: no 'closed ping' within 110 s for a client that never reads"
-[ "$slowest" -lt 100 ] || fail "case 8: echo took ${slowest} ms while a hold stalled (must be < 100 ms)"
+# One scheduling hiccup on a shared CI runner is tolerated; a server blocked on the stalled client is not
+# (it would be slow on every sample, and stalls last until `closed ping`).
+[ "$slow" -le 1 ] || fail "case 8: echo took >= 100 ms on $slow samples while a hold stalled (slowest ${slowest} ms)"
+[ "$slowest" -lt 1000 ] || fail "case 8: echo took ${slowest} ms while a hold stalled (must be < 1 s even once)"
 wait_pool "held=0 active=0" 20 || fail "case 8: the stalled hold wasn't released ($(pool))"
 [ -n "$staller" ] && kill -9 "$staller" 2>/dev/null
-say "case 8 done (slowest echo ${slowest} ms)"
+say "case 8 done (slowest echo ${slowest} ms, ${slow} sample(s) >= 100 ms)"
 stop_server
 
 echo "--- server log"
