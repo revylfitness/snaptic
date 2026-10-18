@@ -120,9 +120,9 @@ struct TriggerEditorSheet: View, ControlDeclaring {
                 Spacer(minLength: 0)
             }
             .modifier(SettingsAnchor(ControlID("awake.rule.match")))
-            ForEach(0..<count, id: \.self) { index in
+            ForEach(Array(0..<count), id: \.self) { (index: Int) in
                 CriterionEditors(entry: entryBinding(rule, index), sources: sources,
-                                 remove: count > 1 ? { removeCondition(rule, index) } : nil, anchored: index == 0)
+                                 remove: removal(rule, index, count: count), anchored: index == 0)
             }
             HStack {
                 Spacer()
@@ -220,6 +220,12 @@ struct TriggerEditorSheet: View, ControlDeclaring {
             guard rule.wrappedValue.criteria.indices.contains(index) else { return }
             rule.wrappedValue.criteria[index] = entry
         })
+    }
+
+    /// The row's − button; nil for the last condition.
+    private func removal(_ rule: Binding<AwakeTrigger>, _ index: Int, count: Int) -> (@MainActor () -> Void)? {
+        guard count > 1 else { return nil }
+        return { removeCondition(rule, index) }
     }
 
     private func addCondition(_ rule: Binding<AwakeTrigger>) {

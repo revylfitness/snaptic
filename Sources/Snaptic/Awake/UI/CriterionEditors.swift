@@ -542,7 +542,7 @@ private struct DaysEditor: View {
         let full = Calendar.autoupdatingCurrent.weekdaySymbols
         let first = Calendar.autoupdatingCurrent.firstWeekday - 1
         HStack(spacing: 2) {
-            ForEach(0..<7, id: \.self) { offset in
+            ForEach(Array(0..<7), id: \.self) { (offset: Int) in
                 let day = (first + offset) % 7
                 let on = days.contains(day: day)
                 Toggle(isOn: Binding(get: { on }, set: { new in

@@ -37,7 +37,10 @@ struct PresetEditorSheet: View, ControlDeclaring {
         let presets: [AwakePreset] = sessions.value.presets
         let canDelete = presets.count > 1
         let onEdit: (AwakePreset) -> Void = { preset in expanded = preset.id }
-        let onDelete: ((AwakePreset) -> Void)? = canDelete ? { preset in deleting = preset.id } : nil
+        var onDelete: ((AwakePreset) -> Void)?
+        if canDelete {
+            onDelete = { (preset: AwakePreset) in deleting = preset.id }
+        }
         return Section {
             ReorderableList(SettingsBinding.store(env.config, \.sessions.presets), onEdit: onEdit,
                             onDelete: onDelete) { (preset: AwakePreset) -> PresetRow in
@@ -54,7 +57,10 @@ struct PresetEditorSheet: View, ControlDeclaring {
     private func row(_ preset: AwakePreset, first: StableID?, canDelete: Bool) -> PresetRow {
         let id = preset.id
         let expandedBinding = Binding<Bool>(get: { expanded == id }, set: { on in expanded = on ? id : nil })
-        let delete: (@MainActor () -> Void)? = canDelete ? { deleting = id } : nil
+        var delete: (@MainActor () -> Void)?
+        if canDelete {
+            delete = { deleting = id }
+        }
         return PresetRow(env: env, id: id, preset: preset, defaults: sessions.value, effective: runtime.effectiveFeatures,
                          isExpanded: expandedBinding, delete: delete, revealsHere: id == first)
     }
