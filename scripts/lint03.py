@@ -283,6 +283,54 @@ def unratcheted_problems():
     problems += l15()
     problems += rule2()
     problems += menu_contributors()
+    problems += old_terms()
+    return problems
+
+
+# 0.2 names that UI strings (`L("…")`) no longer use (PLAN 0.3 §4.2 terms table; review5 ux N1), matched without
+# case, with the 0.3 word to use. CLI verbs and config keys are not in `L()` prose and stay.
+OLD_TERMS = {
+    "smart hidpi": "Sharper text",
+    "virtual screen": "virtual display",
+    "match ui size": "Match Text Size",
+    "menu-bar strip": "Black Menu Bar Background",
+    "native-halved": "Half of Native Resolution",
+    "on-screen display": "Brightness indicator",
+    "recording screen": "recording display",
+}
+# Occurrences still waiting for their owner's fix in step-4 fix round 2 (D: Management, C: Brightness/Input; review5
+# ux N1). A count may only go down: more fails, fewer prints a warning to lower or delete the entry (lead).
+OLD_TERMS_PENDING = {
+    ("Sources/Snaptic/Displays/Brightness/MenuBarOverlaysController.swift", "menu-bar strip"): 1,
+    ("Sources/Snaptic/Displays/Input/OSDController.swift", "on-screen display"): 1,
+    ("Sources/Snaptic/Displays/Management/ResolutionController.swift", "native-halved"): 1,
+    ("Sources/Snaptic/Displays/Management/ResolutionController.swift", "match ui size"): 3,
+    ("Sources/Snaptic/Displays/Management/SmartHiDPIController.swift", "smart hidpi"): 14,
+    ("Sources/Snaptic/Displays/Management/VirtualController.swift", "virtual screen"): 8,
+    ("Sources/Snaptic/Displays/Management/VirtualController.swift", "recording screen"): 1,
+    ("Sources/Snaptic/Displays/Management/VirtualHostsService.swift", "virtual screen"): 4,
+    ("Sources/Snaptic/Displays/Platform/DisplayRegistry.swift", "virtual screen"): 1,
+}
+
+
+def old_terms():
+    found = {}
+    for p in APP:
+        for m in re.finditer(r'\bL\(\s*"((?:[^"\\\n]|\\.)*)"', TEXT[p]):
+            text = m.group(1).lower()
+            for term in OLD_TERMS:
+                if term in text:
+                    found[(p, term)] = found.get((p, term), 0) + text.count(term)
+    problems = []
+    for (p, term), n in sorted(found.items()):
+        allowed = OLD_TERMS_PENDING.get((p, term), 0)
+        if n > allowed:
+            problems.append(f"{p}: UI text says the 0.2 name “{term}” {n} time(s) (allowed {allowed}); "
+                            f"use “{OLD_TERMS[term]}” (PLAN 0.3 §4.2)")
+    for (p, term), n in sorted(OLD_TERMS_PENDING.items()):
+        if found.get((p, term), 0) < n:
+            print(f"lint warning: {p}: “{term}” is down to {found.get((p, term), 0)}; lower OLD_TERMS_PENDING "
+                  f"({n}) in scripts/lint03.py", file=sys.stderr)
     return problems
 
 

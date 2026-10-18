@@ -10,7 +10,7 @@ import SnapticKit
     let id: ModuleID = .displays
     let title = L("Displays")
     let symbolName = "display.2"
-    let summary = L("Brightness, resolution, DDC, virtual screens and more, for every display.")
+    let summary = L("Brightness, resolution, hardware controls, virtual displays, and more, for every display.")
     private(set) var state: ModuleState = .stopped
 
     /// Before start(), what the saved settings would turn on (for the host's launch request).
