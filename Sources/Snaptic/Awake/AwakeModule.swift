@@ -79,6 +79,16 @@ import SnapticKit
         lastConfig = config.value
         apply(resolveEffective(config.value))
         ctx.sessions.restore(snapshot)
+        // §2.1 step 5: re-apply once if restore changed the needs; afterwards follow every change.
+        if ctx.sessions.dynamicNeeds != dynamicNeeds {
+            dynamicNeeds = ctx.sessions.dynamicNeeds
+            apply(effective)
+        }
+        ctx.sessions.onDynamicNeedsChange = { [weak self] needs in
+            guard let self, self.context != nil, needs != self.dynamicNeeds else { return }
+            self.dynamicNeeds = needs
+            self.apply(self.effective)
+        }
         state = .running
         runtime.moduleState = .running
         config.$value
@@ -122,7 +132,11 @@ import SnapticKit
         moduleContext = nil
     }
 
-    func menuSection() -> [NSMenuItem] { [] }
+    /// §5.4: the compact section (G's AwakeMenuRows through the indicator).
+    func menuSection() -> [NSMenuItem] { context == nil ? [] : (indicator?.compactSection() ?? []) }
+
+    /// The Awake section of the shared diagnostics report (G's AwakeDiagnostics; §3.6: no names or identifiers).
+    func diagnosticsLines() -> [String] { AwakeDiagnostics().lines(context) }
 
     func settingsPages() -> [SettingsPage] {
         [SettingsPage(id: "awake", title: L("Awake"), symbol: "cup.and.saucer.fill") { AnyView(AwakePage()) }]
