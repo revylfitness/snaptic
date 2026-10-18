@@ -441,7 +441,8 @@ import SnapticKit
             let id = d.hardwareID
             ctx.connectPlanner.beginUserChange()
             let outcome = await ManagedTransactions.run(ctx, TransactionRequest(label: L("Disconnect display"), risk: .trial,
-                                                                               changes: [.enabled(id, false)], finalScope: .forSession))
+                                                                               changes: [.enabled(id, false)], finalScope: .forSession,
+                                                                               skipConfirmation: req.skipConfirmation))
             let ok = outcome == .applied || outcome == .kept
             if ok { self.disabled[d.key] = id }
             ctx.connectPlanner.endUserChange(changed: ok)

@@ -367,6 +367,14 @@ import SnapticShims
 
     private func hostExited(_ id: StableID, unexpected: Bool) {
         guard let ctx = context, screen(id) != nil, unexpected else { return }
+        // FIXES-R3 5: a host that speaks another protocol means Snaptic was updated on disk;
+        // re-creating would only fail again.
+        if ctx.virtualHosts.restartRequired {
+            lastError = L("Restart Snaptic to finish updating")
+            ctx.toasts.show(L("Restart Snaptic to finish updating"), lifetime: lifetime)
+            ctx.requestMenuRebuild()
+            return
+        }
         if ctx.virtualHosts.recentFailures >= 3 {
             stoppedAfterFailures = true
             ctx.toasts.show(L("Virtual display failed to start"), lifetime: lifetime)

@@ -163,3 +163,22 @@ package enum KitArgs {
         return cleaned.isEmpty ? "\"\"" : cleaned
     }
 }
+
+/// How a helper process ended, from its raw `waitpid` status (FIXES-R3 5). Helpers exit 64
+/// when their parent fails their checks and 65 when the parent speaks another protocol
+/// version. 65 means this copy of Snaptic was replaced on disk: respawning can't help, the
+/// user has to restart Snaptic.
+package enum HelperExitStatus {
+    /// The parent failed the helper's checks (bad arguments or identity).
+    package static let badParent: Int32 = 64
+    /// `--protocol` didn't match the helper's own version.
+    package static let protocolMismatch: Int32 = 65
+
+    /// The exit code of a normal exit; nil for a signal, a stop or an unknown status (-1).
+    package static func exitCode(_ waitStatus: Int32) -> Int32? {
+        guard waitStatus >= 0, waitStatus & 0x7F == 0 else { return nil }
+        return (waitStatus >> 8) & 0xFF
+    }
+
+    package static func isProtocolMismatch(_ waitStatus: Int32) -> Bool { exitCode(waitStatus) == protocolMismatch }
+}

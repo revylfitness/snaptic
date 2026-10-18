@@ -79,12 +79,14 @@ import SnapticKit
             EventLog.shared.record(.control, "CLI \(entry.verb) refused: off-only")
             return .failure(ControlExit.refused, L("From the command line this can only be turned off."))
         }
+        let skip = KitControl.skipsConfirmation(requested: request.skipConfirmation, allowed: skipConfirmationAllowed,
+                                                policy: entry.policy)
         let forwarded = ControlRequest(verb: entry.verb, arguments: match.arguments, json: request.json,
-                                       skipConfirmation: request.skipConfirmation && skipConfirmationAllowed
-                                           && entry.policy == .trial)
+                                       skipConfirmation: skip)
         let response = await entry.handler(forwarded)
-        EventLog.shared.record(.control, "CLI \(entry.verb) → \(response.exitCode)")
-        return response
+        EventLog.shared.record(.control, "CLI \(entry.verb) → \(response.exitCode)" + (skip ? " (no panel)" : ""))
+        // FIXES-R3 10: with --json every successful reply is JSON.
+        return request.json ? KitControl.jsonReply(response) : response
     }
 
     private func help(_ topic: [String], json: Bool) -> ControlResponse {

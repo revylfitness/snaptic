@@ -246,8 +246,8 @@ final class HelperHandle: @unchecked Sendable {
         let flags = fcntl(parentIn, F_GETFL)
         if flags >= 0 { _ = fcntl(parentIn, F_SETFL, flags | O_NONBLOCK) }
         let reader = ReaderState(fd: parentIn)
-        let readSource = DispatchSource.makeReadSource(fileDescriptor: parentIn,
-                                                       queue: DispatchQueue(label: "app.snaptic.helper-reader"))
+        let readerQueue = DispatchQueue(label: "app.snaptic.helper-reader")
+        let readSource = DispatchSource.makeReadSource(fileDescriptor: parentIn, queue: readerQueue)
         readSource.setEventHandler { [reader] in
             switch reader.drain() {
             case .lines(let lines):
@@ -270,15 +270,27 @@ final class HelperHandle: @unchecked Sendable {
             }
         }
 
-        // Exit: one process source on main; the child is reaped exactly once.
+        // Exit: one process source on main; the child is reaped exactly once. FIXES-R3 4: the
+        // reply pipe is drained to EOF (or EAGAIN) on the reader's queue first, and those last
+        // lines are delivered before `onExit`. Lines the reader had already queued for main
+        // were enqueued before this hop, so the order on main is: every line, then the exit.
+        let finish: @MainActor (Int32) -> Void = { status in
+            handle.writer?.close()
+            readerQueue.async {
+                let last = reader.drainToEnd()
+                handle.cancelReader()
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        for line in last { onLine(line) }
+                        onExit(status)
+                    }
+                }
+            }
+        }
         let exitSource = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
         exitSource.setEventHandler {
             MainActor.assumeIsolated {
-                if let status = handle.reapIfExited() {
-                    handle.cancelReader()
-                    handle.writer?.close()
-                    onExit(status)
-                }
+                if let status = handle.reapIfExited() { finish(status) }
             }
         }
         handle.attach(read: readSource, exit: exitSource)
@@ -287,11 +299,7 @@ final class HelperHandle: @unchecked Sendable {
 
         _ = kill(pid, SIGCONT)
         // Catch an exit that raced the source registration.
-        if let status = handle.reapIfExited() {
-            handle.cancelReader()
-            handle.writer?.close()
-            DispatchQueue.main.async { MainActor.assumeIsolated { onExit(status) } }
-        }
+        if let status = handle.reapIfExited() { finish(status) }
         EventLog.shared.record(.modules, "Helper \(kind.rawValue) started")
         return handle
     }
@@ -553,6 +561,22 @@ private final class ReaderState: @unchecked Sendable {
         if n < 0 && (errno == EINTR || errno == EAGAIN) { return .wouldBlock }
         guard n > 0, let lines = splitter.feed(Data(buffer[0..<n])) else { return .finished }
         return .lines(lines)
+    }
+
+    /// Everything left in the pipe once the child is gone: reads until EOF, EAGAIN, an error
+    /// or an oversized line, at most 64 reads (1 MB). Only the lines read here are returned;
+    /// earlier ones were already delivered by the read source.
+    func drainToEnd() -> [Data] {
+        guard !closed else { return [] }
+        var out: [Data] = []
+        var buffer = [UInt8](repeating: 0, count: 16_384)
+        for _ in 0..<64 {
+            let n = buffer.withUnsafeMutableBytes { raw in read(fd, raw.baseAddress, raw.count) }
+            if n < 0 && errno == EINTR { continue }
+            guard n > 0, let lines = splitter.feed(Data(buffer[0..<n])) else { break }
+            out += lines
+        }
+        return out
     }
 
     func closeDescriptor() {

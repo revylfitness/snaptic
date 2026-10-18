@@ -36,10 +36,13 @@ enum VoiceOverAnnouncer {
     /// Set by OSDController (feature `osd`); when false only broadcasts and announcements happen.
     var isEnabled = true
     /// Set by OSDController (feature `osdBroadcast`).
-    var broadcastEnabled = false
+    var broadcastEnabled = false {
+        didSet { if !broadcastEnabled { cancelPendingBroadcast() } }
+    }
 
     private var huds: [UInt32: OSDHUDWindow] = [:]
-    private var lastBroadcast: TimeInterval = 0
+    /// ≤ 10/s, ending on the latest value (FIXES-R3 9; Kit-tested).
+    private var throttle = LatestValueThrottle(interval: OSDPresenter.broadcastInterval)
     private var pendingBroadcast: (OSDKind, Double, Double)?
     private var broadcastWork: DispatchWorkItem?
 
@@ -50,9 +53,7 @@ enum VoiceOverAnnouncer {
     func deactivate() {
         huds.values.forEach { $0.hide() }
         huds.removeAll()
-        broadcastWork?.cancel()
-        broadcastWork = nil
-        pendingBroadcast = nil
+        cancelPendingBroadcast()
         context = nil
     }
 
@@ -136,30 +137,54 @@ enum VoiceOverAnnouncer {
 
     private func broadcast(_ kind: OSDKind, _ value: Double, _ max: Double) {
         guard broadcastEnabled, let context, context.sessionGate.isOpen, !context.sessionGate.isLocked else { return }
-        let now = ProcessInfo.processInfo.systemUptime
-        if now - lastBroadcast >= Self.broadcastInterval {
+        switch throttle.offer(at: ProcessInfo.processInfo.systemUptime) {
+        case .sendNow:
+            // FIXES-R3 9: an immediate send drops whatever was waiting and its timer, so an
+            // older value can never follow a newer one (and the rate stays ≤ 10/s).
+            broadcastWork?.cancel()
+            broadcastWork = nil
+            pendingBroadcast = nil
             post(kind, value, max)
-            return
+        case .schedule(let seconds):
+            pendingBroadcast = (kind, value, max)
+            scheduleBroadcast(after: seconds)
+        case .coalesced:
+            pendingBroadcast = (kind, value, max)
         }
-        // ≤ 10/s: keep the latest and send it when the window opens.
-        pendingBroadcast = (kind, value, max)
-        guard broadcastWork == nil else { return }
+    }
+
+    private func scheduleBroadcast(after seconds: Double) {
+        broadcastWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.broadcastWork = nil
-                if let p = self.pendingBroadcast {
-                    self.pendingBroadcast = nil
-                    self.post(p.0, p.1, p.2)
+                switch self.throttle.timerFired(at: ProcessInfo.processInfo.systemUptime) {
+                case .sendNow?:
+                    if let p = self.pendingBroadcast {
+                        self.pendingBroadcast = nil
+                        self.post(p.0, p.1, p.2)
+                    }
+                case .schedule(let again)?:
+                    self.scheduleBroadcast(after: again)
+                case .coalesced?, nil:
+                    break
                 }
             }
         }
         broadcastWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.broadcastInterval, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, seconds), execute: work)
+    }
+
+    private func cancelPendingBroadcast() {
+        broadcastWork?.cancel()
+        broadcastWork = nil
+        pendingBroadcast = nil
+        throttle.reset()
     }
 
     private func post(_ kind: OSDKind, _ value: Double, _ max: Double) {
-        lastBroadcast = ProcessInfo.processInfo.systemUptime
+        guard broadcastEnabled, let context, context.sessionGate.isOpen, !context.sessionGate.isLocked else { return }
         // Closed enum + two numbers only: no names, titles or identifiers.
         let info: [String: Any] = ["kind": kind.rawValue, "value": (value * 1000).rounded() / 1000,
                                    "max": (max * 1000).rounded() / 1000]

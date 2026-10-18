@@ -220,35 +220,44 @@ import SnapticKit
 
     /// Manual apply: one transaction plus brightness, volume and DDC input (§9.7).
     func apply(_ id: StableID) {
-        guard let ctx = context, let lifetime, let l = layout(id) else { return }
+        guard let lifetime else { return }
+        lifetime.spawn { [weak self] in _ = await self?.applyAwaiting(id) }
+    }
+
+    /// The manual apply, awaited (the CLI reports the outcome: 0 kept or applied, 6 reverted).
+    /// `skipConfirmation`: `--yes` the user allowed (FIXES-R3 1). Nil when nothing was tried.
+    @discardableResult
+    func applyAwaiting(_ id: StableID, skipConfirmation: Bool = false) async -> TransactionOutcome? {
+        guard let ctx = context, let lifetime, let l = layout(id) else { return nil }
         guard matches(l) != nil else {
             ctx.toasts.show(L("'\(l.name)' doesn't match the connected displays"), lifetime: lifetime)
-            return
+            return nil
         }
         let p = plan(l, ctx: ctx)
         let trusted = isTrusted(l)
         let risk: TransactionRisk = l.hasTrialContent ? .trial : .low
         ctx.connectPlanner.beginUserChange()
-        lifetime.spawn { [weak self] in
-            guard let self, let ctx = self.context else { return }
-            var outcome: TransactionOutcome = .applied
-            if !p.changes.isEmpty {
-                outcome = await ManagedTransactions.run(ctx, TransactionRequest(label: L("Apply layout"), risk: risk, changes: p.changes))
-            }
-            let ok = outcome == .applied || outcome == .kept
-            ctx.connectPlanner.endUserChange(changed: ok)
-            guard ok else {
-                if let text = ManagedTransactions.message(outcome) { ctx.toasts.show(text, lifetime: self.lifetime) }
-                return
-            }
-            await self.applyExtras(l, ctx: ctx, manual: true)
-            ctx.osd.show(.layout, text: l.name, on: ctx.registry.displays.first(where: \.isMain)?.desktopID ?? 0)
-            if !p.skipped.isEmpty {
-                ctx.toasts.show(L("Applied '\(l.name)'; skipped \(p.skipped.joined(separator: ", ")) (feature off)"), lifetime: self.lifetime)
-            }
-            if self.pendingMatch == id { self.pendingMatch = nil; ctx.requestMenuRebuild() }
-            if !trusted { self.offerTrust(id) }
+        var outcome: TransactionOutcome = .applied
+        if !p.changes.isEmpty {
+            outcome = await ManagedTransactions.run(ctx, TransactionRequest(label: L("Apply layout"), risk: risk, changes: p.changes,
+                                                                           skipConfirmation: skipConfirmation))
         }
+        let ok = outcome == .applied || outcome == .kept
+        ctx.connectPlanner.endUserChange(changed: ok)
+        guard !lifetime.isEnded, context === ctx else { return outcome }
+        guard ok else {
+            if let text = ManagedTransactions.message(outcome) { ctx.toasts.show(text, lifetime: lifetime) }
+            return outcome
+        }
+        await applyExtras(l, ctx: ctx, manual: true)
+        guard !lifetime.isEnded, context === ctx else { return outcome }
+        ctx.osd.show(.layout, text: l.name, on: ctx.registry.displays.first(where: \.isMain)?.desktopID ?? 0)
+        if !p.skipped.isEmpty {
+            ctx.toasts.show(L("Applied '\(l.name)'; skipped \(p.skipped.joined(separator: ", ")) (feature off)"), lifetime: lifetime)
+        }
+        if pendingMatch == id { pendingMatch = nil; ctx.requestMenuRebuild() }
+        if !trusted { offerTrust(id) }
+        return outcome
     }
 
     /// "Keep for automatic use?" after a kept manual apply (R5.7).
@@ -350,6 +359,13 @@ import SnapticKit
             let a = req.arguments
             switch a.first?.lowercased() {
             case "list", nil:
+                if req.json {
+                    let rows: [[String: Any]] = self.layouts.enumerated().map { i, l in
+                        ["number": i + 1, "id": l.id.rawValue, "name": l.name, "matches": self.matches(l) != nil,
+                         "trusted": self.isTrusted(l), "auto": l.autoApply != .never]
+                    }
+                    return .ok(KitControl.jsonText(rows) ?? "[]")
+                }
                 return .ok(self.layouts.enumerated().map { pair -> String in
                     let i = pair.offset
                     let l = pair.element
@@ -362,11 +378,19 @@ import SnapticKit
                     return .failure(ControlExit.notFound, L("No such layout"))
                 }
                 guard self.matches(l) != nil else { return .failure(ControlExit.refused, L("The layout doesn't match the connected displays")) }
-                self.apply(l.id)
-                return .ok(l.name)
+                // Awaits the outcome: 0 applied or kept, 6 declined or timed out (FIXES-R3 10).
+                guard let outcome = await self.applyAwaiting(l.id, skipConfirmation: req.skipConfirmation) else {
+                    return .failure(ControlExit.unavailable, L("Layouts are off"))
+                }
+                let response = ManagedTransactions.response(outcome, ok: l.name)
+                if req.json, response.exitCode == ControlExit.ok {
+                    return .ok(KitControl.jsonText(["name": l.name, "id": l.id.rawValue, "outcome": ManagedTransactions.outcomeName(outcome)]) ?? "{}")
+                }
+                return response
             case "capture":
                 let name = a.count > 1 ? TextSanitizer.clean(a.dropFirst().joined(separator: " "), maxScalars: SavedLayout.maxNameScalars) : nil
                 guard let l = self.captureCurrent(name: name) else { return .failure(ControlExit.refused, L("Couldn't capture a layout")) }
+                if req.json { return .ok(KitControl.jsonText(["name": l.name, "id": l.id.rawValue]) ?? "{}") }
                 return .ok(l.name)
             default:
                 return .failure(ControlExit.usage, L("Usage: layout list | apply <name> | capture <name>"))

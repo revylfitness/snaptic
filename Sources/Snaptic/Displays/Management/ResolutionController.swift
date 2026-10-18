@@ -423,18 +423,32 @@ import SnapticKit
     }
 
     func applyScaleMatch(_ proposals: [ScaleMatchProposal]) {
-        guard let ctx = context, let lifetime else { return }
-        let changes: [DisplayChange] = proposals.compactMap { p in info(p.key).map { .mode($0.desktopID, p.to) } }
-        guard !changes.isEmpty else { return }
-        let before = Dictionary(uniqueKeysWithValues: proposals.compactMap { p in info(p.key).flatMap { d in currentMode(d).map { (p.key, $0) } } })
-        ctx.connectPlanner.beginUserChange()
-        ManagedTransactions.submit(ctx, TransactionRequest(label: L("Match UI size"), risk: .trial, changes: changes),
-                                   lifetime: lifetime) { [weak self] outcome in
-            let ok = outcome == .applied || outcome == .kept
-            self?.context?.connectPlanner.endUserChange(changed: ok)
-            guard ok, let self else { return }
-            for p in proposals { self.recorded(p.key, applied: p.to, before: before[p.key], move: .normal) }
+        guard context != nil, let lifetime else { return }
+        lifetime.spawn { [weak self] in
+            guard let self else { return }
+            let outcome = await self.applyScaleMatchAwaiting(proposals)
+            if let text = ManagedTransactions.message(outcome), !lifetime.isEnded, let ctx = self.context {
+                ctx.toasts.show(text, lifetime: lifetime)
+            }
         }
+    }
+
+    /// One trial for all proposals, awaited. `skipConfirmation`: `--yes` the user allowed.
+    private func applyScaleMatchAwaiting(_ proposals: [ScaleMatchProposal], skipConfirmation: Bool = false) async -> TransactionOutcome {
+        guard let ctx = context else { return .failed(L("Resolution is off")) }
+        let changes: [DisplayChange] = proposals.compactMap { p in info(p.key).map { .mode($0.desktopID, p.to) } }
+        guard !changes.isEmpty else { return .applied }
+        var before: [DisplayKey: ModeRef] = [:]
+        for p in proposals { if let d = info(p.key), let m = currentMode(d) { before[p.key] = m } }
+        ctx.connectPlanner.beginUserChange()
+        let outcome = await ManagedTransactions.run(ctx, TransactionRequest(label: L("Match UI size"), risk: .trial, changes: changes,
+                                                                           skipConfirmation: skipConfirmation))
+        let ok = outcome == .applied || outcome == .kept
+        ctx.connectPlanner.endUserChange(changed: ok)
+        if ok, context === ctx {
+            for p in proposals { recorded(p.key, applied: p.to, before: before[p.key], move: .normal) }
+        }
+        return outcome
     }
 
     // MARK: Persisted choice (ConnectPlanner step 4)
@@ -536,31 +550,53 @@ import SnapticKit
 
     private func registerCommands(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("mode", policy: .trial, offOnly: false, cliAllowed: true,
-                              summary: L("mode list|set|up|down|hidpi|native|default|halved|undo|redo|notch|favorite N <display> [WxH[@Hz] [hidpi]]"),
+                              summary: L("mode list|up|down|hidpi|native|default|halved|undo|redo|notch [display] | mode set <display> WxH[@Hz] [hidpi|lodpi] | mode favorite N [display]"),
                               lifetime: lifetime) { [weak self] request in
             guard let self else { return .failure(ControlExit.unavailable, L("Resolution is off")) }
             return await self.handleMode(request)
         }
         ctx.commands.register("match-ui", policy: .trial, offOnly: false, cliAllowed: true, summary: L("Match UI size across displays"),
-                              lifetime: lifetime) { [weak self] _ in
+                              lifetime: lifetime) { [weak self] request in
             guard let self, self.effective.contains(.scaleMatch) else { return .failure(ControlExit.unavailable, L("Match UI size is off")) }
             let proposals = self.scaleMatchProposals()
             guard !proposals.isEmpty else { return .ok(L("UI sizes already match")) }
-            self.applyScaleMatch(proposals)
+            // Awaited like `mode`: 0 kept, 6 declined or timed out.
+            let outcome = await self.applyScaleMatchAwaiting(proposals, skipConfirmation: request.skipConfirmation)
+            guard outcome == .applied || outcome == .kept else { return ManagedTransactions.response(outcome) }
+            if request.json {
+                let rows: [[String: Any]] = proposals.map {
+                    ["key": $0.key.rawValue, "mode": Self.modeJSON($0.to, label: self.label($0.to, markers: false))]
+                }
+                return .ok(KitControl.jsonText(rows) ?? "[]")
+            }
             return .ok(proposals.map { "\($0.key.rawValue) \(self.label($0.to, markers: false))" }.joined(separator: "\n"))
         }
     }
 
+    /// `mode …` (README, FIXES-R3 10): `mode list|up|down|hidpi|native|default|halved|undo|redo|notch
+    /// [display]`, `mode set <display> WxH[@Hz] [hidpi|lodpi]`, `mode favorite N [display]`.
+    /// Every changing subcommand awaits its outcome: 0 applied or kept, 6 declined or timed out.
     private func handleMode(_ request: ControlRequest) async -> ControlResponse {
         guard let ctx = context else { return .failure(ControlExit.unavailable, L("Resolution is off")) }
         let args = request.arguments
         guard let sub = args.first?.lowercased() else { return .failure(ControlExit.usage, L("Usage: mode <subcommand> <display>")) }
-        let selector = args.count > 1 ? args[1] : "main"
+        var favorite: Int?
+        let selector: String
+        if sub == "favorite" {
+            guard args.count > 1, let n = Int(args[1]), (1...PerDisplayResolution.maxFavorites).contains(n), args.count <= 3 else {
+                return .failure(ControlExit.usage, L("Usage: mode favorite <1-\(PerDisplayResolution.maxFavorites)> [display]"))
+            }
+            favorite = n
+            selector = args.count > 2 ? args[2] : "main"
+        } else {
+            selector = args.count > 1 ? args[1] : "main"
+        }
         let picked = ManagedDisplays.cliSelect(ctx, selector)
         if let error = picked.error { return error }
         let targets = picked.displays
         switch sub {
         case "list":
+            if request.json { return .ok(KitControl.jsonText(listJSON(targets, ctx)) ?? "[]") }
             return .ok(targets.map { d in
                 let current = currentMode(d)
                 let lines = modes(for: d.key).map { (($0.ref == current) ? "* " : "  ") + label($0.ref, key: d.key) }
@@ -570,59 +606,120 @@ import SnapticKit
             guard args.count > 2, let spec = Self.parseMode(Array(args.dropFirst(2))) else {
                 return .failure(ControlExit.usage, L("Usage: mode set <display> WxH[@Hz] [hidpi|lodpi]"))
             }
-            var results: [String] = []
+            var picks: [(DisplayInfo, ModeRef)] = []
             for d in targets {
-                let all = allModes(d).map(\.ref)
-                let matches = all.filter { m in
+                let matches = allModes(d).map(\.ref).filter { m in
                     m.pointWidth == spec.width && m.pointHeight == spec.height && (spec.hiDPI.map { $0 == m.isHiDPI } ?? true)
                         && (spec.hz.map { abs(m.refreshMilliHz - $0) < 500 } ?? true)
                 }
                 guard let current = currentMode(d),
                       let pick = matches.min(by: { abs($0.refreshMilliHz - current.refreshMilliHz) < abs($1.refreshMilliHz - current.refreshMilliHz) })
                 else { return .failure(ControlExit.notFound, L("No such mode on \(d.name)")) }
-                let outcome = await applyAwaiting(pick, to: d.key)
-                if case .applied = outcome {} else if case .kept = outcome {} else { return ManagedTransactions.response(outcome) }
-                results.append("\(d.name): \(label(pick, markers: false))")
+                picks.append((d, pick))
             }
-            return .ok(results.joined(separator: "\n"))
-        case "up", "down", "hidpi", "native", "default", "halved", "undo", "redo", "notch":
+            return await applyAll(picks.map { ($0.0, $0.1, L("Change resolution"), HistoryMove.normal) }, request: request, ctx)
+        case "up", "down", "hidpi", "native", "default", "halved", "undo", "redo", "notch", "favorite":
+            var plan: [(DisplayInfo, ModeRef, String, HistoryMove)] = []
             for d in targets {
-                switch sub {
-                case "up": step(d.key, by: 1)
-                case "down": step(d.key, by: -1)
-                case "hidpi": if let m = hiDPIToggleTarget(d.key) { apply(m, to: d.key) }
-                case "native": if let m = native(d.key) { apply(m, to: d.key) }
-                case "default": if let m = defaultMode(d.key) { apply(m, to: d.key) }
-                case "halved": if let m = nativeHalved(d.key) { apply(m, to: d.key) }
-                case "undo": undo(d.key)
-                case "redo": redo(d.key)
-                default: if let m = notchToggleTarget(d.key) { apply(m, to: d.key) }
+                if let n = favorite {
+                    let favs = favorites(d.key)
+                    guard favs.indices.contains(n - 1), let ref = favs[n - 1].resolve(in: allModes(d).map(\.ref)) else {
+                        return .failure(ControlExit.notFound, L("Favorite \(n) isn't available on \(d.name)"))
+                    }
+                    plan.append((d, ref, L("Apply favorite resolution"), .normal))
+                } else if let t = cliTarget(sub, d) {
+                    plan.append((d, t.mode, t.label, t.move))
                 }
             }
-            return .ok()
-        case "favorite":
-            guard args.count > 2, let n = Int(args[2]), (1...PerDisplayResolution.maxFavorites).contains(n) else {
-                return .failure(ControlExit.usage, L("Usage: mode favorite <display> 1-5"))
+            guard !plan.isEmpty else {
+                return request.json ? .ok("[]") : .ok(L("Nothing to change"))
             }
-            targets.forEach { applyFavorite(n - 1, on: $0.key) }
-            return .ok()
+            return await applyAll(plan, request: request, ctx)
         default:
             return .failure(ControlExit.usage, L("Unknown mode subcommand"))
         }
     }
 
-    /// Applies and waits for the outcome (CLI).
-    private func applyAwaiting(_ mode: ModeRef, to key: DisplayKey) async -> TransactionOutcome {
-        guard let ctx = context, let d = info(key) else { return .failed(L("Display not found")) }
+    /// The mode a CLI subcommand moves `d` to; undo/redo take it off the history.
+    private func cliTarget(_ sub: String, _ d: DisplayInfo) -> (mode: ModeRef, label: String, move: HistoryMove)? {
+        let key = d.key
+        let change = L("Change resolution")
+        switch sub {
+        case "up", "down":
+            guard let current = currentMode(d) else { return nil }
+            let stops = sliderModes(for: key)
+            guard let i = stops.firstIndex(of: current) else { return nil }
+            let j = min(stops.count - 1, max(0, i + (sub == "up" ? 1 : -1)))
+            return j == i ? nil : (stops[j], change, .normal)
+        case "hidpi": return hiDPIToggleTarget(key).map { ($0, change, .normal) }
+        case "native": return native(key).map { ($0, change, .normal) }
+        case "default": return defaultMode(key).map { ($0, change, .normal) }
+        case "halved": return nativeHalved(key).map { ($0, change, .normal) }
+        case "notch": return notchToggleTarget(key).map { ($0, change, .normal) }
+        case "undo":
+            guard var h = history[key], let target = h.undo.popLast() else { return nil }
+            history[key] = h
+            return (target, L("Undo resolution change"), .undo)
+        case "redo":
+            guard var h = history[key], let target = h.redo.popLast() else { return nil }
+            history[key] = h
+            return (target, L("Redo resolution change"), .redo)
+        default: return nil
+        }
+    }
+
+    /// Applies one mode per display in turn, each awaited; stops at the first that isn't
+    /// applied or kept and reports it (6 when the panel was declined or timed out).
+    private func applyAll(_ plan: [(DisplayInfo, ModeRef, String, HistoryMove)], request: ControlRequest,
+                          _ ctx: DisplaysContext) async -> ControlResponse {
+        var lines: [String] = []
+        var rows: [[String: Any]] = []
+        let order = DisplaySelectorResolver.ordered(ctx).map(\.key)
+        for (d, mode, text, move) in plan {
+            let outcome = await applyAwaiting(mode, to: d.key, label: text, move: move, skipConfirmation: request.skipConfirmation)
+            guard outcome == .applied || outcome == .kept else { return ManagedTransactions.response(outcome) }
+            lines.append("\(d.name): \(label(mode, markers: false))")
+            rows.append(["display": (order.firstIndex(of: d.key) ?? -1) + 1, "name": TextSanitizer.clean(d.name, maxScalars: 64),
+                         "key": d.key.rawValue, "mode": Self.modeJSON(mode, label: label(mode, markers: false)),
+                         "outcome": ManagedTransactions.outcomeName(outcome)])
+        }
+        return request.json ? .ok(KitControl.jsonText(rows) ?? "[]") : .ok(lines.joined(separator: "\n"))
+    }
+
+    private func listJSON(_ targets: [DisplayInfo], _ ctx: DisplaysContext) -> [[String: Any]] {
+        let order = DisplaySelectorResolver.ordered(ctx).map(\.key)
+        return targets.map { d in
+            let current = currentMode(d)
+            let list: [[String: Any]] = modes(for: d.key).map { m in
+                var o = Self.modeJSON(m.ref, label: label(m.ref, markers: false))
+                o["current"] = m.ref == current
+                return o
+            }
+            return ["display": (order.firstIndex(of: d.key) ?? -1) + 1, "name": TextSanitizer.clean(d.name, maxScalars: 64),
+                    "key": d.key.rawValue, "modes": list]
+        }
+    }
+
+    private static func modeJSON(_ m: ModeRef, label: String) -> [String: Any] {
+        ["width": m.pointWidth, "height": m.pointHeight, "pixelWidth": m.pixelWidth, "pixelHeight": m.pixelHeight,
+         "refreshHz": Double(m.refreshMilliHz) / 1000, "hidpi": m.isHiDPI, "label": label]
+    }
+
+    /// Applies and waits for the outcome (CLI). `skipConfirmation`: `--yes` the user allowed.
+    private func applyAwaiting(_ mode: ModeRef, to key: DisplayKey, label text: String = L("Change resolution"),
+                               move: HistoryMove = .normal, skipConfirmation: Bool = false) async -> TransactionOutcome {
+        guard let ctx = context, effective.contains(.resolution), let d = info(key) else { return .failed(L("Display not found")) }
         let before = currentMode(d)
         if mode == before { return .applied }
         ctx.connectPlanner.beginUserChange()
         expected[key] = (mode, managementUptime())
-        let outcome = await ManagedTransactions.run(ctx, TransactionRequest(label: L("Change resolution"), risk: .low,
-                                                                           changes: [.mode(d.desktopID, mode)]))
+        // The queue's classifier raises this to a trial per "Confirm resolution changes" (B).
+        let outcome = await ManagedTransactions.run(ctx, TransactionRequest(label: text, risk: .low,
+                                                                           changes: [.mode(d.desktopID, mode)], finalScope: .permanently,
+                                                                           skipConfirmation: skipConfirmation))
         let ok = outcome == .applied || outcome == .kept
         ctx.connectPlanner.endUserChange(changed: ok)
-        if ok { recorded(key, applied: mode, before: before, move: .normal) }
+        if ok { recorded(key, applied: mode, before: before, move: move) }
         return outcome
     }
 

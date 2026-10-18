@@ -9,11 +9,14 @@ import SnapticKit
 enum CLIClient {
     static func run(_ arguments: [String]) -> Never {
         let rest = arguments.count > 1 && arguments[1] == "cli" ? Array(arguments.dropFirst(2)) : Array(arguments.dropFirst())
+        // FIXES-R3 10: with --json the client's own errors are JSON too, even a usage error.
+        json = KitControl.wantsJSON(rest)
         let command: KitControl.ParsedCommand
         switch KitControl.parseCommandLine(rest) {
         case .success(let parsed): command = parsed
         case .failure(let error): fail(ControlExit.usage, error.message)
         }
+        json = command.json
         var words = command.help ? ["help"] + command.words : command.words
         if command.help && words.count > 1 && words[1] == "help" { words.removeFirst() }
         guard let first = words.first, KitControl.isVerbWord(first.lowercased()) else {
@@ -40,10 +43,8 @@ enum CLIClient {
         guard let response = KitControl.decodeResponse(reply) else { fail(ControlExit.unavailable, L("Unreadable reply.")) }
 
         if command.json && response.exitCode != ControlExit.ok {
-            let object: [String: Any] = ["exitCode": Int(response.exitCode), "error": response.output]
-            if let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) {
-                print(String(decoding: data, as: UTF8.self))
-            }
+            let message = response.output.isEmpty ? ControlExit.describe(response.exitCode) : response.output
+            print(KitControl.errorJSON(response.exitCode, message))
         } else if response.exitCode == ControlExit.ok {
             if !response.output.isEmpty { print(response.output) }
         } else {
@@ -52,8 +53,15 @@ enum CLIClient {
         exit(response.exitCode)
     }
 
+    /// `--json` was given: errors go to stdout as `{"exitCode":…,"error":…}`.
+    private static var json = false
+
     private static func fail(_ code: Int32, _ message: String) -> Never {
-        printError(message)
+        if json {
+            print(KitControl.errorJSON(code, message))
+        } else {
+            printError(message)
+        }
         exit(code)
     }
 

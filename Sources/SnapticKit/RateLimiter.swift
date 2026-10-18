@@ -71,3 +71,61 @@ package struct RateLimiter: Codable, Equatable, Sendable {
         return max(0, wait)
     }
 }
+
+/// At most one send per `interval`, always ending on the latest value (the OSD broadcast's
+/// ≤ 10/s, FIXES-R3 9). A value offered inside the window waits for one timer; a value sent
+/// right away clears whatever was waiting, so an older value is never sent after a newer one.
+/// Times are uptime seconds.
+package struct LatestValueThrottle: Equatable, Sendable {
+    package enum Decision: Equatable, Sendable {
+        /// Send this value now; cancel any outstanding timer.
+        case sendNow
+        /// Keep this value; start a timer firing after `seconds` (none is outstanding).
+        case schedule(seconds: Double)
+        /// Keep this value; the outstanding timer will send it.
+        case coalesced
+    }
+
+    package let interval: Double
+    package private(set) var lastSent: Double?
+    /// A value is waiting for the timer.
+    package private(set) var hasPending = false
+    /// A timer is outstanding.
+    package private(set) var isScheduled = false
+
+    package init(interval: Double) { self.interval = max(0, interval) }
+
+    package mutating func offer(at now: Double) -> Decision {
+        if let last = lastSent, now >= last, now - last < interval {
+            hasPending = true
+            if isScheduled { return .coalesced }
+            isScheduled = true
+            return .schedule(seconds: last + interval - now)
+        }
+        lastSent = now
+        hasPending = false
+        isScheduled = false
+        return .sendNow
+    }
+
+    /// The timer fired: `.sendNow` sends the waiting value, `.schedule` re-arms a timer that
+    /// fired early (clock skew), nil means there's nothing to do.
+    package mutating func timerFired(at now: Double) -> Decision? {
+        guard isScheduled else { return nil }
+        isScheduled = false
+        guard hasPending else { return nil }
+        if let last = lastSent, now >= last, now - last < interval {
+            isScheduled = true
+            return .schedule(seconds: last + interval - now)
+        }
+        hasPending = false
+        lastSent = now
+        return .sendNow
+    }
+
+    /// Drop anything waiting (feature off, Displays stopping).
+    package mutating func reset() {
+        hasPending = false
+        isScheduled = false
+    }
+}

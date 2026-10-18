@@ -217,6 +217,38 @@ final class TrialLifecycleTests: XCTestCase {
         }
     }
 
+    /// FIXES-R3 1: `--yes` (allowed) keeps right after settle; automatic requests never skip.
+    func testSkippingThePanel() {
+        XCTAssertEqual(TrialPanelChoice.withoutPanel(skipConfirmation: true, automatic: false), .keep)
+        XCTAssertNil(TrialPanelChoice.withoutPanel(skipConfirmation: false, automatic: false))
+        XCTAssertNil(TrialPanelChoice.withoutPanel(skipConfirmation: true, automatic: true))
+        XCTAssertNil(TrialPanelChoice.withoutPanel(skipConfirmation: false, automatic: true))
+
+        // The skipped trial goes through the same lifecycle: Keep, commit intent, kept.
+        var kept = toPanel()
+        let choice = TrialPanelChoice.withoutPanel(skipConfirmation: true, automatic: false)!
+        XCTAssertEqual(kept.panelClosed(choice), .proceed)
+        XCTAssertEqual(kept.checkpoint(), .proceed)
+        XCTAssertEqual(kept.finishKeep(), .proceed)
+        XCTAssertEqual(kept.end, .kept)
+
+        // A revert requested while settling still wins: the queue checks the lifecycle
+        // (advance to .confirming) before it decides to skip the panel.
+        var t = TrialLifecycle()
+        XCTAssertEqual(t.advance(to: .applying), .proceed)
+        XCTAssertEqual(t.advance(to: .settling), .proceed)
+        XCTAssertTrue(t.requestRevert(.session))
+        XCTAssertEqual(t.advance(to: .confirming), .revert(.session))
+        XCTAssertTrue(t.finishRevert())
+        XCTAssertEqual(t.end, .reverted(.session))
+
+        // Panic during the Keep write still overrides a skipped confirmation.
+        var p = toPanel()
+        XCTAssertEqual(p.panelClosed(choice), .proceed)
+        XCTAssertTrue(p.requestRevert(.panic))
+        XCTAssertEqual(p.finishKeep(), .revert(.panic))
+    }
+
     func testSupersession() {
         var s = TrialSupersession()
         let auto1 = s.ticket(user: false)

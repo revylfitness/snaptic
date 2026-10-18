@@ -37,6 +37,8 @@ import SnapticShims
         context.connectPlanner.attach(self, lifetime: lifetime)
         context.virtualHosts.addExitListener(lifetime: lifetime) { [weak self] id, unexpected in
             guard let self, unexpected, self.owns(id) else { return }
+            // FIXES-R3 5: no respawn once the hosts speak another protocol (restart needed).
+            guard self.context?.virtualHosts.restartRequired != true else { return }
             self.context?.connectPlanner.trigger(.reconfigure)
         }
         // Only a session resign (fast user switching) shuts pairs down; lock and sleep keep them.

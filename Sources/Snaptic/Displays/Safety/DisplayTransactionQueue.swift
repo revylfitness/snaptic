@@ -308,6 +308,11 @@ import SnapticShims
         }
 
         let undo = UndoPlanner.undo(for: changes, before: before)
+        // FIXES-R3 7: more undo steps than one guard message carries can't be protected.
+        if undo.count > GuardProtocol.maxUndoOps {
+            EventLog.shared.record(.transaction, "Refused \(undo.count) undo steps: over the guard's limit")
+            return .failed(L("Too many display changes at once."))
+        }
         if risk == .trial {
             let outcome = await runTrial(req, changes: changes, undo: undo, before: before, ticket: ticket, ctx: ctx)
             if isCurrent(epoch) { report(req, before: before, risk: risk, outcome: outcome) }
@@ -450,18 +455,25 @@ import SnapticShims
         case .revert(let why): return await revertTrial(token, why, req: req, ctx: ctx)
         case .proceed: break
         }
-        ctx.guardClient.extend(trialID, seconds: GuardProtocol.panelExtension(panelSeconds: panelSeconds))
-        panelObservers.forEach { $0.1(true) }
-        let result = await panel.present(label: req.label, seconds: panelSeconds, interactive: req.interactive) { [weak self] in
-            guard let snap = self?.context?.registry.snapshot() else { return [] }
-            return Invariants.panelHosts(snap)
-        }
-        if isTrialCurrent(token) { panelObservers.forEach { $0.1(false) } }
         let choice: TrialPanelChoice
-        switch result {
-        case .keep: choice = .keep
-        case .revert: choice = .revert
-        case .timeout: choice = .timeout
+        if let skipped = TrialPanelChoice.withoutPanel(skipConfirmation: req.skipConfirmation, automatic: req.automatic) {
+            // FIXES-R3 1: `--yes` the user allowed: keep now. The guard is armed and the
+            // journal written exactly as for a panel trial; Keep commits intent as usual.
+            EventLog.shared.record(.transaction, "Trial confirmed from the command line (no panel)")
+            choice = skipped
+        } else {
+            ctx.guardClient.extend(trialID, seconds: GuardProtocol.panelExtension(panelSeconds: panelSeconds))
+            panelObservers.forEach { $0.1(true) }
+            let result = await panel.present(label: req.label, seconds: panelSeconds, interactive: req.interactive) { [weak self] in
+                guard let snap = self?.context?.registry.snapshot() else { return [] }
+                return Invariants.panelHosts(snap)
+            }
+            if isTrialCurrent(token) { panelObservers.forEach { $0.1(false) } }
+            switch result {
+            case .keep: choice = .keep
+            case .revert: choice = .revert
+            case .timeout: choice = .timeout
+            }
         }
         switch step(token, { $0.panelClosed(choice) }) {
         case .abandon: return stoppedOutcome(token)

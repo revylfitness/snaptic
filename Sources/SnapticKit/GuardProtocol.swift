@@ -42,7 +42,12 @@ package enum GuardProtocol {
     /// 2: acks echo a per-request `seq` (FIXES-R2 N1).
     package static let version = 2
     /// Bounds enforced on both sides (a message outside them is a protocol error).
-    package static let maxUndoOps = 256
+    /// FIXES-R3 7: 96 ops of the largest kind (two modes, a 64-byte fingerprint) still encode
+    /// below `LineSplitter.maxLine` (GuardProtocolTests); 256 did not.
+    package static let maxUndoOps = 96
+    /// The longest fingerprint the size budget assumes (session fingerprints are ≤ 41 bytes of
+    /// printable ASCII that JSON doesn't escape).
+    package static let maxFingerprintBytes = 64
     package static let maxDisplays = 64
     package static let maxDeadlineSeconds = 120.0
     /// Panel (≤ 60 s) + 10 s, with room to spare.
@@ -73,8 +78,24 @@ package enum GuardProtocol {
 
     // MARK: Coding (one JSON object per line; JSONEncoder never emits a raw newline)
 
-    package static func encode(_ message: GuardMessage) -> Data? { try? JSONEncoder().encode(message) }
-    package static func encode(_ reply: GuardReply) -> Data? { try? JSONEncoder().encode(reply) }
+    /// Nil for a message the guard would refuse: out of bounds (`isValid`) or longer than one
+    /// line it can read (`LineSplitter.maxLine`). The parent refuses it instead of sending a
+    /// line that would kill the link (FIXES-R3 7).
+    package static func encode(_ message: GuardMessage) -> Data? {
+        guard isValid(message), let data = try? JSONEncoder().encode(message), fitsOneLine(data) else { return nil }
+        return data
+    }
+    package static func encode(_ reply: GuardReply) -> Data? {
+        guard let data = try? JSONEncoder().encode(reply), fitsOneLine(data) else { return nil }
+        return data
+    }
+
+    /// The raw JSON with no checks: what an older or hostile parent could send (tests of the
+    /// guard's own bounds use it). The app always sends through `encode`.
+    package static func encodeUnchecked(_ message: GuardMessage) -> Data? { try? JSONEncoder().encode(message) }
+
+    /// A line (without its newline) the reader's LineSplitter accepts.
+    package static func fitsOneLine(_ data: Data) -> Bool { data.count <= LineSplitter.maxLine }
 
     /// Nil for malformed or out-of-bounds messages.
     package static func decodeMessage(_ line: Data) -> GuardMessage? {
@@ -94,14 +115,22 @@ package enum GuardProtocol {
         switch m {
         case .hello(let v, let build): return v > 0 && build.utf8.count <= 128
         case .armTrial(_, let seq, let undo, let deadline):
-            return seq != 0 && undo.count <= maxUndoOps && ok(deadline, maxDeadlineSeconds)
+            return seq != 0 && undo.count <= maxUndoOps && undo.allSatisfy(fingerprintFits) && ok(deadline, maxDeadlineSeconds)
         case .extend(_, let s): return ok(s, maxExtendSeconds)
         case .commitIntent(_, let seq): return seq != 0
-        case .long(let seq, let undo, _): return seq != 0 && undo.count <= maxUndoOps
+        case .long(let seq, let undo, _): return seq != 0 && undo.count <= maxUndoOps && undo.allSatisfy(fingerprintFits)
         case .busy(let s): return s.isFinite && s >= 0
         case .classification(let c): return c.count <= maxDisplays
         case .commit, .disarm, .impairment, .heartbeat, .shutdown: return true
         }
+    }
+
+    /// Session fingerprints are short printable ASCII ("uuid:…", "vms:…"); anything else
+    /// (or anything JSON would escape) could blow the line budget, so it's out of bounds.
+    private static func fingerprintFits(_ op: UndoOp) -> Bool {
+        let bytes = op.fingerprint.utf8
+        return bytes.count <= maxFingerprintBytes
+            && bytes.allSatisfy { (0x21...0x7E).contains($0) && $0 != 0x22 && $0 != 0x5C && $0 != 0x2F }
     }
 
     /// The `seq` the guard's `ack` must echo, for the messages that are acknowledged; nil for

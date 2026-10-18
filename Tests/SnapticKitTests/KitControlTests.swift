@@ -86,10 +86,68 @@ final class KitControlTests: XCTestCase {
     // MARK: Policy
 
     func testTurningOnIsDetected() {
-        XCTAssertTrue(KitControl.requestsTurningOn(["smartHiDPI", "on"]))
+        XCTAssertTrue(KitControl.requestsTurningOn(["on"]))
         XCTAssertTrue(KitControl.requestsTurningOn(["ENABLE"]))
-        XCTAssertFalse(KitControl.requestsTurningOn(["smartHiDPI", "off"]))
+        XCTAssertTrue(KitControl.requestsTurningOn(["start", "2"]))
+        XCTAssertFalse(KitControl.requestsTurningOn(["off"]))
         XCTAssertFalse(KitControl.requestsTurningOn([]))
+    }
+
+    /// FIXES-R3 2: display number 1 is a selector, not "on".
+    func testDisplayNumberOneIsNotTurningOn() {
+        XCTAssertFalse(KitControl.requestsTurningOn(["off", "1"]))
+        XCTAssertFalse(KitControl.requestsTurningOn(["1"]))
+        XCTAssertFalse(KitControl.requestsTurningOn(["off", "on"]))
+        XCTAssertFalse(KitControl.requestsTurningOn(["windowSwitcher"]))
+    }
+
+    /// FIXES-R3 1: --yes counts only with the user's setting and only for trial verbs.
+    func testSkipConfirmationNeedsTheSettingAndATrialVerb() {
+        XCTAssertTrue(KitControl.skipsConfirmation(requested: true, allowed: true, policy: .trial))
+        XCTAssertFalse(KitControl.skipsConfirmation(requested: true, allowed: false, policy: .trial))
+        XCTAssertFalse(KitControl.skipsConfirmation(requested: false, allowed: true, policy: .trial))
+        for policy in [ControlPolicy.read, .low, .preConfirm] {
+            XCTAssertFalse(KitControl.skipsConfirmation(requested: true, allowed: true, policy: policy))
+        }
+    }
+
+    // MARK: JSON output (FIXES-R3 10)
+
+    private func object(_ text: String) -> [String: Any]? {
+        (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any]
+    }
+
+    func testJSONRepliesPassHandlerJSONThrough() {
+        let array = ControlResponse.ok(#"[{"display":1}]"#)
+        XCTAssertEqual(KitControl.jsonReply(array), array)
+        let dict = ControlResponse.ok(#" {"a":1}"#)
+        XCTAssertEqual(KitControl.jsonReply(dict), dict)
+    }
+
+    func testJSONRepliesWrapTextAndEmptyOutput() throws {
+        XCTAssertEqual(object(KitControl.jsonReply(.ok()).output)?["ok"] as? Bool, true)
+        XCTAssertNil(object(KitControl.jsonReply(.ok()).output)?["output"])
+        let wrapped = try XCTUnwrap(object(KitControl.jsonReply(.ok("1. Office [trusted]\n2. Home")).output))
+        XCTAssertEqual(wrapped["output"] as? String, "1. Office [trusted]\n2. Home")
+        // A bare number or a broken object is text, not JSON.
+        XCTAssertEqual(object(KitControl.jsonReply(.ok("60")).output)?["output"] as? String, "60")
+        XCTAssertEqual(object(KitControl.jsonReply(.ok("{broken")).output)?["output"] as? String, "{broken")
+    }
+
+    func testJSONRepliesLeaveFailuresAlone() {
+        let failure = ControlResponse.failure(ControlExit.cancelled, "Change reverted")
+        XCTAssertEqual(KitControl.jsonReply(failure), failure)
+    }
+
+    func testClientErrorsAsJSON() throws {
+        let error = try XCTUnwrap(object(KitControl.errorJSON(ControlExit.usage, "Unknown option: -x")))
+        XCTAssertEqual(error["exitCode"] as? Int, 2)
+        XCTAssertEqual(error["error"] as? String, "Unknown option: -x")
+        XCTAssertTrue(KitControl.wantsJSON(["--json", "list"]))
+        XCTAssertTrue(KitControl.wantsJSON(["--yes", "--frob", "--json"]))
+        XCTAssertFalse(KitControl.wantsJSON(["list", "--json"]))
+        XCTAssertFalse(KitControl.wantsJSON(["--", "--json"]))
+        XCTAssertFalse(KitControl.wantsJSON([]))
     }
 
     func testProtectedSettingsAreFound() {

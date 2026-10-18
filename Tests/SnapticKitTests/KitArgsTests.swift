@@ -146,4 +146,20 @@ final class KitArgsTests: XCTestCase {
         // Prefixes are case-sensitive, like the variables themselves.
         XCTAssertEqual(KitArgs.deniedEnvironmentVariables(["dyld_x": "1", "nszombieenabled": "YES"]), [])
     }
+
+    // MARK: Helper exit status (FIXES-R3 5)
+
+    func testHelperExitStatusDecodesWaitStatus() {
+        XCTAssertEqual(HelperExitStatus.exitCode(0), 0)
+        XCTAssertEqual(HelperExitStatus.exitCode(65 << 8), 65)
+        XCTAssertEqual(HelperExitStatus.exitCode(64 << 8), 64)
+        XCTAssertNil(HelperExitStatus.exitCode(9), "killed by SIGKILL")
+        XCTAssertNil(HelperExitStatus.exitCode(0x7F | (19 << 8)), "stopped")
+        XCTAssertNil(HelperExitStatus.exitCode(-1), "not our child any more")
+        XCTAssertTrue(HelperExitStatus.isProtocolMismatch(65 << 8))
+        XCTAssertFalse(HelperExitStatus.isProtocolMismatch(65), "signal 65 isn't exit 65")
+        XCTAssertFalse(HelperExitStatus.isProtocolMismatch(0))
+        XCTAssertFalse(HelperExitStatus.isProtocolMismatch(64 << 8))
+        XCTAssertFalse(HelperExitStatus.isProtocolMismatch(-1))
+    }
 }

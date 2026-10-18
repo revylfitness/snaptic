@@ -248,11 +248,62 @@ package enum KitControl {
         "sleepprevention", "preventsleep",
     ]
 
-    private static let onWords: Set<String> = ["on", "true", "yes", "1", "enable", "enabled", "start"]
+    private static let onWords: Set<String> = ["on", "true", "yes", "enable", "enabled", "start"]
 
-    /// An off-only verb may not be asked to turn anything on.
+    /// An off-only verb may not be asked to turn anything on. Only the first argument is the
+    /// on/off position (`smart-hidpi off 1`, `protect off`); later arguments are displays or
+    /// names. Numbers never count: "1" is display number 1 (`toggle smart-hidpi 1`), and
+    /// every off-only handler accepts only "off" or a selector there anyway (FIXES-R3 2).
     package static func requestsTurningOn(_ arguments: [String]) -> Bool {
-        arguments.contains { onWords.contains($0.lowercased()) }
+        guard let first = arguments.first else { return false }
+        return onWords.contains(first.lowercased())
+    }
+
+    /// `--yes` skips the "Keep this change?" panel only when the user also allowed it and the
+    /// verb is a trial verb (FIXES-R3 1). The server applies this before any handler runs.
+    package static func skipsConfirmation(requested: Bool, allowed: Bool, policy: ControlPolicy) -> Bool {
+        requested && allowed && policy == .trial
+    }
+
+    // MARK: JSON output
+
+    /// With `--json`, every successful reply is JSON (FIXES-R3 10): a handler's own JSON object
+    /// or array passes through; anything else becomes `{"ok":true}` or
+    /// `{"ok":true,"output":"…"}`. Failures are left alone (the client formats those).
+    package static func jsonReply(_ response: ControlResponse) -> ControlResponse {
+        guard response.exitCode == ControlExit.ok else { return response }
+        let text = response.output
+        if let first = text.unicodeScalars.first(where: { !CharacterSet.whitespacesAndNewlines.contains($0) }),
+           first == "{" || first == "[",
+           let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)),
+           object is [String: Any] || object is [Any] {
+            return response
+        }
+        var object: [String: Any] = ["ok": true]
+        if !text.isEmpty { object["output"] = text }
+        return .ok(jsonText(object) ?? #"{"ok":true}"#)
+    }
+
+    /// The client's error object: `{"error":"…","exitCode":N}`.
+    package static func errorJSON(_ code: Int32, _ message: String) -> String {
+        jsonText(["exitCode": Int(code), "error": message]) ?? #"{"exitCode":\#(code)}"#
+    }
+
+    /// Whether the raw client arguments ask for `--json` before the verb (so the client's own
+    /// errors, even a usage error, come out as JSON).
+    package static func wantsJSON(_ arguments: [String]) -> Bool {
+        for argument in arguments {
+            if argument == "--json" { return true }
+            if argument == "--" || !argument.hasPrefix("-") || argument.count == 1 { return false }
+        }
+        return false
+    }
+
+    /// Sorted-key JSON text for an object or array.
+    package static func jsonText(_ object: Any) -> String? {
+        guard JSONSerialization.isValidJSONObject(object),
+              let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) else { return nil }
+        return String(decoding: data, as: UTF8.self)
     }
 
     /// "xdr", "night-shift", "NightShift" → the feature; case, dashes and underscores ignored.

@@ -50,11 +50,16 @@ struct TransactionRequest {
     var planID: UInt64?
     /// Shows the confirm panel as key (UI-triggered changes only, PLAN §4.4). Defaults to !automatic.
     var interactive: Bool
+    /// FIXES-R3 1: a command-line request with `--yes` that the user allowed ("Let commands
+    /// skip the confirmation panel"; the server filters it). A trial keeps right after settle
+    /// instead of showing the panel; it is journaled and guard-armed exactly as any trial.
+    /// Ignored for automatic requests (`TrialPanelChoice.withoutPanel`).
+    var skipConfirmation: Bool
 
     init(label: String, risk: TransactionRisk, changes: [DisplayChange], finalScope: FinalScope = .permanently,
          automatic: Bool = false, prepare: (@MainActor () async throws -> Void)? = nil,
          afterRevert: (@MainActor () async -> Void)? = nil, afterKeep: (@MainActor () async -> Void)? = nil,
-         planID: UInt64? = nil, interactive: Bool? = nil) {
+         planID: UInt64? = nil, interactive: Bool? = nil, skipConfirmation: Bool = false) {
         self.label = label
         self.risk = risk
         self.changes = changes
@@ -65,6 +70,7 @@ struct TransactionRequest {
         self.afterKeep = afterKeep
         self.planID = planID
         self.interactive = interactive ?? !automatic
+        self.skipConfirmation = skipConfirmation
     }
 }
 

@@ -62,6 +62,15 @@ package enum TrialEnd: Equatable, Sendable {
 
 package enum TrialPanelChoice: Equatable, Sendable {
     case keep, revert, timeout
+
+    /// FIXES-R3 1: the choice a trial makes without showing the panel, or nil when the panel
+    /// must show. Only a user request whose command line passed `--yes` (already filtered by
+    /// the server: the user allowed it, trial verb) keeps right after settle; everything else
+    /// (journal, guard arm, deadline, revert requests up to that point) is exactly as for a
+    /// panel trial. Automatic requests never skip.
+    package static func withoutPanel(skipConfirmation: Bool, automatic: Bool) -> TrialPanelChoice? {
+        skipConfirmation && !automatic ? .keep : nil
+    }
 }
 
 /// What the trial task does at a checkpoint.

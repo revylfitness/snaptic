@@ -16,8 +16,8 @@ struct HelperArgs: Equatable {
 /// Helper-side entry hardening (R5.1, R4C §4.1), shared by the display guard, virtual
 /// hosts and the self-test child. Never touches AppKit, UserDefaults or TCC.
 enum HelperPrologue {
-    static let exitBadParent: Int32 = 64
-    static let exitProtocolMismatch: Int32 = 65
+    static let exitBadParent: Int32 = HelperExitStatus.badParent
+    static let exitProtocolMismatch: Int32 = HelperExitStatus.protocolMismatch
 
     /// 1. SIGPIPE ignored, TERM/INT/HUP back to default; 2. every fd ≥ 3 closed except
     /// `--keep-fd` ones; 3. arguments parsed; 4. the parent checked (pid and code

@@ -201,7 +201,8 @@ import SnapticKit
             guard let d = pick.display else { return .failure(ControlExit.notFound, "") }
             if let why = self.setMainRefusal(d.key) { return .failure(ControlExit.refused, why) }
             return ManagedTransactions.response(await ManagedTransactions.run(
-                ctx, TransactionRequest(label: L("Set main display"), risk: .low, changes: [.main(d.desktopID)])))
+                ctx, TransactionRequest(label: L("Set main display"), risk: .low, changes: [.main(d.desktopID)],
+                                        skipConfirmation: req.skipConfirmation)))
         }
         ctx.commands.register("arrange", policy: .low, offOnly: false, cliAllowed: true,
                               summary: L("arrange <display> <x> <y> | arrange <display> <placement> <reference>"),
@@ -244,7 +245,8 @@ import SnapticKit
             }
             guard !changes.isEmpty else { return .ok() }
             return ManagedTransactions.response(await ManagedTransactions.run(
-                ctx, TransactionRequest(label: L("Arrange displays"), risk: .low, changes: changes)))
+                ctx, TransactionRequest(label: L("Arrange displays"), risk: .low, changes: changes,
+                                        skipConfirmation: req.skipConfirmation)))
         }
         ctx.commands.register("mirror", policy: .trial, offOnly: false, cliAllowed: true,
                               summary: L("mirror <display> <source>|off"), lifetime: lifetime) { [weak self] req in
@@ -268,7 +270,7 @@ import SnapticKit
             return ManagedTransactions.response(await ManagedTransactions.run(
                 ctx, TransactionRequest(label: source == nil ? L("Stop mirroring") : L("Mirror display"),
                                         risk: source == nil ? .low : .trial, changes: [.mirror(d.hardwareID, of: source)],
-                                        finalScope: .forSession)))
+                                        finalScope: .forSession, skipConfirmation: req.skipConfirmation)))
         }
     }
 

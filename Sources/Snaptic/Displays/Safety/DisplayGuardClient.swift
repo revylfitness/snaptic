@@ -40,6 +40,10 @@ import SnapticKit
     private var active = false
     private var spawnTimes: [Double] = []
     private(set) var lastFailure: String?
+    /// The guard exited 65 or answered with another protocol version: Snaptic was replaced on
+    /// disk. Never respawned until Snaptic restarts (FIXES-R3 5).
+    private(set) var restartRequired = false
+    static var restartText: String { L("Restart Snaptic to finish updating.") }
 
     // State re-sent to a respawned guard.
     private var longUndo: [UndoOp] = []
@@ -89,6 +93,10 @@ import SnapticKit
     func ensureRunning() async -> Bool {
         if isAlive { return true }
         guard active, let ctx = context else { return false }
+        if restartRequired {
+            lastFailure = Self.restartText
+            return false
+        }
         if handle == nil && !starting {
             if !ctx.helpers.isReady && ctx.helpers.unavailable == nil {
                 starting = true
@@ -118,7 +126,10 @@ import SnapticKit
                 return false
             }
             spawnTimes.append(now)
-            let dir = JournalFiles.defaultDirectory() ?? ""
+            // FIXES-R3 6: no `--journal-dir ""` (the guard refuses an empty or relative path);
+            // without a directory the flag is left out and the guard uses its own default.
+            var arguments = ["--protocol", String(GuardProtocol.version)]
+            if let dir = JournalFiles.defaultDirectory(), dir.hasPrefix("/") { arguments += ["--journal-dir", dir] }
             // A new generation before the spawn: this guard's lines and exit carry it, and
             // anything still waiting on an earlier guard fails now (N2).
             let generation = newGeneration()
@@ -128,7 +139,7 @@ import SnapticKit
             let spawned: HelperHandle
             do {
                 spawned = try await ctx.helpers.spawn(.displayGuard,
-                                                      arguments: ["--protocol", String(GuardProtocol.version), "--journal-dir", dir],
+                                                      arguments: arguments,
                                                       onLine: { [weak self] line in self?.receive(line, generation: generation) },
                                                       onExit: { [weak self] status in self?.exited(status, generation: generation) })
             } catch {
@@ -262,10 +273,18 @@ import SnapticKit
         armedTrials = []
         failPending()
         updateActivity()
+        if HelperExitStatus.isProtocolMismatch(status) { noteRestartRequired() }
         if active {
             EventLog.shared.record(.guardProcess, "Guard exited (\(status))")
             if wasAlive { onLost?() }
         }
+    }
+
+    private func noteRestartRequired() {
+        lastFailure = Self.restartText
+        guard !restartRequired else { return }
+        restartRequired = true
+        EventLog.shared.record(.guardProcess, "Guard speaks another protocol: restart required")
     }
 
     private func failPending() {
@@ -275,9 +294,17 @@ import SnapticKit
 
     // MARK: Messages
 
-    private func send(_ m: GuardMessage) {
-        guard let writer = handle?.writer, let data = GuardProtocol.encode(m) else { return }
+    /// False when nothing went out: no guard, or the message is out of bounds or longer than
+    /// one line the guard can read (FIXES-R3 7: refused here, never truncated there).
+    @discardableResult
+    private func send(_ m: GuardMessage) -> Bool {
+        guard let writer = handle?.writer else { return false }
+        guard let data = GuardProtocol.encode(m) else {
+            EventLog.shared.record(.guardProcess, "Guard message refused: out of bounds or too large")
+            return false
+        }
         writer.send(data)
+        return true
     }
 
     private func receive(_ line: Data, generation: UInt64) {
@@ -286,7 +313,7 @@ import SnapticKit
         switch reply {
         case .ready(let version, let mp):
             guard version == GuardProtocol.version else {
-                lastFailure = L("Restart Snaptic to finish updating.")
+                noteRestartRequired()
                 terminate(sendShutdown: true, grace: Self.shutdownGraceSeconds)
                 return
             }
@@ -312,7 +339,11 @@ import SnapticKit
         return await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
             let timeout = GuardProtocol.ackTimeoutSeconds
             let seq = acks.begin(c, at: SessionGate.uptime(), timeout: timeout)
-            send(make(seq))
+            guard send(make(seq)) else {
+                // Refused before sending: fail now rather than after the ack timeout.
+                acks.timeOut(seq)?.resume(returning: false)
+                return
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
                 MainActor.assumeIsolated { self?.acks.timeOut(seq)?.resume(returning: false) }
             }
@@ -415,6 +446,7 @@ import SnapticKit
         rows.append(("App Nap held off", activity == nil ? "no" : "yes"))
         if isUnprotected { rows.append(("State", "Unprotected — restart Snaptic")) }
         if let f = lastFailure { rows.append(("Last problem", f)) }
+        if restartRequired { rows.append(("Respawn", "off until Snaptic restarts")) }
         return rows
     }
 }

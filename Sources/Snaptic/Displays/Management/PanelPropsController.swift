@@ -180,7 +180,7 @@ import SnapticKit
             ctx.connectPlanner.beginUserChange()
             let outcome = await ManagedTransactions.run(
                 ctx, TransactionRequest(label: L("Rotate display"), risk: .trial, changes: [.rotation(d.hardwareID, deg)],
-                                        finalScope: .permanently))
+                                        finalScope: .permanently, skipConfirmation: req.skipConfirmation))
             ctx.connectPlanner.endUserChange(changed: outcome == .applied || outcome == .kept)
             return ManagedTransactions.response(outcome)
         }

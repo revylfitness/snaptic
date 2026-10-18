@@ -32,8 +32,10 @@ import SnapticShims
         }
     }
 
-    /// Host bookkeeping, touched only on main.
+    /// Host bookkeeping, touched only on main. Callbacks hold the Host itself (FIXES-R3 3):
+    /// a line or exit from one host process can never land on a newer host for the same spec.
     private final class Host {
+        let serial: UInt64
         let specID: StableID
         let backing: VirtualBacking
         let bytes: UInt64
@@ -43,7 +45,8 @@ import SnapticShims
         var shuttingDown = false
         var pending: [UInt64: CheckedContinuation<VirtualHostReply, Error>] = [:]
 
-        init(specID: StableID, backing: VirtualBacking) {
+        init(serial: UInt64, specID: StableID, backing: VirtualBacking) {
+            self.serial = serial
             self.specID = specID
             self.backing = backing
             bytes = SoCCaps.backingBytes(pixelsWide: backing.pixelsWide, pixelsHigh: backing.pixelsHigh)
@@ -61,8 +64,13 @@ import SnapticShims
     /// 8 user screens plus one per Smart HiDPI display.
     static let maxHosts = VirtualConfig.maxScreens + VirtualConfig.maxPairs
     private var hosts: [StableID: Host] = [:]
-    /// Hosts being shut down, until their process exits.
-    private var retiring: [StableID: Host] = [:]
+    /// Hosts being shut down, by host serial, until their process exits (only `hostExited`
+    /// removes them, FIXES-R3 3).
+    private var retiring: [UInt64: Host] = [:]
+    private var hostSerial: UInt64 = 0
+    /// A host exited 65 (protocol mismatch) or answered with another protocol version: this
+    /// copy of Snaptic was replaced on disk. No host is spawned again until a restart (FIXES-R3 5).
+    private(set) var restartRequired = false
     private var nextRequest: UInt64 = 0
     private var listeners: [ExitListener] = []
     private var listenerSerial: UInt64 = 0
@@ -203,6 +211,7 @@ import SnapticShims
         }
         if let h = hosts[spec.id], !h.exited, let id = h.displayID { return id }
         if let h = hosts[spec.id], !h.exited { throw HostError.failed(.alreadyCreated) }
+        if restartRequired { throw HostError.failed(.protocolMismatch) }
         guard Self.isAvailable else { throw HostError.unavailable(L("Virtual displays aren't available on this Mac")) }
         guard hostCount < Self.maxHosts else { throw HostError.tooMany }
         let soc = ManagedHardware.soc
@@ -224,15 +233,22 @@ import SnapticShims
             throw HostError.failed(reason)
         }
 
-        let host = Host(specID: spec.id, backing: backing)
+        hostSerial &+= 1
+        let host = Host(serial: hostSerial, specID: spec.id, backing: backing)
         hosts[spec.id] = host
         let specID = spec.id
         let spawned: HelperHandle
         do {
             spawned = try await ctx.helpers.spawn(
                 .virtualHost, arguments: ["--protocol", String(VirtualHostProtocol.version)],
-                onLine: { [weak self] line in self?.handleLine(specID, line) },
-                onExit: { [weak self] status in self?.hostExited(specID, status: status) })
+                onLine: { [weak self, weak host] line in
+                    guard let self, let host else { return }
+                    self.handleLine(host, line)
+                },
+                onExit: { [weak self, weak host] status in
+                    guard let self, let host else { return }
+                    self.hostExited(host, status: status)
+                })
         } catch {
             if hosts[specID] === host { hosts[specID] = nil }
             throw HostError.unavailable(Self.spawnFailure(error).message)
@@ -244,7 +260,7 @@ import SnapticShims
             host.shuttingDown = true
             if hosts[specID] === host { hosts[specID] = nil }
             if !spawned.isReaped {
-                retiring[specID] = host
+                retiring[host.serial] = host
                 spawned.terminate()
             }
             host.failAll(HostError.exited)
@@ -254,6 +270,7 @@ import SnapticShims
             let build = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "0"
             let hello = try await request(host, id: 0, .hello(protocolVersion: VirtualHostProtocol.version, build: build))
             guard case .ready(let version) = hello, version == VirtualHostProtocol.version else {
+                noteRestartRequired()
                 throw HostError.failed(.protocolMismatch)
             }
             let rid = nextID()
@@ -293,7 +310,7 @@ import SnapticShims
         guard let host = hosts[specID] else { return }
         hosts[specID] = nil
         host.shuttingDown = true
-        retiring[specID] = host
+        if !host.exited { retiring[host.serial] = host }
         if !host.exited {
             send(host, .shutdown)
             host.handle?.writer?.close()
@@ -355,12 +372,13 @@ import SnapticShims
         }
     }
 
-    private func handleLine(_ specID: StableID, _ line: Data) {
-        guard let host = hosts[specID], let reply = VirtualHostProtocol.decodeReply(line) else { return }
+    private func handleLine(_ host: Host, _ line: Data) {
+        guard !host.exited, let reply = VirtualHostProtocol.decodeReply(line) else { return }
         switch reply {
         case .ready: host.pending.removeValue(forKey: 0)?.resume(returning: reply)
         case .created(let rid, _), .modesSet(let rid): host.pending.removeValue(forKey: rid)?.resume(returning: reply)
-        case .failed(let rid, _):
+        case .failed(let rid, let reason):
+            if reason == .protocolMismatch { noteRestartRequired() }
             if let rid, let cont = host.pending.removeValue(forKey: rid) {
                 cont.resume(returning: reply)
             } else {
@@ -369,20 +387,15 @@ import SnapticShims
         }
     }
 
-    private func hostExited(_ specID: StableID, status: Int32) {
-        // Shut-down hosts are in `retiring`; an old record must not hide a newer host.
-        let host: Host
-        if let r = retiring[specID], r.handle != nil, hosts[specID] == nil || r.shuttingDown {
-            retiring[specID] = nil
-            host = r
-        } else if let h = hosts[specID] {
-            hosts[specID] = nil
-            host = h
-        } else {
-            return
-        }
+    /// The single place a host leaves the books: its own record (never a newer host for the
+    /// same spec) leaves `hosts` and `retiring` (FIXES-R3 3).
+    private func hostExited(_ host: Host, status: Int32) {
+        retiring[host.serial] = nil
+        if hosts[host.specID] === host { hosts[host.specID] = nil }
+        guard !host.exited else { return }
         host.exited = true
         host.failAll(HostError.exited)
+        if HelperExitStatus.isProtocolMismatch(status) { noteRestartRequired() }
         let unexpected = !host.shuttingDown
         if unexpected {
             failures.append(managementUptime())
@@ -390,20 +403,26 @@ import SnapticShims
             EventLog.shared.record(.virtualDisplay, "Virtual host exited unexpectedly (status \(status))")
         }
         context?.registry.refresh()
-        for l in listeners { l.run(specID, unexpected) }
+        for l in listeners { l.run(host.specID, unexpected) }
+    }
+
+    private func noteRestartRequired() {
+        guard !restartRequired else { return }
+        restartRequired = true
+        EventLog.shared.record(.virtualDisplay, "Virtual host speaks another protocol: restart required")
     }
 
     private func shutdownNow(_ host: Host) {
         host.shuttingDown = true
         guard !host.exited, let handle = host.handle else { return }
-        retiring[host.specID] = host
+        retiring[host.serial] = host
         send(host, .shutdown)
         handle.writer?.close()
         host.failAll(HostError.exited)
-        DispatchQueue.main.asyncAfter(deadline: .now() + VirtualHostProtocol.shutdownGrace) { [host] in
+        // SIGKILL a straggler; its exit (reaped by the spawner) clears `retiring`.
+        DispatchQueue.main.asyncAfter(deadline: .now() + VirtualHostProtocol.shutdownGrace) { [weak host] in
             MainActor.assumeIsolated {
-                if !host.exited { handle.terminate() }
-                if self.retiring[host.specID] === host { self.retiring[host.specID] = nil }
+                if let host, !host.exited { handle.terminate() }
             }
         }
     }
@@ -416,7 +435,9 @@ extension VirtualHostsService: DiagnosticsContributor {
             (L("Estimated virtual display memory"), ByteCountFormatter.string(fromByteCount: Int64(clamping: totalBackingBytes), countStyle: .memory)),
             (L("Virtual displays available"), Self.isAvailable ? L("Yes") : L("No")),
             (L("Recent host failures"), String(recentFailures)),
+            (L("Hosts shutting down"), String(retiring.count)),
         ]
+        if restartRequired { rows.append((L("State"), L("Restart Snaptic to finish updating"))) }
         for (i, f) in hostFootprints.enumerated() {
             let pid = hosts[f.specID]?.handle?.pid ?? 0
             rows.append((L("Host \(i + 1) (pid \(pid))"), ByteCountFormatter.string(fromByteCount: Int64(clamping: f.bytes), countStyle: .memory)))
