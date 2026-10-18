@@ -518,6 +518,7 @@ Sources/Snaptic/SettingsUI/SettingsBinding.swift	H	S	SettingsBinding	-
 Sources/Snaptic/SettingsUI/SettingsShell.swift	H	S	SettingsShell	-
 Sources/Snaptic/SettingsUI/SettingsSearchView.swift	H	S	SettingsSearchView	-
 Sources/Snaptic/SettingsUI/ModuleSwitchRow.swift	H	L	-	-
+Sources/Snaptic/SettingsUI/SafeModeLeave.swift	H	L	-	-
 # 0.3: M (menu system)
 Sources/SnapticKit/MenuLayout.swift	M	S	MenuLayout	-
 Tests/SnapticKitTests/MenuLayoutTests.swift	M	K3	MenuLayoutTests	-

@@ -43,6 +43,10 @@ struct AwakeLastEnd: Equatable {
     /// Shortcuts whose combo failed to register (conflict or system refusal; AwakeAutomation publishes it here, as
     /// the runtime outlives the controller). The menu bar treats a failed Keep Awake shortcut as unbound.
     @Published var failedShortcuts: Set<AwakeActionID> = []
+    /// The Keep Awake (toggle) shortcut is registered right now (fix round 2 shared decision): false while the
+    /// module is off, `shortcuts` isn't effective (setting, Safe Mode, kill switch), no combo is set, or the
+    /// registration failed. The menu bar's Don't Show fallback reads only this.
+    @Published var keepAwakeRegistered = false
 
     init() {}
 
@@ -70,5 +74,6 @@ struct AwakeLastEnd: Equatable {
         lidWillSleep = nil
         indicatorVisible = false
         failedShortcuts = []
+        keepAwakeRegistered = false
     }
 }

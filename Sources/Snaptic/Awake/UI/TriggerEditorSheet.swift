@@ -211,7 +211,7 @@ struct TriggerEditorSheet: View, ControlDeclaring {
         return values.map { (minutes: Int?) -> PickerOption<Int?> in
             guard let minutes else { return PickerOption(nil, L("Resume When the Conditions Are Next Met")) }
             let span = minutes % 60 == 0 ? AwakeCountdown.unit(minutes / 60, L("Hour"), L("Hours"))
-                                         : AwakeCountdown.unit(minutes, L("Min"), L("Min"))
+                                         : AwakeCountdown.unit(minutes, L("Minute"), L("Minutes"))
             return PickerOption(minutes, L("Resume After ") + span)
         }
     }

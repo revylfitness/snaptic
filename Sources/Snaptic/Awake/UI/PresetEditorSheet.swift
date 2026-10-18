@@ -25,7 +25,7 @@ struct PresetEditorSheet: View, ControlDeclaring {
             listSection
             addSection
         }
-        .alert(L("Delete this session?"), isPresented: deletingShown) {
+        .alert(deletingTitle, isPresented: deletingShown) {
             Button(L("Delete"), role: .destructive) { confirmDelete() }
             Button(L("Cancel"), role: .cancel) { deleting = nil }
         } message: {
@@ -73,6 +73,13 @@ struct PresetEditorSheet: View, ControlDeclaring {
             }
             .disabled(count >= AwakeSessionsConfig.maxPresets)
         }
+    }
+
+    /// "Delete “For 1 Hour”?" (ux nit 8: named, as PIP and Forget do).
+    private var deletingTitle: String {
+        let preset = deleting.flatMap { id in sessions.value.presets.first { $0.id == id } }
+        guard let preset else { return L("Delete this session?") }
+        return L("Delete ") + AwakeDetail.quoted(preset.title(AwakeFormat.text)) + "?"
     }
 
     private var deletingShown: Binding<Bool> {

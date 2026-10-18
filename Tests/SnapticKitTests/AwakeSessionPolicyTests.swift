@@ -254,4 +254,35 @@ final class AwakeSessionPolicyTests: XCTestCase {
         XCTAssertNil(AwakeSystemPolicy.end(behavior: b, onConsole: true, offConsoleSince: nil, locked: false,
                                            lockedSince: nil, now: 9 * 3_600))
     }
+
+    // MARK: Keep Awake shortcut registered (fix round 2 shared decision)
+
+    func testKeepAwakeRegisteredOnlyWhenEverythingHolds() {
+        for effective in [false, true] {
+            for combo in [false, true] {
+                for registered in [false, true] {
+                    XCTAssertEqual(AwakeShortcutRegistration.keepAwakeRegistered(shortcutsEffective: effective,
+                                                                                hasCombo: combo, registered: registered),
+                                   effective && combo && registered)
+                }
+            }
+        }
+        // A kill switch, Safe Mode or a stopped module all leave `shortcuts` not effective: never registered.
+        XCTAssertFalse(AwakeShortcutRegistration.keepAwakeRegistered(shortcutsEffective: false, hasCombo: true,
+                                                                     registered: true))
+    }
+
+    func testRemindersKeepingOnlyTheirSession() {
+        let a = StableID(), b = StableID()
+        var r = AwakeReminders()
+        let s = AwakeClock.start(.indefinite, options: AwakeSessionOptions(), presetID: nil, source: .menu,
+                                 now: ClockNow(wall: 1_000, continuous: 0, bootSession: "B"), id: a)
+        XCTAssertEqual(r.due(s, now: ClockNow(wall: 1_000 + 8 * 3_600, continuous: 8 * 3_600, bootSession: "B")), .eightHours)
+        var kept = r.keeping(session: a)
+        XCTAssertEqual(kept, r)
+        XCTAssertNil(kept.due(s, now: ClockNow(wall: 1_000 + 9 * 3_600, continuous: 9 * 3_600, bootSession: "B")))
+        XCTAssertEqual(r.keeping(session: b), AwakeReminders())
+        r = AwakeReminders()
+        XCTAssertEqual(r.keeping(session: a), AwakeReminders())
+    }
 }

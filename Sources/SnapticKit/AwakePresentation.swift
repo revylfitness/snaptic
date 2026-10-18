@@ -138,6 +138,78 @@ package enum AwakeEndText {
     }
 }
 
+/// Why a saved-on Awake feature doesn't run (ux N2): a kill switch (`Awake.disable.<feature>`; it outlasts Safe
+/// Mode, so it is named first) or Safe Mode's removals. nil = nothing locks it.
+package enum AwakeFeatureLock: Equatable, Sendable {
+    case killSwitch, safeMode
+
+    package static func of(_ f: AwakeFeature, killSwitches: Set<AwakeFeature>, safeMode: Bool) -> AwakeFeatureLock? {
+        if killSwitches.contains(f) && !AwakeFeatureGraph.unkillable.contains(f) { return .killSwitch }
+        if safeMode && AwakeFeatureGraph.safeModeRemoves.contains(f) { return .safeMode }
+        return nil
+    }
+
+    /// The first lock of `features` in order (a feature and what it requires, e.g. pointer movement and activity).
+    package static func first(_ features: [AwakeFeature], killSwitches: Set<AwakeFeature>,
+                              safeMode: Bool) -> (feature: AwakeFeature, lock: AwakeFeatureLock)? {
+        for f in features {
+            if let lock = of(f, killSwitches: killSwitches, safeMode: safeMode) { return (f, lock) }
+        }
+        return nil
+    }
+
+    /// The row note: "Paused in Safe Mode." or the one kill-switch wording.
+    package var text: String {
+        switch self {
+        case .safeMode: return L("Paused in Safe Mode.")
+        case .killSwitch: return DefaultsLock.text
+        }
+    }
+
+    /// The Awake page's Safe Mode row: what is paused and what still works (sessions do, §2.6 N14).
+    package static let safeModeStatus = L("Safe Mode is on. Rules, Appear active, and Drive Alive are paused; sessions you start still work.")
+    /// Above the rules list while rules can't run.
+    package static func rulesNote(_ lock: AwakeFeatureLock) -> String {
+        switch lock {
+        case .safeMode: return L("Rules don’t run in Safe Mode.")
+        case .killSwitch: return DefaultsLock.text
+        }
+    }
+}
+
+/// Why activity and Drive Alive stopped (§2.6, awake-correctness F2): the unreadable-battery toast and the status
+/// line, naming only what is in use.
+package enum AwakeBackgroundText {
+    /// The one toast when the battery becomes unreadable; nil when neither activity nor Drive Alive is in use.
+    package static func unreadableToast(activity: Bool, drives: Bool) -> String? {
+        switch (activity, drives) {
+        case (true, true): return L("Snaptic can't read the battery level, so it stopped appearing active and keeping drives awake.")
+        case (true, false): return L("Snaptic can't read the battery level, so it stopped appearing active.")
+        case (false, true): return L("Snaptic can't read the battery level, so it stopped keeping drives awake.")
+        case (false, false): return nil
+        }
+    }
+
+    /// "Appear active and Drive Alive are paused: your Mac is too hot."; nil when nothing in use is stopped.
+    package static func paused(_ block: AwakeBackgroundBlock?, activity: Bool, drives: Bool) -> String? {
+        guard let block else { return nil }
+        let subject: String
+        switch (activity, drives) {
+        case (true, true): subject = L("Appear active and Drive Alive are paused")
+        case (true, false): subject = L("Appear active is paused")
+        case (false, true): subject = L("Drive Alive is paused")
+        case (false, false): return nil
+        }
+        let reason: String
+        switch block {
+        case .heat: reason = L("your Mac is too hot")
+        case .batteryUnreadable: reason = L("Snaptic can't read the battery level")
+        case .batteryLow: reason = L("the battery is low")
+        }
+        return subject + ": " + reason + "."
+    }
+}
+
 /// The switch header's detail lines (§5.3): a primary line for what governs, then the single most relevant extra.
 package struct AwakeDetailInput: Equatable, Sendable {
     package var governing: AwakeGoverning
@@ -161,11 +233,14 @@ package struct AwakeDetailInput: Equatable, Sendable {
     package var lidWarning: Bool
     /// Idle: "Ended at 3:12 AM: battery below 20%." or the guard-holding line.
     package var idleNote: String?
+    /// "Appear active is paused: Snaptic can't read the battery level." (`AwakeBackgroundText.paused`).
+    package var backgroundPaused: String?
 
     package init(governing: AwakeGoverning, now: ClockNow, endClock: String? = nil, appName: String? = nil,
                  ruleName: String? = nil, nextRuleName: String? = nil, holderSummary: String? = nil,
                  quietFor: Double? = nil, activity: AwakeActivityMode = .off, activityCapped: Bool = false,
-                 stopAfterHours: Int = 1, lidWarning: Bool = false, idleNote: String? = nil) {
+                 stopAfterHours: Int = 1, lidWarning: Bool = false, idleNote: String? = nil,
+                 backgroundPaused: String? = nil) {
         self.governing = governing
         self.now = now
         self.endClock = endClock
@@ -179,6 +254,7 @@ package struct AwakeDetailInput: Equatable, Sendable {
         self.stopAfterHours = stopAfterHours
         self.lidWarning = lidWarning
         self.idleNote = idleNote
+        self.backgroundPaused = backgroundPaused
     }
 }
 
@@ -236,7 +312,9 @@ package enum AwakeDetail {
             break
         }
         if i.governing.isActive {
-            if i.activityCapped {
+            if let paused = i.backgroundPaused {
+                out.append(paused)
+            } else if i.activityCapped {
                 let span = AwakeCountdown.unit(max(1, i.stopAfterHours), L("hour"), L("hours"))
                 out.append(L("Stopped appearing active after ") + span + ".")
             } else if i.activity == .nudge {
@@ -578,6 +656,8 @@ package enum AwakeStatusText {
         // §1.4 closed-display mode: the native route, where there is room for it (the menu header keeps 2 lines).
         if i.lidWarning { out.append(lidRoute) }
         if !i.governing.isActive, let note = i.idleNote { out.append(note) }
+        // Drive Alive runs without a session too: say why it stopped while idle as well.
+        if !i.governing.isActive, let paused = i.backgroundPaused { out.append(paused) }
         if let p = pausedUntilClock { out.append(L("Rules are paused until ") + p + ".") }
         return out
     }

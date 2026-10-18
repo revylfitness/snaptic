@@ -267,6 +267,9 @@ import SnapticKit
         input.activityCapped = rt.activityCapped
         input.stopAfterHours = ctx.config.value.activity.stopAfterHours
         input.lidWarning = rt.governing.isActive && lidWarning(ctx)
+        let use = backgroundUse(ctx)
+        input.backgroundPaused = rt.power.flatMap { AwakeGuards.backgroundBlock($0, config: ctx.config.value.guards) }
+            .flatMap { AwakeBackgroundText.paused($0, activity: use.activity, drives: use.drives) }
         if !rt.governing.isActive {
             let floor = ctx.sessions.floorForText()
             if let hold = rt.guardHold, let text = AwakeEndText.holding(hold, floor: floor) {
@@ -278,6 +281,15 @@ import SnapticKit
             }
         }
         return input
+    }
+
+    /// What the guards' background stop affects right now: activity for the governing session, Drive Alive with a
+    /// turned-on drive (F2).
+    static func backgroundUse(_ ctx: AwakeContext) -> (activity: Bool, drives: Bool) {
+        let rt = ctx.runtime
+        let activity = rt.isEffective(.activity) && (rt.governing.options.map { $0.activity != .off } ?? false)
+        let drives = rt.isEffective(.driveAlive) && !rt.drives.isEmpty
+        return (activity, drives)
     }
 
     /// "Closing the lid will put your Mac to sleep." on battery or without an external display (§2.12, design m5).
@@ -300,6 +312,8 @@ import SnapticKit
             runtime.$activityCapped.map { _ in () }.eraseToAnyPublisher(),
             runtime.$lastEnd.map { _ in () }.eraseToAnyPublisher(),
             runtime.$guardHold.map { _ in () }.eraseToAnyPublisher(),
+            runtime.$power.map { _ in () }.eraseToAnyPublisher(),
+            runtime.$drives.map { _ in () }.eraseToAnyPublisher(),
         ]
         Publishers.MergeMany(changes)
             .receive(on: DispatchQueue.main)
