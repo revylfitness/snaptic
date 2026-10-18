@@ -162,6 +162,42 @@ package enum SwitcherPageRules {
     /// shortcuts may use it).
     package static func windowlessChoiceTurnsOnFeature(_ on: Bool) -> Bool { on }
 
+    /// Choosing "Windows from" `raw` for the shortcut at `changed` (review round 2 ui F2, parity Q1): the stored values
+    /// to write for every shortcut, and whether the other-Spaces feature turns on. When the choice turns the feature
+    /// on, every other shortcut gets the value it showed until now (Current Space) written explicitly, so its stored
+    /// All/Other Spaces doesn't silently take effect. When the feature is already on (or stays off), only the chosen
+    /// shortcut changes.
+    package static func spacesChoice(_ stored: [String], changed: Int, to raw: String,
+                                      otherSpacesOn: Bool) -> (spaces: [String], turnsOn: Bool) {
+        guard stored.indices.contains(changed) else { return (stored, false) }
+        let turnsOn = !otherSpacesOn && spaceChoiceTurnsOnOtherSpaces(raw)
+        var out = stored
+        if turnsOn {
+            for i in out.indices where i != changed {
+                out[i] = effectiveSpace(stored[i], otherSpacesOn: otherSpacesOn)
+            }
+        }
+        out[changed] = raw
+        return (out, turnsOn)
+    }
+
+    /// Turning "Include apps with no open windows" on or off for the shortcut at `changed`: the stored values to
+    /// write and whether the windowless feature turns on. When it turns on, every other shortcut keeps reading as it
+    /// did (off: its stored "on" was masked by the feature) by writing that value explicitly.
+    package static func windowlessChoice(_ stored: [Bool], changed: Int, to on: Bool,
+                                         featureOn: Bool) -> (values: [Bool], turnsOn: Bool) {
+        guard stored.indices.contains(changed) else { return (stored, false) }
+        let turnsOn = !featureOn && windowlessChoiceTurnsOnFeature(on)
+        var out = stored
+        if turnsOn {
+            for i in out.indices where i != changed {
+                out[i] = effectiveWindowless(stored[i], featureOn: featureOn)
+            }
+        }
+        out[changed] = on
+        return (out, turnsOn)
+    }
+
     /// With window thumbnails off, a Thumbnails shortcut shows icons.
     package static func styleChoiceEnabled(_ raw: String, thumbnailsOn: Bool) -> Bool {
         thumbnailsOn || raw != "thumbnails"

@@ -301,6 +301,55 @@ final class SliderMathTests: XCTestCase {
         XCTAssertFalse(f.isDirty)
     }
 
+    /// Round 2 ui F1: text typed without Return, then the row's own slider drag (or stepper arrow, or Reset): the
+    /// field shows the new value and focus leaving later writes nothing over it.
+    func testTypedFieldRowControlDiscardsTyping() {
+        var f = TypedFieldState(display: "50%")
+        f.edit("40")
+        // Drag begins (the row bumps its discard token at the start of the drag).
+        f.discardTyping(display: "50%")
+        XCTAssertFalse(f.isDirty)
+        XCTAssertEqual(f.text, "50%")
+        // The drag moves the value; the field follows.
+        f.sync(display: "80%")
+        XCTAssertEqual(f.text, "80%")
+        XCTAssertEqual(f.commit(display: "80%", parse: { _ in XCTFail("discarded text parsed"); return nil },
+                                format: showPercent), .none)
+        XCTAssertEqual(f.text, "80%")
+
+        // Reset: the value and the discard arrive in the same update, in either order.
+        for discardFirst in [true, false] {
+            var r = TypedFieldState(display: "70%")
+            r.edit("12")
+            if discardFirst {
+                r.discardTyping(display: "50%")
+                r.sync(display: "50%")
+            } else {
+                r.sync(display: "50%")
+                XCTAssertEqual(r.text, "12", "an outside change alone keeps the typing")
+                r.discardTyping(display: "50%")
+            }
+            XCTAssertEqual(r.text, "50%")
+            XCTAssertEqual(r.commit(display: "50%", parse: parsePercent, format: showPercent), .none)
+        }
+    }
+
+    /// Round 2 ui N2: the binding clamps a written value back to the old one, so the display never changes; the
+    /// settle on the next turn shows the stored value. Typing in between is kept.
+    func testTypedFieldSettlesToStoredValueAfterWrite() {
+        var f = TypedFieldState(display: "800 nits")
+        f.edit("1000")
+        XCTAssertEqual(f.commit(display: "800 nits", parse: { Double($0) }, format: { "\(Int($0)) nits" }), .write(1000))
+        XCTAssertEqual(f.text, "1000 nits")
+        f.settle(display: "800 nits")
+        XCTAssertEqual(f.text, "800 nits")
+        XCTAssertFalse(f.isDirty)
+
+        f.edit("900")
+        f.settle(display: "800 nits")
+        XCTAssertEqual(f.text, "900", "a settle never drops new typing")
+    }
+
     /// Any sequence of syncs and edits: a commit writes only when the last thing before it was typing that changed the
     /// text, and the field is never dirty after a commit.
     func testSeededTypedFieldCommitsOnlyTypedText() {
@@ -312,10 +361,17 @@ final class SliderMathTests: XCTestCase {
             var typedSinceSync = false
             for _ in 0..<Int(g.next() % 8) {
                 let t = texts[Int(g.next() % UInt64(texts.count))]
-                if g.next() % 2 == 0 {
+                let roll = g.next() % 3
+                if roll == 0 {
                     shown = t
                     f.sync(display: t)
                     if !f.isDirty { typedSinceSync = false }
+                } else if roll == 1 && g.next() % 3 == 0 {
+                    // The row's own slider, stepper or Reset.
+                    shown = t
+                    f.discardTyping(display: t)
+                    typedSinceSync = false
+                    XCTAssertEqual(f.text, t)
                 } else {
                     f.edit(t)
                     typedSinceSync = f.isDirty
