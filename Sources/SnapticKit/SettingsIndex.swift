@@ -173,10 +173,7 @@ package enum SettingsIndexCoverage {
     ]
 
     /// Controls whose owners add a search entry in step 3 (lead: empty this list at the step-3 exit).
-    package static let awaitingSearch: Set<String> = [
-        "menubar.page.customize", "menubar.page.restoreDefaults", "menubar.customize.displays",
-        "menubar.customize.useDefaultOrder",
-    ]
+    package static let awaitingSearch: Set<String> = []
 
     package static func isSettingsSurface(_ surface: String) -> Bool {
         !otherSurfaces.contains { surface == $0 || surface.hasPrefix($0 + ".") } && !itemEditorSurfaces.contains(surface)
