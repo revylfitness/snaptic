@@ -1,8 +1,8 @@
 import Foundation
 
 // Pure logic behind the Displays UI shell (owner: F): feature and page names, the
-// onboarding chips (PLAN §3.7, R5.8), resolution choices for the live controls, MCCS
-// input names and the diagnostics report text with masked identifiers (PLAN §12).
+// onboarding chips (PLAN §3.7, R5.8), the display icon choices, the EDID view's text,
+// MCCS input names and the diagnostics report text with masked identifiers (PLAN §12).
 
 // MARK: - Names
 
@@ -201,40 +201,49 @@ package enum DisplaysUIText {
         guard widthMM > 0, heightMM > 0, widthMM.isFinite, heightMM.isFinite else { return nil }
         return (widthMM * widthMM + heightMM * heightMM).squareRoot() / 25.4
     }
+
+    /// The curated icons offered on the Display Names page (SF Symbols that exist on
+    /// macOS 14). Each passes PerDisplayIdentity's symbol rule.
+    package static let displaySymbols: [DisplaySymbolChoice] = [
+        DisplaySymbolChoice("display", L("Monitor")),
+        DisplaySymbolChoice("display.2", L("Two monitors")),
+        DisplaySymbolChoice("laptopcomputer", L("Laptop")),
+        DisplaySymbolChoice("desktopcomputer", L("Desktop computer")),
+        DisplaySymbolChoice("pc", L("PC")),
+        DisplaySymbolChoice("tv", L("TV")),
+        DisplaySymbolChoice("4k.tv", L("4K TV")),
+        DisplaySymbolChoice("play.tv", L("Media TV")),
+        DisplaySymbolChoice("ipad.landscape", L("iPad")),
+        DisplaySymbolChoice("airplayvideo", L("AirPlay")),
+        DisplaySymbolChoice("rectangle.dashed", L("Virtual")),
+        DisplaySymbolChoice("macwindow", L("Window")),
+        DisplaySymbolChoice("gamecontroller", L("Games")),
+        DisplaySymbolChoice("paintpalette", L("Design")),
+        DisplaySymbolChoice("film", L("Video")),
+        DisplaySymbolChoice("chevron.left.forwardslash.chevron.right", L("Code")),
+        DisplaySymbolChoice("star", L("Favorite")),
+    ]
+
+    /// True when `symbol` is one of the curated icons.
+    package static func isCuratedSymbol(_ symbol: String?) -> Bool {
+        guard let symbol else { return false }
+        return displaySymbols.contains { $0.symbol == symbol }
+    }
 }
 
-// MARK: - Resolution choices
+/// One icon offered for a display (an SF Symbol name and what it shows).
+package struct DisplaySymbolChoice: Equatable, Hashable, Sendable {
+    package let symbol: String
+    package let title: String
+    package init(_ symbol: String, _ title: String) {
+        self.symbol = symbol
+        self.title = title
+    }
+}
+
+// MARK: - Mode checks (onboarding)
 
 package enum DisplayModeChoices {
-    /// The modes the live controls offer: one per (size, HiDPI) pair, preferring the
-    /// current refresh rate, then the highest; largest first, HiDPI before LoDPI at the
-    /// same size. The current mode is always included as itself.
-    package static func choices(_ modes: [ModeRef], current: ModeRef?) -> [ModeRef] {
-        struct Size: Hashable { let w: Int; let h: Int; let hidpi: Bool }
-        var best: [Size: ModeRef] = [:]
-        for mode in modes + (current.map { [$0] } ?? []) where mode.pointWidth > 0 && mode.pointHeight > 0 {
-            let size = Size(w: mode.pointWidth, h: mode.pointHeight, hidpi: mode.isHiDPI)
-            guard let existing = best[size] else { best[size] = mode; continue }
-            if existing == current { continue }
-            if mode == current { best[size] = mode; continue }
-            let target = current?.refreshMilliHz
-            let existingMatches = target != nil && existing.refreshMilliHz == target
-            let modeMatches = target != nil && mode.refreshMilliHz == target
-            if modeMatches && !existingMatches { best[size] = mode; continue }
-            if existingMatches && !modeMatches { continue }
-            if mode.refreshMilliHz > existing.refreshMilliHz
-                || (mode.refreshMilliHz == existing.refreshMilliHz && mode.pixelWidth > existing.pixelWidth) {
-                best[size] = mode
-            }
-        }
-        return best.values.sorted { a, b in
-            if a.pointWidth != b.pointWidth { return a.pointWidth > b.pointWidth }
-            if a.pointHeight != b.pointHeight { return a.pointHeight > b.pointHeight }
-            if a.isHiDPI != b.isHiDPI { return a.isHiDPI }
-            return a.refreshMilliHz > b.refreshMilliHz
-        }
-    }
-
     /// True when a HiDPI mode looks at least ~55% as wide as the panel's pixels, i.e. text
     /// can be sharp at a usable size without Smart HiDPI (onboarding's "Sharper text").
     package static func hasHiDPINearNative(_ modes: [ModeRef], nativePixelWidth: Int) -> Bool {
@@ -330,6 +339,81 @@ package enum DisplaysOnboardingPlan {
     /// Permissions needed afterwards, only for what was chosen.
     package static func permissions(_ raw: [DisplayFeature: Bool]) -> Set<Permission> {
         turnedOn(raw).reduce(into: Set<Permission>()) { $0.formUnion(FeatureGraph.permissions($1)) }
+    }
+}
+
+// MARK: - EDID view (Display Names page only; never in the diagnostics report)
+
+package enum EDIDText {
+    /// Uppercase hex, `perLine` bytes per line, bytes separated by spaces.
+    package static func hex(_ bytes: [UInt8], perLine: Int = 16) -> String {
+        let width = max(1, perLine)
+        var lines: [String] = []
+        var index = 0
+        while index < bytes.count {
+            let line = bytes[index..<min(index + width, bytes.count)]
+            lines.append(line.map { String(format: "%02X", Int($0)) }.joined(separator: " "))
+            index += width
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    package static func base64(_ bytes: [UInt8]) -> String { Data(bytes).base64EncodedString() }
+
+    /// "Week 12, 2021", "2021" (week 0), "Model year 2021" (week 0xFF), nil when unknown.
+    package static func manufactured(week: Int, year: Int) -> String? {
+        guard year > 0 else { return nil }
+        if week == 0xFF { return L("Model year \(year)") }
+        if (1...54).contains(week) { return L("Week \(week), \(year)") }
+        return "\(year)"
+    }
+
+    /// The decoded summary rows. The serial is masked: the page shows it, copies don't need it.
+    package static func summary(_ info: EDIDInfo, byteCount: Int) -> [DiagnosticsRow] {
+        var rows: [DiagnosticsRow] = []
+        rows.append(DiagnosticsRow(L("Manufacturer"), info.manufacturerID.isEmpty ? L("Unknown") : info.manufacturerID))
+        rows.append(DiagnosticsRow(L("Product code"), String(format: "0x%04X", Int(info.productCode))))
+        if let name = info.name, !name.isEmpty { rows.append(DiagnosticsRow(L("Product name"), name)) }
+        if let serial = info.serialString, !serial.isEmpty {
+            rows.append(DiagnosticsRow(L("Serial number"), DiagnosticsText.mask(serial)))
+        } else if info.serialNumber != 0 {
+            rows.append(DiagnosticsRow(L("Serial number"), DiagnosticsText.mask(String(info.serialNumber))))
+        }
+        if let made = manufactured(week: info.week, year: info.year) { rows.append(DiagnosticsRow(L("Manufactured"), made)) }
+        rows.append(DiagnosticsRow(L("EDID version"), "\(info.version).\(info.revision)"))
+        rows.append(DiagnosticsRow(L("Input"), info.isDigital ? L("Digital") : L("Analog")))
+        if info.physicalWidthMM > 0, info.physicalHeightMM > 0 {
+            var size = "\(info.physicalWidthMM) × \(info.physicalHeightMM) mm"
+            if let inches = DisplaysUIText.diagonalInches(widthMM: Double(info.physicalWidthMM),
+                                                          heightMM: Double(info.physicalHeightMM)) {
+                size += String(format: " (%.1f″)", inches)
+            }
+            rows.append(DiagnosticsRow(L("Image size"), size))
+        }
+        if let w = info.nativePixelWidth, let h = info.nativePixelHeight {
+            rows.append(DiagnosticsRow(L("Preferred timing"), "\(w) × \(h)"))
+        }
+        if let c = info.chromaticity, c.isPlausible {
+            let f = { (x: Double, y: Double) in String(format: "%.3f, %.3f", x, y) }
+            rows.append(DiagnosticsRow(L("Red"), f(c.redX, c.redY)))
+            rows.append(DiagnosticsRow(L("Green"), f(c.greenX, c.greenY)))
+            rows.append(DiagnosticsRow(L("Blue"), f(c.blueX, c.blueY)))
+            rows.append(DiagnosticsRow(L("White point"), f(c.whiteX, c.whiteY)))
+        }
+        rows.append(DiagnosticsRow(L("HDR static metadata"), info.hasHDRStaticMetadata ? L("Yes") : L("No")))
+        rows.append(DiagnosticsRow(L("Extension blocks"), "\(info.extensionCount)"))
+        rows.append(DiagnosticsRow(L("Checksums"), info.checksumValid ? L("Valid") : L("Invalid")))
+        rows.append(DiagnosticsRow(L("Size"), L("\(byteCount) bytes")))
+        return rows
+    }
+
+    /// A file name for "Export .bin…": the display name reduced to safe characters.
+    package static func exportFileName(displayName: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: " -_"))
+        let cleaned = String(String.UnicodeScalarView(displayName.unicodeScalars.filter { allowed.contains($0) }))
+            .trimmingCharacters(in: .whitespaces)
+        let base = cleaned.isEmpty ? "Display" : String(cleaned.prefix(48))
+        return base + " EDID.bin"
     }
 }
 

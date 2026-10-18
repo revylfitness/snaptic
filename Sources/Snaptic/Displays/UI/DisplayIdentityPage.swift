@@ -1,9 +1,11 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import SnapticKit
 
 /// Display Names (PLAN §2.1 `overview`: identity, hide, order, forget / transfer /
-/// forget-all): per-display info, menu visibility and order, renaming, and the displays
-/// Snaptic remembers settings for.
+/// forget-all): per-display info and EDID, menu visibility and order, name and icon, and the
+/// displays Snaptic remembers settings for.
 struct DisplayIdentityPage: View {
     @ObservedObject private var env: DisplaysPageEnvironment
     @State private var forgetting: DisplayKey?
@@ -92,19 +94,20 @@ struct DisplayIdentityPage: View {
     @ViewBuilder
     private func connectedRow(_ display: DisplayInfo, index: Int) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: DisplayMenuBlock.symbol(for: display))
+            Image(systemName: DisplayMenuBlock.symbol(for: display, config: env.config.value))
                 .font(.title2)
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(display.name).font(.headline)
                 HStack(spacing: 4) {
-                    ForEach(DisplayMenuBlock.badges(for: display, paused: false), id: \.self) { DisplaysBadge(text: $0) }
+                    ForEach(badges(display), id: \.self) { DisplaysBadge(text: $0) }
                 }
             }
         }
         .accessibilityElement(children: .combine)
         NameField(display: display, config: env.config)
+        SymbolPicker(display: display, config: env.config)
         Toggle(L("Show in the menu and the Displays panel"), isOn: Binding(
             get: { !env.config.value.menu.isHidden(display.key) },
             set: { env.config.value.menu.setHidden(!$0, for: display.key) }))
@@ -128,6 +131,7 @@ struct DisplayIdentityPage: View {
                 LabeledContent(row.label) { Text(row.value).textSelection(.enabled) }
             }
         }
+        EDIDDisclosure(display: display, context: env.context)
         if !remembered.isEmpty {
             Menu(L("Copy Settings From…")) {
                 ForEach(remembered, id: \.self) { source in
@@ -136,6 +140,11 @@ struct DisplayIdentityPage: View {
             }
             .help(L("Use a remembered display's brightness, color and resolution settings for this display"))
         }
+    }
+
+    private func badges(_ display: DisplayInfo) -> [String] {
+        guard let ctx = env.context else { return DisplayMenuBlock.badges(for: display, paused: false) }
+        return DisplayMenuBlock.badges(for: display, context: ctx)
     }
 
     // MARK: Actions
@@ -205,12 +214,13 @@ struct DisplayIdentityPage: View {
     }
 }
 
-/// Rename field. Names are stored in PerDisplayIdentity (team B's ConfigIdentity) through
-/// DisplayNameFields; until those fields exist the field is read-only and says so.
+/// Rename field: `PerDisplayIdentity.customName` (B's ConfigIdentity); the registry shows it
+/// as the display's name everywhere. Empty = the system name (`lastKnownName`).
 private struct NameField: View {
     let display: DisplayInfo
     @ObservedObject var config: ConfigStore<DisplaysConfig>
     @State private var draft = ""
+    @FocusState private var focused: Bool
 
     init(display: DisplayInfo, config: ConfigStore<DisplaysConfig>) {
         self.display = display
@@ -218,45 +228,167 @@ private struct NameField: View {
     }
 
     var body: some View {
-        if DisplayNameFields.isSupported {
-            TextField(L("Name"), text: $draft, prompt: Text(display.name))
-                .onAppear { draft = DisplayNameFields.customName(identity) ?? "" }
-                .onSubmit { save() }
-                .accessibilityLabel(L("Name for \(display.name)"))
-            if DisplayNameFields.customName(identity) != nil {
-                Button(L("Use the System Name")) {
-                    draft = ""
-                    save()
-                }
+        TextField(L("Name"), text: $draft, prompt: Text(systemName))
+            .focused($focused)
+            .onAppear { draft = DisplayNameFields.customName(identity) ?? "" }
+            .onSubmit { save() }
+            .onChange(of: focused) { _, isFocused in if !isFocused { save() } }
+            .accessibilityLabel(L("Name for \(display.name)"))
+        if DisplayNameFields.customName(identity) != nil {
+            Button(L("Use the System Name")) {
+                draft = ""
+                save()
             }
-        } else {
-            LabeledContent(L("Name"), value: display.name)
-            Text(L("Renaming displays arrives with display identity support."))
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 
     private var identity: PerDisplayIdentity { config.value.perDisplay[display.key]?.identity ?? PerDisplayIdentity() }
 
+    /// What macOS calls the display (shown as the placeholder).
+    private var systemName: String { identity.lastKnownName ?? display.name }
+
     private func save() {
-        let name = String(draft.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars.prefix(64))
+        let name = PerDisplayIdentity.cleanName(draft)
+        guard name != DisplayNameFields.customName(identity) else { return }
         var value = config.value
         var perDisplay = value.perDisplay[display.key] ?? PerDisplayConfig()
-        DisplayNameFields.setCustomName(name.isEmpty ? nil : name, in: &perDisplay.identity)
+        DisplayNameFields.setCustomName(name, in: &perDisplay.identity)
+        value.perDisplay[display.key] = perDisplay
+        config.value = value
+        draft = name ?? ""
+        EventLog.shared.record(.registry, name == nil ? "Display name reset" : "Display renamed")
+    }
+}
+
+/// The display's icon in the menu, the panel and these pages: a curated set of SF Symbols,
+/// or Automatic (by connection type).
+private struct SymbolPicker: View {
+    let display: DisplayInfo
+    @ObservedObject var config: ConfigStore<DisplaysConfig>
+
+    init(display: DisplayInfo, config: ConfigStore<DisplaysConfig>) {
+        self.display = display
+        _config = ObservedObject(wrappedValue: config)
+    }
+
+    var body: some View {
+        Picker(selection: Binding<String?>(
+            get: { DisplayNameFields.symbol(config.value.perDisplay[display.key]?.identity ?? PerDisplayIdentity()) },
+            set: { set($0) })) {
+            Label(L("Automatic"), systemImage: DisplayMenuBlock.symbol(for: display)).tag(String?.none)
+            Divider()
+            ForEach(DisplaysUIText.displaySymbols, id: \.symbol) { entry in
+                Label(entry.title, systemImage: entry.symbol).tag(Optional(entry.symbol))
+            }
+            // A symbol set elsewhere (an imported config) stays selectable.
+            if let other = DisplayNameFields.symbol(config.value.perDisplay[display.key]?.identity ?? PerDisplayIdentity()),
+               !DisplaysUIText.isCuratedSymbol(other) {
+                Label(other, systemImage: other).tag(Optional(other))
+            }
+        } label: {
+            Text(L("Icon"))
+        }
+        .pickerStyle(.menu)
+        .accessibilityLabel(L("Icon for \(display.name)"))
+    }
+
+    private func set(_ symbol: String?) {
+        var value = config.value
+        var perDisplay = value.perDisplay[display.key] ?? PerDisplayConfig()
+        guard perDisplay.identity.symbol != symbol else { return }
+        perDisplay.identity.symbol = symbol
         value.perDisplay[display.key] = perDisplay
         config.value = value
     }
 }
 
-/// The one place that touches PerDisplayIdentity's name fields (team B owns the type).
-/// B's ConfigIdentity needs: `customName: String?` (≤ 64 scalars, sanitized, applied by the
-/// registry to DisplayInfo.name), `lastKnownName: String?` (the system name, written by the
-/// registry, shown for remembered displays) and `symbol: String?` (SF Symbol for the menu).
-/// When they land, set `isSupported` and the three accessors to use them.
+/// The one place that touches PerDisplayIdentity's name and icon fields (team B owns the type).
 private enum DisplayNameFields {
-    static let isSupported = false
-    static func customName(_ identity: PerDisplayIdentity) -> String? { nil }
-    static func setCustomName(_ name: String?, in identity: inout PerDisplayIdentity) {}
-    static func savedName(_ identity: PerDisplayIdentity) -> String? { nil }
+    static func customName(_ identity: PerDisplayIdentity) -> String? { identity.customName }
+
+    static func setCustomName(_ name: String?, in identity: inout PerDisplayIdentity) {
+        identity.customName = PerDisplayIdentity.cleanName(name)
+    }
+
+    /// The name for a display that isn't connected: the user's name, else the last system name.
+    static func savedName(_ identity: PerDisplayIdentity) -> String? { identity.customName ?? identity.lastKnownName }
+
+    static func symbol(_ identity: PerDisplayIdentity) -> String? { identity.symbol }
+}
+
+// MARK: - EDID (parity: BetterDisplay's EDID view)
+
+/// The display's EDID: decoded summary (Kit `EDIDInfo`), copy as hex or Base64, export
+/// the raw bytes. Read on demand from B's `IORegistryDisplays` when expanded. EDID bytes
+/// never go into the diagnostics report or the event log.
+private struct EDIDDisclosure: View {
+    let display: DisplayInfo
+    weak var context: DisplaysContext?
+    @State private var expanded = false
+    @State private var bytes: [UInt8]?
+    @State private var loaded = false
+
+    var body: some View {
+        DisclosureGroup(L("EDID"), isExpanded: $expanded) {
+            if context == nil {
+                Text(L("Turn on Displays to read the EDID.")).foregroundStyle(.secondary)
+            } else if !loaded {
+                ProgressView().controlSize(.small)
+            } else if let bytes, !bytes.isEmpty {
+                if let info = EDIDInfo.parse(bytes) {
+                    ForEach(Array(EDIDText.summary(info, byteCount: bytes.count).enumerated()), id: \.offset) { _, row in
+                        LabeledContent(row.label) { Text(row.value).textSelection(.enabled) }
+                    }
+                } else {
+                    Text(L("The EDID couldn't be decoded (\(bytes.count) bytes)."))
+                        .foregroundStyle(.secondary)
+                }
+                HStack {
+                    Button(L("Copy Hex")) { copy(EDIDText.hex(bytes)) }
+                    Button(L("Copy Base64")) { copy(EDIDText.base64(bytes)) }
+                    Spacer()
+                    Button(L("Export .bin…")) { export(bytes) }
+                }
+            } else {
+                Text(L("macOS doesn't expose an EDID for this display."))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .onChange(of: expanded) { _, isExpanded in if isExpanded && !loaded { load() } }
+        .onChange(of: display.hardwareID) { _, _ in
+            loaded = false
+            bytes = nil
+            if expanded { load() }
+        }
+    }
+
+    private func load() {
+        guard let ctx = context else { return }
+        let info = ctx.privateAPI.function(.coreDisplayInfo, as: IORegistryDisplays.InfoDictionaryFn.self)
+        let data = IORegistryDisplays.facts(for: display.hardwareID, coreDisplayInfo: info).edid
+        bytes = data.map { [UInt8]($0.prefix(EDIDInfo.maxBytes)) }
+        loaded = true
+    }
+
+    private func copy(_ text: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+    }
+
+    private func export(_ bytes: [UInt8]) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = EDIDText.exportFileName(displayName: display.name)
+        panel.allowedContentTypes = [UTType(filenameExtension: "bin") ?? .data]
+        panel.canCreateDirectories = true
+        let data = Data(bytes)
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                try data.write(to: url, options: .atomic)
+            } catch {
+                EventLog.shared.record(.registry, "EDID export failed")
+            }
+        }
+    }
 }

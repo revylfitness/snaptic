@@ -38,7 +38,7 @@ struct DiagnosticsReport {
         context.commands.register("diagnostics", policy: .read, offOnly: false, cliAllowed: true,
                                   summary: L("Print the diagnostics report (identifiers masked)"),
                                   lifetime: lifetime) { [weak self] _ in
-            guard let ctx = self?.context else { return .failure(2, L("Displays isn't running")) }
+            guard let ctx = self?.context else { return .failure(ControlExit.unavailable, L("Displays isn't running")) }
             return .ok(Self.makeReport(context: ctx, runtime: ctx.runtime).text)
         }
     }
@@ -110,10 +110,12 @@ struct DiagnosticsReport {
         guard let ctx = context else { return DiagnosticsSection(title: "Displays module", rows: rows) }
         rows.append(DiagnosticsText.scrub(label: "Safe Mode",
                                           value: ctx.safeMode.isActive ? "on (\(ctx.safeMode.reason ?? "no reason"))" : "off"))
-        rows.append(DiagnosticsRow("Panic latch", runtime.isPanicLatched ? "latched" : "off"))
+        rows.append(DiagnosticsRow("Panic latch", ctx.panic.isLatched ? "latched" : "off"))
         if let summary = runtime.lastPanicSummary { rows.append(DiagnosticsText.scrub(label: "Last panic", value: summary)) }
         rows.append(DiagnosticsRow("Unprotected", DisplaysMenuBuilder.isUnprotected(ctx) ? "yes" : "no"))
         rows.append(DiagnosticsRow("Guard helper", ctx.guardClient.isAlive ? "running" : "not running"))
+        rows.append(DiagnosticsText.scrub(label: "Helpers", value: ctx.helpers.unavailable.map { "unavailable: \($0)" } ?? "available"))
+        rows.append(DiagnosticsRow("Sleep prevention", runtime.sleepPreventionActive ? "active" : "off"))
         rows.append(DiagnosticsRow("Virtual hosts", "\(ctx.virtualHosts.liveDisplays.count)"))
         rows.append(DiagnosticsRow("Transactions", ctx.transactions.isBusy ? "busy" : "idle"))
         rows.append(DiagnosticsRow("Session", ctx.sessionGate.isOpen ? "open" : "paused"))

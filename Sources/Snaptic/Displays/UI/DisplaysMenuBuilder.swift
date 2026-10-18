@@ -40,12 +40,9 @@ import SnapticKit
                 relauncher.relaunch(reason: L("Leave Safe Mode"))
             })
         }
-        if ctx.runtime.isPanicLatched {
+        // B's Tools item "Resume Display Automation" is the action; this is only the notice.
+        if ctx.panic.isLatched {
             items.append(DisplayMenuBlock.infoItem(L("Display automation is paused"), symbol: "pause.circle"))
-            let panic = ctx.panic
-            items.append(DisplayMenuBlock.actionItem(L("Resume Display Automation"), symbol: "play.circle") {
-                panic.resume()
-            })
         }
         let paused = ctx.otherApps.pausedDisplayFeatures
         if !paused.isEmpty {
@@ -54,8 +51,12 @@ import SnapticKit
             item.toolTip = paused.map(DisplaysUIText.title).sorted().joined(separator: ", ")
             items.append(item)
         }
-        if Self.isUnprotected(ctx) {
-            items.append(DisplayMenuBlock.infoItem(L("Unprotected: the safety helper isn't running"), symbol: "exclamationmark.shield"))
+        if let reason = Self.unprotectedReason(ctx) {
+            let title = ctx.helpers.unavailable != nil ? L("Unprotected: Snaptic's helpers can't run")
+                : L("Unprotected: the safety helper isn't running")
+            let item = DisplayMenuBlock.infoItem(title, symbol: "exclamationmark.shield")
+            item.toolTip = reason
+            items.append(item)
             let relauncher = ctx.relauncher
             items.append(DisplayMenuBlock.actionItem(L("Restart Snaptic"), symbol: "arrow.clockwise") {
                 relauncher.relaunch(reason: L("Restart the safety helper"))
@@ -69,10 +70,19 @@ import SnapticKit
         Array(Set(paused.compactMap { monitor.pauseReason(for: $0) })).sorted()
     }
 
-    /// Features that rely on the guard are on, but the guard isn't alive (PLAN §3.5 "Unprotected").
-    static func isUnprotected(_ ctx: DisplaysContext) -> Bool {
-        FeatureGraph.requiredServices(effective: ctx.runtime.effectiveFeatures).contains(.guardProcess)
-            && !ctx.guardClient.isAlive
+    /// PLAN §3.5 "Unprotected": the guard isn't alive while something it must undo is
+    /// armed (B's `isUnprotected`), or helpers can't be spawned at all (A's spawner).
+    static func isUnprotected(_ ctx: DisplaysContext) -> Bool { unprotectedReason(ctx) != nil }
+
+    /// What the Unprotected banner says, or nil when protected.
+    static func unprotectedReason(_ ctx: DisplaysContext) -> String? {
+        if let reason = ctx.helpers.unavailable {
+            return L("Snaptic's helpers can't run (\(reason)), so risky display changes can't be reverted automatically.")
+        }
+        if ctx.guardClient.isUnprotected {
+            return L("The safety helper that reverts risky display changes isn't running.")
+        }
+        return nil
     }
 
     // MARK: Display blocks
@@ -124,8 +134,9 @@ import SnapticKit
         if !result.more.isEmpty {
             items.append(DisplayMenuBlock.submenuItem(L("More Tools"), symbol: "ellipsis.circle", result.more))
         }
+        let open = ctx.openSettings
         items.append(DisplayMenuBlock.actionItem(L("More Display Features…"), symbol: "switch.2") {
-            DisplayMenuBlock.openSettings(page: "displays.features")
+            open("displays.features")
         })
         return items
     }

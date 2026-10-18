@@ -146,7 +146,7 @@ private struct FeatureRow: View {
         guard isOn, !isEffective, let ctx = env.context else { return [] }
         if let reason = ctx.otherApps.pauseReason(for: feature) { return [reason] }
         if ctx.safeMode.isActive && FeatureGraph.safeModeRemoves.contains(feature) { return [L("Paused in Safe Mode")] }
-        if env.runtime.isPanicLatched && FeatureGraph.panicLatchRemoves.contains(feature) {
+        if ctx.panic.isLatched && FeatureGraph.panicLatchRemoves.contains(feature) {
             return [L("Paused until you resume display automation")]
         }
         var lines: [String] = []

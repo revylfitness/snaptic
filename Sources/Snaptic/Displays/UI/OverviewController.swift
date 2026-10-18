@@ -87,13 +87,13 @@ import SnapticKit
         ctx.commands.register("identify", policy: .low, offOnly: false, cliAllowed: true,
                               summary: L("Show each display's number and name for 3 seconds"),
                               lifetime: lifetime) { [weak self] _ in
-            guard let self else { return .failure(2, L("Displays isn't running")) }
+            guard let self else { return .failure(ControlExit.unavailable, L("Displays isn't running")) }
             let count = self.identifyDisplays()
             return .ok(L("Identifying \(count) displays"))
         }
         ctx.commands.register("redetect", policy: .low, offOnly: false, cliAllowed: true,
                               summary: L("Look for connected displays again"), lifetime: lifetime) { [weak self] _ in
-            guard let self else { return .failure(2, L("Displays isn't running")) }
+            guard let self else { return .failure(ControlExit.unavailable, L("Displays isn't running")) }
             self.redetect()
             return .ok(L("Looking for displays"))
         }
@@ -271,10 +271,11 @@ import SnapticKit
             identify: { [weak self] in _ = self?.owner?.identifyDisplays() },
             redetect: { [weak self] in self?.owner?.redetect() },
             restoreAll: { [weak context] in context?.panic.panic(reason: L("Restore All Displays (Displays panel)")) },
-            resume: { [weak context] in context?.panic.resume() },
-            settings: { [weak self] in
+            // B's registered action (its Tools item runs the same one).
+            resume: { [weak context] in _ = context?.actions.perform(.resumeAutomation, on: .all) },
+            settings: { [weak self, weak context] in
                 self?.close()
-                DisplayMenuBlock.openSettings(page: "displays.overview")
+                context?.openSettings("displays.overview")
             },
             showMore: { [weak self] display in self?.owner?.popUpMenu(for: display) },
             enable: { [weak context] feature in if let context { DisplayMenuBlock.enable(feature, context: context) } })
@@ -408,7 +409,7 @@ private struct DisplaysPanelView: View {
                 Label(L("Safe Mode: display automation is off"), systemImage: "exclamationmark.shield")
                     .font(.caption)
             }
-            if runtime.isPanicLatched {
+            if ctx.panic.isLatched {
                 HStack {
                     Label(L("Display automation is paused"), systemImage: "pause.circle").font(.caption)
                     Spacer()
@@ -420,6 +421,12 @@ private struct DisplaysPanelView: View {
                 Label(DisplaysMenuBuilder.pauseReasons(paused, monitor: ctx.otherApps).first ?? L("Some features are paused"),
                       systemImage: "pause.circle")
                     .font(.caption)
+            }
+            if let reason = DisplaysMenuBuilder.unprotectedReason(ctx) {
+                Label(L("Unprotected"), systemImage: "exclamationmark.shield")
+                    .font(.caption)
+                    .help(reason)
+                    .accessibilityValue(Text(reason))
             }
         }
     }

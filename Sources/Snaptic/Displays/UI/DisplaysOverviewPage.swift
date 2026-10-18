@@ -36,7 +36,7 @@ struct DisplaysOverviewPage: View {
         if displays.isEmpty {
             Section(L("Displays")) {
                 Text(L("No displays detected yet.")).foregroundStyle(.secondary)
-                Button(L("Redetect Displays")) { ctx.actions.perform(OverviewController.redetectAction, on: .all) }
+                Button(L("Redetect Displays")) { _ = ctx.actions.perform(OverviewController.redetectAction, on: .all) }
             }
         }
         ForEach(Array(displays.enumerated()), id: \.element.key) { index, display in
@@ -47,9 +47,9 @@ struct DisplaysOverviewPage: View {
         }
         Section(L("Tools")) {
             HStack {
-                Button(L("Identify Displays")) { ctx.actions.perform(OverviewController.identifyAction, on: .all) }
-                Button(L("Redetect")) { ctx.actions.perform(OverviewController.redetectAction, on: .all) }
-                Button(L("Show Displays Panel")) { ctx.actions.perform(OverviewController.showPanelAction, on: .pointer) }
+                Button(L("Identify Displays")) { _ = ctx.actions.perform(OverviewController.identifyAction, on: .all) }
+                Button(L("Redetect")) { _ = ctx.actions.perform(OverviewController.redetectAction, on: .all) }
+                Button(L("Show Displays Panel")) { _ = ctx.actions.perform(OverviewController.showPanelAction, on: .pointer) }
             }
             LabeledContent(L("Displays panel shortcut")) {
                 ShortcutRecorder(combo: shortcutBinding(\.showPanelShortcut))
@@ -103,13 +103,14 @@ struct DisplaysStatusSection: View {
                     }
                     .accessibilityElement(children: .contain)
                 }
-                if env.runtime.isPanicLatched {
+                if ctx.panic.isLatched {
                     VStack(alignment: .leading, spacing: 4) {
                         Label(L("Display automation is paused"), systemImage: "pause.circle").font(.headline)
                         Text(env.runtime.lastPanicSummary ?? L("Restore All Displays ran."))
                         Text(L("Layouts, protection, hooks and virtual-screen recreation wait until you resume."))
                             .font(.caption).foregroundStyle(.secondary)
-                        Button(L("Resume Display Automation")) { ctx.panic.resume() }
+                        // B's registered action (the same one as its Tools menu item).
+                        Button(L("Resume Display Automation")) { _ = ctx.actions.perform(.resumeAutomation, on: .all) }
                     }
                     .accessibilityElement(children: .contain)
                 }
@@ -123,10 +124,10 @@ struct DisplaysStatusSection: View {
                     }
                     .accessibilityElement(children: .combine)
                 }
-                if DisplaysMenuBuilder.isUnprotected(ctx) {
+                if let reason = DisplaysMenuBuilder.unprotectedReason(ctx) {
                     VStack(alignment: .leading, spacing: 4) {
                         Label(L("Unprotected"), systemImage: "exclamationmark.shield").font(.headline)
-                        Text(L("The safety helper that reverts risky display changes isn't running."))
+                        Text(reason)
                         Button(L("Restart Snaptic")) { ctx.relauncher.relaunch(reason: L("Restart the safety helper")) }
                     }
                     .accessibilityElement(children: .contain)
@@ -137,7 +138,7 @@ struct DisplaysStatusSection: View {
 
     private func hasBanner(_ ctx: DisplaysContext) -> Bool {
         if case .degraded = env.runtime.moduleState { return true }
-        return ctx.safeMode.isActive || env.runtime.isPanicLatched || !ctx.otherApps.pausedDisplayFeatures.isEmpty
+        return ctx.safeMode.isActive || ctx.panic.isLatched || !ctx.otherApps.pausedDisplayFeatures.isEmpty
             || DisplaysMenuBuilder.isUnprotected(ctx)
     }
 }
@@ -159,6 +160,10 @@ struct DisplaysBadge: View {
 
 // MARK: - Live controls for one display (Overview page and floating panel)
 
+/// One display's live controls. Every change goes through the owning team's controller:
+/// brightness through BrightnessService, resolution through D's ResolutionController
+/// (`ctx.connectPlanner.resolution`), volume, mute, input and power through C's
+/// DDCController (`ctx.ddc.controller`). Those controllers report failures themselves.
 struct DisplayControlsCard: View {
     let display: DisplayInfo
     let number: Int
@@ -169,6 +174,8 @@ struct DisplayControlsCard: View {
     @ObservedObject private var runtime: DisplaysRuntimeState
     @ObservedObject private var live: DisplayRuntime
     @StateObject private var model: DisplayControlModel
+    /// The resolution slider's position while it is being moved (index into the stops).
+    @State private var draggingStop: Double?
 
     init(display: DisplayInfo, number: Int, runtime: DisplaysRuntimeState, context: DisplaysContext, compact: Bool,
          enableFeature: @escaping @MainActor (DisplayFeature) -> Void,
@@ -187,11 +194,12 @@ struct DisplayControlsCard: View {
         VStack(alignment: .leading, spacing: compact ? 6 : 10) {
             header
             if runtime.isEffective(.brightness) { brightness }
-            if runtime.isEffective(.ddcControls), live.volume != nil { volume }
-            if runtime.isEffective(.resolution), display.isActive, !display.isSmartHiDPIPair, !model.modes.isEmpty {
-                resolution
+            if runtime.isEffective(.ddcControls), model.showsVolume { volume }
+            if runtime.isEffective(.resolution), model.showsResolution(display) { resolution }
+            if runtime.isEffective(.ddcInput) {
+                let inputs = model.inputs
+                if !inputs.isEmpty { input(inputs) }
             }
-            if runtime.isEffective(.ddcInput), model.supportsInput { input }
             if !compact { details }
             ForEach(model.hints(for: display), id: \.feature) { hint in
                 HStack {
@@ -204,31 +212,23 @@ struct DisplayControlsCard: View {
                     }
                 }
             }
-            if let notice = model.notice {
-                Label(notice, systemImage: "exclamationmark.circle")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            }
         }
-        .onAppear { model.refresh(display, runtime: live) }
-        .onChange(of: display.desktopID) { _, _ in model.refresh(display, runtime: live) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text(L("Display \(number): \(display.name)")))
     }
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: DisplayMenuBlock.symbol(for: display))
+            Image(systemName: model.symbol(for: display))
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             Text(display.name)
                 .font(.headline)
                 .lineLimit(1)
-            ForEach(DisplayMenuBlock.badges(for: display, paused: model.isPaused), id: \.self) { DisplaysBadge(text: $0) }
+            ForEach(model.badges(for: display), id: \.self) { DisplaysBadge(text: $0) }
             Spacer(minLength: 4)
-            if runtime.isEffective(.ddcPower), model.ddcAvailable {
-                Toggle(isOn: Binding(get: { live.powerOn ?? true },
-                                     set: { model.setPower($0, display: display, runtime: live) })) {
+            if runtime.isEffective(.ddcPower), model.showsPower {
+                Toggle(isOn: Binding(get: { live.powerOn ?? true }, set: { model.setPower($0) })) {
                     Text(L("Power"))
                 }
                 .toggleStyle(.switch)
@@ -263,39 +263,85 @@ struct DisplayControlsCard: View {
 
     private var volume: some View {
         HStack(spacing: 6) {
-            DisplaySliderRow(title: L("Volume"), symbol: "speaker.wave.2", value: live.volume ?? 0) { v in
-                model.setVolume(v, runtime: live)
+            DisplaySliderRow(title: L("Volume"), symbol: "speaker.wave.2", value: live.volume ?? 0.5) { v in
+                model.setVolume(v)
             }
-            if live.muted != nil {
-                Button { model.toggleMute(runtime: live) } label: {
-                    Image(systemName: live.muted == true ? "speaker.slash.fill" : "speaker.fill")
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel(live.muted == true ? L("Unmute") : L("Mute"))
+            Button { model.toggleMute() } label: {
+                Image(systemName: live.muted == true ? "speaker.slash.fill" : "speaker.fill")
             }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(live.muted == true ? L("Unmute") : L("Mute"))
         }
     }
 
+    // MARK: Resolution (D's ResolutionController)
+
+    @ViewBuilder
     private var resolution: some View {
-        Picker(selection: Binding<ModeRef?>(
-            get: { display.currentMode?.ref ?? model.currentMode },
-            set: { if let mode = $0 { model.setMode(mode, display: display) } })) {
-            ForEach(model.modes, id: \.self) { mode in
-                Text(DisplaysUIText.modeLabel(mode)).tag(Optional(mode))
-            }
-        } label: {
-            Label(L("Resolution"), systemImage: "rectangle.arrowtriangle.2.outward")
+        let current = model.currentMode(display)
+        let stops = model.sliderStops()
+        if stops.count >= 2, let current, let index = stops.firstIndex(of: current) {
+            resolutionSlider(stops: stops, index: index)
         }
-        .pickerStyle(.menu)
-        .accessibilityLabel(L("Resolution of \(display.name)"))
+        let modes = model.modes()
+        if !modes.isEmpty {
+            Picker(selection: Binding<ModeRef?>(
+                get: { current },
+                set: { if let mode = $0 { model.apply(mode, display: display) } })) {
+                ForEach(modes.prefix(DisplayControlModel.pickerLimit), id: \.ref) { mode in
+                    Text(model.label(mode)).tag(Optional(mode.ref))
+                }
+            } label: {
+                Label(L("Resolution"), systemImage: "rectangle.arrowtriangle.2.outward")
+            }
+            .pickerStyle(.menu)
+            .accessibilityLabel(L("Resolution of \(display.name)"))
+            if modes.count > DisplayControlModel.pickerLimit {
+                Button(L("All Modes in Settings…")) { model.openSettings("displays.resolution") }
+                    .buttonStyle(.link)
+                    .font(.caption)
+            }
+        }
     }
 
-    private var input: some View {
-        Picker(selection: Binding<UInt16?>(
-            get: { live.input },
-            set: { if let code = $0 { model.setInput(code, display: display, runtime: live) } })) {
-            ForEach(model.inputs, id: \.self) { code in
-                Text(DisplaysUIText.inputName(code)).tag(Optional(code))
+    private func resolutionSlider(stops: [ModeRef], index: Int) -> some View {
+        let shown = Int((draggingStop ?? Double(index)).rounded())
+        let text = model.sliderText(stops[min(max(shown, 0), stops.count - 1)])
+        return HStack(spacing: 8) {
+            Image(systemName: "rectangle.arrowtriangle.2.outward")
+                .frame(width: 18)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Slider(value: Binding(get: { draggingStop ?? Double(index) }, set: { v in
+                draggingStop = v
+                // Keyboard and VoiceOver changes end no drag: apply after a short pause.
+                model.scheduleSlider(Int(v.rounded()), stops: stops)
+            }), in: 0...Double(stops.count - 1), step: 1, label: { Text(L("Resolution")) }, onEditingChanged: { editing in
+                guard !editing, let v = draggingStop else { return }
+                model.applySlider(Int(v.rounded()), stops: stops)
+                draggingStop = nil
+            })
+            .labelsHidden()
+            .accessibilityLabel(Text(L("Resolution size")))
+            .accessibilityValue(Text(text))
+            Text(text)
+                .monospacedDigit()
+                .font(.caption)
+                .lineLimit(1)
+                .frame(minWidth: 40, alignment: .trailing)
+                .accessibilityHidden(true)
+        }
+        .onChange(of: index) { _, _ in draggingStop = nil }
+    }
+
+    // MARK: Input (C's DDCController)
+
+    private func input(_ inputs: [DDCInputEntry]) -> some View {
+        Picker(selection: Binding<String?>(
+            get: { inputs.first { !$0.lgAlt && $0.value == live.input }?.id },
+            set: { id in if let entry = inputs.first(where: { $0.id == id }) { model.setInput(entry) } })) {
+            ForEach(inputs) { entry in
+                Text(model.inputName(entry)).tag(Optional(entry.id))
             }
         } label: {
             Label(L("Input"), systemImage: "cable.connector")
@@ -306,8 +352,8 @@ struct DisplayControlsCard: View {
 
     private var details: some View {
         VStack(alignment: .leading, spacing: 2) {
-            if let mode = display.currentMode?.ref ?? model.currentMode {
-                Text(DisplaysUIText.modeLabel(mode))
+            if let mode = model.currentMode(display) {
+                Text(model.label(mode))
             }
             if let text = live.statusText { Text(text) }
         }
@@ -360,8 +406,8 @@ struct DisplaySliderRow: View {
 
 // MARK: - Model
 
-/// Live state and actions for one display's controls. Holds the context weakly; async
-/// work runs on the module's lifetime, so it ends when Displays stops.
+/// Reads and actions for one display's controls, delegating to the owning controllers.
+/// Holds the context weakly; nothing here talks to DDC or CoreGraphics directly.
 @MainActor final class DisplayControlModel: ObservableObject {
     struct Hint {
         let feature: DisplayFeature
@@ -369,36 +415,33 @@ struct DisplaySliderRow: View {
         let canTurnOn: Bool
     }
 
+    /// Modes listed in the picker (the rest are on the Resolution page), like D's menu.
+    static let pickerLimit = 60
+
     let key: DisplayKey
     private weak var context: DisplaysContext?
-    @Published private(set) var modes: [ModeRef] = []
-    @Published private(set) var currentMode: ModeRef?
-    @Published private(set) var inputs: [UInt16] = []
-    @Published private(set) var supportsInput = false
-    @Published var notice: String?
-    private var modesFor: UInt32?
-    private var capabilitiesRequested = false
-    private var volumeMax: UInt16 = 100
-    private var pendingVolume: UInt16?
-    private var volumeWriting = false
+    private var sliderWork: DispatchWorkItem?
 
     init(key: DisplayKey, context: DisplaysContext?) {
         self.key = key
         self.context = context
     }
 
-    var isPaused: Bool { !(context?.otherApps.pausedDisplayFeatures.isEmpty ?? true) }
-    var ddcAvailable: Bool { context?.ddc.isAvailable(key) ?? false }
+    private var resolutionController: ResolutionController? { context?.connectPlanner.resolution }
+    private var ddcController: DDCController? { context?.ddc.controller }
 
-    func refresh(_ display: DisplayInfo, runtime live: DisplayRuntime) {
-        if modesFor != display.desktopID {
-            modesFor = display.desktopID
-            let system = Self.systemModes(display.desktopID)
-            currentMode = Self.systemCurrentMode(display.desktopID)
-            modes = DisplayModeChoices.choices(system, current: display.currentMode?.ref ?? currentMode)
-        }
-        loadDDC(live)
+    var isPaused: Bool { !(context?.otherApps.pausedDisplayFeatures.isEmpty ?? true) }
+
+    func symbol(for display: DisplayInfo) -> String {
+        DisplayMenuBlock.symbol(for: display, config: context?.config.value)
     }
+
+    func badges(for display: DisplayInfo) -> [String] {
+        guard let ctx = context else { return DisplayMenuBlock.badges(for: display, paused: false) }
+        return DisplayMenuBlock.badges(for: display, context: ctx)
+    }
+
+    func openSettings(_ page: String) { context?.openSettings(page) }
 
     func hints(for display: DisplayInfo) -> [Hint] {
         guard let ctx = context else { return [] }
@@ -425,163 +468,96 @@ struct DisplaySliderRow: View {
         ctx.brightness.set(min(max(value, 0), 1), for: key, source: .user)
     }
 
-    // MARK: DDC (volume, mute, input, power)
+    // MARK: Resolution (D)
 
-    private func loadDDC(_ live: DisplayRuntime) {
-        guard !capabilitiesRequested, let ctx = context, ctx.ddc.isAvailable(key) else { return }
-        let wantsVolume = ctx.runtime.isEffective(.ddcControls)
-        let wantsInput = ctx.runtime.isEffective(.ddcInput)
-        guard wantsVolume || wantsInput else { return }
-        capabilitiesRequested = true
-        let ddc = ctx.ddc
-        let key = key
-        ctx.lifetime.spawn { [weak self] in
-            let caps = await ddc.capabilities(of: key, refresh: false)
-            if wantsInput {
-                let listed = caps?.vcp[0x60] ?? []
-                self?.inputs = listed.isEmpty ? DisplaysUIText.commonInputs : listed.sorted()
-                self?.supportsInput = caps == nil || caps?.supports(0x60) == true
-                if live.input == nil, let reading = await ddc.read(0x60, from: key) { live.input = reading.current & 0xFF }
-            }
-            if wantsVolume, caps == nil || caps?.supports(0x62) == true, let reading = await ddc.read(0x62, from: key),
-               reading.max > 0 {
-                self?.volumeMax = reading.max
-                if live.volume == nil { live.volume = Double(reading.current) / Double(reading.max) }
-                if live.muted == nil, caps?.supports(0x8D) == true, let mute = await ddc.read(0x8D, from: key) {
-                    live.muted = mute.current == 1
-                }
-            }
-        }
+    func showsResolution(_ display: DisplayInfo) -> Bool {
+        display.isActive && display.mirrorOf == nil && resolutionController != nil
     }
 
-    /// Slider writes are coalesced: one write in flight per display, the latest value wins.
-    func setVolume(_ value: Double, runtime live: DisplayRuntime) {
-        let clamped = min(max(value, 0), 1)
-        live.volume = clamped
-        pendingVolume = UInt16((clamped * Double(volumeMax)).rounded())
-        pumpVolume()
+    func currentMode(_ display: DisplayInfo) -> ModeRef? { resolutionController?.currentMode(display) }
+
+    func modes() -> [DisplayModeDescriptor] { resolutionController?.modes(for: key) ?? [] }
+
+    func label(_ mode: DisplayModeDescriptor) -> String { resolutionController?.label(mode) ?? DisplaysUIText.modeLabel(mode.ref) }
+
+    func label(_ mode: ModeRef) -> String {
+        resolutionController?.label(mode, markers: true, key: key) ?? DisplaysUIText.modeLabel(mode)
     }
 
-    private func pumpVolume() {
-        guard !volumeWriting, let value = pendingVolume, let ctx = context else { return }
-        pendingVolume = nil
-        volumeWriting = true
-        let ddc = ctx.ddc
-        let key = key
-        let task = ctx.lifetime.spawn { [weak self] in
-            let ok = await ddc.write(0x62, value, to: key, interactive: true, token: nil)
-            guard let self else { return }
-            self.volumeWriting = false
-            if !ok { self.notice = L("The monitor didn't accept the volume change.") }
-            self.pumpVolume()
-        }
-        if task == nil { volumeWriting = false }
+    func sliderStops() -> [ModeRef] { resolutionController?.sliderModes(for: key) ?? [] }
+
+    func sliderText(_ mode: ModeRef) -> String {
+        resolutionController?.sliderValueText(mode, key: key) ?? DisplaysUIText.modeLabel(mode)
     }
 
-    func toggleMute(runtime live: DisplayRuntime) {
-        guard let ctx = context else { return }
-        let mute = !(live.muted ?? false)
-        live.muted = mute
-        let ddc = ctx.ddc
-        let key = key
-        ctx.lifetime.spawn { [weak self] in
-            if !(await ddc.write(0x8D, mute ? 1 : 2, to: key, interactive: true, token: nil)) {
-                live.muted = !mute
-                self?.notice = L("The monitor didn't accept the mute change.")
-            }
-        }
+    func apply(_ mode: ModeRef, display: DisplayInfo) {
+        guard let c = resolutionController, mode != c.currentMode(display) else { return }
+        c.apply(mode, to: key, label: L("Resolution of “\(display.name)”"))
     }
 
-    /// Switching input can leave this Mac without the picture, so it is confirmed first.
-    func setInput(_ code: UInt16, display: DisplayInfo, runtime live: DisplayRuntime) {
-        guard let ctx = context, code != live.input else { return }
-        let ddc = ctx.ddc
-        let confirm = ctx.preConfirm
-        let key = key
-        let message = L("Switch “\(display.name)” to \(DisplaysUIText.inputName(code))? It shows that source until you switch back with the monitor's buttons or from Snaptic.")
-        ctx.lifetime.spawn { [weak self] in
-            guard let token = await confirm.confirm(key: key, vcp: 0x60, value: code, message: message, allowKey: "ddc.input") else {
-                return
-            }
-            if await ddc.write(0x60, code, to: key, interactive: true, token: token) {
-                live.input = code
-            } else {
-                self?.notice = L("The monitor didn't switch inputs.")
-            }
-        }
+    /// Slider release: snaps (unless ⌥ is held) and applies through D.
+    func applySlider(_ index: Int, stops: [ModeRef]) {
+        sliderWork?.cancel()
+        sliderWork = nil
+        guard let c = resolutionController, stops.count >= 2 else { return }
+        let raw = min(max(index, 0), stops.count - 1)
+        let bypass = NSEvent.modifierFlags.contains(.option)
+        let i = c.snappedStop(raw, in: stops, key: key, bypass: bypass)
+        c.apply(stops[i], to: key)
     }
 
-    /// DDC power (VCP 0xD6): on is safe; standby is confirmed, and refused for the only
-    /// display you can see.
-    func setPower(_ on: Bool, display: DisplayInfo, runtime live: DisplayRuntime) {
-        guard let ctx = context else { return }
-        let ddc = ctx.ddc
-        let key = key
-        if on {
-            ctx.lifetime.spawn { [weak self] in
-                if await ddc.write(0xD6, 1, to: key, interactive: true, token: nil) {
-                    live.powerOn = true
-                } else {
-                    self?.notice = L("The monitor didn't turn on.")
-                }
-            }
-            return
+    /// Keyboard / VoiceOver changes: apply 0.4 s after the last step (mode changes are slow).
+    func scheduleSlider(_ index: Int, stops: [ModeRef]) {
+        sliderWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated { self?.applySlider(index, stops: stops) }
         }
-        let visible = ctx.runtime.displays.filter(\.isStronglyVisible)
-        if display.isStronglyVisible && visible.count <= 1 {
-            notice = L("This is the only display you can see, so Snaptic won't put it in standby.")
-            return
-        }
-        let confirm = ctx.preConfirm
-        let message = L("Put “\(display.name)” in standby? Wake it from Snaptic or with the monitor's power button.")
-        ctx.lifetime.spawn { [weak self] in
-            guard let token = await confirm.confirm(key: key, vcp: 0xD6, value: 4, message: message, allowKey: "ddc.power") else {
-                return
-            }
-            if await ddc.write(0xD6, 4, to: key, interactive: true, token: token) {
-                live.powerOn = false
-            } else {
-                self?.notice = L("The monitor didn't go to standby.")
-            }
-        }
+        sliderWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
     }
 
-    // MARK: Resolution
+    // MARK: DDC (C)
 
-    func setMode(_ mode: ModeRef, display: DisplayInfo) {
-        guard let ctx = context, ctx.runtime.isEffective(.resolution),
-              mode != (display.currentMode?.ref ?? currentMode) else { return }
-        let onlyVisible = display.isStronglyVisible && ctx.runtime.displays.filter(\.isStronglyVisible).count <= 1
-        let request = TransactionRequest(label: L("Resolution of “\(display.name)”"),
-                                         risk: onlyVisible ? .trial : .low,
-                                         changes: [.mode(display.desktopID, mode)])
-        let queue = ctx.transactions
-        notice = nil
-        ctx.lifetime.spawn { [weak self] in
-            let outcome = await queue.submit(request)
-            guard let self else { return }
-            switch outcome {
-            case .applied, .kept:
-                self.currentMode = mode
-            case .reverted(let why), .failed(let why):
-                self.notice = why
-            case .refused:
-                self.notice = L("Snaptic didn't make this change because it could leave you without a usable display.")
-            case .busy:
-                self.notice = L("Another display change is in progress. Try again in a moment.")
-            }
-        }
+    private var ddcAvailable: Bool { context?.ddc.isAvailable(key) ?? false }
+
+    /// The same rule as C's menu: the volume control only when the display has VCP 0x62.
+    var showsVolume: Bool {
+        guard let ctx = context, ddcAvailable, ddcController != nil else { return false }
+        let caps = ctx.ddc.cachedCapabilities(key)
+        return caps?.supports(VCPPolicy.volume) == true || (caps == nil && ctx.ddc.lastReading(VCPPolicy.volume, of: key) != nil)
     }
+
+    var showsPower: Bool {
+        guard let ctx = context, ddcAvailable, ddcController != nil else { return false }
+        let caps = ctx.ddc.cachedCapabilities(key)
+        return caps == nil || caps?.supports(VCPPolicy.power) == true
+    }
+
+    var inputs: [DDCInputEntry] {
+        guard ddcAvailable, let c = ddcController else { return [] }
+        return c.inputList(for: key)
+    }
+
+    func inputName(_ entry: DDCInputEntry) -> String { ddcController?.inputName(entry) ?? DisplaysUIText.inputName(entry.value) }
+
+    func setVolume(_ value: Double) { ddcController?.setFraction(VCPPolicy.volume, min(max(value, 0), 1), for: key) }
+
+    func toggleMute() { ddcController?.toggleMute(.display(key)) }
+
+    /// C confirms first (switching input can leave this Mac without a picture).
+    func setInput(_ entry: DDCInputEntry) { ddcController?.setInput(entry, on: key) }
+
+    /// C confirms standby and refuses it for the only display you can see.
+    func setPower(_ on: Bool) { ddcController?.setPower(on, on: key) }
+
+    // MARK: System modes (onboarding only)
 
     /// Desktop-usable modes of a display, HiDPI and LoDPI variants included (public CG API).
+    /// Only the onboarding step's "Sharper text" check uses it; live controls go through D.
     static func systemModes(_ id: CGDirectDisplayID) -> [ModeRef] {
         let options = [kCGDisplayShowDuplicateLowResolutionModes as String: true] as CFDictionary
         guard let list = CGDisplayCopyAllDisplayModes(id, options) as? [CGDisplayMode] else { return [] }
         return list.filter { $0.isUsableForDesktopGUI() }.map(modeRef)
-    }
-
-    static func systemCurrentMode(_ id: CGDirectDisplayID) -> ModeRef? {
-        CGDisplayCopyDisplayMode(id).map(modeRef)
     }
 
     private static func modeRef(_ mode: CGDisplayMode) -> ModeRef {

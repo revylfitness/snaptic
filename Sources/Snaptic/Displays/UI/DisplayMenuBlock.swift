@@ -154,8 +154,8 @@ import SnapticKit
     // MARK: Header
 
     private func headerItem(badges showBadges: Bool) -> NSMenuItem {
-        let paused = !(context?.otherApps.pausedDisplayFeatures.isEmpty ?? true)
-        let badges = showBadges ? Self.badges(for: display, paused: paused) : []
+        var badges: [String] = []
+        if showBadges, let ctx = context { badges = Self.badges(for: display, context: ctx) }
         let item = NSMenuItem(title: display.name, action: nil, keyEquivalent: "")
         let title = NSMutableAttributedString(string: display.name, attributes: [
             .font: NSFont.boldSystemFont(ofSize: NSFont.systemFontSize),
@@ -169,23 +169,47 @@ import SnapticKit
             item.title = display.name + ", " + badges.joined(separator: ", ")
         }
         item.attributedTitle = title
-        item.image = NSImage(systemSymbolName: Self.symbol(for: display), accessibilityDescription: nil)
+        item.image = NSImage(systemSymbolName: Self.symbol(for: display, config: context?.config.value),
+                             accessibilityDescription: nil)
         return item
     }
 
     /// Status badges for a display header (PLAN §3.5). Safe Mode and Unprotected are
     /// global and shown as banners instead.
-    static func badges(for display: DisplayInfo, paused: Bool) -> [String] {
+    static func badges(for display: DisplayInfo, paused: Bool, keptAwake: Bool = false) -> [String] {
         var badges: [String] = []
         if display.isMain { badges.append(L("Main")) }
         if display.transport == .snapticVirtual || display.transport == .foreignVirtual { badges.append(L("Virtual")) }
         if display.mirrorOf != nil { badges.append(L("Mirroring")) }
         if display.isSmartHiDPIPair { badges.append(L("Smart HiDPI")) }
         if !display.isOnline || !display.isActive { badges.append(L("Disconnected")) }
+        if keptAwake { badges.append(L("Kept Awake")) }
         if paused { badges.append(L("Paused")) }
         return badges
     }
 
+    /// Badges from the live state: other-app pause, and "Kept Awake" while D's
+    /// PowerController holds the sleep assertion for this display.
+    static func badges(for display: DisplayInfo, context: DisplaysContext) -> [String] {
+        badges(for: display, paused: !context.otherApps.pausedDisplayFeatures.isEmpty,
+               keptAwake: isKeptAwake(display, context: context))
+    }
+
+    static func isKeptAwake(_ display: DisplayInfo, context: DisplaysContext) -> Bool {
+        context.runtime.sleepPreventionActive && display.isOnline
+            && (context.config.value.perDisplay[display.key]?.management.preventSleep ?? false)
+    }
+
+    /// The user's icon (Display Names page) when it is a symbol this macOS has, else by transport.
+    static func symbol(for display: DisplayInfo, config: DisplaysConfig?) -> String {
+        if let chosen = config?.perDisplay[display.key]?.identity.symbol,
+           NSImage(systemSymbolName: chosen, accessibilityDescription: nil) != nil {
+            return chosen
+        }
+        return symbol(for: display)
+    }
+
+    /// The default icon for a display's connection.
     static func symbol(for display: DisplayInfo) -> String {
         switch display.transport {
         case .builtin: return "laptopcomputer"
@@ -263,16 +287,13 @@ import SnapticKit
         EventLog.shared.record(.modules, "Turned on \(feature.rawValue) from the Displays menu")
     }
 
-    /// Posted with `userInfo["page"]` (a settings page id such as "displays.features") so
-    /// the settings window can select that page (team A observes it).
+    /// Posted with `userInfo["page"]` (a settings page id such as "displays.features");
+    /// SettingsWindowHost observes it.
     static let openSettingsNotification = Notification.Name("SnapticOpenSettingsPage")
 
-    /// Opens Settings through the app's reopen path (which shows Settings, PLAN §3.5),
-    /// then asks it to show `page`.
+    /// For callers that have no context (E's PIP menu). Everything in F uses
+    /// `ctx.openSettings(page)`, the host's own path.
     static func openSettings(page: String) {
-        if let delegate = NSApp.delegate {
-            _ = delegate.applicationShouldHandleReopen?(NSApp, hasVisibleWindows: true)
-        }
         NotificationCenter.default.post(name: openSettingsNotification, object: nil, userInfo: ["page": page])
     }
 }

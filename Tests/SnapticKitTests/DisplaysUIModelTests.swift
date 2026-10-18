@@ -55,47 +55,10 @@ final class DisplaysUIModelTests: XCTestCase {
         XCTAssertNil(DisplaysUIText.diagonalInches(widthMM: .nan, heightMM: 300))
     }
 
-    // MARK: Mode choices
+    // MARK: Mode checks
 
     private func mode(_ id: Int32, _ pw: Int, _ ph: Int, _ w: Int, _ h: Int, _ hz: Int) -> ModeRef {
         ModeRef(ioModeID: id, pixelWidth: pw, pixelHeight: ph, pointWidth: w, pointHeight: h, refreshMilliHz: hz)
-    }
-
-    func testChoicesDedupeAndPreferCurrentRefresh() {
-        let modes = [
-            mode(1, 3840, 2160, 1920, 1080, 60000), mode(2, 3840, 2160, 1920, 1080, 30000),
-            mode(3, 1920, 1080, 1920, 1080, 60000), mode(4, 5120, 2880, 2560, 1440, 30000),
-            mode(5, 5120, 2880, 2560, 1440, 60000), mode(6, 2560, 1440, 2560, 1440, 60000),
-            mode(7, 0, 0, 0, 0, 60000),
-        ]
-        let current = mode(2, 3840, 2160, 1920, 1080, 30000)
-        let result = DisplayModeChoices.choices(modes, current: current)
-        XCTAssertEqual(result.map(\.ioModeID), [4, 6, 2, 3], "30 Hz preferred like the current mode; HiDPI first")
-        let noCurrent = DisplayModeChoices.choices(modes, current: nil)
-        XCTAssertEqual(noCurrent.map(\.ioModeID), [5, 6, 1, 3], "highest refresh without a current mode")
-    }
-
-    func testChoicesAlwaysIncludeCurrent() {
-        let current = mode(9, 1680, 1050, 1680, 1050, 60000)
-        XCTAssertEqual(DisplayModeChoices.choices([], current: current), [current])
-        XCTAssertEqual(DisplayModeChoices.choices([], current: nil), [])
-    }
-
-    func testChoicesFuzzedAreUniquePerSize() {
-        var rng = SeededGenerator(seed: 0xC401CE)
-        for _ in 0..<1_000 {
-            let modes = (0..<Int(rng.next() % 30)).map { i -> ModeRef in
-                let w = [1280, 1440, 1920, 2560][Int(rng.next() % 4)]
-                let scale = rng.next() % 2 == 0 ? 1 : 2
-                return mode(Int32(i), w * scale, w * 9 / 16 * scale, w, w * 9 / 16, [30000, 50000, 60000][Int(rng.next() % 3)])
-            }
-            let current = modes.isEmpty || rng.next() % 3 == 0 ? nil : modes[Int(rng.next() % UInt64(modes.count))]
-            let result = DisplayModeChoices.choices(modes, current: current)
-            let sizes = result.map { "\($0.pointWidth)x\($0.pointHeight)x\($0.isHiDPI)" }
-            XCTAssertEqual(Set(sizes).count, sizes.count)
-            if let current { XCTAssertTrue(result.contains(current)) }
-            XCTAssertEqual(result.map(\.pointWidth), result.map(\.pointWidth).sorted(by: >))
-        }
     }
 
     func testHiDPINearNative() {
@@ -181,6 +144,82 @@ final class DisplaysUIModelTests: XCTestCase {
                 let any = FeatureGraph.spec(f).requiresAny
                 if !any.isEmpty { XCTAssertTrue(any.contains { raw[$0] == true }, "\(f) needs one of \(any)") }
             }
+        }
+    }
+
+    // MARK: Display icons
+
+    func testCuratedSymbolsPassTheIdentityRuleAndAreUnique() {
+        let symbols = DisplaysUIText.displaySymbols.map(\.symbol)
+        XCTAssertEqual(Set(symbols).count, symbols.count)
+        XCTAssertEqual(Set(DisplaysUIText.displaySymbols.map(\.title)).count, symbols.count)
+        for symbol in symbols {
+            var identity = PerDisplayIdentity()
+            identity.symbol = symbol
+            XCTAssertEqual(identity.sanitized().symbol, symbol, "\(symbol) would be dropped by sanitized()")
+            XCTAssertTrue(DisplaysUIText.isCuratedSymbol(symbol))
+        }
+        XCTAssertFalse(DisplaysUIText.isCuratedSymbol(nil))
+        XCTAssertFalse(DisplaysUIText.isCuratedSymbol("trash"))
+    }
+
+    // MARK: EDID view
+
+    func testEDIDHexAndBase64() {
+        XCTAssertEqual(EDIDText.hex([]), "")
+        XCTAssertEqual(EDIDText.hex([0x00, 0xFF, 0x0A], perLine: 2), "00 FF\n0A")
+        let sample = EDIDInfoTests.sample()
+        let lines = EDIDText.hex(sample).split(separator: "\n")
+        XCTAssertEqual(lines.count, 8)
+        XCTAssertEqual(lines.first, "00 FF FF FF FF FF FF 00 10 AC 34 12 78 56 34 12")
+        XCTAssertEqual(Data(base64Encoded: EDIDText.base64(sample)), Data(sample))
+        XCTAssertEqual(EDIDText.hex([1, 2, 3], perLine: 0), "01\n02\n03", "a zero width is treated as one")
+    }
+
+    func testEDIDSummaryRows() throws {
+        let sample = EDIDInfoTests.sample(withCTA: true)
+        let info = try XCTUnwrap(EDIDInfo.parse(sample))
+        let rows = EDIDText.summary(info, byteCount: sample.count)
+        let byLabel = Dictionary(rows.map { ($0.label, $0.value) }, uniquingKeysWith: { a, _ in a })
+        XCTAssertEqual(byLabel["Manufacturer"], "DEL")
+        XCTAssertEqual(byLabel["Product code"], "0x1234")
+        XCTAssertEqual(byLabel["Product name"], "DELL U2720Q")
+        XCTAssertEqual(byLabel["Serial number"], "••••23", "the serial is masked on the page")
+        XCTAssertEqual(byLabel["Manufactured"], "Week 10, 2020")
+        XCTAssertEqual(byLabel["EDID version"], "1.4")
+        XCTAssertEqual(byLabel["Input"], "Digital")
+        XCTAssertEqual(byLabel["Preferred timing"], "3840 × 2160")
+        XCTAssertEqual(byLabel["HDR static metadata"], "Yes")
+        XCTAssertEqual(byLabel["Extension blocks"], "1")
+        XCTAssertEqual(byLabel["Checksums"], "Valid")
+        XCTAssertEqual(byLabel["Size"], "256 bytes")
+        XCTAssertTrue(byLabel["White point"]?.hasSuffix(", 0.329") == true)
+        XCTAssertTrue(byLabel["Image size"]?.hasPrefix("597 × 336 mm") == true)
+        XCTAssertFalse(rows.contains { $0.value.contains("ABC123") })
+    }
+
+    func testEDIDManufacturedAndFileName() {
+        XCTAssertNil(EDIDText.manufactured(week: 10, year: 0))
+        XCTAssertEqual(EDIDText.manufactured(week: 0, year: 2021), "2021")
+        XCTAssertEqual(EDIDText.manufactured(week: 0xFF, year: 2021), "Model year 2021")
+        XCTAssertEqual(EDIDText.manufactured(week: 60, year: 2021), "2021")
+        XCTAssertEqual(EDIDText.exportFileName(displayName: "DELL U2720Q"), "DELL U2720Q EDID.bin")
+        XCTAssertEqual(EDIDText.exportFileName(displayName: "../../etc/passwd"), "etcpasswd EDID.bin")
+        XCTAssertEqual(EDIDText.exportFileName(displayName: "  "), "Display EDID.bin")
+        XCTAssertLessThanOrEqual(EDIDText.exportFileName(displayName: String(repeating: "x", count: 500)).count, 57)
+    }
+
+    func testEDIDSummaryFuzzedNeverTraps() {
+        var rng = SeededGenerator(seed: 0xED1D)
+        let base = EDIDInfoTests.sample(withCTA: true)
+        for _ in 0..<500 {
+            var bytes = base
+            for _ in 0..<Int(rng.next() % 40) { bytes[Int(rng.next() % UInt64(bytes.count))] = UInt8(rng.next() & 0xFF) }
+            bytes = Array(bytes.prefix(Int(rng.next() % UInt64(bytes.count + 1))))
+            guard let info = EDIDInfo.parse(bytes) else { continue }
+            let rows = EDIDText.summary(info, byteCount: bytes.count)
+            XCTAssertFalse(rows.isEmpty)
+            XCTAssertFalse(EDIDText.hex(bytes).isEmpty)
         }
     }
 
