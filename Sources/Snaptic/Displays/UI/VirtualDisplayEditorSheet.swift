@@ -13,7 +13,7 @@ enum VirtualEditorTarget: Hashable {
 /// Details sheet replaces the inline editor, Sizes becomes a table with + / −"). New: a shape pop-up and the recipes
 /// as tiles. Details: name, aspect ratio, diagonal, HiDPI, portrait, reconnect at launch, HDR modes (with the
 /// Experimental `hdrVirtual`), refresh rate, the sizes table, the linked displays, and Delete… (a standard alert).
-/// Edits are a draft: Save applies them (a connected display reconnects when its shape changed), Cancel drops them.
+/// Edits are a draft that Done applies (a connected display reconnects when its shape changed).
 struct VirtualDisplayEditorSheet: View, ControlDeclaring {
     typealias Controls = VirtualDisplayEditorSheetControls
 
@@ -43,59 +43,12 @@ struct VirtualDisplayEditorSheet: View, ControlDeclaring {
                 VirtualDisplayDetailsContent(env: env, id: id)
             }
         } else {
-            VirtualSheetFrame(title: L("Virtual Display")) {
+            AdvancedSheet(L("Virtual Display"), restoreDefaults: nil) {
                 Section {
                     StatusRow(L("Turn on Displays to use virtual displays."))
                 }
-            } leading: {
-                EmptyView()
-            } trailing: {
-                EmptyView()
             }
         }
-    }
-}
-
-/// The sheet's frame: title, scrolling grouped form (search highlights scroll into view), footer, 520 wide.
-private struct VirtualSheetFrame<Content: View, Leading: View, Trailing: View>: View {
-    let title: String
-    let content: Content
-    let leading: Leading
-    let trailing: Trailing
-    @Environment(\.dismiss) private var dismiss
-
-    init(title: String, @ViewBuilder content: () -> Content, @ViewBuilder leading: () -> Leading,
-         @ViewBuilder trailing: () -> Trailing) {
-        self.title = title
-        self.content = content()
-        self.leading = leading()
-        self.trailing = trailing()
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Text(title)
-                .font(.headline)
-                .padding(.top, 16)
-                .padding(.bottom, 4)
-                .accessibilityAddTraits(.isHeader)
-            SettingsAnchorScroller {
-                Form { content }
-                    .formStyle(.grouped)
-            }
-            Divider()
-            HStack(spacing: 8) {
-                leading
-                Spacer(minLength: 8)
-                Button(L("Cancel")) { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                trailing
-            }
-            .padding(16)
-        }
-        .frame(width: 520)
-        .frame(minHeight: 360, idealHeight: 560, maxHeight: 760)
-        .onAppear { SettingsShell.shared.sheetDidAppear() }
     }
 }
 
@@ -121,7 +74,7 @@ private struct NewVirtualDisplayContent: View {
     private var controller: VirtualController? { env.context?.connectPlanner.virtual }
 
     var body: some View {
-        VirtualSheetFrame(title: L("New Virtual Display")) {
+        AdvancedSheet(L("New Virtual Display"), restoreDefaults: nil) {
             if full {
                 Section {
                     StatusRow(L("You have \(VirtualConfig.maxScreens) virtual displays, the most Snaptic can make. Delete one to make another."),
@@ -150,10 +103,6 @@ private struct NewVirtualDisplayContent: View {
             } header: {
                 Text(L("Recipes"))
             }
-        } leading: {
-            EmptyView()
-        } trailing: {
-            EmptyView()
         }
     }
 
@@ -204,13 +153,11 @@ private struct VirtualDisplayDetailsContent: View {
     let id: StableID
     @ObservedObject private var runtime: DisplaysRuntimeState
     @StateObject private var virtual: ConfigSlice<DisplaysConfig, VirtualConfig>
-    @Environment(\.dismiss) private var dismiss
     /// The edits, loaded when the sheet appears (no `State(initialValue:)` copies, L7).
     @State private var draft: VirtualScreenSpec?
     @State private var newWidth: Double = 1920
     @State private var newHeight: Double = 1080
     @State private var newLink: DisplayKey?
-    @State private var confirmDelete = false
 
     init(env: DisplaysPageEnvironment, id: StableID) {
         self.env = env
@@ -223,7 +170,8 @@ private struct VirtualDisplayDetailsContent: View {
     private var controller: VirtualController? { env.context?.connectPlanner.virtual }
 
     var body: some View {
-        VirtualSheetFrame(title: draft?.name ?? stored?.name ?? L("Virtual Display")) {
+        AdvancedSheet(stored?.name ?? L("Virtual Display"), restoreDefaults: deleteButton,
+                      restoreControl: ControlID("displays.virtual.editor.delete")) {
             if draft != nil, stored != nil {
                 form
             } else if stored == nil {
@@ -231,24 +179,19 @@ private struct VirtualDisplayDetailsContent: View {
                     StatusRow(L("This virtual display isn’t there anymore."))
                 }
             }
-        } leading: {
-            Button(L("Delete…"), role: .destructive) { confirmDelete = true }
-                .disabled(stored == nil || controller == nil)
-                .modifier(SettingsAnchor(ControlID("displays.virtual.editor.delete")))
-        } trailing: {
-            Button(L("Save")) { save() }
-                .keyboardShortcut(.defaultAction)
-                .disabled(draft == nil || stored == nil || controller == nil)
         }
         .onAppear { if draft == nil { draft = stored } }
-        .alert(L("Delete “\(stored?.name ?? "")”?"), isPresented: $confirmDelete) {
-            Button(L("Delete"), role: .destructive) {
-                controller?.remove(id)
-                dismiss()
-            }
-            Button(L("Cancel"), role: .cancel) {}
-        } message: {
-            Text(L("It disconnects, and its sizes and linked displays are deleted."))
+        .onDisappear { save() }
+    }
+
+    /// The sheet's leading footer button: Delete… with its confirmation.
+    private var deleteButton: RestoreDefaults? {
+        guard let stored, let controller else { return nil }
+        let id = id
+        return RestoreDefaults(title: L("Delete…"), question: L("Delete “\(stored.name)”?"),
+                               message: L("It disconnects, and its sizes and linked displays are deleted."),
+                               button: L("Delete"), destructive: true) {
+            controller.remove(id)
         }
     }
 
@@ -445,9 +388,9 @@ private struct VirtualDisplayDetailsContent: View {
         })
     }
 
+    /// Done (or closing the sheet) applies the edits; a connected display reconnects when its shape changed.
     private func save() {
-        guard let draft, let controller else { return }
+        guard let draft, let controller, let stored, draft != stored else { return }
         controller.update(draft)
-        dismiss()
     }
 }

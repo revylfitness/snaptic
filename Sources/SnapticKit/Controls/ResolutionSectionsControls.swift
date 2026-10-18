@@ -21,27 +21,13 @@ package enum ResolutionSectionsControls: ControlTable {
         SearchSpec(title, keywords: keywords, root: root, sheet: advanced)
     }
 
-    /// The rows inside the root page's collapsed "Resolution options" disclosure (a search result opens it).
-    package static let optionsAnchors: Set<String> = [
-        "displays.resolution.slider", "displays.resolution.quickChanges", "displays.resolution.favorite",
-        "displays.resolution.favorites",
-    ]
-
-    /// The rows inside the Advanced sheet's "Filters for <display>" disclosure.
-    package static let displayFilterAnchors: Set<String> = [
-        "displays.resolution.filters.dpi", "displays.resolution.filters.width", "displays.resolution.filters.refresh",
-    ]
-
-    package static func isInsideOptions(_ anchor: String) -> Bool { optionsAnchors.contains(anchor) }
-    package static func isInsideDisplayFilters(_ anchor: String) -> Bool { displayFilterAnchors.contains(anchor) }
-
     package static let controls: [ControlSpec] = [
         // The selected display (root page rows and the displays.resolution page).
+        // The 0.2 mode picker and refresh rate are homed on F's root rows (displays.root.resolution/refreshRate);
+        // these are the same live rows on the displays.resolution page.
         ControlSpec("displays.resolution.mode", .setting, when: display,
-                    replaces: ["l.d.resolution.mode"],
                     search: onPage("Resolution", ["mode", "scaled", "size", "larger text", "more space", "looks like"])),
         ControlSpec("displays.resolution.refresh", .setting, when: display,
-                    replaces: ["l.d.resolution.refresh"],
                     search: onPage("Refresh rate", ["hertz", "Hz", "frame rate", "ProMotion"])),
         ControlSpec("displays.resolution.hdr", .setting,
                     when: [.module(.displays), .displayFeature(.hdrToggle), .hardware(.hdrDisplay), .perItem("display")],

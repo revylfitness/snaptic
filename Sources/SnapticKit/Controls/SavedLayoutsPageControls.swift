@@ -7,6 +7,8 @@ package enum SavedLayoutsPageControls: ControlTable {
     package static let surface = "displays.layouts"
     /// `SettingsShell.openSheet` id of the page's Advanced sheet.
     package static let advancedSheet = "displays.layouts.advanced"
+    /// `SettingsShell.openSheet` id of a layout's Details… sheet (the page keeps which layout).
+    package static let detailsSheet = "displays.layouts.details"
 
     private static let root = SettingsRootID.displays
     private static let page = SettingsRoute(surface)
@@ -36,7 +38,8 @@ package enum SavedLayoutsPageControls: ControlTable {
                     replaces: ["l.d.protection.protect", "l.dfeat.protection"],
                     keys: ["features.protection", "management.protection"],
                     search: onPage("Protect the current arrangement", ["protection", "keep arrangement", "lock layout"])),
-        ControlSpec("displays.layouts.advanced", .button, when: [.module(.displays)]),
+        ControlSpec("displays.layouts.advanced", .button, when: [.module(.displays)],
+                    search: onPage("Saved Layouts Advanced Settings", ["protected fields", "undo"])),
 
         // Details… (one layout)
         ControlSpec("displays.layouts.details.name", .setting, when: layout,
@@ -58,20 +61,21 @@ package enum SavedLayoutsPageControls: ControlTable {
                     replaces: ["l.d.protection.layout.delete"]),
 
         // Advanced sheet
+        // The five checkboxes are one 0.2 control (l.d.protection.fields), homed on the first.
         ControlSpec("displays.layouts.advanced.fieldMode", .setting, when: [.module(.displays)],
                     replaces: ["l.d.protection.fields"], keys: ["management.protectionFields.mode"],
                     search: inAdvanced("Protect resolution and refresh rate", ["protected fields"])),
         ControlSpec("displays.layouts.advanced.fieldPosition", .setting, when: [.module(.displays)],
-                    replaces: ["l.d.protection.fields"], keys: ["management.protectionFields.origin"],
+                    keys: ["management.protectionFields.origin"],
                     search: inAdvanced("Protect position", ["protected fields", "arrangement"])),
         ControlSpec("displays.layouts.advanced.fieldMain", .setting, when: [.module(.displays)],
-                    replaces: ["l.d.protection.fields"], keys: ["management.protectionFields.main"],
+                    keys: ["management.protectionFields.main"],
                     search: inAdvanced("Protect main display", ["protected fields"])),
         ControlSpec("displays.layouts.advanced.fieldMirroring", .setting, when: [.module(.displays)],
-                    replaces: ["l.d.protection.fields"], keys: ["management.protectionFields.mirror"],
+                    keys: ["management.protectionFields.mirror"],
                     search: inAdvanced("Protect mirroring", ["protected fields"])),
         ControlSpec("displays.layouts.advanced.fieldRotation", .setting, when: [.module(.displays)],
-                    replaces: ["l.d.protection.fields"], keys: ["management.protectionFields.rotation"],
+                    keys: ["management.protectionFields.rotation"],
                     search: inAdvanced("Protect rotation", ["protected fields"])),
         ControlSpec("displays.layouts.advanced.updateProtected", .button,
                     when: [.module(.displays), .displayFeature(.protection)],
@@ -83,6 +87,7 @@ package enum SavedLayoutsPageControls: ControlTable {
         ControlSpec("displays.layouts.advanced.undoToast", .setting, when: [.module(.displays)],
                     replaces: ["l.d.protection.undoToast"], keys: ["layouts.undoToast"],
                     search: inAdvanced("Offer Undo after an automatic apply", ["undo", "notice", "layout"])),
-        ControlSpec("displays.layouts.advanced.restore", .button, when: [.module(.displays)]),
+        ControlSpec("displays.layouts.advanced.restore", .button, when: [.module(.displays)],
+                    search: inAdvanced("Restore Saved Layouts Defaults", ["reset"])),
     ]
 }

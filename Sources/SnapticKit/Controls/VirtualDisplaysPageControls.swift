@@ -34,7 +34,8 @@ package enum VirtualDisplaysPageControls: ControlTable {
                     when: virtual + [.displayFeature(.smartHiDPI), .hardware(.externalDisplay), .perItem("display")],
                     replaces: ["l.d.virtual.smartHiDPI.enabled"], keys: ["virtualScreens.smartHiDPI"],
                     search: onPage("Sharper text on this display", ["Smart HiDPI", "HiDPI", "scaling", "blurry text"])),
-        ControlSpec("displays.virtual.advanced", .button, when: [.module(.displays)]),
+        ControlSpec("displays.virtual.advanced", .button, when: [.module(.displays)],
+                    search: onPage("Virtual Displays Advanced Settings", ["behavior", "Smart HiDPI"])),
 
         // Advanced sheet
         ControlSpec("displays.virtual.advanced.sharperText", .setting, when: [.module(.displays)],
@@ -65,6 +66,7 @@ package enum VirtualDisplaysPageControls: ControlTable {
         ControlSpec("displays.virtual.advanced.hdr", .setting, when: [.module(.displays)],
                     replaces: ["l.dfeat.hdrVirtual"], keys: ["features.hdrVirtual"],
                     search: inAdvanced("HDR virtual modes", ["HDR", "PQ"])),
-        ControlSpec("displays.virtual.advanced.restore", .button, when: [.module(.displays)]),
+        ControlSpec("displays.virtual.advanced.restore", .button, when: [.module(.displays)],
+                    search: inAdvanced("Restore Virtual Displays Defaults", ["reset"])),
     ]
 }

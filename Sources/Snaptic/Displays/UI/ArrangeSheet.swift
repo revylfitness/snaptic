@@ -78,6 +78,7 @@ struct ArrangeContent: View {
                     Text(L("Move with the keyboard"))
                 }
                 .modifier(SettingsAnchor(ControlID("displays.arrange.position")))
+                .modifier(SettingsRevealExpansion([ControlID("displays.arrange.position")], isExpanded: $keyboardExpanded))
             }
         }
     }

@@ -86,7 +86,6 @@ private struct MatchTextSizeRows: View {
     let key: DisplayKey
     let startsExpanded: Bool
     @ObservedObject private var runtime: DisplaysRuntimeState
-    @ObservedObject private var shell: SettingsShell
     @ObservedObject private var revision: ControllerRevision
     @StateObject private var switcher: DisplaysFeatureSwitcher
     @StateObject private var settings: ConfigSlice<DisplaysConfig, ResolutionConfig>
@@ -99,7 +98,6 @@ private struct MatchTextSizeRows: View {
         self.key = key
         self.startsExpanded = startsExpanded
         _runtime = ObservedObject(wrappedValue: env.runtime)
-        _shell = ObservedObject(wrappedValue: SettingsShell.shared)
         _revision = ObservedObject(wrappedValue: env.runtime.revision(.resolution))
         _switcher = StateObject(wrappedValue: DisplaysFeatureSwitcher(env: env))
         _settings = StateObject(wrappedValue: ConfigSlice(env.config, \.resolution))
@@ -132,16 +130,14 @@ private struct MatchTextSizeRows: View {
                                   isOn: switcher.binding([.scaleMatch], title: L("Match text size")),
                                   anchor: ControlID("displays.matchTextSize.enabled"))
                 }
-                .onAppear { expandIfRevealed(shell.highlightedAnchor) }
-                .onChange(of: shell.highlightedAnchor) { _, anchor in expandIfRevealed(anchor) }
+                .modifier(SettingsRevealExpansion([ControlID("displays.matchTextSize.include"),
+                                                   ControlID("displays.matchTextSize.reference"),
+                                                   ControlID("displays.matchTextSize.tolerance"),
+                                                   ControlID("displays.matchTextSize.preview"),
+                                                   ControlID("displays.matchTextSize.apply")], isExpanded: isExpanded))
             }
             .modifier(DisplaysFeatureOffAlert(switcher: switcher))
         }
-    }
-
-    private func expandIfRevealed(_ anchor: String?) {
-        guard let anchor, anchor.hasPrefix(MatchTextSizeSectionControls.surface + ".") else { return }
-        expanded = true
     }
 
     @ViewBuilder private func options(_ c: ResolutionController) -> some View {

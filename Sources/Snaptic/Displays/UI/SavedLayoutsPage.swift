@@ -105,8 +105,10 @@ private struct SavedLayoutsContent: View {
         .sheet(isPresented: shell.sheetBinding(SavedLayoutsPageControls.advancedSheet)) {
             SavedLayoutsAdvancedSheet(env: env)
         }
-        .sheet(item: $details) { item in
-            LayoutDetailsSheet(env: env, id: item.id)
+        .sheet(isPresented: detailsBinding) {
+            if let id = details?.id ?? layouts.value.layouts.first?.id {
+                LayoutDetailsSheet(env: env, id: id)
+            }
         }
         .alert(L("Save Current Layout"), isPresented: $saving) {
             TextField(L("Name"), text: $newName)
@@ -134,9 +136,9 @@ private struct SavedLayoutsContent: View {
                               text: L("Save your current arrangement to restore it later."),
                               action: StatusAction(title: L("Save Current Layout…")) { saving = true })
             } else {
-                ReorderableList(itemsBinding, onEdit: { details = $0 }, onDelete: nil) { item in
+                ReorderableList(itemsBinding, onEdit: { showDetails($0) }, onDelete: nil) { item in
                     LayoutRow(layout: item.layout, controller: c) {
-                        details = item
+                        showDetails(item)
                     }
                     .modifier(OptionalSettingsAnchor(index(of: item.id) == 0 ? ControlID("displays.layouts.list") : nil))
                 }
@@ -154,6 +156,20 @@ private struct SavedLayoutsContent: View {
                 Text(L("The first nine are Layout 1–9 in Keyboard Shortcuts. Drag to reorder."))
             }
         }
+    }
+
+    /// Details… goes through the shell like every sheet (one sheet at a time, search reveals into it).
+    private var detailsBinding: Binding<Bool> {
+        let sheet = shell.sheetBinding(SavedLayoutsPageControls.detailsSheet)
+        return Binding(get: { sheet.wrappedValue }, set: { open in
+            sheet.wrappedValue = open
+            if !open { details = nil }
+        })
+    }
+
+    private func showDetails(_ item: LayoutItem) {
+        details = item
+        shell.openSheet = SavedLayoutsPageControls.detailsSheet
     }
 
     private var itemsBinding: Binding<[LayoutItem]> {
@@ -272,9 +288,7 @@ private struct LayoutDetailsSheet: View {
     let id: StableID
     @ObservedObject private var revision: ControllerRevision
     @StateObject private var layouts: ConfigSlice<DisplaysConfig, LayoutsConfig>
-    @Environment(\.dismiss) private var dismiss
     @State private var name = ""
-    @State private var confirmDelete = false
 
     init(env: DisplaysPageEnvironment, id: StableID) {
         self.env = env
@@ -287,48 +301,28 @@ private struct LayoutDetailsSheet: View {
     private var layout: SavedLayout? { layouts.value.layout(id) }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Text(layout?.name ?? L("Layout"))
-                .font(.headline)
-                .padding(.top, 16)
-                .padding(.bottom, 4)
-                .accessibilityAddTraits(.isHeader)
-            Form {
-                if let layout, let c = controller {
-                    content(layout, c)
-                } else {
-                    Section {
-                        StatusRow(L("This layout isn’t there anymore."))
-                    }
+        AdvancedSheet(layout?.name ?? L("Layout"), restoreDefaults: deleteButton,
+                      restoreControl: ControlID("displays.layouts.details.delete")) {
+            if let layout, let c = controller {
+                content(layout, c)
+            } else {
+                Section {
+                    StatusRow(L("This layout isn’t there anymore."))
                 }
             }
-            .formStyle(.grouped)
-            Divider()
-            HStack(spacing: 8) {
-                Button(L("Delete Layout…"), role: .destructive) { confirmDelete = true }
-                    .disabled(layout == nil || controller == nil)
-                    .modifier(SettingsAnchor(ControlID("displays.layouts.details.delete")))
-                Spacer(minLength: 8)
-                Button(L("Done")) {
-                    commitName()
-                    dismiss()
-                }
-                .keyboardShortcut(.defaultAction)
-            }
-            .padding(16)
         }
-        .frame(width: 520)
-        .frame(minHeight: 320, idealHeight: 440, maxHeight: 640)
         .onAppear { name = layout?.name ?? "" }
-        .onExitCommand { dismiss() }
-        .alert(L("Delete “\(layout?.name ?? "")”?"), isPresented: $confirmDelete) {
-            Button(L("Delete"), role: .destructive) {
-                controller?.delete(id)
-                dismiss()
-            }
-            Button(L("Cancel"), role: .cancel) {}
-        } message: {
-            Text(L("Its shortcut and menu item go away too."))
+        .onDisappear { commitName() }
+    }
+
+    /// The sheet's leading footer button: Delete Layout… with its confirmation.
+    private var deleteButton: RestoreDefaults? {
+        guard let layout, let c = controller else { return nil }
+        let id = id
+        return RestoreDefaults(title: L("Delete Layout…"), question: L("Delete “\(layout.name)”?"),
+                               message: L("Its shortcut and menu item go away too."), button: L("Delete"),
+                               destructive: true) {
+            c.delete(id)
         }
     }
 

@@ -80,8 +80,10 @@ private struct ResolutionFiltersContent: View {
                     Text(L("Filters for \(display.name)"))
                 }
                 .modifier(SettingsAnchor(ControlID("displays.resolution.filters.display")))
-                .onAppear { expandIfRevealed(shell.highlightedAnchor) }
-                .onChange(of: shell.highlightedAnchor) { _, anchor in expandIfRevealed(anchor) }
+                .modifier(SettingsRevealExpansion([ControlID("displays.resolution.filters.dpi"),
+                                                   ControlID("displays.resolution.filters.width"),
+                                                   ControlID("displays.resolution.filters.refresh")],
+                                                  isExpanded: $expanded))
             }
         } header: {
             Text(L("Resolution filters"))
@@ -90,11 +92,6 @@ private struct ResolutionFiltersContent: View {
 
     private var selectedDisplay: DisplayInfo? {
         DisplaysSettingsLookup.selected(runtime.displays.filter(\.isOnline)) { $0.isActive && $0.mirrorOf == nil }
-    }
-
-    private func expandIfRevealed(_ anchor: String?) {
-        guard let anchor, ResolutionSectionsControls.isInsideDisplayFilters(anchor) else { return }
-        expanded = true
     }
 }
 

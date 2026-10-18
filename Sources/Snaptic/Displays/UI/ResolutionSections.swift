@@ -95,7 +95,6 @@ private struct ResolutionRows: View {
     let disclosure: Bool
     @ObservedObject private var runtime: DisplaysRuntimeState
     @ObservedObject private var panel: ControllerRevision
-    @ObservedObject private var shell: SettingsShell
     @State private var expanded = false
 
     init(env: DisplaysPageEnvironment, display: DisplayInfo, disclosure: Bool) {
@@ -104,7 +103,6 @@ private struct ResolutionRows: View {
         self.disclosure = disclosure
         _runtime = ObservedObject(wrappedValue: env.runtime)
         _panel = ObservedObject(wrappedValue: env.runtime.revision(.panelProps))
-        _shell = ObservedObject(wrappedValue: SettingsShell.shared)
     }
 
     var body: some View {
@@ -119,15 +117,11 @@ private struct ResolutionRows: View {
                 Text(L("Resolution options"))
             }
             .modifier(SettingsAnchor(ControlID("displays.resolution.options")))
-            .onAppear { expandIfRevealed(shell.highlightedAnchor) }
-            .onChange(of: shell.highlightedAnchor) { _, anchor in expandIfRevealed(anchor) }
+            .modifier(SettingsRevealExpansion([ControlID("displays.resolution.slider"),
+                                               ControlID("displays.resolution.quickChanges"),
+                                               ControlID("displays.resolution.favorite"),
+                                               ControlID("displays.resolution.favorites")], isExpanded: $expanded))
         }
-    }
-
-    /// A search result inside the disclosure opens it, so the highlighted row is visible.
-    private func expandIfRevealed(_ anchor: String?) {
-        guard let anchor, ResolutionSectionsControls.isInsideOptions(anchor) else { return }
-        expanded = true
     }
 
     @ViewBuilder private func hdrRow(_ c: PanelPropsController) -> some View {
