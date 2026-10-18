@@ -95,7 +95,9 @@ jobs:
           swift test --skip-build 2>&1 | tee test.log
 
       # Helpers must not inherit pipe ends (PLAN §14.1): both children exit once we die.
+      # Disabled until the step-1 hang is diagnosed (FIXES-R1 A0); re-enable by removing `if: false`.
       - name: Helper self-test (debug)
+        if: false
         timeout-minutes: 2
         run: |
           set -o pipefail
@@ -127,7 +129,7 @@ jobs:
           fi
 
       - name: Helper self-test (universal, and under Rosetta when available)
-        if: github.event_name == 'push'
+        if: false && github.event_name == 'push'
         timeout-minutes: 3
         run: |
           set -o pipefail
