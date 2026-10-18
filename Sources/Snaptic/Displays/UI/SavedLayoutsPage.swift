@@ -82,7 +82,11 @@ private struct SavedLayoutsContent: View {
             } else {
                 if let reason = unavailable(.layouts) {
                     Section {
-                        StatusRow(reason, style: .warning)
+                        if let locked = switcher.lockedFeature([.layouts]) {
+                            DefaultsLockRow(key: KillSwitches.key(prefix: "Displays", id: locked.rawValue))
+                        } else {
+                            StatusRow(reason, style: .warning)
+                        }
                     }
                 } else if runtime.isEffective(.layouts), let c = controller {
                     layoutsSection(c)

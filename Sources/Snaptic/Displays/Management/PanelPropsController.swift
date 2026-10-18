@@ -37,7 +37,7 @@ import SnapticKit
         items.panelProps = self
         menu = items
         context.menus.register(items, lifetime: lifetime)
-        context.diagnostics.register(self, section: L("Rotation, underscan and HDR"), lifetime: lifetime)
+        context.diagnostics.register(self, section: ManagementText.panelPropertiesSection, lifetime: lifetime)
         context.connectPlanner.attach(self, lifetime: lifetime)
         registerActions(context, lifetime: lifetime)
         registerCommands(context, lifetime: lifetime)
@@ -135,7 +135,7 @@ import SnapticKit
             guard let self, let ctx = self.context else { return }
             ManagedDisplays.resolve(ctx, t).forEach { self.rotateNext($0.key) }
         }, lifetime: lifetime)
-        ctx.actions.register(Action(id: .dHDRToggle, title: L("Toggle HDR"), feature: .hdrToggle, cliAllowed: true) { [weak self] t in
+        ctx.actions.register(Action(id: .dHDRToggle, title: ManagementText.toggleHighDynamicRange, feature: .hdrToggle, cliAllowed: true) { [weak self] t in
             guard let self, let ctx = self.context else { return }
             for d in ManagedDisplays.resolve(ctx, t) { self.setHDR(d.key, !(self.hdrEnabled(d) ?? false)) }
         }, lifetime: lifetime)

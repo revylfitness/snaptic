@@ -72,7 +72,7 @@ struct DisplaysOnboardingStep: View, ControlDeclaring {
             }
             if chips.contains(.keys), let hideMenuIcon {
                 Section {
-                    Toggle(L("Hide the menu-bar icon"), isOn: hideMenuIcon)
+                    Toggle(L("Hide the menu bar icon"), isOn: hideMenuIcon)
                     Text(L("The keys keep working. Open Snaptic again from Finder or Spotlight to get to Settings."))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)

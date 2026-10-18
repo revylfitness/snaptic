@@ -132,7 +132,8 @@ private struct DisplaysRootContent: View {
                     }
                 }
             }
-            PageFooterButtons(advanced: { shell.openSheet = DisplaysAdvancedSheetControls.sheet },
+            // While Displays is off the footer offers only (?), like the other modules' pages (ux round 2 Nit 9).
+            PageFooterButtons(advanced: enabled ? openAdvanced : nil,
                               help: SettingsRoute(SettingsRootID.displays),
                               advancedControl: ControlID("displays.root.advanced"))
         }
@@ -145,6 +146,11 @@ private struct DisplaysRootContent: View {
         .sheet(isPresented: shell.sheetBinding(ArrangeSheetControls.sheet)) {
             ArrangeSheet(env: env)
         }
+    }
+
+    private var openAdvanced: (() -> Void)? {
+        let shell = shell
+        return { shell.openSheet = DisplaysAdvancedSheetControls.sheet }
     }
 
     /// Connected displays in the menu order (hidden ones too: Settings shows every display).

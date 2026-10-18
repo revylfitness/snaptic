@@ -7,7 +7,7 @@ package enum RecipeKind: String, Codable, CaseIterable, Sendable {
 
     package var title: String {
         switch self {
-        case .headless: return L("Headless")
+        case .headless: return L("Remote Access")
         case .recording: return L("Recording 16:9")
         case .teleprompter: return L("Teleprompter")
         case .portrait: return L("Portrait")
@@ -17,13 +17,13 @@ package enum RecipeKind: String, Codable, CaseIterable, Sendable {
     package var summary: String {
         switch self {
         case .headless:
-            return L("A HiDPI desktop for a Mac without a monitor (remote access). It reconnects at launch and keeps the Mac usable when no display is attached.")
+            return L("A sharp desktop for a Mac with no display connected, for remote access. It connects at launch and keeps the Mac usable.")
         case .recording:
             return L("A 1920 × 1080 desktop for screen recordings, placed below-right of the main display so the pointer doesn't drift into it.")
         case .teleprompter:
-            return L("A screen with the target display's shape, streamed flipped onto it.")
+            return L("A display shaped like the one it streams onto, flipped for a teleprompter mirror.")
         case .portrait:
-            return L("A 9:16 HiDPI desktop for portrait use.")
+            return L("A sharp 9:16 desktop for portrait use.")
         }
     }
 }
@@ -81,7 +81,7 @@ package enum Recipes {
         switch kind {
         case .headless:
             return VirtualScreenSpec(
-                id: id, name: L("Headless"), aspectWidth: 16, aspectHeight: 9, sizeInches: 27, hiDPI: true,
+                id: id, name: L("Remote Access"), aspectWidth: 16, aspectHeight: 9, sizeInches: 27, hiDPI: true,
                 modes: [VirtualMode(width: 2560, height: 1440, hiDPI: true), VirtualMode(width: 1920, height: 1080, hiDPI: true)],
                 recreateOnLaunch: true, headlessPrimary: true
             ).sanitized(soc: soc)

@@ -52,7 +52,7 @@ enum VirtualDisplaysText {
         var parts = ["\(spec.aspectWidth):\(spec.aspectHeight)", L("\(Self.inches(spec.sizeInches)) in"),
                      spec.hiDPI ? L("HiDPI") : L("Standard"),
                      spec.modes.count == 1 ? L("1 size") : L("\(spec.modes.count) sizes")]
-        if spec.headlessPrimary { parts.append(L("Headless")) }
+        if spec.headlessPrimary { parts.append(L("Remote access")) }
         if !spec.associations.isEmpty {
             parts.append(spec.associations.count == 1 ? L("1 display linked") : L("\(spec.associations.count) displays linked"))
         }
@@ -104,7 +104,11 @@ private struct VirtualDisplaysContent: View {
                 }
             } else if let reason = unavailable(.virtualScreens) {
                 Section {
-                    StatusRow(reason, style: .warning)
+                    if let locked = switcher.lockedFeature([.virtualScreens]) {
+                        DefaultsLockRow(key: KillSwitches.key(prefix: "Displays", id: locked.rawValue))
+                    } else {
+                        StatusRow(reason, style: .warning)
+                    }
                 }
             } else if runtime.isEffective(.virtualScreens), let c = controller {
                 listSection(c)
@@ -112,7 +116,7 @@ private struct VirtualDisplaysContent: View {
             } else {
                 FeatureHighlights([
                     FeatureHighlight(id: "virtual.create", symbol: "display.2", title: L("Displays in software"),
-                                     text: L("Extra desktops for screen sharing, recording, or a Mac without a monitor.")),
+                                     text: L("Extra desktops for screen sharing, recording, or a Mac with no display connected.")),
                     FeatureHighlight(id: "virtual.sharper", symbol: "textformat.size", title: L("Sharper text"),
                                      text: L("Renders an external display at twice the size, like a Retina display.")),
                 ])
@@ -336,7 +340,7 @@ private struct VirtualDisplaysAdvancedSheet: View {
     @ViewBuilder private var sharperText: some View {
         Section {
             ToggleSetting(L("Sharper text"),
-                          help: L("Offers Sharper text for external displays on the Virtual Displays page."),
+                          help: L("Offers sharper text for external displays on the Virtual Displays page."),
                           isOn: switcher.binding([.smartHiDPI], title: L("Sharper text")),
                           anchor: ControlID("displays.virtual.advanced.sharperText"), badge: .beta,
                           disabledReason: switcher.unavailableReason([.smartHiDPI]))
@@ -358,7 +362,7 @@ private struct VirtualDisplaysAdvancedSheet: View {
         let options = c.modeOptions(key)
         let name = DisplaysSettingsLookup.name(key, env: env)
         PickerSetting(L("Size on \(name)"),
-                      help: pair.limitToInitial ? L("Only the first size: the HiDPI check failed once.") : nil,
+                      help: pair.limitToInitial ? L("Only the first size, because the sharpness check failed once.") : nil,
                       selection: Binding(get: { pair.mode }, set: { c.setMode(key, $0) }),
                       options: (options.contains(pair.mode) ? options : options + [pair.mode]).map { PickerOption($0, $0.label) },
                       style: .popUp, defaultValue: nil,

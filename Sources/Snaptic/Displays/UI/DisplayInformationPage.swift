@@ -6,7 +6,7 @@ import SnapticKit
 /// Displays › Display Information (owner F; PLAN 0.3 §4.3, design M4; replaces the 0.2 Diagnostics page and the
 /// status parts of the 0.2 Safety and Display Names pages). The report is live: it is rebuilt whenever the displays,
 /// the safety state or the remembered settings change, so there is no Refresh button. Copy Report and Export… use the
-/// same text as Copy Diagnostics Report and `snaptic diagnostics`: identifiers masked, display names replaced, never
+/// same text as Copy Display Information Report and `snaptic diagnostics`: identifiers masked, display names replaced, never
 /// serial numbers, EDID bytes, window titles or app names. File panels open on the Settings window, never on a sheet.
 struct DisplayInformationPage: View, ControlDeclaring {
     typealias Controls = DisplayInformationPageControls

@@ -33,7 +33,7 @@ import SnapticKit
         items.controller = self
         menu = items
         context.menus.register(items, lifetime: lifetime)
-        context.diagnostics.register(self, section: L("Layouts"), lifetime: lifetime)
+        context.diagnostics.register(self, section: ManagementText.savedLayoutsSection, lifetime: lifetime)
         context.connectPlanner.attach(self, lifetime: lifetime)
         registerActions(context, lifetime: lifetime)
         registerCommands(context, lifetime: lifetime)
@@ -164,7 +164,7 @@ import SnapticKit
         let layout = SavedLayout(name: name ?? L("Layout \(n)"), displays: displays, virtualScreens: virtuals).sanitized()
         ctx.config.value.layouts.layouts.append(layout)
         if displays.values.contains(where: { $0.identity.tier1 == nil }) {
-            ctx.toasts.show(L("Some displays have no serial number; '\(layout.name)' matches them by UUID only"), lifetime: lifetime)
+            ctx.toasts.show(L("Some displays have no serial number; “\(layout.name)” matches them by UUID only"), lifetime: lifetime)
         }
         return layout
     }
@@ -264,7 +264,7 @@ import SnapticKit
     func applyAwaiting(_ id: StableID, skipConfirmation: Bool = false) async -> TransactionOutcome? {
         guard let ctx = context, let lifetime, let l = layout(id) else { return nil }
         guard matches(l) != nil else {
-            ctx.toasts.show(L("'\(l.name)' doesn't match the connected displays"), lifetime: lifetime)
+            ctx.toasts.show(L("“\(l.name)” doesn't match the connected displays"), lifetime: lifetime)
             return nil
         }
         let p = plan(l, ctx: ctx)
@@ -287,7 +287,7 @@ import SnapticKit
         guard !lifetime.isEnded, context === ctx else { return outcome }
         ctx.osd.show(.layout, text: l.name, on: ctx.registry.displays.first(where: \.isMain)?.desktopID ?? 0)
         if !p.skipped.isEmpty {
-            ctx.toasts.show(L("Applied '\(l.name)'; skipped \(p.skipped.joined(separator: ", ")) (feature off)"), lifetime: lifetime)
+            ctx.toasts.show(L("Applied “\(l.name)”; skipped \(p.skipped.joined(separator: ", ")) (feature off)"), lifetime: lifetime)
         }
         if pendingMatch == id { pendingMatch = nil }
         if !trusted { offerTrust(id) }
@@ -297,7 +297,7 @@ import SnapticKit
     /// "Keep for automatic use?" after a kept manual apply (R5.7).
     private func offerTrust(_ id: StableID) {
         guard let ctx = context, let l = layout(id), l.autoApply != .never else { return }
-        ctx.toasts.show(L("Keep '\(l.name)' for automatic use?"), action: ToastAction(title: L("Keep")) { [weak self] in
+        ctx.toasts.show(L("Keep “\(l.name)” for automatic use?"), action: ToastAction(title: L("Keep")) { [weak self] in
             self?.trust(id)
         }, lifetime: lifetime)
     }
@@ -305,7 +305,7 @@ import SnapticKit
     func trust(_ id: StableID) {
         guard let l = layout(id) else { return }
         guard let stamp = LayoutPresetModel.stamp(l, osMajor: ManagedIdentity.osMajor, digest: ManagedIdentity.sha256Hex) else {
-            context?.toasts.show(L("Layouts with displays that have no serial number can't apply automatically"), lifetime: lifetime)
+            context?.toasts.show(ManagementText.layoutsNeedSerialNumbers, lifetime: lifetime)
             return
         }
         update(id) { $0.trust = stamp }
@@ -344,7 +344,7 @@ import SnapticKit
         await applyExtras(l, ctx: ctx, manual: false)
         autoApplies += 1
         guard ctx.config.value.layouts.undoToast, !p.changes.isEmpty else { return }
-        ctx.toasts.show(L("Applied '\(l.name)'"), action: ToastAction(title: L("Undo")) { [weak self] in
+        ctx.toasts.show(L("Applied “\(l.name)”"), action: ToastAction(title: L("Undo")) { [weak self] in
             guard let self, let ctx = self.context, let lifetime = self.lifetime else { return }
             var undo: [DisplayChange] = []
             for (key, b) in before {
@@ -363,7 +363,7 @@ import SnapticKit
     func promptApply(_ id: StableID) {
         guard let ctx = context, let l = layout(id) else { return }
         pendingMatch = id
-        ctx.toasts.show(L("Apply '\(l.name)'?"), action: ToastAction(title: L("Apply")) { [weak self] in self?.apply(id) },
+        ctx.toasts.show(L("Apply “\(l.name)”?"), action: ToastAction(title: L("Apply")) { [weak self] in self?.apply(id) },
                         lifetime: lifetime)
     }
 
@@ -388,7 +388,7 @@ import SnapticKit
     private func registerCommands(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("layout", policy: .trial, offOnly: false, cliAllowed: true,
                               summary: L("layout list | apply <name|number> | capture <name>"), lifetime: lifetime) { [weak self] req, _ in
-            guard let self, self.effective.contains(.layouts) else { return .failure(ControlExit.unavailable, L("Layouts are off")) }
+            guard let self, self.effective.contains(.layouts) else { return .failure(ControlExit.unavailable, ManagementText.savedLayoutsOff) }
             let a = req.arguments
             switch a.first?.lowercased() {
             case "list", nil:
@@ -413,7 +413,7 @@ import SnapticKit
                 guard self.matches(l) != nil else { return .failure(ControlExit.refused, L("The layout doesn't match the connected displays")) }
                 // Awaits the outcome: 0 applied or kept, 6 declined or timed out (FIXES-R3 10).
                 guard let outcome = await self.applyAwaiting(l.id, skipConfirmation: req.skipConfirmation) else {
-                    return .failure(ControlExit.unavailable, L("Layouts are off"))
+                    return .failure(ControlExit.unavailable, ManagementText.savedLayoutsOff)
                 }
                 let response = ManagedTransactions.response(outcome, ok: l.name)
                 if req.json, response.exitCode == ControlExit.ok {

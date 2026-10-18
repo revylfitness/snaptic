@@ -832,3 +832,37 @@ package enum DisplayInformationText {
                                    : L("\(session); \(permanentSteps) rotation or HDR steps to confirm")
     }
 }
+
+// MARK: - Display Details › Copy settings from (ux N3; owner F)
+
+/// "Copy settings from" is a real copy: this display takes a remembered display's brightness, hardware controls,
+/// keys, color, resolution and connection settings, and the remembered display stays as it was. This display keeps
+/// what is its own: name, icon and fingerprint, what Snaptic measured about its panel, and its Picture in Picture
+/// setups (their ids name Keyboard Shortcuts actions, so they are never duplicated).
+package enum DisplaySettingsCopy {
+    /// The new per-display map, or nil when there is nothing to copy (no such source, the same display, or this
+    /// display already has those settings). Every other entry, the source's included, is unchanged.
+    package static func copying(from source: DisplayKey, to target: DisplayKey,
+                                in perDisplay: LossyMap<DisplayKey, PerDisplayConfig>) -> LossyMap<DisplayKey, PerDisplayConfig>? {
+        guard source != target, let settings = perDisplay[source] else { return nil }
+        let own = perDisplay[target] ?? PerDisplayConfig()
+        var copied = settings
+        copied.identity = own.identity
+        copied.pip = own.pip
+        copied.brightness.gammaWorks = own.brightness.gammaWorks
+        copied.brightness.xdrOverlayWorks = own.brightness.xdrOverlayWorks
+        copied.brightness.xdrGammaWorks = own.brightness.xdrGammaWorks
+        guard copied != own else { return nil }
+        var result = perDisplay
+        result[target] = copied
+        return result
+    }
+
+    /// The confirmation's title, naming the remembered display.
+    package static func question(source: String) -> String { L("Copy the settings of “\(source)” to this display?") }
+
+    /// The confirmation's message: what is replaced, and that the remembered display stays.
+    package static func message(source: String) -> String {
+        L("This display’s brightness, color, and resolution settings are replaced. Snaptic keeps remembering “\(source)”.")
+    }
+}

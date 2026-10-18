@@ -303,6 +303,8 @@ Sources/SnapticKit/ResolutionMenuPicks.swift	D	L	-	-
 Tests/SnapticKitTests/ResolutionMenuPicksTests.swift	D	L	-	-
 Sources/SnapticKit/TransactionLogText.swift	D	L	-	-
 Tests/SnapticKitTests/TransactionLogTextTests.swift	D	L	-	-
+Sources/SnapticKit/ManagementText.swift	D	L	-	-
+Tests/SnapticKitTests/ManagementTextTests.swift	D	L	-	-
 Tests/SnapticKitTests/VirtualScreenSpecFuzzTests.swift	D	L	-	-
 Tests/SnapticKitTests/ResolutionTypedValueTests.swift	D	L	-	-
 Sources/Snaptic/Displays/Management/ManagementSupport.swift	D	L	-	-

@@ -610,4 +610,69 @@ final class DisplaysRootModelTests: XCTestCase {
         XCTAssertEqual(DisplayInformationText.journal(hasSessionJournal: false, permanentSteps: 2),
                        "Empty; 2 rotation or HDR steps to confirm")
     }
+
+    // MARK: Copy settings from (ux N3)
+
+    private func key(_ c: Character) -> DisplayKey { DisplayKey(rawValue: String(repeating: c, count: 32))! }
+
+    private func tuned(name: String, brightness: Double, contrast: Double, measured: Bool) -> PerDisplayConfig {
+        var c = PerDisplayConfig()
+        c.identity.customName = name
+        c.identity.symbol = "tv"
+        c.brightness.value = brightness
+        c.brightness.gammaWorks = measured
+        c.color.adjustments.contrast = contrast
+        c.resolution.matchUIScale = !measured
+        c.pip.configurations = [PIPConfiguration(name: name + " PIP")]
+        return c
+    }
+
+    func testCopySettingsKeepsTheSourceAndThisDisplaysOwnParts() throws {
+        let source = key("a"), target = key("b"), other = key("c")
+        let lg = tuned(name: "LG", brightness: 0.3, contrast: 1.4, measured: true)
+        let dell = tuned(name: "DELL", brightness: 0.8, contrast: 1, measured: false)
+        let third = tuned(name: "Third", brightness: 0.5, contrast: 1.1, measured: true)
+        let map = LossyMap([source: lg, target: dell, other: third])
+        let result = try XCTUnwrap(DisplaySettingsCopy.copying(from: source, to: target, in: map))
+        // A copy, not a move: the remembered display and every other entry are unchanged.
+        XCTAssertEqual(result[source], lg)
+        XCTAssertEqual(result[other], third)
+        XCTAssertEqual(result.values.count, 3)
+        let copied = try XCTUnwrap(result[target])
+        XCTAssertEqual(copied.brightness.value, 0.3)
+        XCTAssertEqual(copied.color.adjustments.contrast, 1.4)
+        XCTAssertEqual(copied.resolution.matchUIScale, false)
+        // This display's own name, icon, panel measurements and Picture in Picture setups stay.
+        XCTAssertEqual(copied.identity, dell.identity)
+        XCTAssertEqual(copied.pip, dell.pip)
+        XCTAssertEqual(copied.brightness.gammaWorks, false)
+        XCTAssertNotEqual(copied.pip.configurations.map(\.id), lg.pip.configurations.map(\.id))
+    }
+
+    func testCopySettingsOntoADisplayWithNothingStored() throws {
+        let source = key("a"), target = key("b")
+        let lg = tuned(name: "LG", brightness: 0.3, contrast: 1.4, measured: true)
+        let result = try XCTUnwrap(DisplaySettingsCopy.copying(from: source, to: target, in: LossyMap([source: lg])))
+        XCTAssertEqual(result[source], lg)
+        let copied = try XCTUnwrap(result[target])
+        XCTAssertEqual(copied.identity, PerDisplayIdentity())
+        XCTAssertEqual(copied.pip, PerDisplayPIP())
+        XCTAssertNil(copied.brightness.gammaWorks)
+        XCTAssertEqual(copied.brightness.value, 0.3)
+    }
+
+    func testCopySettingsRefusesWhatChangesNothing() {
+        let source = key("a"), target = key("b")
+        let lg = tuned(name: "LG", brightness: 0.3, contrast: 1.4, measured: true)
+        XCTAssertNil(DisplaySettingsCopy.copying(from: source, to: source, in: LossyMap([source: lg])))
+        XCTAssertNil(DisplaySettingsCopy.copying(from: key("c"), to: target, in: LossyMap([source: lg])))
+        // Copying again changes nothing, so there is nothing to confirm or write.
+        let once = DisplaySettingsCopy.copying(from: source, to: target, in: LossyMap([source: lg]))!
+        XCTAssertNil(DisplaySettingsCopy.copying(from: source, to: target, in: once))
+    }
+
+    func testCopySettingsConfirmationNamesTheSourceAndKeepsIt() {
+        XCTAssertEqual(DisplaySettingsCopy.question(source: "LG HDR 4K"), "Copy the settings of “LG HDR 4K” to this display?")
+        XCTAssertTrue(DisplaySettingsCopy.message(source: "LG HDR 4K").contains("keeps remembering “LG HDR 4K”"))
+    }
 }
