@@ -33,6 +33,12 @@ struct SwitcherAdvancedSheet: View, ControlDeclaring {
                                         PickerOption(.mouse, L("Display with the Pointer"))],
                               style: .popUp, defaultValue: Config().showOnScreen,
                               anchor: ControlID("switcher.advanced.showOn"))
+            } header: {
+                Text(L("Switcher"))
+            }
+            // These two belong to the shortcut on the Window Switcher page only (review round 2 ux N6): the header
+            // and footer say so, since More Shortcuts… has the same two options per shortcut.
+            Section {
                 ToggleSetting(L("One entry per app"), help: L("Lists each app once, with its most recent window."),
                               isOn: SwitcherBinding.primary(settings, \.oneWindowPerApp),
                               anchor: ControlID("switcher.advanced.oneWindowPerApp"))
@@ -40,7 +46,10 @@ struct SwitcherAdvancedSheet: View, ControlDeclaring {
                               isOn: SwitcherBinding.windowless(settings, id: nil),
                               anchor: ControlID("switcher.advanced.includeWindowless"))
             } header: {
-                Text(L("Switcher"))
+                Text(L("Main shortcut"))
+            } footer: {
+                Text(L("For the shortcut on the Window Switcher page. Other shortcuts have their own settings in More Shortcuts."))
+                    .foregroundStyle(.secondary)
             }
             Section {
                 ToggleSetting(L("Search"), help: L("Press S or / while the switcher is open, then type a name."),

@@ -13,14 +13,18 @@ struct ButtonRow: View {
     let help: String?
     /// Indented 20 pt under its parent switch, shown by the caller only while the parent is on.
     let subordinate: Bool
+    /// `.destructive` for Delete…-style buttons (red text).
+    let role: ButtonRole?
 
-    init(_ title: String, symbol: String? = nil, control: ControlID? = nil, action: @escaping @MainActor () -> Void) {
-        self.init(title, help: nil, symbol: symbol, control: control, action: action)
+    init(_ title: String, symbol: String? = nil, role: ButtonRole? = nil, control: ControlID? = nil,
+         action: @escaping @MainActor () -> Void) {
+        self.init(title, help: nil, symbol: symbol, role: role, control: control, action: action)
     }
 
-    init(_ title: String, help: String?, subordinate: Bool = false, symbol: String? = nil, control: ControlID? = nil,
-         action: @escaping @MainActor () -> Void) {
+    init(_ title: String, help: String?, subordinate: Bool = false, symbol: String? = nil, role: ButtonRole? = nil,
+         control: ControlID? = nil, action: @escaping @MainActor () -> Void) {
         self.title = title
+        self.role = role
         self.symbol = symbol
         self.control = control
         self.action = action
@@ -36,7 +40,7 @@ struct ButtonRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
-            Button {
+            Button(role: role) {
                 action()
             } label: {
                 if let symbol {

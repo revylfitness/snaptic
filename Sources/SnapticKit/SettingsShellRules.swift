@@ -117,26 +117,46 @@ package struct SettingsFocusGuard: Equatable, Sendable {
     }
 }
 
-/// Where each page's (?) leads (review ux m5): a heading of the README, the most specific one for the route (a
-/// page, else its root). GitHub's heading anchors are the heading text, lowercased, spaces as "-".
+/// Where each page's (?) leads (review ux m5, round 2 N4): a heading of the README, the most specific one for the
+/// route (a page, else its root). `headings` holds the exact heading text; the anchor is GitHub's slug of it
+/// (`slug`). A Kit test reads README.md and checks every heading exists (the ones the README doesn't have yet are
+/// listed there for the docs step).
 package enum SettingsHelpAnchors {
     package static let readme = "https://github.com/revylfitness/snaptic/blob/main/README.md"
 
-    /// Route id (a root id or a page surface such as "displays.color") → README heading anchor.
-    package static let anchors: [String: String] = [
-        SettingsRootID.general: "modules",
-        SettingsRootID.menuBar: "menu-bar",
-        SettingsRootID.windowSwitcher: "window-switcher",
-        SettingsRootID.displays: "displays",
-        "displays.brightness": "brightness",
-        "displays.hardware": "hardware-controls",
-        "displays.color": "color",
-        "displays.keyboard": "keyboard",
-        "displays.info": "display-information",
-        SettingsRootID.awake: "awake",
-        SettingsRootID.permissions: "permissions",
-        SettingsRootID.about: "snaptic",
+    /// Route id (a root id or a page surface such as "displays.color") → the README heading's exact text. Display
+    /// pages use their page titles, as "###" headings under "## Displays".
+    package static let headings: [String: String] = [
+        SettingsRootID.general: "General",
+        SettingsRootID.menuBar: "Menu Bar",
+        SettingsRootID.windowSwitcher: "Window Switcher",
+        SettingsRootID.displays: "Displays",
+        "displays.brightness": "Brightness and Dimming",
+        "displays.hardware": "Hardware Controls",
+        "displays.color": "Color",
+        "displays.keyboard": "Keyboard",
+        "displays.info": "Display Information",
+        SettingsRootID.awake: "Awake",
+        SettingsRootID.permissions: "Permissions",
+        SettingsRootID.about: "Snaptic",
     ]
+
+    /// Route id → README heading anchor.
+    package static let anchors: [String: String] = headings.mapValues { SettingsHelpAnchors.slug($0) }
+
+    /// GitHub's heading anchor: lowercased; letters, digits, spaces, "-" and "_" kept, everything else dropped;
+    /// each space becomes "-" ("Brightness and Dimming" → "brightness-and-dimming", "Menu Bar" → "menu-bar").
+    package static func slug(_ heading: String) -> String {
+        var out = ""
+        for ch in heading.trimmingCharacters(in: .whitespaces).lowercased() {
+            if ch == " " {
+                out.append("-")
+            } else if ch == "-" || ch == "_" || ch.isLetter || ch.isNumber {
+                out.append(ch)
+            }
+        }
+        return out
+    }
 
     /// The anchor of the longest dotted prefix of `routeID` that has one ("displays.color.advanced" →
     /// "color"); the root's for any other page; nil for an id that names no root.
