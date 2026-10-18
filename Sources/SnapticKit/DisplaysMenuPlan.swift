@@ -67,7 +67,7 @@ package enum DisplayMenuLocation: Equatable, Sendable {
     case tools(toggle: Bool)
     /// Under the "Display automation is paused" status row, always while paused.
     case pausedStatus
-    /// Not in the 0.3 Displays menu (`ControlRemovals` gives the reason; d.sleepPrevention moved to Awake).
+    /// Not in the 0.3 Displays menu (`ControlRemovals` gives the reason; Awake's rules replace d.sleepPrevention).
     case removed
 }
 

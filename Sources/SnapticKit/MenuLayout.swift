@@ -8,39 +8,81 @@ package enum MenuLayout {
     /// The Keep Awake action (G declares the `AwakeActionID` constants; the raw value is the contract).
     package static let keepAwakeAction = AwakeActionID(rawValue: "awake.toggle")
 
-    /// Awake's "Don't Show" is only allowed while the Keep Awake shortcut is bound (parity M2): set, and not among
-    /// the combos that failed to register (`failed`, AwakeAutomation's conflicts and system refusals).
-    package static func awakeShortcutBound(_ shortcuts: LossyMap<AwakeActionID, HotkeyCombo>,
-                                           failed: Set<AwakeActionID> = []) -> Bool {
-        shortcuts[keepAwakeAction] != nil && !failed.contains(keepAwakeAction)
+    /// Where the Keep Awake shortcut stands, for Awake's "Don't Show" (parity M2): only `registered` keeps a hidden
+    /// Awake reachable. `registered` is G's runtime flag (`AwakeRuntimeState.keepAwakeRegistered`: the combo is
+    /// registered right now); the other cases only choose the words (toast, Menu Bar footer).
+    package enum AwakeShortcutStatus: Equatable, CaseIterable {
+        /// Set and registered: Awake may be hidden.
+        case registered
+        /// No Keep Awake combo is stored.
+        case notSet
+        /// Set, but another app or macOS has the combo (AwakeAutomation's `failedShortcuts`).
+        case failed
+        /// Set, but nothing is registered: Awake's Keyboard Shortcuts feature is off (setting, defaults key).
+        case turnedOff
+
+        package var isBound: Bool { self == .registered }
     }
 
-    /// The Snaptic item's default glyph (stored as ""), and the one it uses instead while a module's own icon
-    /// already shows the default (Window Switcher's glyph; ux m16: two identical icons side by side).
+    /// `registered` wins (it is what macOS delivers); otherwise unset before failed before turned off.
+    package static func awakeShortcutStatus(_ shortcuts: LossyMap<AwakeActionID, HotkeyCombo>,
+                                            failed: Set<AwakeActionID>, registered: Bool) -> AwakeShortcutStatus {
+        if registered { return .registered }
+        if shortcuts[keepAwakeAction] == nil { return .notSet }
+        return failed.contains(keepAwakeAction) ? .failed : .turnedOff
+    }
+
+    /// The Snaptic item's default glyph (stored as ""), and the ones it uses instead while a module's own icon
+    /// already shows it (Window Switcher's glyph; ux m16: two identical icons side by side).
     package static let snapticSymbol = "rectangle.on.rectangle"
     package static let snapticAlternateSymbol = "square.grid.2x2"
+    /// The Snaptic icon choices on the Menu Bar page, in order (the default first).
+    package static let snapticSymbols = [snapticSymbol, snapticAlternateSymbol, "circle.grid.cross"]
 
-    /// The Snaptic item's glyph: the stored choice; else the default, or the alternate while one of the own icons
-    /// shown (`ownIconSymbols`) is the default glyph.
+    /// The Snaptic item's glyph: the stored choice ("" = the default) unless one of the own icons shown now
+    /// (`ownIconSymbols`, from `ModulesConfig.ownIconIDs`) already uses it; then the first choice none of them uses.
+    /// The Snaptic item and a module's item never show the same glyph (code N3).
     package static func sharedSymbol(stored: String, ownIconSymbols: [String]) -> String {
-        guard stored.isEmpty else { return stored }
-        return ownIconSymbols.contains(snapticSymbol) ? snapticAlternateSymbol : snapticSymbol
+        let wanted = stored.isEmpty ? snapticSymbol : stored
+        guard ownIconSymbols.contains(wanted) else { return wanted }
+        return snapticSymbols.first { !ownIconSymbols.contains($0) } ?? wanted
     }
 
-    /// What the Menu Bar page stores for a chosen Snaptic glyph: "" (follow the default) only for the default
-    /// glyph while it doesn't collide; any other choice, or the default chosen while it collides, is kept as is.
-    package static func storedSharedSymbol(chosen: String, ownIconSymbols: [String]) -> String {
-        chosen == snapticSymbol && !ownIconSymbols.contains(snapticSymbol) ? "" : chosen
+    /// What the Menu Bar page stores for a chosen Snaptic glyph: the default is always stored as "" (it then steps
+    /// aside by itself whenever an own icon uses it), so a choice never pins a glyph that collides later.
+    package static func storedSharedSymbol(chosen: String) -> String {
+        chosen == snapticSymbol ? "" : chosen
     }
 
-    /// The toast the host shows when the Don't Show fallback (`awakePresenceFallback`) moves Awake back.
-    package static var awakeFallbackNotice: String {
-        L("Awake is back in the menu bar because its keyboard shortcut is no longer set.")
+    /// The Snaptic icon tiles: the choices (plus a stored glyph that isn't one of them) except the glyphs an own
+    /// icon shows now, so every tile can be the glyph the menu bar shows. `sharedSymbol` is always among them.
+    package static func snapticSymbolChoices(stored: String, ownIconSymbols: [String]) -> [String] {
+        var seen = Set<String>()
+        let candidates = snapticSymbols + (stored.isEmpty ? [] : [stored])
+        let free = candidates.filter { !ownIconSymbols.contains($0) && seen.insert($0).inserted }
+        let shown = sharedSymbol(stored: stored, ownIconSymbols: ownIconSymbols)
+        return free.contains(shown) ? free : [shown] + free
     }
 
-    /// The same toast when the Keep Awake shortcut is set but couldn't be registered (another app or macOS uses it).
-    package static var awakeFallbackFailedNotice: String {
-        L("Awake is back in the menu bar because its keyboard shortcut is used by another app or by macOS.")
+    /// The toast the host shows when the Don't Show fallback (`awakePresenceFallback`) moves Awake back; nil for
+    /// a registered shortcut (no fallback then).
+    package static func awakeFallbackNotice(_ status: AwakeShortcutStatus) -> String? {
+        switch status {
+        case .registered: return nil
+        case .notSet: return L("Awake is back in the menu bar because its keyboard shortcut is no longer set.")
+        case .failed: return L("Awake is back in the menu bar because its keyboard shortcut is used by another app or by macOS.")
+        case .turnedOff: return L("Awake is back in the menu bar because its keyboard shortcuts are turned off.")
+        }
+    }
+
+    /// The Menu Bar page's footer while Awake can't be hidden; nil for a registered shortcut.
+    package static func awakeHideHint(_ status: AwakeShortcutStatus) -> String? {
+        switch status {
+        case .registered: return nil
+        case .notSet: return L("To hide Awake, first set a Keep Awake shortcut.")
+        case .failed: return L("To hide Awake, choose a Keep Awake shortcut that no other app or macOS uses.")
+        case .turnedOff: return L("Awake’s keyboard shortcuts are turned off, so Awake can’t be hidden.")
+        }
     }
 
     /// Whether `presence` may be chosen for a module now: Awake's Don't Show needs a bound Keep Awake shortcut.
@@ -56,7 +98,8 @@ extension ModulesConfig {
     /// - `running`: modules that run now; enabled modules that don't run (turned off by a defaults key) show nothing.
     /// - `awakeActive`: an Awake session, rule or hold governs (`AwakeGoverning != .inactive`).
     /// - `displaysActive`: an external display is connected (Displays' Show When Active).
-    /// - `awakeShortcutBound`: the Keep Awake shortcut is set (Awake's Don't Show is only safe with it).
+    /// - `awakeShortcutBound`: the Keep Awake shortcut is registered right now (`AwakeShortcutStatus.isBound`;
+    ///   Awake's Don't Show is only safe with it).
     /// - `sharedShownAtRest`: the Snaptic item existed before this Awake session (a session never removes it).
     ///
     /// Rules: Window Switcher and Displays go into the Snaptic item (Show in Snaptic Menu), get their own item
@@ -76,17 +119,8 @@ extension ModulesConfig {
         }
         let live = enabled.filter { running.contains($0) }
         let governing = awakeActive && live.contains(.awake)
-        var shared: [ModuleID] = []
-        var own: [ModuleID] = []
-        for id in live where id != .awake {
-            switch presence(id) {
-            case .inSnapticMenu: shared.append(id)
-            case .ownIcon: own.append(id)
-            // Only Displays offers "when active"; anywhere else it is an unsanitized value and means an own icon.
-            case .ownIconWhenActive: if id != .displays || displaysActive { own.append(id) }
-            case .hidden: break
-            }
-        }
+        var shared = live.filter { $0 != .awake && presence($0) == .inSnapticMenu }
+        let own = ownIconIDs(running: running, displaysActive: displaysActive)
 
         var custom: [ModuleID] = []
         var compact = false
@@ -118,6 +152,20 @@ extension ModulesConfig {
                               sharedFooterInOwnMenus: !showShared && !(own.isEmpty && custom.isEmpty))
     }
 
+    /// The modules (not Awake, which builds its own item) shown with an icon of their own now: running, Always Show,
+    /// or Show When Active while it is active (only Displays offers it; anywhere else it is an unsanitized value
+    /// and means an own icon). The plan's `ownIcon`, and what the Menu Bar page's Snaptic icon steps aside for.
+    package func ownIconIDs(running: Set<ModuleID>, displaysActive: Bool) -> [ModuleID] {
+        enabledModules.filter { id in
+            guard id != .awake, running.contains(id) else { return false }
+            switch presence(id) {
+            case .ownIcon: return true
+            case .ownIconWhenActive: return id != .displays || displaysActive
+            case .inSnapticMenu, .hidden: return false
+            }
+        }
+    }
+
     /// The plan with the Snaptic item's "shown at rest" memory resolved the way StatusMenu does it: the item counts
     /// as shown at rest when it exists now or when the same configuration without a session would show it.
     package func statusItemPlan(running: Set<ModuleID>, awakeActive: Bool, displaysActive: Bool,
@@ -132,8 +180,10 @@ extension ModulesConfig {
 
     /// The "Don't Show" fallback (§5.2, parity minor 11): Awake set to Don't Show while the Keep Awake shortcut is
     /// unbound goes back to Show When Active (the host then says so in `MenuLayout.awakeFallbackNotice`). nil =
-    /// nothing to change; also while Awake is off (it shows nothing anyway; the check runs again when it turns on).
-    package func awakePresenceFallback(awakeShortcutBound: Bool) -> MenuPresence? {
-        isEnabled(.awake) && presence(.awake) == .hidden && !awakeShortcutBound ? .ownIconWhenActive : nil
+    /// nothing to change; also while Awake doesn't run (`awakeRunning` false: off, or turned off by a defaults
+    /// setting; it shows nothing anyway, its shortcut isn't registered, and the check runs again when it starts).
+    package func awakePresenceFallback(awakeRunning: Bool, awakeShortcutBound: Bool) -> MenuPresence? {
+        awakeRunning && isEnabled(.awake) && presence(.awake) == .hidden && !awakeShortcutBound
+            ? .ownIconWhenActive : nil
     }
 }

@@ -125,26 +125,27 @@ final class MenuLayoutTests: XCTestCase {
     }
 
     func testDontShowFallbackAndSelectability() {
-        XCTAssertEqual(config(awake: .hidden).awakePresenceFallback(awakeShortcutBound: false), .ownIconWhenActive)
-        XCTAssertNil(config(awake: .hidden).awakePresenceFallback(awakeShortcutBound: true))
+        XCTAssertEqual(config(awake: .hidden).awakePresenceFallback(awakeRunning: true, awakeShortcutBound: false),
+                       .ownIconWhenActive)
+        XCTAssertNil(config(awake: .hidden).awakePresenceFallback(awakeRunning: true, awakeShortcutBound: true))
         for presence in [MenuPresence.ownIcon, .ownIconWhenActive, .inSnapticMenu] {
-            XCTAssertNil(config(awake: presence).awakePresenceFallback(awakeShortcutBound: false))
+            XCTAssertNil(config(awake: presence).awakePresenceFallback(awakeRunning: true, awakeShortcutBound: false))
         }
         // Applying the fallback gives a plan in which Awake is reachable at rest.
         var c = config(switcher: .hidden, displays: .hidden, awake: .hidden)
         XCTAssertTrue(plan(c).everythingHidden)
-        if let fallback = c.awakePresenceFallback(awakeShortcutBound: false) { c.setPresence(fallback, for: .awake) }
+        if let fallback = c.awakePresenceFallback(awakeRunning: true, awakeShortcutBound: false) {
+            c.setPresence(fallback, for: .awake)
+        }
         let p = plan(c)
         XCTAssertFalse(p.everythingHidden)
         XCTAssertEqual(p.shared, [.awake])
 
         // Awake off: nothing to move (and no toast); the check runs again when it turns on.
-        XCTAssertNil(config(awake: .hidden, enabled: [.displays]).awakePresenceFallback(awakeShortcutBound: false))
-        // The toast names where Awake went and why (parity #2).
-        XCTAssertTrue(MenuLayout.awakeFallbackNotice.contains("menu bar"))
-        XCTAssertTrue(MenuLayout.awakeFallbackNotice.contains("shortcut"))
-        XCTAssertTrue(MenuLayout.awakeFallbackFailedNotice.contains("menu bar"))
-        XCTAssertNotEqual(MenuLayout.awakeFallbackFailedNotice, MenuLayout.awakeFallbackNotice)
+        XCTAssertNil(config(awake: .hidden, enabled: [.displays])
+            .awakePresenceFallback(awakeRunning: false, awakeShortcutBound: false))
+        // ui N3: enabled but not running (a defaults setting turned it off): no fallback, so no toast either.
+        XCTAssertNil(config(awake: .hidden).awakePresenceFallback(awakeRunning: false, awakeShortcutBound: false))
 
         XCTAssertFalse(MenuLayout.isSelectable(.hidden, for: .awake, awakeShortcutBound: false))
         XCTAssertTrue(MenuLayout.isSelectable(.hidden, for: .awake, awakeShortcutBound: true))
@@ -153,43 +154,113 @@ final class MenuLayoutTests: XCTestCase {
         XCTAssertTrue(MenuLayout.isSelectable(.ownIconWhenActive, for: .displays, awakeShortcutBound: false))
     }
 
-    /// ux m16: the Snaptic item's default glyph is Window Switcher's; while that icon is shown on its own, the
-    /// Snaptic item uses the grid so the two are never identical. A stored choice always wins.
+    /// The fallback's toast and the Menu Bar footer name where Awake went and why, one text per reason; a
+    /// registered shortcut has neither (parity #2, code M1).
+    func testFallbackWordsPerShortcutStatus() {
+        var texts = Set<String>()
+        for status in MenuLayout.AwakeShortcutStatus.allCases {
+            let notice = MenuLayout.awakeFallbackNotice(status)
+            let hint = MenuLayout.awakeHideHint(status)
+            if status == .registered {
+                XCTAssertNil(notice)
+                XCTAssertNil(hint)
+                XCTAssertTrue(status.isBound)
+                continue
+            }
+            XCTAssertFalse(status.isBound)
+            guard let notice, let hint else { return XCTFail("\(status) needs words") }
+            XCTAssertTrue(notice.contains("menu bar"))
+            XCTAssertTrue(notice.contains("shortcut"))
+            XCTAssertTrue(hint.contains("hide") || hint.contains("hidden"))
+            XCTAssertTrue(texts.insert(notice).inserted)
+            XCTAssertTrue(texts.insert(hint).inserted)
+        }
+    }
+
+    /// ux m16 / code N3: the Snaptic item never shows the glyph of an own icon shown now; the default is never
+    /// stored explicitly, so no choice pins a glyph that collides later.
     func testSnapticGlyphStepsAsideForAnOwnIconWithTheSameGlyph() {
         let switcher = MenuLayout.snapticSymbol
         XCTAssertEqual(MenuLayout.sharedSymbol(stored: "", ownIconSymbols: []), switcher)
         XCTAssertEqual(MenuLayout.sharedSymbol(stored: "", ownIconSymbols: ["display.2"]), switcher)
         XCTAssertEqual(MenuLayout.sharedSymbol(stored: "", ownIconSymbols: [switcher]), MenuLayout.snapticAlternateSymbol)
         XCTAssertEqual(MenuLayout.sharedSymbol(stored: "circle.grid.cross", ownIconSymbols: [switcher]), "circle.grid.cross")
+        // An explicit default stored by an earlier build steps aside too.
+        XCTAssertEqual(MenuLayout.sharedSymbol(stored: switcher, ownIconSymbols: [switcher]), MenuLayout.snapticAlternateSymbol)
+        XCTAssertEqual(MenuLayout.sharedSymbol(stored: MenuLayout.snapticAlternateSymbol,
+                                               ownIconSymbols: [MenuLayout.snapticAlternateSymbol]), switcher)
         XCTAssertNotEqual(MenuLayout.snapticAlternateSymbol, switcher)
+        XCTAssertEqual(MenuLayout.snapticSymbols.first, switcher)
 
-        // Choosing: the plain default is stored as "" only while it doesn't collide.
-        XCTAssertEqual(MenuLayout.storedSharedSymbol(chosen: switcher, ownIconSymbols: []), "")
-        XCTAssertEqual(MenuLayout.storedSharedSymbol(chosen: switcher, ownIconSymbols: [switcher]), switcher)
-        XCTAssertEqual(MenuLayout.storedSharedSymbol(chosen: "square.grid.2x2", ownIconSymbols: [switcher]), "square.grid.2x2")
-        // Round trip: what the page shows after storing a choice is that choice.
-        for own in [[String](), [switcher], ["display.2"]] {
-            for chosen in [switcher, "square.grid.2x2", "circle.grid.cross"] {
-                let stored = MenuLayout.storedSharedSymbol(chosen: chosen, ownIconSymbols: own)
-                XCTAssertEqual(MenuLayout.sharedSymbol(stored: stored, ownIconSymbols: own), chosen)
-                XCTAssertTrue(ModulesConfig.isCuratedSymbol(stored))
+        // Choosing: the default is always stored as "" (it steps aside by itself); anything else as is.
+        XCTAssertEqual(MenuLayout.storedSharedSymbol(chosen: switcher), "")
+        XCTAssertEqual(MenuLayout.storedSharedSymbol(chosen: "square.grid.2x2"), "square.grid.2x2")
+
+        // The code N3 scenario: the page chose while nothing collided; a Window Switcher or Displays icon with the
+        // same glyph appears later; the two items still differ.
+        let stored = MenuLayout.storedSharedSymbol(chosen: switcher)
+        XCTAssertNotEqual(MenuLayout.sharedSymbol(stored: stored, ownIconSymbols: [switcher]), switcher)
+
+        // Tiles: never a glyph an own icon shows, always the one the Snaptic item shows; round trip: tapping a
+        // tile makes the item show that tile.
+        let pool = MenuLayout.snapticSymbols + ["display", "rectangle.stack"]
+        var rng = SeededGenerator(seed: 0x61_7970_68)
+        for _ in 0..<2_000 {
+            let own = pool.filter { _ in rng.next() % 3 == 0 }
+            let storedNow = rng.next() % 3 == 0 ? "" : pool[Int(rng.next() % UInt64(pool.count))]
+            let shown = MenuLayout.sharedSymbol(stored: storedNow, ownIconSymbols: own)
+            let tiles = MenuLayout.snapticSymbolChoices(stored: storedNow, ownIconSymbols: own)
+            XCTAssertTrue(tiles.contains(shown))
+            XCTAssertEqual(tiles.count, Set(tiles).count)
+            if MenuLayout.snapticSymbols.contains(where: { !own.contains($0) }) {
+                XCTAssertFalse(own.contains(shown), "\(storedNow) \(own)")
+                XCTAssertTrue(tiles.allSatisfy { !own.contains($0) })
+            }
+            for chosen in tiles {
+                let value = MenuLayout.storedSharedSymbol(chosen: chosen)
+                XCTAssertNotEqual(value, switcher, "the default is never stored explicitly")
+                XCTAssertEqual(MenuLayout.sharedSymbol(stored: value, ownIconSymbols: own), chosen)
             }
         }
     }
 
-    func testKeepAwakeShortcutBinding() {
+    func testKeepAwakeShortcutStatus() {
+        typealias S = MenuLayout.AwakeShortcutStatus
         var shortcuts = LossyMap<AwakeActionID, HotkeyCombo>()
-        XCTAssertFalse(MenuLayout.awakeShortcutBound(shortcuts))
+        let keep = MenuLayout.keepAwakeAction
+        XCTAssertEqual(keep.rawValue, "awake.toggle")
+        XCTAssertEqual(MenuLayout.awakeShortcutStatus(shortcuts, failed: [], registered: false), S.notSet)
         shortcuts[AwakeActionID(rawValue: "awake.preset1")] = HotkeyCombo(keyCode: 0, carbonModifiers: 0x0100)
-        XCTAssertFalse(MenuLayout.awakeShortcutBound(shortcuts))
-        shortcuts[MenuLayout.keepAwakeAction] = HotkeyCombo(keyCode: 1, carbonModifiers: 0x0100)
-        XCTAssertTrue(MenuLayout.awakeShortcutBound(shortcuts))
-        XCTAssertEqual(MenuLayout.keepAwakeAction.rawValue, "awake.toggle")
-        // Set but not registered (another app or macOS has the combo) counts as unbound; other failures don't.
-        XCTAssertFalse(MenuLayout.awakeShortcutBound(shortcuts, failed: [MenuLayout.keepAwakeAction]))
-        XCTAssertTrue(MenuLayout.awakeShortcutBound(shortcuts, failed: [AwakeActionID(rawValue: "awake.preset1")]))
-        shortcuts[MenuLayout.keepAwakeAction] = nil
-        XCTAssertFalse(MenuLayout.awakeShortcutBound(shortcuts, failed: []))
+        XCTAssertEqual(MenuLayout.awakeShortcutStatus(shortcuts, failed: [], registered: false), S.notSet)
+        shortcuts[keep] = HotkeyCombo(keyCode: 1, carbonModifiers: 0x0100)
+        XCTAssertEqual(MenuLayout.awakeShortcutStatus(shortcuts, failed: [], registered: true), S.registered)
+        // Set but not registered: another app or macOS has it, or Awake's shortcuts are off (kill switch, backup;
+        // ui F3 / code M1 / parity Q2: a stored combo alone no longer counts as bound).
+        XCTAssertEqual(MenuLayout.awakeShortcutStatus(shortcuts, failed: [keep], registered: false), S.failed)
+        XCTAssertEqual(MenuLayout.awakeShortcutStatus(shortcuts, failed: [], registered: false), S.turnedOff)
+        XCTAssertEqual(MenuLayout.awakeShortcutStatus(shortcuts, failed: [AwakeActionID(rawValue: "awake.preset1")],
+                                                      registered: false), S.turnedOff)
+        // The registered flag is the truth macOS delivers; it wins over a stale failure.
+        XCTAssertEqual(MenuLayout.awakeShortcutStatus(shortcuts, failed: [keep], registered: true), S.registered)
+        // Only `registered` keeps a hidden Awake.
+        for status in S.allCases {
+            XCTAssertEqual(MenuLayout.isSelectable(.hidden, for: .awake, awakeShortcutBound: status.isBound),
+                           status == .registered)
+            XCTAssertEqual(config(awake: .hidden).awakePresenceFallback(awakeRunning: true,
+                                                                       awakeShortcutBound: status.isBound) == nil,
+                           status == .registered)
+        }
+    }
+
+    /// The Menu Bar page decides the Snaptic glyph from the same own icons as the live plan (code N3).
+    func testOwnIconIDsMatchThePlan() {
+        let c = config(switcher: .ownIcon, displays: .ownIconWhenActive)
+        XCTAssertEqual(c.ownIconIDs(running: all, displaysActive: false), [.windowSwitcher])
+        XCTAssertEqual(c.ownIconIDs(running: all, displaysActive: true), [.windowSwitcher, .displays])
+        // Turned off by a defaults setting (enabled, not running): no icon, so nothing to step aside for.
+        XCTAssertEqual(c.ownIconIDs(running: [.displays, .awake], displaysActive: true), [.displays])
+        XCTAssertEqual(config(switcher: .ownIcon, enabled: [.displays]).ownIconIDs(running: all, displaysActive: true), [])
+        XCTAssertEqual(config(awake: .ownIcon).ownIconIDs(running: all, displaysActive: true), [])
     }
 
     // MARK: Displays and the Switcher
@@ -335,6 +406,7 @@ final class MenuLayoutTests: XCTestCase {
             let again = c.statusItemPlan(running: running, awakeActive: active, displaysActive: displaysActive,
                                          awakeShortcutBound: bound, sharedShownAtRest: atRest)
             XCTAssertEqual(p, again)
+            XCTAssertEqual(p.ownIcon, c.ownIconIDs(running: running, displaysActive: displaysActive))
 
             let live = Set(c.enabledModules).intersection(running)
             let governing = active && live.contains(.awake)
