@@ -58,7 +58,8 @@ import SnapticKit
     /// "≈350 nits" under the Brightness slider when Brightness and Dimming › Show brightness in nits is on (PLAN 0.3
     /// §4.3 Display row: "value in nits when Show nits is on"), else nil.
     var nitsText: String? {
-        guard let ctx = context, ctx.runtime.isEffective(.nits), ctx.config.value.brightness.showNits,
+        guard let ctx = context,
+              NitsModel.shows(showNits: ctx.config.value.brightness.showNits, nitsEffective: ctx.runtime.isEffective(.nits)),
               let nits = ctx.brightness.nits(for: key) else { return nil }
         return NitsModel.label(nits.value, estimate: nits.estimate)
     }
