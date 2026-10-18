@@ -40,17 +40,6 @@ final class HelperPipeWriter: @unchecked Sendable {
         self.onBroken = onBroken
     }
 
-    /// Bytes waiting to be written (diagnostics, tests).
-    var pendingBytes: Int {
-        lock.lock(); defer { lock.unlock() }
-        return pending.queuedBytes
-    }
-
-    var isBroken: Bool {
-        lock.lock(); defer { lock.unlock() }
-        return broken
-    }
-
     func send(_ line: Data, isHeartbeat: Bool = false) {
         lock.lock()
         if !accepting || broken {

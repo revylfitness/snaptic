@@ -282,6 +282,24 @@ def unratcheted_problems():
             problems.append(f"{p}: L17 uniqueKeysWithValues is banned in Awake (use uniquingKeysWith: {{ first, _ in first }})")
     problems += l15()
     problems += rule2()
+    problems += menu_contributors()
+    return problems
+
+
+def menu_contributors():
+    """Every `DisplayMenuContributor` conformer is in `DisplaysModule.menuContributorTypes`, the list
+    `--selftest-controls` checks against the frozen 0.2 menu ids (R5-13)."""
+    module = "Sources/Snaptic/Displays/DisplaysModule.swift"
+    listed = re.search(r"static let menuContributorTypes[^=]*=\s*\[([^\]]*)\]", TEXT.get(module, ""))
+    if not listed:
+        return [f"{module}: menuContributorTypes not found"]
+    names = set(re.findall(r"(\w+)\.self", listed.group(1)))
+    problems = []
+    for p in APP:
+        for m in re.finditer(r"\b(?:class|struct|enum|extension)\s+(\w+)[^{]*?:[^{]*\bDisplayMenuContributor\b", TEXT[p]):
+            if m.group(1) not in names:
+                problems.append(f"{p}: {m.group(1)} conforms to DisplayMenuContributor but isn't listed in "
+                                "DisplaysModule.menuContributorTypes")
     return problems
 
 

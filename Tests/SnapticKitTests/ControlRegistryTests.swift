@@ -39,6 +39,60 @@ final class ControlRegistryTests: XCTestCase {
         XCTAssertTrue(ControlLegacy.internalKeys.contains("shortcuts.*.id"))
     }
 
+    // MARK: Menu contributor coverage (R5-13, `--selftest-controls`; review5 code N1)
+
+    private var removedIDs: Set<LegacyControlID> { Set(ControlRemovals.removed.keys) }
+
+    /// What a complete set of contributors declares: every frozen menu id that is neither removed nor a family.
+    private var covering: [String] {
+        ControlLegacy.displayMenuItemIDs.filter {
+            !$0.hasSuffix("*") && !removedIDs.contains(LegacyControlID(rawValue: "l.menu." + $0))
+        }
+    }
+
+    func testDisplayMenuItemIDsAreTheFrozenMenuRows() {
+        let ids = ControlLegacy.displayMenuItemIDs
+        XCTAssertEqual(ids.count, 46)
+        XCTAssertEqual(Set(ids).count, ids.count)
+        XCTAssertTrue(ids.contains("c.brightness.slider"))
+        XCTAssertTrue(ids.contains("a.custom.*"))
+        XCTAssertFalse(ids.contains { $0.hasPrefix("fixed.") || $0.hasPrefix("l.") })
+    }
+
+    func testMenuCoverageAcceptsACompleteSplit() {
+        let ids = covering
+        XCTAssertGreaterThan(ids.count, 30)
+        let half = ids.count / 2
+        let contributed = ["A": Array(ids[..<half]), "B": Array(ids[half...]), "Families": []]
+        XCTAssertEqual(ControlLegacy.menuCoverageProblems(contributed: contributed, removed: removedIDs), [])
+        // Extra 0.3-only ids are fine.
+        let extra = ["A": ids + ["d.newIn03"]]
+        XCTAssertEqual(ControlLegacy.menuCoverageProblems(contributed: extra, removed: removedIDs), [])
+    }
+
+    func testMenuCoverageReportsMissingDuplicateRemovedAndEmpty() {
+        var ids = covering
+        let missing = ids.removeLast()
+        let removed = ControlLegacy.displayMenuItemIDs.first {
+            removedIDs.contains(LegacyControlID(rawValue: "l.menu." + $0))
+        } ?? ""
+        XCTAssertFalse(removed.isEmpty)
+        let problems = ControlLegacy.menuCoverageProblems(
+            contributed: ["A": ids, "B": [ids[0], removed, ""]], removed: removedIDs)
+        XCTAssertEqual(problems.count, 4, problems.joined(separator: "\n"))
+        XCTAssertTrue(problems.contains { $0.contains("0.2 menu item \(missing) has no contributor") })
+        XCTAssertTrue(problems.contains { $0.contains("\(ids[0]) is declared by both A and B") })
+        XCTAssertTrue(problems.contains { $0.contains("which ControlRemovals lists as removed") })
+        XCTAssertTrue(problems.contains { $0.contains("B declares an empty menu item id") })
+        XCTAssertEqual(problems, problems.sorted())
+    }
+
+    func testMenuCoverageNeedsNoContributorForRemovedOrFamilyIDs() {
+        let problems = ControlLegacy.menuCoverageProblems(contributed: [:], removed: removedIDs)
+        XCTAssertEqual(problems.count, covering.count)
+        XCTAssertFalse(problems.contains { $0.contains("a.custom.*") || $0.contains(" d.sleepPrevention ") })
+    }
+
     // MARK: Per table (tests 2, 3, 4, 6, replaces ⊆ legacy, parentOn)
 
     func testRegistryListsEachTableOnce() {
