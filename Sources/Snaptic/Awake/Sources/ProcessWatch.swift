@@ -96,6 +96,24 @@ import SnapticKit
         return nil
     }
 
+    /// A name for any process, also another user's (OtherAssertionsReader): the running app's localized name when the
+    /// pid is an app (regular or accessory), else its short BSD name ("caffeinate", "coreaudiod"), cleaned. Needs no
+    /// activation (a read, no watch). Local UI only; never stored or logged.
+    static func processName(for pid: Int32) -> String? {
+        guard pid > 0 else { return nil }
+        if let app = NSRunningApplication(processIdentifier: pid), let name = app.localizedName {
+            let cleaned = TextSanitizer.clean(name, maxScalars: 64).trimmingCharacters(in: .whitespaces)
+            if !cleaned.isEmpty { return cleaned }
+        }
+        var buffer = [CChar](repeating: 0, count: 256)
+        let length = buffer.withUnsafeMutableBytes { raw in proc_name(pid, raw.baseAddress, UInt32(raw.count)) }
+        guard length > 0 else { return nil }
+        let bytes = buffer.prefix(Int(min(length, 255))).map { UInt8(bitPattern: $0) }
+        let name = TextSanitizer.clean(String(decoding: bytes, as: UTF8.self), maxScalars: 64)
+            .trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? nil : name
+    }
+
     // MARK: AwakeServiceLifecycle
 
     func activate(_ context: AwakeContext, lifetime: Lifetime) {

@@ -453,6 +453,8 @@ Tests/SnapticKitTests/DiskMathTests.swift	J	K3	DiskMathTests	-
 Tests/SnapticKitTests/ActivityPolicyTests.swift	J	K3	ActivityPolicyTests	-
 Tests/SnapticKitTests/DriveAlivePolicyTests.swift	J	K3	DriveAlivePolicyTests	-
 Tests/SnapticKitTests/ConfigAwakeDevicesTests.swift	J	K3	ConfigAwakeDevicesTests	-
+Sources/SnapticKit/OtherAssertions.swift	J	S	OtherAssertions	-
+Tests/SnapticKitTests/OtherAssertionsTests.swift	J	K3	OtherAssertionsTests	-
 Sources/Snaptic/Awake/Sources/PowerMonitor.swift	J	S	PowerMonitor	-
 Sources/Snaptic/Awake/Sources/SystemEventsMonitor.swift	J	S	SystemEventsMonitor	-
 Sources/Snaptic/Awake/Sources/AppMonitor.swift	J	K16	AppMonitor	app
