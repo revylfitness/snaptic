@@ -132,7 +132,8 @@ private struct DisplaysRootContent: View {
                     }
                 }
             }
-            PageFooterButtons(advanced: { shell.openSheet = DisplaysAdvancedSheetControls.sheet },
+            // While Displays is off the footer offers only (?), like the other modules' pages (ux round 2 Nit 9).
+            PageFooterButtons(advanced: enabled ? openAdvanced : nil,
                               help: SettingsRoute(SettingsRootID.displays),
                               advancedControl: ControlID("displays.root.advanced"))
         }
@@ -145,6 +146,11 @@ private struct DisplaysRootContent: View {
         .sheet(isPresented: shell.sheetBinding(ArrangeSheetControls.sheet)) {
             ArrangeSheet(env: env)
         }
+    }
+
+    private var openAdvanced: (() -> Void)? {
+        let shell = shell
+        return { shell.openSheet = DisplaysAdvancedSheetControls.sheet }
     }
 
     /// Connected displays in the menu order (hidden ones too: Settings shows every display).
@@ -168,8 +174,9 @@ private struct DisplaysRootContent: View {
                 }
                 if ctx.safeMode.isActive {
                     StatusRow(L("Safe Mode is on."), style: .warning, actions: [
+                        // The one "Leave Safe Mode?" confirmation everywhere (ux round 2 N5; H's helper).
                         StatusAction(title: L("Leave Safe Mode…"), control: ControlID("displays.root.status.leaveSafeMode")) {
-                            ctx.relauncher.relaunch(reason: L("Leave Safe Mode"))
+                            SafeModeLeave.confirm(relauncher: ctx.relauncher)
                         },
                     ])
                 }

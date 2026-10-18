@@ -5,7 +5,7 @@ import SnapticKit
 /// Display Details… (owner F; PLAN 0.3 §4.3): the selected display's name and icon, a link to its menu visibility
 /// (Menu Bar › Customize Displays Menu), its manage actions (Copy Settings From ▾, Forget Remembered Resolution,
 /// Forget This Display…) and an Information disclosure (connection, masked serial, EDID copies). Never presents
-/// another sheet; Forget asks with a standard alert. C's Menu bar overlays section sits in the sheet; D's Connection
+/// another sheet; Copy Settings From and Forget ask with a standard alert. C's Menu bar overlays section sits in the sheet; D's Connection
 /// and Match text size settings open D's page for the display.
 struct DisplayDetailsSheet: View, ControlDeclaring {
     typealias Controls = DisplayDetailsSheetControls
@@ -16,6 +16,8 @@ struct DisplayDetailsSheet: View, ControlDeclaring {
     @StateObject private var perDisplay: ConfigSlice<DisplaysConfig, LossyMap<DisplayKey, PerDisplayConfig>>
     @Environment(\.dismiss) private var dismiss
     @State private var confirmForget = false
+    /// The remembered display whose settings Copy Settings From asks to copy (ux N3).
+    @State private var copySource: DisplayKey?
 
     init(env: DisplaysPageEnvironment, key: DisplayKey?) {
         self.env = env
@@ -126,13 +128,19 @@ struct DisplayDetailsSheet: View, ControlDeclaring {
             if !remembered.isEmpty {
                 LabeledContent {
                     ActionMenuButton(L("Choose Display"), items: remembered.map { source in
-                        ActionMenuItem(id: source.rawValue, title: rememberedName(source)) {
-                            copySettings(from: source, to: display.key)
-                        }
+                        ActionMenuItem(id: source.rawValue, title: rememberedName(source) + "…") { copySource = source }
                     }, primaryAction: nil, control: ControlID("displays.details.copySettings"))
                 } label: {
                     Text(L("Copy settings from"))
-                    Text(L("Uses a display Snaptic remembers for brightness, color, and resolution."))
+                    Text(L("Replaces this display’s brightness, color, and resolution with a remembered display’s."))
+                }
+                .alert(DisplaySettingsCopy.question(source: copySource.map { rememberedName($0) } ?? ""),
+                       isPresented: Binding(get: { copySource != nil }, set: { if !$0 { copySource = nil } }),
+                       presenting: copySource) { source in
+                    Button(L("Copy Settings")) { copySettings(from: source, to: display.key) }
+                    Button(L("Cancel"), role: .cancel) {}
+                } message: { source in
+                    Text(DisplaySettingsCopy.message(source: rememberedName(source)))
                 }
             }
             if let persisted {
@@ -156,24 +164,19 @@ struct DisplayDetailsSheet: View, ControlDeclaring {
 
     /// Displays with saved settings that aren't connected now.
     private var rememberedDisplays: [DisplayKey] {
-        let online = Set(runtime.displays.map(\.key))
-        return perDisplay.value.values.keys.filter { !online.contains($0) }.sorted { $0.rawValue < $1.rawValue }
+        DisplayInformationText.remembered(stored: Array(perDisplay.value.values.keys), online: Set(runtime.displays.map(\.key)))
     }
 
     private func rememberedName(_ key: DisplayKey) -> String {
-        let identity = identity(of: key)
-        return identity.customName ?? identity.lastKnownName ?? L("Display \(DiagnosticsText.shortKey(key))")
+        DisplayInformationText.name(key, identity: perDisplay.value[key]?.identity)
     }
 
-    /// Copies a remembered display's settings onto this one (keeping this display's own identity), then forgets the
-    /// source.
+    /// Copies a remembered display's settings onto this one after the alert (Kit `DisplaySettingsCopy`: this
+    /// display keeps its own name, icon and Picture in Picture setups; the remembered display stays remembered).
     private func copySettings(from source: DisplayKey, to target: DisplayKey) {
         var value = env.config.value
-        guard var copied = value.perDisplay[source] else { return }
-        copied.identity = value.perDisplay[target]?.identity ?? PerDisplayIdentity()
-        value.perDisplay[target] = copied
-        value.perDisplay[source] = nil
-        value.menu.forget(source)
+        guard let copied = DisplaySettingsCopy.copying(from: source, to: target, in: value.perDisplay) else { return }
+        value.perDisplay = copied
         env.config.value = value
         EventLog.shared.record(.registry, "Copied a remembered display's settings")
     }
@@ -358,6 +361,8 @@ struct DisplayIconTiles: View {
 
     let choices: [Choice]
     let selection: Binding<String>
+    /// Increase Contrast draws every tile's edge and a heavier selection (ux round 2 Nit 10).
+    @Environment(\.colorSchemeContrast) private var contrast
     private static let perRow = 9
 
     var body: some View {
@@ -387,6 +392,7 @@ struct DisplayIconTiles: View {
 
     private func tile(_ choice: Choice) -> some View {
         let selected = choice.value == selection.wrappedValue
+        let increased = contrast == .increased
         let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
         return Button {
             selection.wrappedValue = choice.value
@@ -395,8 +401,8 @@ struct DisplayIconTiles: View {
                 .font(.system(size: 14))
                 .frame(width: 32, height: 26)
                 .background(shape.fill(selected ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.05)))
-                .overlay(shape.strokeBorder(selected ? Color.accentColor : Color.primary.opacity(0.1),
-                                            lineWidth: selected ? 1.5 : 0.5))
+                .overlay(shape.strokeBorder(selected ? Color.accentColor : Color.primary.opacity(increased ? 0.5 : 0.1),
+                                            lineWidth: selected ? (increased ? 2 : 1.5) : (increased ? 1 : 0.5)))
                 .contentShape(shape)
         }
         .buttonStyle(.plain)

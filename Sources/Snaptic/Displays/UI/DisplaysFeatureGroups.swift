@@ -48,6 +48,15 @@ import SnapticKit
         return nil
     }
 
+    /// The first of `features` that a `Displays.disable.<feature>` defaults key turns off (the module reports it as
+    /// unavailable with `DefaultsLock.text`), for its DefaultsLockRow and the command that turns it back on.
+    func lockedFeature(_ features: [DisplayFeature]) -> DisplayFeature? {
+        features.first { feature in
+            if case .unavailable(let reason)? = env.runtime.availability[feature] { return reason == DefaultsLock.text }
+            return false
+        }
+    }
+
     private func turnOn(_ features: [DisplayFeature], title: String) {
         let before = env.config.value.rawFeatures
         let available = Set(DisplayFeature.allCases.filter { env.runtime.availability[$0]?.isAvailable ?? true })
@@ -171,11 +180,16 @@ struct DisplaysFeatureGroups: View, ControlDeclaring {
         }
     }
 
-    private func row(_ item: DisplayFeatureSwitch, _ anchor: ControlID) -> some View {
+    @ViewBuilder private func row(_ item: DisplayFeatureSwitch, _ anchor: ControlID) -> some View {
         let reason = switcher.unavailableReason(item.features)
         let isOn = item.isOn(raw: features.value)
-        return ToggleSetting(item.title, help: help(item), isOn: switcher.binding(item), anchor: anchor,
-                             badge: badge(item), disabledReason: isOn ? nil : reason)
+        ToggleSetting(item.title, help: help(item), isOn: switcher.binding(item), anchor: anchor,
+                      badge: badge(item), disabledReason: isOn ? nil : reason)
+        // A kill switch also says how to turn it back on (ux round 2 Nit 1).
+        if let locked = switcher.lockedFeature(item.features) {
+            DefaultsLockRow(key: KillSwitches.key(prefix: "Displays", id: locked.rawValue))
+                .padding(.leading, 20)
+        }
     }
 
     private func help(_ item: DisplayFeatureSwitch) -> String {

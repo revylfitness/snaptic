@@ -182,7 +182,7 @@ package struct VirtualScreenSpec: Codable, Equatable, Sendable {
     package init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(StableID.self, forKey: .id)
-        name = c.lossy(.name, L("Virtual Screen"))
+        name = c.lossy(.name, ManagementText.newVirtualDisplayName)
         aspectWidth = c.lossy(.aspectWidth, 16)
         aspectHeight = c.lossy(.aspectHeight, 9)
         sizeInches = c.lossy(.sizeInches, 27)
@@ -256,7 +256,7 @@ package struct VirtualScreenSpec: Codable, Equatable, Sendable {
     package func sanitized(soc: SoCClass = .appleEntry) -> VirtualScreenSpec {
         var s = self
         let cleanName = TextSanitizer.clean(name, maxScalars: Self.maxNameScalars).trimmingCharacters(in: .whitespaces)
-        s.name = cleanName.isEmpty ? L("Virtual Screen") : cleanName
+        s.name = cleanName.isEmpty ? ManagementText.newVirtualDisplayName : cleanName
         s.aspectWidth = min(Self.maxAspectComponent, max(1, aspectWidth))
         s.aspectHeight = min(Self.maxAspectComponent, max(1, aspectHeight))
         s.sizeInches = sizeInches.isFinite ? min(Self.maxSizeInches, max(Self.minSizeInches, sizeInches)) : 27

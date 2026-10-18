@@ -31,7 +31,7 @@ struct DisplaysAdvancedSheet: View, ControlDeclaring {
             }
             permissions
             Section {
-                link(L("Remembered Displays"), help: L("Displays Snaptic keeps settings for, on Display Information."),
+                link(L("Remembered displays"), help: L("Displays Snaptic keeps settings for, on Display Information."),
                      page: DisplayInformationPageControls.surface)
             } header: {
                 Text(L("More settings"))
@@ -72,7 +72,7 @@ struct DisplaysAdvancedSheet: View, ControlDeclaring {
     /// Closes the sheet, then opens the page on the next turn (the shell pushes it).
     private func link(_ title: String, help: String, page: String) -> some View {
         LabeledContent {
-            Button(L("Open…")) {
+            Button(L("Show")) {
                 dismiss()
                 let env = env
                 DispatchQueue.main.async {

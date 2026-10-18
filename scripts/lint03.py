@@ -300,14 +300,7 @@ OLD_TERMS = {
 }
 # Occurrences still waiting for their owner's fix in step-4 fix round 2 (D: Management, C: Brightness/Input; review5
 # ux N1). A count may only go down: more fails, fewer prints a warning to lower or delete the entry (lead).
-OLD_TERMS_PENDING = {
-    ("Sources/Snaptic/Displays/Management/ResolutionController.swift", "native-halved"): 1,
-    ("Sources/Snaptic/Displays/Management/ResolutionController.swift", "match ui size"): 3,
-    ("Sources/Snaptic/Displays/Management/SmartHiDPIController.swift", "smart hidpi"): 14,
-    ("Sources/Snaptic/Displays/Management/VirtualController.swift", "virtual screen"): 8,
-    ("Sources/Snaptic/Displays/Management/VirtualController.swift", "recording screen"): 1,
-    ("Sources/Snaptic/Displays/Management/VirtualHostsService.swift", "virtual screen"): 4,
-}
+OLD_TERMS_PENDING: dict = {}
 
 
 def old_terms():

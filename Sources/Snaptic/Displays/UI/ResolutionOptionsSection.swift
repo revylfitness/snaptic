@@ -3,8 +3,8 @@ import SwiftUI
 import SnapticKit
 
 /// **Resolution options** for one display (owner D; PLAN 0.3 §4.3 Resolution row, design M6): the discrete resolution
-/// slider (applies on release), **Quick Changes ▾** (Toggle HiDPI, Native, Default, Half of Native, Toggle Notch, Undo
-/// and Redo Resolution Change), Add to / Remove from Favorites and the favorites (Apply, −). Rows only: the root page
+/// slider (applies on release), **Quick Changes ▾** (Turn On or Off HiDPI, Native, Default, Half of Native Resolution,
+/// Notch Area On or Off, Undo and Redo Resolution Change), Add to / Remove from Favorites and the favorites (Apply, −). Rows only: the root page
 /// shows them inside its collapsed disclosure, the `displays.resolution` page in a section of their own.
 struct ResolutionOptionsSection: View, ControlDeclaring {
     typealias Controls = ResolutionSectionsControls
@@ -159,10 +159,10 @@ private struct ResolutionOptionsRows: View {
             item("hiDPI", (current?.isHiDPI ?? false) ? L("Turn Off HiDPI") : L("Turn On HiDPI"), c.hiDPIToggleTarget(key)),
             item("native", L("Native Resolution"), c.native(key)),
             item("default", L("Default Resolution"), c.defaultMode(key)),
-            item("nativeHalved", L("Half of Native (Sharper)"), c.nativeHalved(key)),
+            item("nativeHalved", ManagementText.halfOfNativeResolution, c.nativeHalved(key)),
         ]
         if let notch = c.notchToggleTarget(key) {
-            items.append(item("notch", L("Toggle Notch Area"), notch))
+            items.append(item("notch", ManagementText.notchAreaOnOff, notch))
         }
         items.append(.separator("undoSeparator"))
         items.append(ActionMenuItem(id: "undo", title: L("Undo Resolution Change"), enabled: c.canUndo(key)) {

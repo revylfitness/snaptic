@@ -4,7 +4,7 @@ import SnapticKit
 /// The diagnostics report (PLAN §12, 0.3 §3.6). Collects the system facts, module state, per-display
 /// facts, every DiagnosticsRegistry section and Awake's lines, plus the EventLog tail. Identifiers are
 /// masked and display names replaced; titles, app names, serial numbers, EDID bytes and key codes never appear.
-/// Display Information shows it live; Copy Diagnostics Report and `snaptic diagnostics` print the same text.
+/// Display Information shows it live; Copy Display Information Report and `snaptic diagnostics` print the same text.
 struct DiagnosticsReport {
     let generated: Date
     let sections: [DiagnosticsSection]
@@ -32,14 +32,14 @@ struct DiagnosticsReport {
         guard self.lifetime !== lifetime else { return }
         self.context = context
         self.lifetime = lifetime
-        context.actions.register(Action(id: Self.copyAction, title: L("Copy Diagnostics Report"), feature: .diagnostics,
+        context.actions.register(Action(id: Self.copyAction, title: L("Copy Display Information Report"), feature: .diagnostics,
                                         cliAllowed: false) { [weak self] _ in
             guard let ctx = self?.context else { return }
             Self.copyToClipboard(Self.makeReport(context: ctx, runtime: ctx.runtime).text)
-            ctx.toasts.show(L("Diagnostics report copied"), lifetime: lifetime)
+            ctx.toasts.show(L("Display Information report copied"), lifetime: lifetime)
         }, lifetime: lifetime)
         context.commands.register("diagnostics", policy: .read, offOnly: false, cliAllowed: true,
-                                  summary: L("Print the diagnostics report (identifiers masked)"),
+                                  summary: L("Print the Display Information report (identifiers masked)"),
                                   lifetime: lifetime) { [weak self] _, _ in
             guard let ctx = self?.context else { return .failure(ControlExit.unavailable, L("Displays isn't running")) }
             return .ok(Self.makeReport(context: ctx, runtime: ctx.runtime).text)

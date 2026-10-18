@@ -63,7 +63,7 @@ final class VirtualScreenSpecTests: XCTestCase {
         let c = s.sanitized()
         XCTAssertFalse(c.modes.isEmpty)
         XCTAssertTrue(c.modes.allSatisfy { !$0.hiDPI })
-        XCTAssertEqual(c.name, L("Virtual Screen"))
+        XCTAssertEqual(c.name, ManagementText.newVirtualDisplayName)
     }
 
     func testLadder() {
@@ -93,7 +93,7 @@ final class VirtualScreenSpecTests: XCTestCase {
          "placement":"nowhere"}
         """
         let s = try JSONDecoder().decode(VirtualScreenSpec.self, from: Data(json.utf8))
-        XCTAssertEqual(s.name, L("Virtual Screen"))
+        XCTAssertEqual(s.name, ManagementText.newVirtualDisplayName)
         XCTAssertEqual(s.aspectWidth, 16)
         XCTAssertFalse(s.hiDPI)
         XCTAssertEqual(s.modes.count, 1)

@@ -189,7 +189,7 @@ enum ManagedModes {
         let changes = request.changes
         let scope = request.finalScope
         weak var weakCtx = ctx
-        ctx.toasts.show(L("Restore '\(label)'?"), action: ToastAction(title: L("Keep")) {
+        ctx.toasts.show(L("Restore “\(label)”?"), action: ToastAction(title: L("Keep")) {
             guard let ctx = weakCtx else { return }
             submit(ctx, TransactionRequest(label: label, risk: .trial, changes: changes, finalScope: scope), lifetime: ctx.lifetime)
         }, lifetime: ctx.lifetime)

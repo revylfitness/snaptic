@@ -291,7 +291,7 @@ import SnapticKit
         }, lifetime: lifetime)
         ctx.actions.register(Action(id: .dDisconnectAllButMain, title: L("Disconnect All But Main"), feature: .disconnect,
                                     cliAllowed: true) { [weak self] _ in self?.disconnectAllButMain() }, lifetime: lifetime)
-        ctx.actions.register(Action(id: .dToggleBuiltin, title: L("Toggle Built-in Display"), feature: .disconnect, cliAllowed: true) { [weak self] _ in
+        ctx.actions.register(Action(id: .dToggleBuiltin, title: ManagementText.builtInDisplayOnOff, feature: .disconnect, cliAllowed: true) { [weak self] _ in
             self?.toggleBuiltin()
         }, lifetime: lifetime)
     }

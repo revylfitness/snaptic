@@ -22,12 +22,12 @@ import SnapticShims
         var message: String {
             switch self {
             case .unavailable(let why): return why
-            case .overBudget: return L("Not enough graphics memory for another virtual screen")
-            case .tooMany: return L("Too many virtual screens")
+            case .overBudget: return L("Not enough graphics memory for another virtual display")
+            case .tooMany: return L("Too many virtual displays")
             case .failed(let f): return f.message
-            case .timeout: return L("The virtual screen helper didn't answer")
+            case .timeout: return L("The virtual display helper didn’t answer")
             case .exited: return L("Virtual display failed to start")
-            case .notRunning: return L("The virtual screen isn't running")
+            case .notRunning: return L("The virtual display isn’t running")
             }
         }
     }

@@ -154,11 +154,11 @@ import SnapticKit
     // MARK: Actions / CLI
 
     private func registerActions(_ ctx: DisplaysContext, lifetime: Lifetime) {
-        ctx.actions.register(Action(id: .dSetMain, title: L("Set as Main Display"), feature: .mainDisplay, cliAllowed: true) { [weak self] t in
+        ctx.actions.register(Action(id: .dSetMain, title: ManagementText.useAsMainDisplay, feature: .mainDisplay, cliAllowed: true) { [weak self] t in
             guard let self, let ctx = self.context, let d = ManagedDisplays.resolve(ctx, t).first else { return }
             self.setMain(d.key)
         }, lifetime: lifetime)
-        ctx.actions.register(Action(id: .dMirrorToggle, title: L("Toggle Mirroring"), feature: .mirroring, cliAllowed: true) { [weak self] t in
+        ctx.actions.register(Action(id: .dMirrorToggle, title: ManagementText.mirroringOnOff, feature: .mirroring, cliAllowed: true) { [weak self] t in
             guard let self, let ctx = self.context, let d = ManagedDisplays.resolve(ctx, t).first else { return }
             self.toggleMirror(d.key)
         }, lifetime: lifetime)

@@ -545,17 +545,17 @@ import SnapticKit
         }
         add(.dResolutionUp, L("Increase Resolution")) { $0.step($1, by: 1) }
         add(.dResolutionDown, L("Decrease Resolution")) { $0.step($1, by: -1) }
-        add(.dHiDPIToggle, L("Toggle HiDPI")) { c, k in if let m = c.hiDPIToggleTarget(k) { c.apply(m, to: k) } }
+        add(.dHiDPIToggle, ManagementText.hiDPIOnOff) { c, k in if let m = c.hiDPIToggleTarget(k) { c.apply(m, to: k) } }
         add(.dNativeMode, L("Native Resolution")) { c, k in if let m = c.native(k) { c.apply(m, to: k) } }
         add(.dDefaultMode, L("Default Resolution")) { c, k in if let m = c.defaultMode(k) { c.apply(m, to: k) } }
-        add(.dNativeHalved, L("Native-Halved HiDPI")) { c, k in if let m = c.nativeHalved(k) { c.apply(m, to: k) } }
+        add(.dNativeHalved, ManagementText.halfOfNativeResolution) { c, k in if let m = c.nativeHalved(k) { c.apply(m, to: k) } }
         add(.dResolutionUndo, L("Undo Resolution Change")) { $0.undo($1) }
         add(.dResolutionRedo, L("Redo Resolution Change")) { $0.redo($1) }
-        add(.dNotchToggle, L("Toggle Notch")) { c, k in if let m = c.notchToggleTarget(k) { c.apply(m, to: k) } }
+        add(.dNotchToggle, ManagementText.notchAreaOnOff) { c, k in if let m = c.notchToggleTarget(k) { c.apply(m, to: k) } }
         for n in 1...PerDisplayResolution.maxFavorites {
             add(.dFavorite(n), L("Favorite Resolution \(n)")) { $0.applyFavorite(n - 1, on: $1) }
         }
-        ctx.actions.register(Action(id: .dMatchUI, title: L("Match UI Size…"), feature: .scaleMatch, cliAllowed: true) { [weak self] _ in
+        ctx.actions.register(Action(id: .dMatchUI, title: ManagementText.matchTextSize, feature: .scaleMatch, cliAllowed: true) { [weak self] _ in
             self?.matchUIScale()
         }, lifetime: lifetime)
     }
@@ -567,9 +567,9 @@ import SnapticKit
             guard let self else { return .failure(ControlExit.unavailable, L("Resolution is off")) }
             return await self.handleMode(request)
         }
-        ctx.commands.register("match-ui", policy: .trial, offOnly: false, cliAllowed: true, summary: L("Match UI size across displays"),
+        ctx.commands.register("match-ui", policy: .trial, offOnly: false, cliAllowed: true, summary: L("Match text size across displays"),
                               lifetime: lifetime) { [weak self] request, _ in
-            guard let self, self.effective.contains(.scaleMatch) else { return .failure(ControlExit.unavailable, L("Match UI size is off")) }
+            guard let self, self.effective.contains(.scaleMatch) else { return .failure(ControlExit.unavailable, L("Match text size is off")) }
             let proposals = self.scaleMatchProposals()
             guard !proposals.isEmpty else { return .ok(L("Text already looks the same size on every display")) }
             // Awaited like `mode`: 0 kept, 6 declined or timed out.

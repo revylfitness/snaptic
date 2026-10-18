@@ -20,7 +20,7 @@ package enum DisplayInformationPageControls: ControlTable {
                     search: SearchSpec("Export Report", keywords: ["diagnostics", "save report"], root: root,
                                        route: route)),
         ControlSpec("displays.info.report", .list, replaces: ["l.d.diagnostics.report"],
-                    search: SearchSpec("Diagnostics report", keywords: ["recent events", "log", "effective features"],
+                    search: SearchSpec("Report", keywords: ["diagnostics", "recent events", "log", "effective features"],
                                        root: root, route: route)),
         ControlSpec("displays.info.exportEDID", .button, when: [.module(.displays), .perItem("display")],
                     replaces: ["l.d.names.edid.export"],
