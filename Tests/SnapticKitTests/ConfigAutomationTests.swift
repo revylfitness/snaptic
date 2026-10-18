@@ -62,10 +62,12 @@ final class ConfigAutomationTests: XCTestCase {
     func testHooksForEvent() {
         var c = AutomationConfig()
         let other = DisplayKey(rawValue: String(repeating: "2b", count: 16))!
-        c.hooks = [HookSpec(name: "any", event: .connect),
-                   HookSpec(name: "mine", event: .connect, display: key),
-                   HookSpec(name: "off", enabled: false, event: .connect),
-                   HookSpec(name: "wake", event: .wake)]
+        let program = CommandSpec(executable: "/usr/bin/true")
+        c.hooks = [HookSpec(name: "any", event: .connect, command: program),
+                   HookSpec(name: "mine", event: .connect, display: key, command: program),
+                   HookSpec(name: "off", enabled: false, event: .connect, command: program),
+                   HookSpec(name: "no program", event: .connect),
+                   HookSpec(name: "wake", event: .wake, command: program)]
         XCTAssertEqual(c.hooks(for: .connect, display: key).map(\.name), ["any", "mine"])
         XCTAssertEqual(c.hooks(for: .connect, display: other).map(\.name), ["any"])
         XCTAssertEqual(c.hooks(for: .wake, display: nil).map(\.name), ["wake"])
@@ -81,5 +83,51 @@ final class ConfigAutomationTests: XCTestCase {
 
     func testEveryEventHasATitle() {
         for e in HookEvent.allCases { XCTAssertFalse(e.title.isEmpty) }
+        XCTAssertEqual(Set(HookEvent.allCases.map(\.title)).count, HookEvent.allCases.count)
+        XCTAssertNotNil(HookEvent.softConnect.help)
+        XCTAssertNil(HookEvent.connect.help)
+    }
+
+    func testSummaries() {
+        XCTAssertEqual(HookSpec(event: .connect).summary(displayName: nil), "When a display connects")
+        // A name without a chosen display is ignored: the hook watches every display.
+        XCTAssertEqual(HookSpec(event: .disconnect).summary(displayName: "Studio"), "When a display disconnects")
+        XCTAssertEqual(HookSpec(event: .softConnect, display: key).summary(displayName: "DELL U2720Q"),
+                       "When “DELL U2720Q” turns on")
+        XCTAssertEqual(HookSpec(event: .softDisconnect, display: key).summary(displayName: nil),
+                       "When a display turns off")
+        XCTAssertEqual(HookSpec(event: .softDisconnect, display: key).summary(displayName: ""),
+                       "When a display turns off")
+        XCTAssertEqual(HookSpec(event: .sleep, display: key).summary(displayName: "x"), "When your Mac goes to sleep")
+        XCTAssertEqual(HookSpec(event: .wake).summary(displayName: nil), "When your Mac wakes")
+        XCTAssertEqual(HookSpec(event: .wakeDelayed, delaySeconds: 10).summary(displayName: nil),
+                       "When your Mac wakes, after 10 s")
+        XCTAssertEqual(HookSpec(event: .wakeDelayed, delaySeconds: 90).summary(displayName: nil),
+                       "When your Mac wakes, after 1 min 30 s")
+        // The summary shows what runs: the clamped delay.
+        XCTAssertEqual(HookSpec(event: .wakeDelayed, delaySeconds: 5_000).summary(displayName: nil),
+                       "When your Mac wakes, after 10 min")
+        XCTAssertEqual(HookSpec(event: .wakeDelayed, delaySeconds: .nan).summary(displayName: nil),
+                       "When your Mac wakes, after 10 s")
+        // Control characters in a display name never reach the label.
+        XCTAssertEqual(HookSpec(event: .connect, display: key).summary(displayName: "A\u{202E}B\n"), "When “AB” connects")
+    }
+
+    func testDurationText() {
+        XCTAssertEqual(HookSpec.durationText(0), "0 s")
+        XCTAssertEqual(HookSpec.durationText(59.6), "1 min")
+        XCTAssertEqual(HookSpec.durationText(61), "1 min 1 s")
+        XCTAssertEqual(HookSpec.durationText(600), "10 min")
+        XCTAssertEqual(HookSpec.durationText(-3), "0 s")
+        XCTAssertEqual(HookSpec.durationText(.infinity), "0 s")
+    }
+
+    func testProgramNames() {
+        XCTAssertEqual(CommandSpec().programName, "")
+        XCTAssertEqual(CommandSpec(executable: "/Users/a/bin/dock.sh").programName, "dock.sh")
+        XCTAssertEqual(CommandSpec(executable: "/Applications/Tool.app/").programName, "Tool.app")
+        XCTAssertEqual(CommandSpec(executable: "relative").programName, "relative")
+        XCTAssertFalse(HookSpec().hasProgram)
+        XCTAssertTrue(HookSpec(command: CommandSpec(executable: "/bin/echo")).hasProgram)
     }
 }

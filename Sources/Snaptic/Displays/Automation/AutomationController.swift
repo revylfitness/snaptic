@@ -156,7 +156,7 @@ import SnapticKit
     private func run(_ hook: HookSpec, event: HookEvent, display: DisplayInfo?) {
         guard let ctx = context else { return }
         let environment = KitHookPolicy.environment(event: event, displayName: display?.name, displayKey: display?.key)
-        // A refusal is kept in SpawnerService.lastProblem for the Automation page.
+        // A refusal is kept in SpawnerService.lastProblem for Displays › Automations.
         let spawner = ctx.spawner
         let command = hook.command
         let key = hook.id.rawValue + "." + event.rawValue
@@ -257,7 +257,7 @@ import SnapticKit
                     + L(" allowed from the CLI)")),
             (L("Commands running"), String(ctx.spawner.runningCount)),
             (L("Helpers"), ctx.helpers.unavailable ?? L("available")),
-            (L("Last problem"), ctx.spawner.lastProblem == nil ? L("none") : L("see the Automation page")),
+            (L("Last problem"), ctx.spawner.lastProblem == nil ? L("none") : L("see Displays › Automations")),
         ]
     }
 

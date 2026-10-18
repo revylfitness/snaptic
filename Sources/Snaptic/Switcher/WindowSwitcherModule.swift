@@ -148,6 +148,12 @@ import SnapticKit
         SwitcherPages.pages(module: self)
     }
 
+    /// Settings search for the Window Switcher root (R5-13: derived from the control specs whose search root is
+    /// this module; the page, its Advanced sheet and its shortcuts sheet).
+    func settingsIndex() -> [SettingsSearchEntry] { Self.index }
+
+    private static let index = SettingsIndex.entries(ControlRegistry.tables, root: SettingsRootID.windowSwitcher)
+
     /// 0.3 C8: opens the switcher in sticky mode with the first shortcut that may act (it stays open until Return,
     /// Esc or a click). False while it can't see keys (no Accessibility yet), without a usable shortcut, or when the
     /// module isn't running.
