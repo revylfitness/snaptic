@@ -163,8 +163,9 @@ private struct PanicShortcutSettings: Equatable {
                 }
                 hotkeyLifetime = life
                 registeredHotkey = combo
-                // The user's own combo lost to another app while a default stood in for it.
-                hotkeyProblem = combo == candidates.first ? nil
+                // The user's own combo lost to another app while a default stood in for it (the default's own
+                // fallback is the documented behavior, not a problem).
+                hotkeyProblem = combo == candidates.first || candidates.first == SafetyConfig.defaultPanicHotkey ? nil
                     : L("\(HotkeyRules.displayString(candidates[0])) is used by another app, so \(HotkeyRules.displayString(combo)) restores your displays instead.")
                 return
             } catch {
