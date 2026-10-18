@@ -8,8 +8,8 @@ import SnapticKit
 // invariant 8, shows a HUD and sets the latch that pauses automation until Resume.
 
 fileprivate extension DisplayActionID {
-    static let restoreAll = DisplayActionID(rawValue: "b.restoreAll")
-    static let resumeAutomation = DisplayActionID(rawValue: "b.resumeAutomation")
+    static let restoreAll = PanicCoordinator.restoreActionID
+    static let resumeAutomation = PanicCoordinator.resumeActionID
 }
 
 fileprivate extension DisplayMenuItemID {
@@ -19,6 +19,9 @@ fileprivate extension DisplayMenuItemID {
 }
 
 @MainActor final class PanicCoordinator: DisplayMenuContributor, DiagnosticsContributor {
+    /// Action ids other files use (F's Resume buttons): `ctx.actions.perform(PanicCoordinator.resumeActionID…)`.
+    nonisolated static let restoreActionID = DisplayActionID(rawValue: "b.restoreAll")
+    nonisolated static let resumeActionID = DisplayActionID(rawValue: "b.resumeAutomation")
     private(set) var isLatched = false
     /// Set by DisplaysModule; called whenever `isLatched` changes.
     var onLatchChanged: (@MainActor () -> Void)?
