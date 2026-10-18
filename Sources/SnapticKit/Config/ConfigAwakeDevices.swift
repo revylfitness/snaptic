@@ -1,7 +1,7 @@
 import Foundation
 
-// Stub (owner: J). Hand-written by the lead in step 0 from PLAN 0.3 §2.14 + R5-3 (kind S): the declared lossy
-// decoders and the key validation are real.
+// Awake device config (owner: J; PLAN 0.3 §2.14, R5-3): activity and Drive Alive settings, the volume key, and the
+// rules for Awake's salted identifiers (router MACs, USB serials).
 
 /// Canonical uppercase UUID (code M13).
 package struct VolumeUUIDKey: RawRepresentable, Hashable, Sendable, Codable {
@@ -95,5 +95,64 @@ package struct DriveAliveConfig: ConfigModel {
         evenWithoutSession = c.lossy(.evenWithoutSession, false)
     }
 
-    package func sanitized() -> DriveAliveConfig { self }
+    package static let maxVolumes = 16
+    package static let maxNameScalars = 64
+
+    /// ≤ 16 volumes (enabled ones first, then by key), names cleaned to ≤ 64 scalars, the interval clamped to
+    /// 30...600, unknown (non-UUID) keys dropped.
+    package func sanitized() -> DriveAliveConfig {
+        var c = self
+        c.intervalSeconds = DriveAlivePolicy.clampedInterval(intervalSeconds)
+        let ordered = volumes.values.sorted { a, b in
+            a.value.enabled != b.value.enabled ? a.value.enabled : a.key.rawValue < b.key.rawValue
+        }
+        var kept: [VolumeUUIDKey: DriveAliveVolume] = [:]
+        for (key, volume) in ordered.prefix(Self.maxVolumes) {
+            var v = volume
+            v.name = TextSanitizer.clean(volume.name, maxScalars: Self.maxNameScalars)
+            kept[key] = v
+        }
+        c.volumes = LossyMap(kept)
+        return c
+    }
+
+    /// Volumes the user turned on.
+    package var enabledVolumes: Set<VolumeUUIDKey> {
+        Set(volumes.values.compactMap { $0.value.enabled ? $0.key : nil })
+    }
+}
+
+/// Awake's salt for stored identifiers (PLAN 0.3 §2.7, §3.6): 32 random bytes in its own persistent-domain key,
+/// created on first use, never exported (same rules as `SnapticDisplaySalt`, R5.7).
+package enum AwakeSaltRules {
+    package static let key = "SnapticAwakeSalt"
+    package static let length = 32
+
+    package static func isValid(_ data: Data?) -> Bool {
+        guard let data, data.count == length else { return false }
+        return data.contains { $0 != 0 }
+    }
+}
+
+/// The canonical text each salted identifier hashes (SHA-256(salt ‖ material), in the app). One definition, so the
+/// rule editor and the live sources always hash the same bytes.
+package enum AwakeHashMaterial {
+    /// "router:aa:bb:cc:dd:ee:ff"; nil unless the MAC normalizes.
+    package static func router(mac: String) -> String? {
+        NetworkMath.normalizeMAC(mac).map { "router:" + $0 }
+    }
+
+    /// "usb:<serial>": surrounding whitespace and NULs trimmed, ≤ 128 scalars; nil when empty or only zeros (many
+    /// devices report "0" or "000000" for "no serial").
+    package static func usbSerial(_ serial: String) -> String? {
+        let trimmed = serial.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\0")))
+        guard !trimmed.isEmpty, trimmed.unicodeScalars.count <= 128, trimmed.contains(where: { $0 != "0" }) else { return nil }
+        return "usb:" + trimmed
+    }
+
+    /// Lowercase hex of a digest (64 characters for SHA-256).
+    package static func hex(_ bytes: [UInt8]) -> String {
+        let digits = Array("0123456789abcdef")
+        return String(bytes.flatMap { [digits[Int($0 >> 4)], digits[Int($0 & 0x0F)]] })
+    }
 }

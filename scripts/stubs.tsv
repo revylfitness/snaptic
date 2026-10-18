@@ -461,6 +461,7 @@ Sources/Snaptic/Awake/Sources/IdleSampler.swift	J	K16	IdleSampler	idle
 Sources/Snaptic/Awake/Sources/NetworkMonitor.swift	J	K16	NetworkMonitor	network,networkActivity
 Sources/Snaptic/Awake/Sources/BluetoothPresence.swift	J	K16	BluetoothPresence	bluetooth
 Sources/Snaptic/Awake/Sources/DiskIOSampler.swift	J	K15	DiskIOSampler	-
+Sources/Snaptic/Awake/Sources/SourceSupport.swift	J	L	-	-
 Sources/Snaptic/Awake/Sources/ActivitySimulator.swift	J	S	ActivitySimulator	-
 Sources/Snaptic/Awake/Sources/DriveAliveService.swift	J	S	DriveAliveService	-
 Sources/Snaptic/Awake/Sources/OtherAssertionsReader.swift	J	K5	OtherAssertionsReader	-
