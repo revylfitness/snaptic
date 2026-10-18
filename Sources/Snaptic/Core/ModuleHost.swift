@@ -310,6 +310,7 @@ import SnapticKit
         let config = modulesStore.value
         otherApps.policy = config.otherApps
         if config.commandLine.enabled { controlServer.start() } else { controlServer.stop() }
+        if signals.commandLineEnabled != config.commandLine.enabled { signals.commandLineEnabled = config.commandLine.enabled }
         let desired = Set(config.enabledModules).subtracting(disabledByDefaults)
         let transitions = ModuleTransitions.plan(order: ModuleID.allCases, running: runningModules, desired: desired)
         for id in transitions.stop { stopModule(id) }

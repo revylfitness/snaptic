@@ -9,6 +9,9 @@ import SnapticKit
     var isTerminating = false
     /// The "start at launch" session ran in this process (code M9), so re-enabling Awake doesn't start it again.
     var launchSessionStarted = false
+    /// 0.3 (R5-14a): the host's command-line control is on (General › Command-line control). Awake ends every
+    /// command-line hold, connection and `--pid` alike, when it turns off.
+    @Published var commandLineEnabled = false
 
     init() {}
 }
