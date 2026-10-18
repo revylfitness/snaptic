@@ -249,8 +249,8 @@ final class AwakePresentationTests: XCTestCase {
 
     // MARK: Settings status row
 
-    private func facts(_ g: AwakeGoverning, holds: Bool = false, rules: Bool = false, paused: Bool = false) -> AwakeStatusFacts {
-        AwakeStatusFacts(governing: g, holdsExist: holds, rulesExist: rules, rulesPaused: paused)
+    private func facts(_ g: AwakeGoverning, holds: Bool = false, rules: Bool = false, paused: Bool = false) -> AwakeStatusRowFacts {
+        AwakeStatusRowFacts(governing: g, holdsExist: holds, rulesExist: rules, rulesPaused: paused)
     }
 
     func testStatusButtons() {

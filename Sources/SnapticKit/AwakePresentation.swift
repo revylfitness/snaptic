@@ -481,7 +481,7 @@ package enum AwakeOptionsItem: Equatable, Sendable {
     case replaceWith
 }
 
-package struct AwakeStatusFacts: Equatable, Sendable {
+package struct AwakeStatusRowFacts: Equatable, Sendable {
     package var governing: AwakeGoverning
     /// Holds exist (under any source).
     package var holdsExist: Bool
@@ -500,7 +500,7 @@ package struct AwakeStatusFacts: Equatable, Sendable {
 package enum AwakeStatusPlan {
     /// Idle: [Pause Rules ▾] [Keep Awake ▾]. Session or rule: [Pause Rules ▾] [Options ▾] [Turn Off]. Holds only:
     /// [Pause Rules ▾] [Turn Off]. Paused: Resume in Pause Rules ▾'s slot.
-    package static func buttons(_ f: AwakeStatusFacts) -> [AwakeStatusButton] {
+    package static func buttons(_ f: AwakeStatusRowFacts) -> [AwakeStatusButton] {
         var out: [AwakeStatusButton] = []
         if f.rulesExist { out.append(f.rulesPaused ? .resumeRules : .pauseRules) }
         switch f.governing {
@@ -513,7 +513,7 @@ package enum AwakeStatusPlan {
 
     /// Options ▾: Add 15 Minutes, Add 1 Hour, Add Time… (timed and capped manual sessions); ─; ✓ Keep Display On;
     /// End Command-Line Holds (holds under this source); ─; Replace With ▸. Empty while idle or holds-only.
-    package static func options(_ f: AwakeStatusFacts) -> [AwakeOptionsItem] {
+    package static func options(_ f: AwakeStatusRowFacts) -> [AwakeOptionsItem] {
         var out: [AwakeOptionsItem] = []
         switch f.governing {
         case .inactive, .holds:

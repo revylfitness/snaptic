@@ -30,7 +30,7 @@ struct AwakeStatusSection: View, ControlDeclaring {
     var body: some View {
         let input = AwakeMenuRows.detailInput(context)
         let paused = pausedUntilClock
-        let facts = AwakeStatusFacts(governing: runtime.governing, holdsExist: !runtime.holds.isEmpty,
+        let facts = AwakeStatusRowFacts(governing: runtime.governing, holdsExist: !runtime.holds.isEmpty,
                                      rulesExist: runtime.isEffective(.triggers) && !triggers.value.triggers.isEmpty,
                                      rulesPaused: paused != nil)
         let primary = AwakeStatusText.primary(input)
@@ -85,7 +85,7 @@ struct AwakeStatusSection: View, ControlDeclaring {
 
     // MARK: Buttons
 
-    @ViewBuilder private func buttons(_ facts: AwakeStatusFacts) -> some View {
+    @ViewBuilder private func buttons(_ facts: AwakeStatusRowFacts) -> some View {
         HStack(spacing: 8) {
             ForEach(Array(AwakeStatusPlan.buttons(facts).enumerated()), id: \.offset) { _, button in
                 self.button(button, facts: facts)
@@ -94,7 +94,7 @@ struct AwakeStatusSection: View, ControlDeclaring {
         .fixedSize()
     }
 
-    @ViewBuilder private func button(_ kind: AwakeStatusButton, facts: AwakeStatusFacts) -> some View {
+    @ViewBuilder private func button(_ kind: AwakeStatusButton, facts: AwakeStatusRowFacts) -> some View {
         switch kind {
         case .pauseRules:
             ActionMenuButton(L("Pause Rules"), items: [
@@ -168,7 +168,7 @@ struct AwakeStatusSection: View, ControlDeclaring {
 
     /// Options ▾ (AwakeStatusPlan): Add 15 Minutes, Add 1 Hour, Add Time…, Keep Display On / Let Display Sleep, End
     /// Command-Line Holds, Replace With ▸.
-    private func optionItems(_ facts: AwakeStatusFacts) -> [ActionMenuItem] {
+    private func optionItems(_ facts: AwakeStatusRowFacts) -> [ActionMenuItem] {
         var items: [ActionMenuItem] = []
         for (index, item) in AwakeStatusPlan.options(facts).enumerated() {
             switch item {
