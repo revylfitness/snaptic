@@ -334,7 +334,11 @@ import SnapticKit
                 self.statusMenu.applyPlan()
             },
             setPresence: { [weak self] id, presence in self?.modulesStore.value.setPresence(presence, for: id) },
-            hostSignals: signals)
+            hostSignals: signals,
+            moduleDiagnostics: { [weak self] id in
+                guard let self, id == .awake, self.awake.state == .running else { return [] }
+                return self.awake.diagnosticsLines()
+            })
         module(id).start(context)
         EventLog.shared.record(.modules, "Module \(id.rawValue) started")
     }

@@ -49,6 +49,10 @@ import SnapticKit
     let requestMenuRebuild: @MainActor () -> Void
     /// Opens Settings, optionally at a page id (e.g. "displays.brightness").
     let openSettings: @MainActor (String?) -> Void
+    /// 0.3: Awake's lines for the shared diagnostics report (empty while Awake isn't running; §3.6).
+    let awakeDiagnosticsLines: @MainActor () -> [String]
+    /// 0.3: the one live-value writer every page, panel and menu row shares (C's DisplayLiveController, §4.5).
+    let live: DisplayLiveController
     /// Ends when the Displays module stops.
     let lifetime: Lifetime
 
@@ -98,7 +102,11 @@ import SnapticKit
         otherApps = module.otherApps
         requestMenuRebuild = module.requestMenuRebuild
         openSettings = module.openSettings
+        let moduleDiagnostics = module.moduleDiagnostics
+        awakeDiagnosticsLines = { moduleDiagnostics(.awake) }
+        live = DisplayLiveController()
         self.lifetime = lifetime
+        live.context = self
     }
 
     /// The service object for an id (total over DisplayServiceID).

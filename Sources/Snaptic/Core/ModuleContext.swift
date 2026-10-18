@@ -23,6 +23,8 @@ import SnapticKit
     let setPresence: @MainActor (ModuleID, MenuPresence) -> Void
     /// 0.3: host facts (switcher visible, terminating, launch session started).
     let hostSignals: HostSignals
+    /// 0.3: another module's lines for a shared diagnostics report (empty while that module is off; §3.6).
+    let moduleDiagnostics: @MainActor (ModuleID) -> [String]
 
     init(safeMode: SafeModeState, hotkeys: GlobalHotkeys, commands: ControlCommandRegistry, toasts: ToastPresenter,
          permissions: PermissionFlow, spawner: HelperSpawner, relauncher: Relauncher, otherApps: OtherAppsMonitor,
@@ -32,7 +34,9 @@ import SnapticKit
          openSettings: @escaping @MainActor (String?) -> Void = { _ in },
          requestStatusPlan: @escaping @MainActor () -> Void = {},
          setPresence: @escaping @MainActor (ModuleID, MenuPresence) -> Void = { _, _ in },
-         hostSignals: HostSignals) {
+         hostSignals: HostSignals,
+         moduleDiagnostics: @escaping @MainActor (ModuleID) -> [String] = { _ in [] }) {
+        self.moduleDiagnostics = moduleDiagnostics
         self.safeMode = safeMode
         self.hotkeys = hotkeys
         self.commands = commands
