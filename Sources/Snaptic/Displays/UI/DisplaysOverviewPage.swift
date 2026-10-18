@@ -109,8 +109,10 @@ struct DisplaysStatusSection: View {
                         Text(env.runtime.lastPanicSummary ?? L("Restore All Displays ran."))
                         Text(L("Layouts, protection, hooks and virtual-screen recreation wait until you resume."))
                             .font(.caption).foregroundStyle(.secondary)
-                        // B's PanicCoordinator (its Tools item calls the same method).
-                        Button(L("Resume Display Automation")) { ctx.panic.resume() }
+                        // B's registered Resume action (the same one its Tools item and the CLI use).
+                        Button(L("Resume Display Automation")) {
+                            _ = ctx.actions.perform(PanicCoordinator.resumeActionID, on: .all)
+                        }
                     }
                     .accessibilityElement(children: .contain)
                 }
@@ -552,17 +554,9 @@ struct DisplaySliderRow: View {
 
     // MARK: System modes (onboarding only)
 
-    /// Desktop-usable modes of a display, HiDPI and LoDPI variants included (public CG API).
-    /// Only the onboarding step's "Sharper text" check uses it; live controls go through D.
+    /// Desktop-usable modes of a display, HiDPI and LoDPI variants included, from D's mode
+    /// list. Only the onboarding step's "Sharper text" check uses it; live controls go through D.
     static func systemModes(_ id: CGDirectDisplayID) -> [ModeRef] {
-        let options = [kCGDisplayShowDuplicateLowResolutionModes as String: true] as CFDictionary
-        guard let list = CGDisplayCopyAllDisplayModes(id, options) as? [CGDisplayMode] else { return [] }
-        return list.filter { $0.isUsableForDesktopGUI() }.map(modeRef)
-    }
-
-    private static func modeRef(_ mode: CGDisplayMode) -> ModeRef {
-        ModeRef(ioModeID: mode.ioDisplayModeID, pixelWidth: mode.pixelWidth, pixelHeight: mode.pixelHeight,
-                pointWidth: mode.width, pointHeight: mode.height,
-                refreshMilliHz: mode.refreshRate.isFinite ? Int((mode.refreshRate * 1000).rounded()) : 0)
+        ManagedModes.modes(for: id).map(\.ref)
     }
 }

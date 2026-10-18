@@ -105,6 +105,9 @@ private struct FeatureRow: View {
         if case .unavailable(let reason)? = env.runtime.availability[feature] { return reason }
         return nil
     }
+    /// D's PowerController decides when Disconnect is experimental on this Mac (Intel).
+    private var hardwareExperimental: Bool { feature == .disconnect && PowerController.disconnectIsExperimental }
+    private var hardwareNote: String? { feature == .disconnect ? PowerController.disconnectNote : nil }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -112,12 +115,19 @@ private struct FeatureRow: View {
                 HStack(spacing: 6) {
                     Text(DisplaysUIText.title(feature))
                     if spec.beta { DisplaysBadge(text: L("Beta"), tint: .orange) }
-                    if spec.defaultState == .experimental { DisplaysBadge(text: L("Experimental"), tint: .purple) }
+                    if spec.defaultState == .experimental || hardwareExperimental {
+                        DisplaysBadge(text: L("Experimental"), tint: .purple)
+                    }
                     if isAlways { DisplaysBadge(text: L("Always on")) }
                 }
                 Text(DisplaysUIText.summary(feature))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if let note = hardwareNote {
+                    Text(note)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 ForEach(statusLines, id: \.self) { line in
                     Text(line)
                         .font(.caption)

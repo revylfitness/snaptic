@@ -271,8 +271,8 @@ import SnapticKit
             identify: { [weak self] in _ = self?.owner?.identifyDisplays() },
             redetect: { [weak self] in self?.owner?.redetect() },
             restoreAll: { [weak context] in context?.panic.panic(reason: L("Restore All Displays (Displays panel)")) },
-            // B's PanicCoordinator (its Tools item calls the same method).
-            resume: { [weak context] in context?.panic.resume() },
+            // B's registered Resume action (the same one its Tools item and the CLI use).
+            resume: { [weak context] in _ = context?.actions.perform(PanicCoordinator.resumeActionID, on: .all) },
             settings: { [weak self, weak context] in
                 self?.close()
                 context?.openSettings("displays.overview")

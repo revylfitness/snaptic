@@ -820,8 +820,7 @@ fileprivate extension DisplayActionID {
             ctx.toasts.show(L("“Native mode while streaming” needs the Resolution feature."), lifetime: lifetime)
             return
         }
-        guard let current = CGDisplayCopyDisplayMode(targetID), let native = Self.nativeMode(targetID) else { return }
-        let currentRef = Self.modeRef(current), nativeRef = Self.modeRef(native)
+        guard let currentRef = ManagedModes.current(for: targetID)?.ref, let nativeRef = Self.nativeMode(targetID) else { return }
         guard currentRef != nativeRef else { return }
         s.lifetime.spawn { [weak self, weak s] in
             guard let transactions = self?.context?.transactions else { return }
@@ -849,19 +848,12 @@ fileprivate extension DisplayActionID {
         }
     }
 
-    private static func modeRef(_ m: CGDisplayMode) -> ModeRef {
-        ModeRef(ioModeID: m.ioDisplayModeID, pixelWidth: m.pixelWidth, pixelHeight: m.pixelHeight,
-                pointWidth: m.width, pointHeight: m.height, refreshMilliHz: Int((m.refreshRate * 1000).rounded()))
-    }
-
-    /// The largest mode flagged native (IOKit kDisplayModeNativeFlag = 0x02000000).
-    private static func nativeMode(_ id: CGDirectDisplayID) -> CGDisplayMode? {
-        let options = [kCGDisplayShowDuplicateLowResolutionModes as String: true] as CFDictionary
-        guard let modes = CGDisplayCopyAllDisplayModes(id, options) as? [CGDisplayMode] else { return nil }
-        let natives = modes.filter { $0.ioFlags & 0x0200_0000 != 0 && $0.isUsableForDesktopGUI() }
-        return natives.max { a, b in
-            (a.pixelWidth * a.pixelHeight, a.refreshRate) < (b.pixelWidth * b.pixelHeight, b.refreshRate)
-        }
+    /// The largest desktop-usable mode flagged native (IOKit kDisplayModeNativeFlag), from
+    /// D's mode list (the same one the Resolution feature uses).
+    private static func nativeMode(_ id: CGDirectDisplayID) -> ModeRef? {
+        ManagedModes.modes(for: id).filter(\.isNative).max { a, b in
+            (a.ref.pixelWidth * a.ref.pixelHeight, a.ref.refreshMilliHz) < (b.ref.pixelWidth * b.ref.pixelHeight, b.ref.refreshMilliHz)
+        }?.ref
     }
 
     // MARK: Bulk actions
