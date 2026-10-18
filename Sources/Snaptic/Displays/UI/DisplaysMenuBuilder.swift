@@ -157,7 +157,7 @@ import SnapticKit
                 let entry = DisplayMenuBlock.Entry(id: id, item: item)
                 // A custom action shows exactly when Automations › "Show in menu" is on (the contributor filters).
                 let visibility = DisplaysMenuPlan.isCustomAction(id) ? MenuItemVisibility.visible
-                    : menu.visibility(of: id, default: defaults[id] ?? .visible)
+                    : menu.visibility(of: id, default: DisplaysMenuPlan.defaultVisibility(id, declared: defaults[id]))
                 // The paused status row has its own Resume item.
                 switch DisplaysMenuPlan.place(id, visibility: visibility, perDisplay: false, isCustomRow: item.view != nil,
                                               pendingConfirmation: pending, automationPaused: false) {

@@ -98,15 +98,25 @@ package struct DisplayMenuItemInfo: Equatable, Sendable, Identifiable {
     package let header: String?
     /// Top-level symbol when the item is placed at the top level of the Displays section.
     package let symbol: String?
+    /// The 0.2 contributor's default visibility (§4.8: "Default" is kept), for when no contributor runs (the
+    /// Customize sheet with Displays off). A running contributor's descriptor wins.
+    package let legacyDefault: MenuItemVisibility
 
     init(_ id: String, _ title: String, _ location: DisplayMenuLocation, feature: DisplayFeature? = nil,
-         header: String? = nil, symbol: String? = nil) {
+         header: String? = nil, symbol: String? = nil, default legacyDefault: MenuItemVisibility? = nil) {
         self.id = DisplayMenuItemID(rawValue: id)
         self.title = title
         self.location = location
         self.feature = feature
         self.header = header
         self.symbol = symbol
+        if let legacyDefault {
+            self.legacyDefault = legacyDefault
+        } else if case .submenu = location {
+            self.legacyDefault = .inSubmenu
+        } else {
+            self.legacyDefault = .visible
+        }
     }
 
     package var isPerDisplay: Bool {
@@ -163,9 +173,11 @@ package enum DisplaysMenuPlan {
         // Per display: sliders (top level, Show / Hide).
         DisplayMenuItemInfo("c.brightness.slider", L("Brightness"), .slider, feature: .brightness),
         DisplayMenuItemInfo("c.ddc.volume", L("Volume"), .slider, feature: .ddcControls),
-        DisplayMenuItemInfo("c.ddc.contrast", L("Contrast"), .slider, feature: .ddcControls),
-        DisplayMenuItemInfo("c.ddc.custom", L("Custom Hardware Controls"), .slider, feature: .ddcCustom),
-        DisplayMenuItemInfo("d.resolutionSlider", L("Resolution Slider"), .slider, feature: .resolution),
+        DisplayMenuItemInfo("c.ddc.contrast", L("Contrast"), .slider, feature: .ddcControls, default: .inSubmenu),
+        DisplayMenuItemInfo("c.ddc.custom", L("Custom Hardware Controls"), .slider, feature: .ddcCustom,
+                            default: .inSubmenu),
+        DisplayMenuItemInfo("d.resolutionSlider", L("Resolution Slider"), .slider, feature: .resolution,
+                            default: .inSubmenu),
         // Per display: the display submenu, in §5.2 order.
         DisplayMenuItemInfo("d.resolutionMenu", L("Resolutions"), .submenu(.resolution, promotable: false),
                             feature: .resolution),
@@ -199,7 +211,7 @@ package enum DisplaysMenuPlan {
                             header: L("Input")),
         DisplayMenuItemInfo("c.ddc.mute", L("Mute"), .submenu(.power, promotable: false), feature: .ddcControls),
         DisplayMenuItemInfo("c.ddc.power", L("Turn Display On or Off"), .submenu(.power, promotable: true),
-                            feature: .ddcPower, symbol: "power"),
+                            feature: .ddcPower, symbol: "power", default: .visible),
         DisplayMenuItemInfo("d.disconnectItem", L("Disconnect"), .submenu(.power, promotable: true),
                             feature: .disconnect, symbol: "eject"),
         // Displays section.
@@ -221,7 +233,7 @@ package enum DisplaysMenuPlan {
         DisplayMenuItemInfo("d.matchUI", L("Match Text Size…"), .tools(toggle: false), feature: .scaleMatch),
         DisplayMenuItemInfo("d.connectAll", L("Connect All Displays"), .tools(toggle: false), feature: .disconnect),
         DisplayMenuItemInfo("d.disconnectAllButMain", L("Disconnect All But Main"), .tools(toggle: false),
-                            feature: .disconnect),
+                            feature: .disconnect, default: .inSubmenu),
         DisplayMenuItemInfo("b.restoreAll", L("Restore All Displays"), .tools(toggle: false),
                             symbol: "arrow.uturn.backward"),
         DisplayMenuItemInfo("c.sync.toggle", L("Sync Brightness"), .tools(toggle: true), feature: .sync),
@@ -265,6 +277,17 @@ package enum DisplaysMenuPlan {
 
     // MARK: Placement
 
+    /// The default an item's choice is stored against: the running contributor's descriptor (`declared`), else the
+    /// 0.2 default from the table, else Show. A slider whose 0.2 default was "In submenu" (Contrast, custom
+    /// controls, Resolution) is hidden by default: 0.3 sliders are never in a submenu, and §4.8 keeps them off the
+    /// top level unless the user asks (an explicit 0.2 "In submenu" choice still shows it, `MenuConfig.isSliderShown`).
+    package static func defaultVisibility(_ id: DisplayMenuItemID, declared: MenuItemVisibility?) -> MenuItemVisibility {
+        let entry = Self.info(for: id)
+        let value = declared ?? entry?.legacyDefault ?? .visible
+        if entry?.location == .slider && value == .inSubmenu { return .hidden }
+        return value
+    }
+
     /// Where an item goes for the user's choice (§5.2: "Show" places it at its location, "In Display Submenu" keeps
     /// a per-display item in the submenu, "Hide" removes it; sliders are Show or Hide only, and a 0.2 "In submenu"
     /// slider shows at the top level). nil = not in the menu.
@@ -279,8 +302,8 @@ package enum DisplaysMenuPlan {
                               isCustomRow: Bool, pendingConfirmation: Bool = false,
                               automationPaused: Bool = true) -> DisplayMenuPlace? {
         let location: DisplayMenuLocation
-        if let info = info(for: id) {
-            location = info.location
+        if let known = Self.info(for: id) {
+            location = known.location
         } else {
             location = perDisplay ? (isCustomRow ? .slider : .submenu(.options, promotable: false)) : .tools(toggle: false)
         }

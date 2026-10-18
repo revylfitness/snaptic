@@ -45,8 +45,6 @@ package enum CustomizeMenuSheetControls: ControlTable {
         ControlSpec("menubar.customize.headerForSingleDisplay", .setting, replaces: ["l.gen.menu.headerForSingleDisplay"],
                     keys: ["menu.headerForSingleDisplay"], search: search("Display row with one display", ["header"])),
         ControlSpec("menubar.customize.needFeatures", .button),
-        ControlSpec("menubar.customize.restoreDefaults", .button, replaces: ["l.gen.menu.reset"],
-                    keys: ["menu.items", "menu.sectionOrder"]),
         // Per Display.
         ControlSpec("menubar.customize.brightness", .setting, keys: items, menu: place(section, .checkbox, "c.brightness.slider"),
                     search: item("Brightness slider")),

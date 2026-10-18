@@ -184,6 +184,31 @@ final class DisplaysMenuPlanTests: XCTestCase {
         }
     }
 
+    func testDefaults() {
+        XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("c.brightness.slider"), declared: nil), .visible)
+        XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("c.ddc.contrast"), declared: nil), .hidden)
+        XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("c.ddc.contrast"), declared: .inSubmenu), .hidden)
+        XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("c.ddc.contrast"), declared: .visible), .visible)
+        XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("d.resolutionSlider"), declared: nil), .hidden)
+        XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("d.hdrToggle"), declared: nil), .inSubmenu)
+        XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("c.ddc.power"), declared: nil), .visible)
+        XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("d.disconnectItem"), declared: nil), .inSubmenu)
+        XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("d.disconnectAllButMain"), declared: nil), .inSubmenu)
+        XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("f.tools.panel"), declared: nil), .visible)
+        XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("z.unknown"), declared: nil), .visible)
+        XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("z.unknown"), declared: .hidden), .hidden)
+        // The §5.2 row budget's defaults: brightness and volume sliders show, contrast and resolution don't.
+        var c = MenuConfig()
+        for raw in ["c.ddc.contrast", "d.resolutionSlider", "c.ddc.custom"] {
+            let fallback = DisplaysMenuPlan.defaultVisibility(id(raw), declared: .inSubmenu)
+            XCTAssertNil(DisplaysMenuPlan.place(id(raw), visibility: c.visibility(of: id(raw), default: fallback),
+                                                perDisplay: true, isCustomRow: true))
+            c.setShown(true, for: id(raw), default: fallback)
+            XCTAssertEqual(DisplaysMenuPlan.place(id(raw), visibility: c.visibility(of: id(raw), default: fallback),
+                                                  perDisplay: true, isCustomRow: true), .slider)
+        }
+    }
+
     func testCompactKeepsOneSliderByPriority() {
         XCTAssertNil(DisplaysMenuPlan.compactSlider([]))
         XCTAssertEqual(DisplaysMenuPlan.compactSlider([id("c.ddc.volume"), id("c.brightness.slider")]), 1)

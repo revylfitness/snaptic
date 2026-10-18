@@ -121,7 +121,7 @@ import SnapticKit
                     }
                     continue
                 }
-                let visibility = menu.visibility(of: id, default: defaults[id] ?? .visible)
+                let visibility = menu.visibility(of: id, default: DisplaysMenuPlan.defaultVisibility(id, declared: defaults[id]))
                 switch DisplaysMenuPlan.place(id, visibility: visibility, perDisplay: true, isCustomRow: item.view != nil) {
                 case .slider?: content.sliders.append(entry)
                 case .underDevice?: content.underDevice.append(entry)
