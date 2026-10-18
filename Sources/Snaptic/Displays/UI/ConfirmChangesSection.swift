@@ -2,8 +2,9 @@ import SwiftUI
 import SnapticKit
 
 /// Displays › Advanced › **Confirm display changes** (owner: B; PLAN 0.3 §4.3 Advanced group 2, §4.4 duplicates 1
-/// and 2, §4.6 M6). One section for a grouped `Form`: F's Advanced sheet composes it as `ConfirmChangesSection()`;
-/// until the step-3 exit the 0.2 Safety page shows it too, as `ConfirmChangesSection(env:)`.
+/// and 2, §4.6 M6). One section for a grouped `Form`: F's Advanced sheet composes it as `ConfirmChangesSection(env:)`
+/// (`ConfirmChangesSection()` finds the environment through the shell); until phase 3b removes the 0.2 page list the
+/// Safety page shows it too.
 ///
 /// Live updates (§4.5): settings come from a `ConfigSlice` of `safety`, so other Displays writes don't re-render it;
 /// the pause status and the shortcut's registration come from `revision(.diagnostics)`, which PanicCoordinator and
@@ -80,6 +81,7 @@ private struct ConfirmChangesContent: View {
             Text(L("Confirm display changes"))
         } footer: {
             Text(L("Risky changes ask “Keep this change?” on every display. Esc or no answer undoes them, even if Snaptic stops responding."))
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -103,7 +105,9 @@ private struct ConfirmChangesContent: View {
             SettingsRowNote(note)
         }
         if state != .standard {
-            ButtonRow(L("Use Default Shortcut"), control: ControlID("displays.advanced.confirm.useDefaultShortcut")) { [env] in
+            ButtonRow(L("Use Default Shortcut"),
+                      help: L("Back to \(HotkeyRules.displayString(SafetyConfig.defaultPanicHotkey))."), subordinate: true,
+                      control: ControlID("displays.advanced.confirm.useDefaultShortcut")) { [env] in
                 let next = env.config.value.safety.usingDefaultPanicShortcut()
                 if next != env.config.value.safety { env.config.value.safety = next }
             }

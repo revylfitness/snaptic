@@ -82,7 +82,10 @@ private struct LossyModeRef: Decodable {
 }
 
 package struct SafetyConfig: ConfigModel {
-    package static let confirmSecondsRange = 10...60
+    /// "Revert after" (0.3 §4.3: StepperSetting 5–60; 0.2 allowed 10–60). The guard never needs a longer panel:
+    /// its deadline is always the panel plus a fixed margin (`GuardProtocol.trialDeadline`, `panelExtension`), so a
+    /// shorter countdown only reverts sooner, never later. A 0.2 build reading 5 clamps it up to 10 (safer).
+    package static let confirmSecondsRange = 5...60
     package static let defaultConfirmSeconds = 15
 
     package var confirmResolution: ConfirmResolutionChanges

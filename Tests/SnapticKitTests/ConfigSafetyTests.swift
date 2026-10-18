@@ -19,12 +19,53 @@ final class ConfigSafetyTests: XCTestCase {
             + #""preConfirmAllowed":{"\#(key.rawValue)":["60:0011","zz:1","60:0011","d6:0004"]}}"#
         let c = try JSONDecoder().decode(SafetyConfig.self, from: Data(json.utf8)).sanitized()
         XCTAssertEqual(c.confirmResolution, .newModesOnly)
-        XCTAssertEqual(c.confirmSeconds, 10)
+        XCTAssertEqual(c.confirmSeconds, 5, "clamped up to the 0.3 minimum")
         XCTAssertFalse(c.panicHotkeyEnabled)
         XCTAssertNil(c.panicHotkey, "invalid key code")
         XCTAssertEqual(c.preConfirmAllowed[key]?.entries, ["60:0011", "d6:0004"])
         XCTAssertTrue(c.keptModes.values.isEmpty)
         XCTAssertTrue(try JSONDecoder().decode(SafetyConfig.self, from: Data("{}".utf8)) == SafetyConfig())
+    }
+
+    /// 0.3 §4.3: "Revert after" is 5–60 s (0.2: 10–60). Every value survives a round trip; outside values clamp.
+    func testRevertAfterRange() throws {
+        XCTAssertEqual(SafetyConfig.confirmSecondsRange, 5...60)
+        XCTAssertTrue(SafetyConfig.confirmSecondsRange.contains(SafetyConfig.defaultConfirmSeconds))
+        for (stored, expected) in [(Int.min, 5), (-1, 5), (0, 5), (4, 5), (5, 5), (9, 9), (10, 10), (15, 15), (60, 60),
+                                   (61, 60), (Int.max, 60)] {
+            var c = SafetyConfig()
+            c.confirmSeconds = stored
+            XCTAssertEqual(c.sanitized().confirmSeconds, expected, "\(stored)")
+        }
+        for seconds in SafetyConfig.confirmSecondsRange {
+            var c = SafetyConfig()
+            c.confirmSeconds = seconds
+            let back = try JSONDecoder().decode(SafetyConfig.self, from: JSONEncoder().encode(c)).sanitized()
+            XCTAssertEqual(back.confirmSeconds, seconds)
+        }
+        // A 0.2 file's value (10–60) means the same in 0.3.
+        let old = try JSONDecoder().decode(SafetyConfig.self, from: Data(#"{"confirmSeconds":10}"#.utf8)).sanitized()
+        XCTAssertEqual(old.confirmSeconds, 10)
+    }
+
+    /// Why 5 s is safe: whatever the countdown, the guard's deadline stays a fixed margin past the panel, and every
+    /// value fits the protocol bounds, so a short countdown only reverts sooner (never later, never refused).
+    func testRevertAfterRangeFitsTheGuard() throws {
+        for seconds in SafetyConfig.confirmSecondsRange {
+            let panel = Double(seconds)
+            let arm = GuardProtocol.trialDeadline(panelSeconds: panel)
+            let ext = GuardProtocol.panelExtension(panelSeconds: panel)
+            XCTAssertGreaterThanOrEqual(arm, panel + 10, "\(seconds)")
+            XCTAssertEqual(ext, panel + 10, "\(seconds)")
+            XCTAssertNotNil(GuardProtocol.decodeMessage(try XCTUnwrap(GuardProtocol.encode(
+                .armTrial(id: 1, seq: 1, undo: [], deadlineSeconds: arm)))), "\(seconds)")
+            XCTAssertNotNil(GuardProtocol.decodeMessage(try XCTUnwrap(GuardProtocol.encode(.extend(id: 1, seconds: ext)))),
+                            "\(seconds)")
+            // The guard's margin after the panel is never shorter than its own hang window.
+            XCTAssertGreaterThanOrEqual(ext, GuardProtocol.hangSeconds, "\(seconds)")
+        }
+        // The command-line client waits for the longest panel.
+        XCTAssertEqual(KitControl.confirmSeconds, Double(SafetyConfig.confirmSecondsRange.upperBound))
     }
 
     func testAllowListAndExportStripping() {

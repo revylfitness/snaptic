@@ -98,7 +98,7 @@ final class GuardProtocolTests: XCTestCase {
     /// FIXES-R1 B4: `extend` right before the panel makes the deadline now + panel + 10,
     /// however long the staged apply and settle took; it never shortens a deadline.
     func testExtendBeforePanel() throws {
-        for panel in [10.0, 15, 60] {
+        for panel in [Double(SafetyConfig.confirmSecondsRange.lowerBound), 10, 15, 60] {
             let ext = GuardProtocol.panelExtension(panelSeconds: panel)
             XCTAssertEqual(ext, panel + 10)
             XCTAssertNotNil(GuardProtocol.decodeMessage(try XCTUnwrap(GuardProtocol.encode(.extend(id: 1, seconds: ext)))),
