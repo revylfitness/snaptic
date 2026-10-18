@@ -229,7 +229,7 @@ private struct AutomationsContent: View {
                 .modifier(OptionalSettingsAnchor(first ? ControlID("displays.automations.actionShowInMenu") : nil))
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .foregroundStyle(action.name.isEmpty ? .secondary : .primary)
+                    .foregroundStyle(action.name.isEmpty ? Color.secondary : Color.primary)
                 Text(AutomationText.actionLine(action))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
