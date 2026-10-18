@@ -493,22 +493,21 @@ enum DisplaysSectionRoute: String, CaseIterable {
     }
 }
 
-/// The owners' 0.3 pages (step 3a). Each owner fills in its step-0 stub in parallel, so a route shows the owner's
-/// page once its type is built and the 0.2 page until then. A new page is "built" when its body no longer has the
-/// stub's type (scripts/gen-stubs.py K18/K19); a 0.2 page rewritten in place (Color, Picture in Picture) when it
-/// declares its control table. Stubs and owners' pages are made with their no-argument `init()` (the stub
-/// signature, kept by every owner); the 0.2 pages keep `init(env:)`.
+/// The owners' 0.3 pages, each shown directly (they have their own header and switches). Pages still being built in
+/// parallel (D's) show once their type replaces its step-0 stub, and the 0.2 page until then: a page is "built" when
+/// its body no longer has the stub's type (scripts/gen-stubs.py K18/K19). Those are made with their no-argument
+/// `init()` (the stub signature, kept by their owner).
 @MainActor enum DisplaysOwnerPages {
     static func page(_ page: DisplaysSubpage, env: DisplaysPageEnvironment) -> AnyView? {
         switch page {
-        case .brightness: return built(BrightnessSubpage.self) { BrightnessSubpage() }
-        case .color: return declaresControls(ColorPage.self) ? AnyView(ColorPage(env: env)) : nil
-        case .hardware: return built(HardwareControlsPage.self) { HardwareControlsPage() }
-        case .keyboard: return built(KeyboardPage.self) { KeyboardPage() }
+        case .brightness: return AnyView(BrightnessSubpage(env: env))
+        case .color: return AnyView(ColorPage(env: env))
+        case .hardware: return AnyView(HardwareControlsPage(env: env))
+        case .keyboard: return AnyView(KeyboardPage(env: env))
         case .layouts: return built(SavedLayoutsPage.self) { SavedLayoutsPage() }
         case .virtual: return built(VirtualDisplaysPage.self) { VirtualDisplaysPage() }
-        case .pip: return declaresControls(PIPPage.self) ? AnyView(PIPPage(env: env)) : nil
-        case .automations: return built(AutomationsPage.self) { AutomationsPage() }
+        case .pip: return AnyView(PIPPage(env: env))
+        case .automations: return AnyView(AutomationsPage(env: env))
         case .information: return AnyView(DisplayInformationPage(env: env))
         }
     }
@@ -537,8 +536,6 @@ enum DisplaysSectionRoute: String, CaseIterable {
     static func isBuiltSheet<V: View>(_ type: V.Type) -> Bool {
         ObjectIdentifier(V.Body.self) != ObjectIdentifier(StubSheetProbe.Body.self)
     }
-
-    static func declaresControls<V>(_ type: V.Type) -> Bool { type is any ControlDeclaring.Type }
 
     private static func built<V: View>(_ type: V.Type, _ make: () -> V) -> AnyView? {
         isBuilt(type) ? AnyView(make()) : nil

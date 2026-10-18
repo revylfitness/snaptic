@@ -60,7 +60,6 @@ package enum DisplaysAdvancedSheetControls: ControlTable {
         ControlSpec("displays.advanced.otherApps", .setting, replaces: ["l.gen.otherApps.policy"], keys: ["otherApps"],
                     search: SearchSpec("Other display apps", keywords: ["BetterDisplay", "MonitorControl", "Lunar",
                                                                         "conflict", "pause"], root: root, sheet: sheet)),
-        ControlSpec("displays.advanced.permissions", .statusAction, when: [.state(.accessibilityMissing)],
-                    replaces: ["l.d.features.permissionRows"]),
+        ControlSpec("displays.advanced.permissions", .statusAction, when: [.state(.accessibilityMissing)]),
     ]
 }

@@ -13,7 +13,7 @@ package enum DisplayInformationPageControls: ControlTable {
 
     package static let controls: [ControlSpec] = [
         ControlSpec("displays.info.copyReport", .button,
-                    replaces: ["l.d.diagnostics.copyReport", "l.action.f.copyDiagnostics"],
+                    replaces: ["l.d.diagnostics.copyReport"],
                     search: SearchSpec("Copy Report", keywords: ["diagnostics", "bug report", "support", "copy"],
                                        root: root, route: route)),
         ControlSpec("displays.info.export", .button, replaces: ["l.d.diagnostics.export"],

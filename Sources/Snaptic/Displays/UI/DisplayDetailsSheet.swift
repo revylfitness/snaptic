@@ -5,8 +5,8 @@ import SnapticKit
 /// Display Details… (owner F; PLAN 0.3 §4.3): the selected display's name and icon, a link to its menu visibility
 /// (Menu Bar › Customize Displays Menu), its manage actions (Copy Settings From ▾, Forget Remembered Resolution,
 /// Forget This Display…) and an Information disclosure (connection, masked serial, EDID copies). Never presents
-/// another sheet; Forget asks with a standard alert. D's Connection and Match text size settings open D's page for
-/// the display.
+/// another sheet; Forget asks with a standard alert. C's Menu bar overlays section sits in the sheet; D's Connection
+/// and Match text size settings open D's page for the display.
 struct DisplayDetailsSheet: View, ControlDeclaring {
     typealias Controls = DisplayDetailsSheetControls
 
@@ -31,6 +31,7 @@ struct DisplayDetailsSheet: View, ControlDeclaring {
             if let display {
                 identity(display)
                 ownerSettings(display)
+                MenuBarOverlaysSection(env: env, key: display.key)
                 manage(display)
                 information(display)
             } else {
