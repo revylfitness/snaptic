@@ -44,7 +44,7 @@ struct DisplaysOnboardingStep: View, ControlDeclaring {
     private var displaysWantingSmartHiDPI: [DisplayInfo] {
         env.runtime.displays.filter { d in
             guard !d.isBuiltin, d.isActive, d.transport == .wired || d.transport == .displayLink else { return false }
-            let modes = DisplayControlModel.systemModes(d.desktopID)
+            let modes = ManagedModes.modes(for: d.desktopID).map(\.ref)
             let native = modes.filter { !$0.isHiDPI }.map(\.pixelWidth).max() ?? 0
             return !DisplayModeChoices.hasHiDPINearNative(modes, nativePixelWidth: native)
         }

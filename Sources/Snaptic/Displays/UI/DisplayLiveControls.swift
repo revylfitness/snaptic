@@ -15,7 +15,9 @@ import SnapticKit
 @MainActor final class DisplayLiveModel: ObservableObject {
     let key: DisplayKey
     private weak var context: DisplaysContext?
-    private let writer: DisplayLiveControlling
+    /// The module's one shared live writer (`DisplaysContext.live`, C's latest-wins mailbox per display and control),
+    /// so the root page, the panel and the menu never race each other's writes.
+    private var writer: DisplayLiveControlling? { context?.live }
     /// Controls being dragged now, and the last value sent for each, so `.ended` carries the final value.
     private var dragging: Set<LiveControl> = []
     private var lastSent: [LiveControl: Double] = [:]
@@ -23,7 +25,6 @@ import SnapticKit
     init(key: DisplayKey, context: DisplaysContext?) {
         self.key = key
         self.context = context
-        writer = DisplaysLive.makeWriter(context)
     }
 
     // MARK: Live values (C)
@@ -31,7 +32,7 @@ import SnapticKit
     /// Every value change: part of a drag, or a single change (keyboard, VoiceOver, a click on the track).
     func set(_ control: LiveControl, _ value: Double) {
         lastSent[control] = value
-        writer.set(control, value, for: key, phase: dragging.contains(control) ? .changed : .ended)
+        writer?.set(control, value, for: key, phase: dragging.contains(control) ? .changed : .ended)
     }
 
     /// SliderSetting's drag phases; `.ended` repeats the final value so the mailbox always delivers it.
@@ -40,12 +41,12 @@ import SnapticKit
         case .began:
             dragging.insert(control)
             lastSent[control] = current
-            writer.set(control, current, for: key, phase: .began)
+            writer?.set(control, current, for: key, phase: .began)
         case .changed:
             break
         case .ended:
             dragging.remove(control)
-            writer.set(control, lastSent[control] ?? current, for: key, phase: .ended)
+            writer?.set(control, lastSent[control] ?? current, for: key, phase: .ended)
         }
     }
 
@@ -304,6 +305,7 @@ struct DisplayLiveControls: View, ControlDeclaring {
                 }
             }
             .padding(.vertical, 2)
+            .modifier(SettingsAnchor(ControlID("displays.panel.display")))
         } label: {
             header
         }
@@ -482,13 +484,6 @@ struct DisplaysPanelActions {
             return L("The safety helper that reverts risky display changes isn’t running.")
         }
         return nil
-    }
-
-    /// The live writer for a context: C's `DisplayLiveController` (latest-wins mailbox per display and control).
-    static func makeWriter(_ context: DisplaysContext?) -> DisplayLiveControlling {
-        let writer = DisplayLiveController()
-        writer.context = context
-        return writer
     }
 }
 

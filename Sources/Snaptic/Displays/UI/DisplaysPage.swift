@@ -35,12 +35,21 @@ struct DisplaysPage: View, ControlDeclaring {
         }
     }
 
-    /// The pages the root page's navigation rows open (`DisplaysModule.settingsDestination(_:)`); nil for every
-    /// other route, which the shell then resolves to a 0.2 page.
+    /// Every Displays sub-route (`DisplaysModule.settingsDestination(_:)`, PLAN 0.3 §4.3): the owner's 0.3 page once
+    /// it is built, else the 0.2 page that still holds those settings. nil for routes the shell resolves to a 0.2 page
+    /// itself.
     @MainActor static func destination(_ route: SettingsRoute, env: DisplaysPageEnvironment) -> AnyView? {
         if route.id == DisplaysFeaturesPage.route.id { return AnyView(DisplaysFeaturesPage(env: env)) }
-        guard let page = DisplaysSubpage(rawValue: route.id) else { return nil }
-        return AnyView(DisplaysSubpageHost(page: page, env: env))
+        if let page = DisplaysSubpage(rawValue: route.id) {
+            SettingsShell.shared.noteTitle(page.title, for: route)
+            if let built = DisplaysOwnerPages.page(page, env: env) { return built }
+            return AnyView(DisplaysSubpageHost(page: page, env: env))
+        }
+        if let section = DisplaysSectionRoute(rawValue: route.id) {
+            SettingsShell.shared.noteTitle(section.title, for: route)
+            return DisplaysOwnerPages.page(section) ?? DisplaysOwnerPages.legacy(section.legacyPage)
+        }
+        return nil
     }
 
     var body: some View {
@@ -131,6 +140,9 @@ private struct DisplaysRootContent: View {
         }
         .sheet(isPresented: shell.sheetBinding(DisplayDetailsSheetControls.sheet)) {
             DisplayDetailsSheet(env: env, key: selected?.key)
+        }
+        .sheet(isPresented: shell.sheetBinding(ArrangeSheetControls.surface)) {
+            ArrangeSheet()
         }
     }
 
@@ -272,7 +284,11 @@ private struct DisplaysRootContent: View {
         Section {
             if runtime.isEffective(.arrangement), displays.count > 1 {
                 ButtonRow(L("Arrange Displays…"), control: ControlID("displays.root.arrange")) {
-                    shell.push(SettingsRoute("displays.arrangement"))
+                    if DisplaysOwnerPages.arrangeSheetIsBuilt {
+                        shell.openSheet = ArrangeSheetControls.surface
+                    } else {
+                        shell.push(SettingsRoute("displays.arrangement"))
+                    }
                 }
             }
             navigationRow(.layouts, control: ControlID("displays.root.nav.layouts"))
@@ -309,7 +325,7 @@ private struct DisplaysRootContent: View {
     }
 }
 
-// MARK: - Sub-pages (step 2: hosts for the 0.2 pages until each owner's 0.3 sub-page lands)
+// MARK: - Sub-pages (hosts for the 0.2 pages until each owner's 0.3 sub-page is built)
 
 /// The root page's navigation targets. Route ids are the owners' control-table surfaces.
 enum DisplaysSubpage: String, CaseIterable {
@@ -414,7 +430,7 @@ enum DisplaysSubpage: String, CaseIterable {
         case .virtual: return ["displays.virtual"]
         case .pip: return ["displays.pip"]
         case .automations: return ["displays.automation"]
-        case .information: return ["displays.diagnostics"]
+        case .information: return []
         }
     }
 
@@ -450,6 +466,113 @@ enum DisplaysSubpage: String, CaseIterable {
         case .customActions: return L("Your own programs in the menu and as shortcuts.")
         default: return DisplaysUIText.summary(feature)
         }
+    }
+}
+
+/// Sub-routes that aren't navigation rows of the root page: the full-page forms of D's root and Display Details
+/// sections, opened from menus ("Match Text Size…", "Underscan…", "More Resolutions…"), search and Display Details.
+enum DisplaysSectionRoute: String, CaseIterable {
+    case resolution = "displays.resolution"
+    case matchTextSize = "displays.matchTextSize"
+    case connection = "displays.connection"
+
+    var title: String {
+        switch self {
+        case .resolution: return L("Resolution")
+        case .matchTextSize: return L("Match Text Size")
+        case .connection: return L("Connection")
+        }
+    }
+
+    /// The 0.2 page that holds these settings until D's page is built.
+    var legacyPage: String {
+        switch self {
+        case .resolution, .matchTextSize: return "displays.resolution"
+        case .connection: return "displays.arrangement"
+        }
+    }
+}
+
+/// The owners' 0.3 pages (step 3a). Each owner fills in its step-0 stub in parallel, so a route shows the owner's
+/// page once its type is built and the 0.2 page until then. A new page is "built" when its body no longer has the
+/// stub's type (scripts/gen-stubs.py K18/K19); a 0.2 page rewritten in place (Color, Picture in Picture) when it
+/// declares its control table. Stubs and owners' pages are made with their no-argument `init()` (the stub
+/// signature, kept by every owner); the 0.2 pages keep `init(env:)`.
+@MainActor enum DisplaysOwnerPages {
+    static func page(_ page: DisplaysSubpage, env: DisplaysPageEnvironment) -> AnyView? {
+        switch page {
+        case .brightness: return built(BrightnessSubpage.self) { BrightnessSubpage() }
+        case .color: return declaresControls(ColorPage.self) ? AnyView(ColorPage(env: env)) : nil
+        case .hardware: return built(HardwareControlsPage.self) { HardwareControlsPage() }
+        case .keyboard: return built(KeyboardPage.self) { KeyboardPage() }
+        case .layouts: return built(SavedLayoutsPage.self) { SavedLayoutsPage() }
+        case .virtual: return built(VirtualDisplaysPage.self) { VirtualDisplaysPage() }
+        case .pip: return declaresControls(PIPPage.self) ? AnyView(PIPPage(env: env)) : nil
+        case .automations: return built(AutomationsPage.self) { AutomationsPage() }
+        case .information: return AnyView(DisplayInformationPage(env: env))
+        }
+    }
+
+    static func page(_ route: DisplaysSectionRoute) -> AnyView? {
+        switch route {
+        case .resolution: return built(ResolutionSections.self) { ResolutionSections() }
+        case .matchTextSize: return built(MatchTextSizeSection.self) { MatchTextSizeSection() }
+        case .connection: return built(ConnectionSection.self) { ConnectionSection() }
+        }
+    }
+
+    /// Whether D's Arrange Displays sheet replaced its stub (until then the root page opens the 0.2 page).
+    static var arrangeSheetIsBuilt: Bool { isBuiltSheet(ArrangeSheet.self) }
+
+    /// A 0.2 page by id, while Displays runs.
+    static func legacy(_ id: String) -> AnyView? {
+        guard let host = SettingsShell.shared.host, host.isRunning(.displays) else { return nil }
+        return host.displays.settingsPages().first { $0.id == id }?.makeView()
+    }
+
+    static func isBuilt<V: View>(_ type: V.Type) -> Bool {
+        ObjectIdentifier(V.Body.self) != ObjectIdentifier(StubPageProbe.Body.self)
+    }
+
+    static func isBuiltSheet<V: View>(_ type: V.Type) -> Bool {
+        ObjectIdentifier(V.Body.self) != ObjectIdentifier(StubSheetProbe.Body.self)
+    }
+
+    static func declaresControls<V>(_ type: V.Type) -> Bool { type is any ControlDeclaring.Type }
+
+    private static func built<V: View>(_ type: V.Type, _ make: () -> V) -> AnyView? {
+        isBuilt(type) ? AnyView(make()) : nil
+    }
+}
+
+/// The body of a step-0 page stub, written exactly as gen-stubs.py writes it (K18): only its type matters.
+private struct StubPageProbe: View {
+    var body: some View {
+        SettingsPageScaffold(route: SettingsRoute(SettingsRootID.displays)) {
+            Text(L("Displays")).font(.headline)
+            Text(L("Not built yet")).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// The body of a step-0 sheet stub (K19).
+private struct StubSheetProbe: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            SettingsPageScaffold(route: SettingsRoute(SettingsRootID.displays)) {
+                Text(L("Displays")).font(.headline)
+                Text(L("Not built yet")).foregroundStyle(.secondary)
+            }
+            HStack {
+                Spacer()
+                Button(L("Done")) { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(16)
+        }
+        .frame(width: 520)
     }
 }
 
@@ -604,7 +727,7 @@ private struct DisplaysSubpageHost: View {
 }
 
 /// "displays.features" (0.2 links still open it): the feature switches of Displays › Advanced as a page.
-private struct DisplaysFeaturesPage: View {
+struct DisplaysFeaturesPage: View {
     static let route = SettingsRoute("displays.features")
 
     @ObservedObject private var runtime: DisplaysRuntimeState

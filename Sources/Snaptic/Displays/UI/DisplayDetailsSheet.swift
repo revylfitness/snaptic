@@ -5,8 +5,8 @@ import SnapticKit
 /// Display Details… (owner F; PLAN 0.3 §4.3): the selected display's name and icon, a link to its menu visibility
 /// (Menu Bar › Customize Displays Menu), its manage actions (Copy Settings From ▾, Forget Remembered Resolution,
 /// Forget This Display…) and an Information disclosure (connection, masked serial, EDID copies). Never presents
-/// another sheet; Forget asks with a standard alert. The owners' Connection, Menu bar overlays and Match text size
-/// groups join in step 3.
+/// another sheet; Forget asks with a standard alert. D's Connection and Match text size settings open D's page for
+/// the display.
 struct DisplayDetailsSheet: View, ControlDeclaring {
     typealias Controls = DisplayDetailsSheetControls
 
@@ -30,6 +30,7 @@ struct DisplayDetailsSheet: View, ControlDeclaring {
         AdvancedSheet(display?.name ?? L("Display Details"), restoreDefaults: nil) {
             if let display {
                 identity(display)
+                ownerSettings(display)
                 manage(display)
                 information(display)
             } else {
@@ -102,6 +103,40 @@ struct DisplayDetailsSheet: View, ControlDeclaring {
                 shell.selectedDisplay = key
                 shell.go(to: SettingsLocation(root: SettingsRootID.menuBar))
                 shell.openSheet = CustomizeMenuSheetControls.surface
+            }
+        }
+    }
+
+    // MARK: Connection and Match text size (D)
+
+    /// D's Connection and Match text size settings for this display. A sheet never presents another one, so these
+    /// close the sheet and open D's page for the display (the 0.2 page until D's is built).
+    @ViewBuilder private func ownerSettings(_ display: DisplayInfo) -> some View {
+        let connection = runtime.isEffective(.disconnect) || runtime.isEffective(.underscan)
+            || (display.isBuiltin && runtime.isEffective(.autoDisconnectBuiltin))
+        let matchTextSize = runtime.isEffective(.scaleMatch)
+        if connection || matchTextSize {
+            Section {
+                if connection {
+                    ButtonRow(L("Connection…"), help: L("Disconnect, underscan, and automatic disconnection."),
+                              control: ControlID("displays.details.connection")) { open(.connection, display.key) }
+                }
+                if matchTextSize {
+                    ButtonRow(L("Match Text Size…"), help: L("Makes text look the same size on every display."),
+                              control: ControlID("displays.details.matchTextSize")) { open(.matchTextSize, display.key) }
+                }
+            }
+        }
+    }
+
+    /// Closes the sheet, then pushes the page with this display selected.
+    private func open(_ route: DisplaysSectionRoute, _ key: DisplayKey) {
+        dismiss()
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                let shell = SettingsShell.shared
+                shell.selectedDisplay = key
+                shell.push(SettingsRoute(route.rawValue))
             }
         }
     }
@@ -291,7 +326,7 @@ private struct DisplayInformationDisclosure: View {
     }
 
     private var facts: [DiagnosticsRow] {
-        var rows: [DiagnosticsRow] = [DiagnosticsRow(L("Connection"), Self.transportName(display.transport))]
+        var rows: [DiagnosticsRow] = [DiagnosticsRow(L("Connection"), DisplaysUIText.transportName(display.transport))]
         if let mode = display.currentMode {
             rows.append(DiagnosticsRow(L("Resolution"), DisplaysUIText.modeLabel(mode.ref)))
             rows.append(DiagnosticsRow(L("Pixels"), "\(mode.ref.pixelWidth) × \(mode.ref.pixelHeight)"))
@@ -310,18 +345,6 @@ private struct DisplayInformationDisclosure: View {
         }
         rows.append(DiagnosticsRow(L("Identifier"), DiagnosticsText.shortKey(display.key)))
         return rows
-    }
-
-    static func transportName(_ transport: Transport) -> String {
-        switch transport {
-        case .builtin: return L("Built-in")
-        case .wired: return L("Cable")
-        case .displayLink: return L("DisplayLink")
-        case .airplay: return L("AirPlay")
-        case .sidecar: return L("Sidecar")
-        case .snapticVirtual: return L("Snaptic virtual display")
-        case .foreignVirtual: return L("Virtual display (other app)")
-        }
     }
 
     private func load() {
