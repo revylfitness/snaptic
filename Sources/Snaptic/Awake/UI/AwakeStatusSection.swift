@@ -175,10 +175,13 @@ struct AwakeStatusSection: View, ControlDeclaring {
             case .addTime(let seconds):
                 let title = seconds < 3_600 ? L("Add 15 Minutes") : L("Add 1 Hour")
                 items.append(ActionMenuItem(id: "add.\(seconds)", title: title) { [weak sessions = context.sessions] in
+                    // Same focus guard as the Custom panel's Add Time (security S2-3).
+                    guard SettingsShell.shared.mayStart() else { return }
                     _ = sessions?.extend(by: seconds, source: .settings)
                 })
             case .addTimeCustom:
                 items.append(ActionMenuItem(id: "addTime", title: L("Add Time…")) { [weak env = self.env] in
+                    guard SettingsShell.shared.mayStart() else { return }
                     env?.presentCustom(.extend)
                 })
             case .separator:

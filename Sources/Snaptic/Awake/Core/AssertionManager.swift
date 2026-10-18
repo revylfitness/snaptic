@@ -21,7 +21,6 @@ import SnapticKit
     private(set) var failureCount = 0
     /// Sleep assertions alive now: 0 or 1.
     var liveCount: Int { sleepID == 0 ? 0 : 1 }
-    var diskAssertionLive: Bool { diskID != 0 }
 
     /// Runs when powerd reports an assertion timeout (`com.apple.system.powermanagement.assertions.timeout`): the
     /// session controller checks expiry first, then arbitrates, then verifies.

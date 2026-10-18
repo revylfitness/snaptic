@@ -13,6 +13,19 @@ import SnapticKit
         return AwakeTextContext(uses24Hour: !template.contains("a"), decimalSeparator: decimal)
     }()
 
+    /// `Awake.disable.<feature>` as AwakeModule reads them (Snaptic's persistent domain only, N14), for Settings'
+    /// lock notes (ux N2).
+    static func killSwitches() -> Set<AwakeFeature> {
+        KillSwitches.read(UserDefaults.standard.persistentDomain(forName: ConfigStore<AwakeConfig>.persistentDomainName),
+                          prefix: "Awake", as: AwakeFeature.self)
+    }
+
+    /// Why a saved-on feature doesn't run now, for its Settings row (nil = it runs, or it is off by choice).
+    static func lock(_ features: [AwakeFeature]) -> (feature: AwakeFeature, lock: AwakeFeatureLock)? {
+        AwakeFeatureLock.first(features, killSwitches: killSwitches(),
+                               safeMode: SettingsShell.shared.host?.safeMode.isActive ?? false)
+    }
+
     /// "5:00 PM" / "17:00" for a wall instant in the current time zone.
     static func clock(_ unix: Double) -> String {
         guard unix.isFinite else { return "" }

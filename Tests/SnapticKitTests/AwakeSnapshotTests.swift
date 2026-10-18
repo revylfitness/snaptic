@@ -158,35 +158,125 @@ final class AwakeSnapshotTests: XCTestCase {
         XCTAssertFalse(out.contains("pointer"))
     }
 
-    // MARK: Expired while Snaptic wasn't running (awake-correctness F5b)
+    // MARK: Ended while Snaptic wasn't running (awake-correctness F5b, round-2 F1)
+
+    private let t0 = 1_700_000_000.0
+    private func stamp(_ c: Double, clean: Bool = true) -> AwakeStopStamp {
+        AwakeStopStamp(wall: t0 + c, continuous: c, clean: clean)
+    }
 
     func testExpiredWhileAwayReportsEndsAtTheirInstant() {
         let raw = snapshot(manual: session(), holds: [hold("a", cap: 600), hold("b", pid: 401, cap: 7_200)])
         // Everything still running at 4 500: nothing to report.
-        let early = raw.expiredWhileAway(now: now(4_500))
-        XCTAssertNil(early.manual)
-        XCTAssertTrue(early.holds.isEmpty)
+        XCTAssertTrue(raw.awayEnds(now: now(4_500)).isEmpty)
         // At 10 000 the 1-hour session (ended 7 600) and the 10-minute hold (ended 4 600) ran out.
-        let late = raw.expiredWhileAway(now: now(10_000))
-        XCTAssertEqual(late.manual?.session.id, id("m"))
-        XCTAssertEqual(late.manual?.endWall, 1_700_000_000 + 7_600)
-        XCTAssertEqual(late.holds.map(\.hold.id), [id("a")])
-        XCTAssertEqual(late.holds.first?.endWall, 1_700_000_000 + 4_600)
+        let late = raw.awayEnds(now: now(10_000))
+        XCTAssertEqual(late.map(\.item.id), [id("m"), id("a")])
+        XCTAssertEqual(late.map(\.endWall), [t0 + 7_600, t0 + 4_600])
+        XCTAssertEqual(late.map(\.reason), [.timeUp, .timeUp])
+        XCTAssertEqual(late.first?.startWall, t0 + 4_000)
         XCTAssertNil(raw.sanitized(now: now(10_000)).manual, "the sanitizer still drops it")
     }
 
-    func testExpiredWhileAwayIgnoresOtherBootsEndlessAndForgedItems() {
-        XCTAssertNil(snapshot(manual: session()).expiredWhileAway(now: now(10_000, boot: "BOOT-2")).manual)
-        XCTAssertNil(snapshot(manual: session(.indefinite)).expiredWhileAway(now: now(99_000)).manual)
+    func testExpiredWhileAwayEndsWhenSnapticStopped() {
+        // 2 h session started at 4 000, quit 30 min in, relaunched 3 h later: 30 min, not 2 h.
+        var raw = snapshot(manual: session(.duration(seconds: 7_200)))
+        raw.stop = stamp(5_800)
+        let ends = raw.awayEnds(now: now(16_600))
+        XCTAssertEqual(ends.count, 1)
+        XCTAssertEqual(ends.first?.startWall, t0 + 4_000)
+        XCTAssertEqual(ends.first?.endWall, t0 + 5_800)
+    }
+
+    func testOtherBootEndsReboot() {
+        // Until Turned Off started at 4 000, Mac shut down at 36 400 (quit stamp): one `.reboot` entry.
+        var raw = snapshot(manual: session(.indefinite), holds: [hold("a", cap: 86_400)])
+        raw.stop = stamp(36_400)
+        let ends = raw.awayEnds(now: now(50, boot: "BOOT-2"))
+        XCTAssertEqual(ends.map(\.item.id), [id("m"), id("a")])
+        XCTAssertEqual(ends.map(\.reason), [.reboot, .reboot])
+        XCTAssertEqual(ends.map(\.endWall), [t0 + 36_400, t0 + 36_400])
+        XCTAssertEqual(ends.first?.startWall, t0 + 4_000)
+        // A crash before the reboot: the last heartbeat bounds it the same way.
+        raw.stop = stamp(30_000, clean: false)
+        XCTAssertEqual(raw.awayEnds(now: now(50, boot: "BOOT-2")).first?.endWall, t0 + 30_000)
+        // A timed session that ran out before Snaptic stopped ends `.timeUp` at its own end.
+        var timed = snapshot(manual: session(.duration(seconds: 600)))
+        timed.stop = stamp(4_550)
+        timed.manual = session(.duration(seconds: 600))
+        let t = timed.awayEnds(now: now(50, boot: "BOOT-2"))
+        XCTAssertEqual(t.first?.reason, .reboot, "still running at the stop stamp")
+        XCTAssertEqual(t.first?.endWall, t0 + 4_550)
+        timed.stop = stamp(4_700)
+        XCTAssertEqual(timed.awayEnds(now: now(50, boot: "BOOT-2")).first?.reason, .timeUp)
+        XCTAssertEqual(timed.awayEnds(now: now(50, boot: "BOOT-2")).first?.endWall, t0 + 4_600)
+        // Without a stamp (a snapshot from before stamps) another boot's end is unknown: nothing is reported.
+        XCTAssertTrue(snapshot(manual: session(.indefinite)).awayEnds(now: now(50, boot: "BOOT-2")).isEmpty)
+    }
+
+    func testAwayEndsIgnoreEndlessAndForgedItems() {
+        XCTAssertTrue(snapshot(manual: session(.indefinite)).awayEnds(now: now(99_000)).isEmpty, "still running")
         var forged = session()
         forged.deadline = 4_000 + 99_999   // deadline doesn't match the duration
-        XCTAssertNil(snapshot(manual: forged).expiredWhileAway(now: now(200_000)).manual)
+        XCTAssertTrue(snapshot(manual: forged).awayEnds(now: now(200_000)).isEmpty)
         var rule = session()
         rule.source = .rule
-        XCTAssertNil(snapshot(manual: rule).expiredWhileAway(now: now(10_000)).manual)
-        let until = session(.until(unixTime: 1_700_000_000 + 4_000 + 1_800))
-        let report = snapshot(manual: until).expiredWhileAway(now: now(9_000))
-        XCTAssertEqual(report.manual?.endWall, 1_700_000_000 + 5_800)
+        XCTAssertTrue(snapshot(manual: rule).awayEnds(now: now(10_000)).isEmpty)
+        let until = session(.until(unixTime: t0 + 4_000 + 1_800))
+        XCTAssertEqual(snapshot(manual: until).awayEnds(now: now(9_000)).first?.endWall, t0 + 5_800)
+    }
+
+    func testRestoreEndAndResumedSegment() {
+        let m = session(.indefinite)
+        var raw = snapshot(manual: m)
+        // Crash with resume off: the session ends at the last heartbeat, not at the relaunch.
+        raw.stop = stamp(9_000, clean: false)
+        let end = raw.restoreEnd(.session(m), reason: .moduleStopped, now: now(20_000))
+        XCTAssertEqual(end.startWall, t0 + 4_000)
+        XCTAssertEqual(end.endWall, t0 + 9_000)
+        // Without a stamp: now.
+        XCTAssertEqual(snapshot(manual: m).restoreEnd(.session(m), reason: .appQuit, now: now(20_000)).endWall, t0 + 20_000)
+        // A resume after a gap: the part before it is one entry; a short gap (update relaunch) keeps one segment.
+        let before = raw.resumedSegment(.session(m), now: now(20_000))
+        XCTAssertEqual(before, AwakeAwayEnd(item: .session(m), startWall: t0 + 4_000, endWall: t0 + 9_000, reason: .moduleStopped))
+        XCTAssertNil(raw.resumedSegment(.session(m), now: now(9_030)))
+        XCTAssertNil(snapshot(manual: m).resumedSegment(.session(m), now: now(20_000)), "no stamp: no split")
+        // The next segment starts where the resume began, and survives the next relaunch.
+        raw.segmentStarts = LossyMap([m.id: t0 + 20_000])
+        raw.stop = stamp(30_000)
+        XCTAssertEqual(raw.segmentStart(m.id, startedAt: m.startedAt), t0 + 20_000)
+        XCTAssertEqual(raw.resumedSegment(.session(m), now: now(40_000))?.startWall, t0 + 20_000)
+        XCTAssertEqual(raw.sanitized(now: now(40_000)).segmentStarts.values, [m.id: t0 + 20_000])
+        XCTAssertNil(raw.sanitized(now: now(40_000)).stop, "the stamp is read once, from the store")
+        // A forged segment start before the start is ignored.
+        raw.segmentStarts = LossyMap([m.id: 10])
+        XCTAssertEqual(raw.segmentStart(m.id, startedAt: m.startedAt), m.startedAt)
+    }
+
+    func testRemindersSurviveSameBootOnlyForTheirSession() throws {
+        let m = session(.indefinite)
+        var r = AwakeReminders()
+        XCTAssertEqual(r.due(m, now: now(4_000 + 8 * 3_600)), .eightHours)
+        var raw = snapshot(manual: m)
+        raw.reminders = r
+        let decoded = try JSONDecoder().decode(AwakeRuntimeSnapshot.self, from: JSONEncoder().encode(raw))
+        var restored = decoded.sanitized(now: now(4_000 + 10 * 3_600)).reminders
+        XCTAssertNil(restored.due(m, now: now(4_000 + 10 * 3_600)), "N1: once per session across relaunches")
+        XCTAssertEqual(decoded.sanitized(now: now(10, boot: "BOOT-2")).reminders, AwakeReminders())
+        raw.manual = session(.duration(seconds: 7_200))
+        raw.manual?.id = id("other")
+        XCTAssertEqual(raw.sanitized().reminders, AwakeReminders(), "another session's marks are dropped")
+        r = AwakeReminders()
+        XCTAssertEqual(r.keeping(session: nil), AwakeReminders())
+    }
+
+    func testContentIgnoresTheStamp() {
+        var a = snapshot(manual: session())
+        var b = a
+        a.stop = stamp(5_000)
+        b.stop = stamp(6_000, clean: false)
+        XCTAssertNotEqual(a, b)
+        XCTAssertEqual(a.content, b.content)
     }
 
     // MARK: Seeded fuzz of the outside-writable snapshot (code F5)
@@ -196,7 +286,10 @@ final class AwakeSnapshotTests: XCTestCase {
         let valid = snapshot(manual: session(.untilIdle(UntilIdleSpec(), maxSeconds: 7_200)), holds: [hold("a"), hold("b", pid: 401)],
                              suppressions: [id("t"): TriggerSuppression(until: 5_500, untilFalse: true)],
                              paused: 1_700_000_000 + 6_000)
-        let base = try JSONSerialization.jsonObject(with: JSONEncoder().encode(valid))
+        var stamped = valid
+        stamped.stop = AwakeStopStamp(wall: 1_700_000_000 + 5_200, continuous: 5_200, clean: true)
+        stamped.reminders = AwakeReminders()
+        let base = try JSONSerialization.jsonObject(with: JSONEncoder().encode(stamped))
         for round in 0..<600 {
             let mutated = mutate(base, &rng, depth: 0)
             guard JSONSerialization.isValidJSONObject(mutated),
@@ -212,10 +305,14 @@ final class AwakeSnapshotTests: XCTestCase {
             if let p = s.pausedUntil { XCTAssertLessThanOrEqual(p - clock.wall, AwakeRuntimeSnapshot.maxPauseSeconds) }
             XCTAssertLessThanOrEqual(s.suppressions.values.count, AwakeRuntimeSnapshot.maxSuppressions)
             XCTAssertEqual(try JSONDecoder().decode(AwakeRuntimeSnapshot.self, from: JSONEncoder().encode(s)), s)
-            let away = decoded.expiredWhileAway(now: clock)
-            if let m = away.manual { XCTAssertLessThanOrEqual(m.endWall, clock.wall) }
-            XCTAssertTrue(away.holds.allSatisfy { $0.endWall <= clock.wall })
-            XCTAssertLessThanOrEqual(away.holds.count, AwakeHold.maxHolds)
+            let away = decoded.awayEnds(now: clock)
+            XCTAssertTrue(away.allSatisfy { $0.startWall <= $0.endWall && $0.endWall.isFinite })
+            if clock.bootSession == boot { XCTAssertTrue(away.allSatisfy { $0.endWall <= clock.wall }) }
+            if let st = decoded.sanitized().stop, decoded.bootSession == boot {
+                XCTAssertTrue(away.allSatisfy { $0.endWall <= max(st.wall, $0.startWall) }, "never after Snaptic stopped")
+            }
+            XCTAssertLessThanOrEqual(away.count, AwakeHold.maxHolds + 1)
+            XCTAssertEqual(Set(away.map(\.item.id)).count, away.count)
         }
     }
 

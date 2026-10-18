@@ -155,12 +155,13 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
     /// boot's session or `--pid` hold ends `.reboot` when Snaptic stopped (the stamp; without one, from a build
     /// before stamps, the end is unknown and nothing is reported), a same-boot one that ran out ends `.timeUp`. An
     /// end is never after the item's own end, after Snaptic stopped (or `now` without a stamp, same boot), or
-    /// before its start; the entry starts at the item's segment start.
-    package func awayEnds(now: ClockNow) -> [AwakeAwayEnd] {
+    /// before its start; the entry starts at the item's segment start. With `resume` off, a manual session in a
+    /// snapshot without a stamp (written by a quit of a build before stamps) was recorded at that quit: skipped.
+    package func awayEnds(now: ClockNow, resume: Bool = true) -> [AwakeAwayEnd] {
         let base = sanitized()
         guard now.wall.isFinite, now.continuous.isFinite else { return [] }
         var out: [AwakeAwayEnd] = []
-        if let m = base.manual, m.sanitized(now: now) == nil,
+        if let m = base.manual, resume || base.stop != nil, m.sanitized(now: now) == nil,
            let e = base.awayEnd(.session(m), boot: m.bootSession, startedAt: m.startedAt, ownEnd: Self.end(of: m),
                                 now: now, valid: { m.sanitized(now: $0) != nil }) {
             out.append(e)
@@ -172,6 +173,19 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
                                     valid: { h.sanitized(now: $0) != nil }) {
                 out.append(e)
             }
+        }
+        return out
+    }
+
+    /// Everything the snapshot owes History when it is discarded unread (a launch with `Modules.disable.awake`):
+    /// the away ends, and every item that would have been carried on, ended `.moduleStopped` when Snaptic stopped.
+    package func discardedEnds(now: ClockNow, resume: Bool) -> [AwakeAwayEnd] {
+        var out = awayEnds(now: now, resume: resume)
+        let kept = sanitized(now: now)
+        let stamped = sanitized().stop != nil
+        if let m = kept.manual, resume || stamped { out.append(restoreEnd(.session(m), reason: .moduleStopped, now: now)) }
+        for h in kept.holds where !out.contains(where: { $0.item.id == h.id }) {
+            out.append(restoreEnd(.hold(h), reason: .moduleStopped, now: now))
         }
         return out
     }
@@ -287,6 +301,22 @@ package struct AwakeStopStamp: Codable, Equatable, Sendable {
     }
 
     package var isValid: Bool { wall.isFinite && continuous.isFinite && wall >= 0 && continuous >= 0 }
+}
+
+extension AwakeHistoryEntry {
+    /// The entry for an away end (kind, source and bundle from the item, as a live end records them).
+    package init(_ e: AwakeAwayEnd) {
+        switch e.item {
+        case .session(let s):
+            var bundleID: String?
+            if case .whileApp(let b, _) = s.kind { bundleID = b }
+            self.init(start: min(e.startWall, e.endWall), end: e.endWall, kind: s.kind.historyKind, source: s.source,
+                      presetID: s.presetID, triggerID: nil, bundleID: bundleID, endReason: e.reason)
+        case .hold:
+            self.init(start: min(e.startWall, e.endWall), end: e.endWall, kind: .process, source: .commandLine,
+                      presetID: nil, triggerID: nil, bundleID: nil, endReason: e.reason)
+        }
+    }
 }
 
 /// One history entry restore owes for an item it doesn't carry on, or for the part of a resumed item before the gap.
