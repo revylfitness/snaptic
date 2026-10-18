@@ -112,6 +112,9 @@ Sources/Snaptic/Core/Backup.swift	A	K14	Backup	-
 Sources/Snaptic/Core/Onboarding.swift	H	K5	Onboarding	-
 Sources/Snaptic/Core/SettingsWindowHost.swift	H	K5	SettingsWindowHost	-
 Sources/Snaptic/Core/GeneralPages.swift	H	K14	GeneralPages	-
+Sources/Snaptic/Core/GeneralAdvancedSheet.swift	H	L	-	-
+Sources/Snaptic/Core/PermissionsPage.swift	H	L	-	-
+Sources/Snaptic/Core/AboutPage.swift	H	L	-	-
 Sources/Snaptic/Core/MenuPlacement.swift	M	K14	MenuPlacement	-
 Sources/Snaptic/Core/StatusMenu.swift	M	K5	StatusMenu	-
 Sources/Snaptic/Core/MenuSliderItem.swift	M	S	MenuSliderItem	-
@@ -133,6 +136,7 @@ Sources/Snaptic/Switcher/ThumbnailStore.swift	A	L	-	-
 Sources/Snaptic/Switcher/WindowManager.swift	A	L	-	-
 Sources/Snaptic/Switcher/WindowSwitcherModule.swift	A	K5	WindowSwitcherModule	-
 Sources/Snaptic/Switcher/SwitcherPages.swift	H	K14	SwitcherPages	-
+Sources/Snaptic/Switcher/SwitcherShortcutsSheet.swift	H	L	-	-
 Sources/Snaptic/Switcher/WindowGatherer.swift	A	K5	WindowGatherer	-
 Sources/Snaptic/Displays/DisplaysModule.swift	lead	L	-	-
 Sources/Snaptic/Displays/DisplaysContext.swift	lead	L	-	-
@@ -479,9 +483,11 @@ Sources/Snaptic/Awake/UI/DrivesPage.swift	J	K18	DrivesPage	Drives
 Sources/SnapticKit/SliderMath.swift	H	S	SliderMath	-
 Sources/SnapticKit/SettingsIndex.swift	H	S	SettingsIndex	-
 Sources/SnapticKit/SettingsShellRules.swift	H	L	-	-
+Sources/SnapticKit/SettingsPageRules.swift	H	L	-	-
 Tests/SnapticKitTests/SliderMathTests.swift	H	K3	SliderMathTests	-
 Tests/SnapticKitTests/SettingsIndexTests.swift	H	K3	SettingsIndexTests	-
 Tests/SnapticKitTests/SettingsShellRulesTests.swift	H	L	-	-
+Tests/SnapticKitTests/SettingsPageRulesTests.swift	H	L	-	-
 Sources/Snaptic/SettingsUI/SettingsIcon.swift	H	S	SettingsIcon	-
 Sources/Snaptic/SettingsUI/SettingsPageHeader.swift	H	S	SettingsPageHeader	-
 Sources/Snaptic/SettingsUI/FeatureHighlights.swift	H	S	FeatureHighlights	-
@@ -509,6 +515,7 @@ Sources/Snaptic/SettingsUI/SettingsAnchor.swift	H	S	SettingsAnchor	-
 Sources/Snaptic/SettingsUI/SettingsBinding.swift	H	S	SettingsBinding	-
 Sources/Snaptic/SettingsUI/SettingsShell.swift	H	S	SettingsShell	-
 Sources/Snaptic/SettingsUI/SettingsSearchView.swift	H	S	SettingsSearchView	-
+Sources/Snaptic/SettingsUI/ModuleSwitchRow.swift	H	L	-	-
 # 0.3: M (menu system)
 Sources/SnapticKit/MenuLayout.swift	M	S	MenuLayout	-
 Tests/SnapticKitTests/MenuLayoutTests.swift	M	K3	MenuLayoutTests	-

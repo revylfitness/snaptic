@@ -8,12 +8,20 @@ struct AdvancedSheet<Content: View>: View {
     let title: String
     let restoreDefaults: RestoreDefaults?
     let content: Content
+    /// R5-13: the footer button's search anchor ("general.advanced.resetAll").
+    let restoreControl: ControlID?
     @Environment(\.dismiss) private var dismiss
     @State private var confirming = false
 
     init(_ title: String, restoreDefaults: RestoreDefaults?, @ViewBuilder content: () -> Content) {
+        self.init(title, restoreDefaults: restoreDefaults, restoreControl: nil, content: content)
+    }
+
+    init(_ title: String, restoreDefaults: RestoreDefaults?, restoreControl: ControlID?,
+         @ViewBuilder content: () -> Content) {
         self.title = title
         self.restoreDefaults = restoreDefaults
+        self.restoreControl = restoreControl
         self.content = content()
     }
 
@@ -31,7 +39,10 @@ struct AdvancedSheet<Content: View>: View {
             Divider()
             HStack(spacing: 8) {
                 if let restoreDefaults {
-                    Button(restoreDefaults.title) { confirming = true }
+                    Button(restoreDefaults.title, role: restoreDefaults.destructive ? .destructive : nil) {
+                        restoreDefaults.press { confirming = true }
+                    }
+                    .modifier(OptionalSettingsAnchor(restoreControl))
                 }
                 Spacer(minLength: 8)
                 Button(L("Done")) { dismiss() }

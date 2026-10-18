@@ -73,17 +73,25 @@ import SnapticKit
             byID[id] = SettingsRoot(id: id, title: title, symbol: style.symbol, tint: style.tint, makeView: make)
         }
         add(SettingsRootID.general, L("General")) { [weak host] in
-            host.map { AnyView(GeneralRootPage(host: $0)) } ?? AnyView(EmptyView())
+            host.map { AnyView(GeneralPage(host: $0)) } ?? AnyView(UnavailablePage())
         }
         add(SettingsRootID.menuBar, L("Menu Bar")) { AnyView(MenuBarPage()) }
         for module in host.modules {
-            let r = module.settingsRoot()
-            byID[r.id] = r
+            // The Window Switcher's page is H's (its module keeps the default hub for its 0.2 pages).
+            let r = module.id == .windowSwitcher ? SwitcherPages.root(module: host.switcher) : module.settingsRoot()
+            // The sidebar's symbols and tints are fixed by the IA, whatever a module's own symbol (§4.2).
+            if let style = Self.sidebarStyle[r.id] {
+                byID[r.id] = SettingsRoot(id: r.id, title: r.title, symbol: style.symbol, tint: style.tint, makeView: r.makeView)
+            } else {
+                byID[r.id] = r
+            }
         }
         add(SettingsRootID.permissions, L("Permissions")) { [weak host] in
-            host.map { AnyView(PermissionsRootPage(host: $0)) } ?? AnyView(EmptyView())
+            host.map { AnyView(PermissionsPage(host: $0)) } ?? AnyView(UnavailablePage())
         }
-        add(SettingsRootID.about, L("About")) { AnyView(AboutRootPage()) }
+        add(SettingsRootID.about, L("About")) { [weak host] in
+            host.map { AnyView(AboutPage(host: $0)) } ?? AnyView(UnavailablePage())
+        }
         let known = SettingsRootID.all
         return known.compactMap { byID[$0] } + byID.values.filter { !known.contains($0.id) }.sorted { $0.id < $1.id }
     }
@@ -140,14 +148,11 @@ import SnapticKit
         return legacyPage(route, root: root)?.title
     }
 
-    /// The page a route shows: a host page, the module's `settingsDestination`, or (until each module provides its
-    /// own) the module's 0.2 page with that id while it runs.
+    /// The page a route shows: the module's `settingsDestination`, or (until each module provides its own) the
+    /// module's 0.2 page with that id while it runs. The host roots (General, Menu Bar, Permissions, About) have no
+    /// sub-pages.
     func destination(_ route: SettingsRoute, root: String) -> AnyView? {
         guard let host else { return nil }
-        if root == SettingsRootID.general,
-           let page = GeneralPages.pages(host: host).first(where: { $0.id == route.id }) {
-            return page.makeView()
-        }
         guard let module = host.modules.first(where: { $0.id.rawValue == root }) else { return nil }
         if let view = module.settingsDestination(route) { return view }
         return legacyPage(route, root: root)?.makeView()

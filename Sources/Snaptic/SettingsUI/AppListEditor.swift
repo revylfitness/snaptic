@@ -72,6 +72,9 @@ private struct AppListRow: View {
 
     var body: some View {
         let name = AppNames.name(for: bundleID)
+        // Well-known entries of the default lists are often identifier prefixes: never "Not installed".
+        let installed = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil
+            || AppNames.knownNames[bundleID] != nil
         HStack(spacing: 8) {
             icon
                 .resizable()
@@ -79,12 +82,12 @@ private struct AppListRow: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(name)
-                if name != bundleID {
-                    Text(bundleID)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if !installed {
+                    Text(L("Not installed"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
                 }
             }
             Spacer(minLength: 8)

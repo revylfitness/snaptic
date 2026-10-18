@@ -1,6 +1,4 @@
 import AppKit
-import Combine
-import ServiceManagement
 import SwiftUI
 import UniformTypeIdentifiers
 import SnapticKit
@@ -10,289 +8,159 @@ struct AppChoice: Hashable {
     let name: String
 }
 
-/// The switcher's settings sections, shown as pages by SwitcherPages (PLAN §3.7).
-@MainActor
-struct SwitcherShortcutsSection: View {
+/// Window Switcher › Advanced… (H; PLAN 0.3 §4.3; 21 controls): the feature switches that apply to every
+/// shortcut, the switcher's behavior, keys and pointer, shortcut handling, and the app lists. Footer: Restore Window
+/// Switcher Defaults….
+struct SwitcherAdvancedSheet: View, ControlDeclaring {
+    typealias Controls = SwitcherAdvancedSheetControls
     @ObservedObject var settings: AppSettings
 
-    var body: some View {
-        Section {
-            ForEach(settings.config.shortcuts) { shortcut in
-                ShortcutEditor(
-                    shortcut: shortcut,
-                    canDelete: settings.config.shortcuts.count > 1,
-                    isDuplicate: settings.config.shortcuts.contains { $0.id != shortcut.id && $0.sameKeys(as: shortcut) },
-                    commandShortcutsOff: !settings.config.isOn(.commandTabTakeover),
-                    onUpdate: { updated in replace(updated) },
-                    onDelete: { remove(shortcut.id) }
-                )
-            }
-            Button {
-                addShortcut()
-            } label: {
-                Label("Add shortcut", systemImage: "plus")
-            }
-            .disabled(settings.config.shortcuts.count >= Config.maxShortcuts)
-        } header: {
-            Text("Shortcuts")
-        } footer: {
-            Text(footer)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var footer: String {
-        let keys = settings.config.disabledFeatures.hintLine()
-        let base = "Hold the modifier and press the key to open; keep pressing to cycle, add ⇧ to go back, release to switch."
-        return keys.isEmpty ? base + " Esc cancels." : base + " While open: " + keys + ", Esc to cancel."
-    }
-
-    private func replace(_ updated: Shortcut) {
-        guard let index = settings.config.shortcuts.firstIndex(where: { $0.id == updated.id }) else { return }
-        settings.config.shortcuts[index] = updated
-    }
-
-    private func remove(_ id: UUID) {
-        settings.config.shortcuts.removeAll { $0.id == id }
-    }
-
-    /// Adds the first modifier + key combination that isn't already taken.
-    private func addShortcut() {
-        let candidates: [(ModifierKey, Int)] = [
-            (.option, KeyCode.tab), (.option, KeyCode.backtick), (.command, KeyCode.tab),
-            (.command, KeyCode.backtick), (.option, KeyCode.space), (.control, KeyCode.backtick),
-        ]
-        for (modifier, key) in candidates {
-            let shortcut = Shortcut(modifier: modifier, keyCode: key, scope: .allWindows, style: .icons)
-            if !settings.config.shortcuts.contains(where: { $0.sameKeys(as: shortcut) }) {
-                settings.config.shortcuts.append(shortcut)
-                return
-            }
-        }
-        for choice in Keys.choices where choice.code != KeyCode.tab {
-            let shortcut = Shortcut(modifier: .option, keyCode: choice.code, scope: .allWindows, style: .icons)
-            if !settings.config.shortcuts.contains(where: { $0.sameKeys(as: shortcut) }) {
-                settings.config.shortcuts.append(shortcut)
-                return
-            }
-        }
-    }
-}
-
-@MainActor
-struct SwitcherBehaviorSection: View {
-    @ObservedObject var settings: AppSettings
+    private var passthroughOn: Bool { settings.config.isOn(.passthrough) }
 
     var body: some View {
-        Section {
-            Toggle("Switch when the modifier key is released", isOn: $settings.config.releaseToSwitch)
-            Picker("Show the switcher on", selection: $settings.config.showOnScreen) {
-                ForEach(ScreenChoice.allCases) { choice in
-                    Text(choice.label).tag(choice)
-                }
+        AdvancedSheet(L("Window Switcher"),
+                      restoreDefaults: RestoreDefaults(scopeName: L("Window Switcher"), destructive: false) { [settings] in
+                          settings.reset()
+                      }) {
+            Section {
+                ToggleSetting(L("Window thumbnails"), help: L("Live images of your windows. Needs Screen Recording."),
+                              isOn: SwitcherBinding.feature(settings, .thumbnails),
+                              anchor: ControlID("switcher.advanced.thumbnails"))
+                ToggleSetting(L("Windows on other Spaces"), help: L("Applies to every shortcut."),
+                              isOn: SwitcherBinding.feature(settings, .otherSpaces),
+                              anchor: ControlID("switcher.advanced.otherSpaces"))
+                ToggleSetting(L("Apps with no open windows"), help: L("Applies to every shortcut."),
+                              isOn: SwitcherBinding.feature(settings, .windowlessApps),
+                              anchor: ControlID("switcher.advanced.windowlessApps"))
+            } header: {
+                Text(L("Features"))
             }
-        } header: {
-            Text("Behavior")
-        } footer: {
-            Text("Previews, other Spaces and hover selection are on the Features page.")
-                .foregroundStyle(.secondary)
-        }
-    }
-}
-
-@MainActor
-struct SwitcherThumbnailsSection: View {
-    @ObservedObject var settings: AppSettings
-
-    var body: some View {
-        Section {
-            Toggle("Auto-size to fit the number of windows", isOn: $settings.config.autoSize)
-            LabeledContent("Size") {
-                Slider(value: $settings.config.thumbnailSize, in: 100...300, step: 10)
-                    .frame(width: 220)
-                    .accessibilityLabel("Thumbnail size")
+            Section {
+                PickerSetting(L("Show on"), selection: SwitcherBinding.config(settings, \.showOnScreen),
+                              options: [PickerOption(.activeWindow, L("Display with the active window")),
+                                        PickerOption(.mouse, L("Display with the pointer"))],
+                              style: .popUp, defaultValue: Config().showOnScreen,
+                              anchor: ControlID("switcher.advanced.showOn"))
+                ToggleSetting(L("One entry per app"), help: L("Lists each app once, with its most recent window."),
+                              isOn: SwitcherBinding.primary(settings, \.oneWindowPerApp),
+                              anchor: ControlID("switcher.advanced.oneWindowPerApp"))
+                ToggleSetting(L("Include apps with no open windows"), help: L("Lists running apps that have no windows."),
+                              isOn: SwitcherBinding.primary(settings, \.includeWindowlessApps),
+                              anchor: ControlID("switcher.advanced.includeWindowless"),
+                              disabledReason: settings.config.isOn(.windowlessApps)
+                                  ? nil : L("Turn on Apps with no open windows to use this."))
+            } header: {
+                Text(L("Switcher"))
             }
-            .disabled(settings.config.autoSize)
-        } header: {
-            Text("Thumbnails")
-        } footer: {
-            if !settings.config.isOn(.thumbnails) {
-                Text("Window thumbnails are turned off on the Features page, so every shortcut shows app icons.")
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-}
-
-@MainActor
-struct SwitcherAppListsSections: View {
-    @ObservedObject var settings: AppSettings
-
-    var body: some View {
-        AppListSection(
-            title: "Hidden from the switcher",
-            footer: "These apps never appear in the switcher.",
-            bundleIDs: $settings.config.excludedBundleIDs
-        )
-        AppListSection(
-            title: "Apps that keep the shortcut",
-            footer: settings.config.isOn(.passthrough)
-                ? "While one of these is in front, Snaptic's shortcuts go to it instead. Useful for virtual machines and remote desktops. An entry like com.parallels also covers every app whose identifier starts with it."
-                : "Turned off on the Features page: this list is ignored.",
-            bundleIDs: $settings.config.passthroughBundleIDs
-        ) {
-            Toggle("Only while the app is full screen", isOn: $settings.config.passthroughOnlyWhenFullscreen)
-        }
-    }
-}
-
-@MainActor
-struct SwitcherPrivacySections: View {
-    @ObservedObject var settings: AppSettings
-
-    var body: some View {
-        Section {
-            Toggle("Never capture password managers or private browsing windows", isOn: $settings.config.protectPrivateWindows)
-        } header: {
-            Text("Privacy")
-        } footer: {
-            Text("Thumbnails stay in memory only, are never saved to disk, and are cleared when your Mac locks or sleeps. Snaptic asks macOS to keep its panels out of screen sharing, but some capture methods may ignore that. Private windows are only recognised when the browser puts it in the title (Firefox does; Safari and Chrome don't), so add a browser below if you want none of its windows captured.")
-                .foregroundStyle(.secondary)
-        }
-        if settings.config.protectPrivateWindows {
-            AppListSection(
-                title: "Never capture these apps",
-                footer: "Shown with their app icon instead of a thumbnail.",
-                bundleIDs: $settings.config.privateBundleIDs
-            )
-        }
-    }
-}
-
-/// "Launch Snaptic at login" (General → Startup).
-@MainActor
-struct LaunchAtLoginSection: View {
-    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
-    @State private var launchNote: String?
-    private let poll = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
-
-    var body: some View {
-        Section("Startup") {
-            Toggle("Launch Snaptic at login", isOn: $launchAtLogin)
-                .onChange(of: launchAtLogin) {
-                    setLaunchAtLogin(launchAtLogin)
-                }
-            if let launchNote {
-                Text(launchNote)
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
-            }
-        }
-        .onReceive(poll) { _ in
-            let enabled = SMAppService.mainApp.status == .enabled
-            if enabled != launchAtLogin { launchAtLogin = enabled }
-        }
-    }
-
-    private func setLaunchAtLogin(_ enabled: Bool) {
-        let service = SMAppService.mainApp
-        let current = service.status == .enabled
-        guard enabled != current else { return }
-        do {
-            if enabled {
-                try service.register()
-            } else {
-                try service.unregister()
-            }
-            if service.status == .requiresApproval {
-                launchNote = "Approve Snaptic in System Settings → General → Login Items."
-                SMAppService.openSystemSettingsLoginItems()
-            } else {
-                launchNote = nil
-            }
-        } catch {
-            launchNote = "Couldn't change the login item: \(error.localizedDescription)"
-            launchAtLogin = current   // guard above stops this from looping
-        }
-    }
-}
-
-/// An editable list of apps, shown by name, stored by bundle identifier.
-@MainActor
-struct AppListSection<Extra: View>: View {
-    let title: String
-    let footer: String
-    @Binding var bundleIDs: [String]
-    let extra: Extra
-
-    init(title: String, footer: String, bundleIDs: Binding<[String]>, @ViewBuilder extra: () -> Extra) {
-        self.title = title
-        self.footer = footer
-        _bundleIDs = bundleIDs
-        self.extra = extra()
-    }
-
-    var body: some View {
-        Section {
-            extra
-            if bundleIDs.isEmpty {
-                Text("None")
-                    .foregroundStyle(.secondary)
-            }
-            ForEach(bundleIDs, id: \.self) { bundleID in
-                HStack {
-                    Text(AppNames.name(for: bundleID))
-                    Text(bundleID)
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                        .lineLimit(1)
-                    Spacer()
-                    Button {
-                        bundleIDs.removeAll { $0 == bundleID }
-                    } label: {
-                        Image(systemName: "minus.circle")
+            Section {
+                ToggleSetting(L("Search"), help: L("Press S or / while the switcher is open, then type a name."),
+                              isOn: SwitcherBinding.feature(settings, .search), anchor: ControlID("switcher.advanced.search"))
+                LabeledContent {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(Self.actions, id: \.feature) { action in
+                            Toggle(action.title, isOn: SwitcherBinding.feature(settings, action.feature))
+                                .toggleStyle(.checkbox)
+                        }
                     }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel("Remove \(AppNames.name(for: bundleID))")
+                } label: {
+                    Text(L("Window actions"))
+                    Text(L("Keys that act on the selected window while the switcher is open."))
                 }
+                .modifier(SettingsAnchor(ControlID("switcher.advanced.actions")))
+                ToggleSetting(L("Window buttons on hover"),
+                              help: L("Close, minimize, and full-screen buttons on the window under the pointer."),
+                              isOn: SwitcherBinding.feature(settings, .hoverButtons),
+                              anchor: ControlID("switcher.advanced.hoverButtons"))
+                ToggleSetting(L("Select by hovering"), help: L("Moving the pointer over a window selects it."),
+                              isOn: SwitcherBinding.feature(settings, .hoverSelect),
+                              anchor: ControlID("switcher.advanced.selectOnHover"))
+            } header: {
+                Text(L("Keys and pointer"))
             }
-            HStack {
-                Menu("Add a running app") {
-                    ForEach(AppNames.runningApps(), id: \.self) { app in
-                        Button(app.name) { add(app.bundleID) }
-                    }
+            Section {
+                ToggleSetting(L("⌘⇥ replaces the app switcher"),
+                              help: L("Shortcuts that use ⌘ work, and ⌘⇥ opens the Window Switcher."),
+                              isOn: SwitcherBinding.feature(settings, .commandTabTakeover),
+                              anchor: ControlID("switcher.advanced.commandTab"))
+                ToggleSetting(L("Pass shortcuts through to apps"),
+                              help: L("In the apps listed below, Snaptic's shortcuts go to the app."),
+                              isOn: SwitcherBinding.feature(settings, .passthrough),
+                              anchor: ControlID("switcher.advanced.passthrough"))
+                if passthroughOn {
+                    ToggleSetting(L("Only while full screen"), help: L("Applies while one of these apps is full screen."),
+                                  isOn: SwitcherBinding.config(settings, \.passthroughOnlyWhenFullscreen), subordinate: true,
+                                  anchor: ControlID("switcher.advanced.passthroughFullScreen"))
                 }
-                Button("Choose…") {
-                    if let bundleID = AppNames.chooseApp() { add(bundleID) }
-                }
+            } header: {
+                Text(L("Shortcuts"))
             }
-        } header: {
-            Text(title)
-        } footer: {
-            Text(footer)
-                .foregroundStyle(.secondary)
+            if passthroughOn {
+                AppListEditor(L("Apps that keep the shortcut"),
+                              help: L("Useful for virtual machines and remote desktops."),
+                              bundleIDs: SwitcherBinding.config(settings, \.passthroughBundleIDs),
+                              anchor: ControlID("switcher.advanced.passthroughApps"))
+            }
+            AppListEditor(L("Apps hidden from the switcher"), help: L("These apps never appear in the switcher."),
+                          bundleIDs: SwitcherBinding.config(settings, \.excludedBundleIDs),
+                          anchor: ControlID("switcher.advanced.excludedApps"))
+            Section {
+                ToggleSetting(L("Protect private windows"),
+                              help: L("Password managers and private browsing windows show their app icon instead."),
+                              isOn: SwitcherBinding.config(settings, \.protectPrivateWindows),
+                              anchor: ControlID("switcher.advanced.protectPrivate"))
+            } header: {
+                Text(L("Privacy"))
+            } footer: {
+                Text(L("Thumbnails stay in memory, are never saved, and are cleared when your Mac locks or sleeps."))
+                    .foregroundStyle(.secondary)
+            }
+            if settings.config.protectPrivateWindows {
+                AppListEditor(L("Never show thumbnails for"),
+                              help: L("These apps show their icon instead of a thumbnail."),
+                              bundleIDs: SwitcherBinding.config(settings, \.privateBundleIDs),
+                              anchor: ControlID("switcher.advanced.privateApps"))
+            }
         }
     }
 
-    private func add(_ bundleID: String) {
-        if !bundleIDs.contains(bundleID) { bundleIDs.append(bundleID) }
+    private struct Action {
+        let feature: SwitcherFeature
+        let title: String
     }
+
+    private static let actions: [Action] = [
+        Action(feature: .actionClose, title: L("Close (W)")),
+        Action(feature: .actionMinimize, title: L("Minimize (M)")),
+        Action(feature: .actionFullscreen, title: L("Full screen (F)")),
+        Action(feature: .actionHide, title: L("Hide app (H)")),
+        Action(feature: .actionQuit, title: L("Quit app (Q)")),
+    ]
 }
 
-extension AppListSection where Extra == EmptyView {
-    init(title: String, footer: String, bundleIDs: Binding<[String]>) {
-        self.init(title: title, footer: footer, bundleIDs: bundleIDs) { EmptyView() }
-    }
-}
-
+/// App names and pickers for app lists (AppListEditor; Awake's app sessions use AppChoice).
 @MainActor
 enum AppNames {
+    /// The app's name as Finder shows it; for an app that isn't installed, the name of a well-known one (the
+    /// default lists), else the identifier itself.
     static func name(for bundleID: String) -> String {
         if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
             return FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
         }
-        return bundleID
+        return knownNames[bundleID] ?? bundleID
     }
+
+    /// Names for the entries of the switcher's default lists (some are identifier prefixes, never installed as is).
+    static let knownNames: [String: String] = [
+        "com.parallels": "Parallels Desktop", "com.vmware.fusion": "VMware Fusion", "com.utmapp.UTM": "UTM",
+        "org.virtualbox.app.VirtualBoxVM": "VirtualBox", "com.microsoft.rdc": "Microsoft Remote Desktop",
+        "com.citrix.receiver": "Citrix Workspace", "com.omnissa.horizon": "Omnissa Horizon Client",
+        "com.vmware.horizon": "VMware Horizon Client", "com.apple.ScreenSharing": "Screen Sharing",
+        "com.teamviewer.TeamViewer": "TeamViewer", "com.p5sys.jump.mac.viewer": "Jump Desktop",
+        "com.1password.1password": "1Password", "com.agilebits.onepassword7": "1Password 7",
+        "com.bitwarden.desktop": "Bitwarden", "com.apple.Passwords": "Passwords", "com.apple.keychainaccess": "Keychain Access",
+        "in.sinew.Enpass-Desktop": "Enpass", "com.dashlane.dashlanephonefinal": "Dashlane", "com.lastpass.LastPass": "LastPass",
+        "org.torproject.torbrowser": "Tor Browser",
+    ]
 
     static func runningApps() -> [AppChoice] {
         let own = Bundle.main.bundleIdentifier
@@ -313,135 +181,5 @@ enum AppNames {
         panel.directoryURL = URL(fileURLWithPath: "/Applications")
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         return Bundle(url: url)?.bundleIdentifier
-    }
-}
-
-@MainActor
-struct PermissionRow: View {
-    let title: String
-    let detail: String
-    let granted: Bool
-    let open: () -> Void
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                .foregroundStyle(granted ? Color.green : Color.orange)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            if !granted {
-                Button("Open Settings", action: open)
-            }
-        }
-    }
-}
-
-@MainActor
-struct ShortcutEditor: View {
-    @State private var local: Shortcut
-    let canDelete: Bool
-    let isDuplicate: Bool
-    let commandShortcutsOff: Bool
-    let onUpdate: (Shortcut) -> Void
-    let onDelete: () -> Void
-
-    init(
-        shortcut: Shortcut,
-        canDelete: Bool,
-        isDuplicate: Bool,
-        commandShortcutsOff: Bool,
-        onUpdate: @escaping (Shortcut) -> Void,
-        onDelete: @escaping () -> Void
-    ) {
-        _local = State(initialValue: shortcut)
-        self.canDelete = canDelete
-        self.isDuplicate = isDuplicate
-        self.commandShortcutsOff = commandShortcutsOff
-        self.onUpdate = onUpdate
-        self.onDelete = onDelete
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Picker("Modifier", selection: $local.modifier) {
-                    ForEach(ModifierKey.allCases) { key in
-                        Text(key.label).tag(key)
-                    }
-                }
-                .labelsHidden()
-                .frame(width: 130)
-
-                Text("+")
-                    .foregroundStyle(.secondary)
-
-                Picker("Key", selection: $local.keyCode) {
-                    ForEach(Keys.allowedChoices(for: local.modifier)) { choice in
-                        Text(choice.label).tag(choice.code)
-                    }
-                }
-                .labelsHidden()
-                .frame(width: 170)
-
-                Spacer()
-
-                Button(role: .destructive, action: onDelete) {
-                    Image(systemName: "trash")
-                }
-                .buttonStyle(.borderless)
-                .disabled(!canDelete)
-                .accessibilityLabel("Delete shortcut")
-            }
-
-            HStack(spacing: 16) {
-                Picker("Show", selection: $local.scope) {
-                    ForEach(SwitcherScope.allCases) { scope in
-                        Text(scope.label).tag(scope)
-                    }
-                }
-                Picker("Style", selection: $local.style) {
-                    ForEach(SwitcherStyle.allCases) { style in
-                        Text(style.label).tag(style)
-                    }
-                }
-            }
-
-            Picker("Spaces", selection: $local.spaces) {
-                ForEach(SpacesFilter.allCases) { filter in
-                    Text(filter.label).tag(filter)
-                }
-            }
-            Toggle("Include minimized and hidden windows", isOn: $local.includeMinimized)
-            Toggle("Include apps with no open windows", isOn: $local.includeWindowlessApps)
-            Toggle("One entry per app (its most recent window)", isOn: $local.oneWindowPerApp)
-
-            if isDuplicate {
-                Label("Another shortcut uses the same keys; only the first one works.", systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            } else if local.modifier == .command && commandShortcutsOff {
-                Label("⌘ shortcuts are turned off on the Features page; this one does nothing.", systemImage: "info.circle")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else if local.modifier == .command {
-                Text("Replaces the built-in macOS shortcut while Snaptic is running.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.vertical, 4)
-        .onChange(of: local) {
-            // ⌘ + letter/digit is never allowed (it would hijack ⌘C, ⌘V, …).
-            if !Keys.isAllowed(local) {
-                local.keyCode = KeyCode.tab
-                return   // the change above triggers onChange again
-            }
-            onUpdate(local)
-        }
     }
 }
