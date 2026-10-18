@@ -95,9 +95,12 @@ package enum HostReport {
         }
     }
 
+    /// `awake`: `AwakeModule.diagnosticsLines()` while Awake is enabled (already free of names and identifiers),
+    /// nil otherwise; it becomes an "Awake" section.
     package static func sections(version: String, system: String, safeMode: Bool, modules: [Module],
-                                 granted: Set<Permission>, commandLine: String) -> [DiagnosticsSection] {
-        [
+                                 granted: Set<Permission>, commandLine: String,
+                                 awake: [String]? = nil) -> [DiagnosticsSection] {
+        var result = [
             DiagnosticsSection(title: L("Snaptic"), rows: [
                 DiagnosticsRow(L("Version"), version),
                 DiagnosticsRow(L("macOS"), system),
@@ -109,6 +112,19 @@ package enum HostReport {
                 DiagnosticsRow(permissionName($0), granted.contains($0) ? L("Allowed") : L("Not allowed"))
             }),
         ]
+        if let awake { result.append(DiagnosticsSection(title: L("Awake"), rows: awake.compactMap(row))) }
+        return result
+    }
+
+    /// "Label: value" lines keep their label; other lines become a "Note"; blank lines are dropped.
+    package static func row(_ line: String) -> DiagnosticsRow? {
+        let text = line.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return nil }
+        if let range = text.range(of: ": "), range.lowerBound != text.startIndex {
+            let value = text[range.upperBound...].trimmingCharacters(in: .whitespaces)
+            return DiagnosticsRow(String(text[..<range.lowerBound]), value)
+        }
+        return DiagnosticsRow(L("Note"), text)
     }
 
     package static func permissionName(_ permission: Permission) -> String {

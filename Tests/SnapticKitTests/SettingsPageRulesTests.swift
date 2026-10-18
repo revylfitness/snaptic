@@ -120,6 +120,24 @@ final class SettingsPageRulesTests: XCTestCase {
         XCTAssertTrue(report.contains("- Accessibility: Allowed"))
     }
 
+    func testAwakeSectionOnlyWhenGiven() {
+        let without = HostReport.sections(version: "v", system: "s", safeMode: false, modules: [], granted: [],
+                                          commandLine: "Off")
+        XCTAssertFalse(without.contains { $0.title == "Awake" })
+        let with = HostReport.sections(version: "v", system: "s", safeMode: false, modules: [], granted: [],
+                                       commandLine: "Off", awake: ["Assertion: display", "", "  plain line  "])
+        XCTAssertEqual(with.last?.title, "Awake")
+        XCTAssertEqual(with.last?.rows, [DiagnosticsRow("Assertion", "display"), DiagnosticsRow("Note", "plain line")])
+        XCTAssertEqual(HostReport.sections(version: "v", system: "s", safeMode: false, modules: [], granted: [],
+                                           commandLine: "Off", awake: []).last?.rows, [])
+    }
+
+    func testReportRowParsing() {
+        XCTAssertNil(HostReport.row("   "))
+        XCTAssertEqual(HostReport.row(": x"), DiagnosticsRow("Note", ": x"))
+        XCTAssertEqual(HostReport.row("Rules: 2: on"), DiagnosticsRow("Rules", "2: on"))
+    }
+
     // MARK: Window Switcher choices
 
     func testSpacesGating() {

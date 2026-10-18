@@ -69,7 +69,8 @@ struct AboutPage: View, ControlDeclaring {
 }
 
 /// The host's own report (About, while Displays doesn't run): version, macOS, Safe Mode, command line, module
-/// states, permissions and the recent event log (already free of names and identifiers, §4.10(2)).
+/// states, permissions, Awake's lines while Awake is enabled, and the recent event log (all free of names and
+/// identifiers, §4.10(2)).
 @MainActor enum HostDiagnostics {
     static func report(host: ModuleHost) -> String {
         let modules = host.modules.map { module -> HostReport.Module in
@@ -87,6 +88,7 @@ struct AboutPage: View, ControlDeclaring {
             }
             return HostReport.Module(title: module.title, state: state)
         }
+        let awakeEnabled = host.modulesStore.value.isEnabled(.awake) && !host.disabledByDefaults.contains(.awake)
         let commandLine: String
         switch host.controlServer.status {
         case .off: commandLine = L("Off")
@@ -96,7 +98,8 @@ struct AboutPage: View, ControlDeclaring {
         let sections = HostReport.sections(version: AboutPage.version,
                                            system: ProcessInfo.processInfo.operatingSystemVersionString,
                                            safeMode: host.safeMode.isActive, modules: modules,
-                                           granted: host.permissions.granted, commandLine: commandLine)
+                                           granted: host.permissions.granted, commandLine: commandLine,
+                                           awake: awakeEnabled ? host.awake.diagnosticsLines() : nil)
         let events = EventLog.shared.recent(100).map { entry in
             entry.date.formatted(date: .omitted, time: .standard) + " " + entry.category.rawValue + " " + entry.message
         }

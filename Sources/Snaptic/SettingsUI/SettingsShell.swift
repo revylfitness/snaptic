@@ -178,7 +178,11 @@ import SnapticKit
         } else if !restored {
             restored = true
             if let text = UserDefaults.standard.string(forKey: Self.lastRouteKey),
-               let location = SettingsLocation(encoded: text, roots: rootIDs) {
+               var location = SettingsLocation(encoded: text, roots: rootIDs) {
+                // A route remembered from the interim hubs ("general general.menu") opens its 0.3 root.
+                if let id = location.route?.id, let root = SettingsRootID.legacyPages[id], rootIDs.contains(root) {
+                    location = SettingsLocation(root: root)
+                }
                 go(to: location)
             }
         }
