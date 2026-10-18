@@ -163,7 +163,9 @@ package enum KitBackup {
     /// everything an export would have left out (imports never carry those fields).
     package static func parseDocument(_ data: Data) -> Result<[String: Data], BackupError> {
         guard data.count <= maxBytes else { return .failure(.tooLarge) }
-        // Before JSONSerialization or anything recursive sees it.
+        // Before JSONSerialization or anything recursive sees it. UTF-8 only: JSONSerialization also reads UTF-16
+        // and UTF-32, which the byte-level depth scan below can't follow (security S2-2).
+        guard isUTF8Text(data) else { return .failure(.wrongFormat) }
         guard nestingDepth(data, limit: maxDepth) != nil else { return .failure(.wrongFormat) }
         guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return .failure(.notJSON) }
         guard root["format"] as? String == format else { return .failure(.wrongFormat) }
@@ -275,12 +277,20 @@ package enum KitBackup {
         return stripped
     }
 
-    /// The deepest nesting of objects and arrays in JSON text (brackets inside strings don't count; a top-level
-    /// object is 1), or nil once it passes `limit`. One linear pass with no recursion, so it is safe on any input.
+    /// Whether `data` is UTF-8 text without a NUL byte. Valid UTF-8 JSON never contains a NUL (control characters
+    /// in strings must be escaped), while UTF-16 and UTF-32 text of any JSON document always does.
+    package static func isUTF8Text(_ data: Data) -> Bool {
+        !data.contains(0) && String(data: data, encoding: .utf8) != nil
+    }
+
+    /// The deepest nesting of objects and arrays in UTF-8 JSON text (brackets inside strings don't count; a top-level
+    /// object is 1), or nil once it passes `limit` or on a NUL byte (not UTF-8 JSON, so the scan can't vouch for it).
+    /// One linear pass with no recursion, so it is safe on any input.
     package static func nestingDepth(_ data: Data, limit: Int) -> Int? {
         var depth = 0, deepest = 0
         var inString = false, escaped = false
         for byte in data {
+            if byte == 0 { return nil }
             if inString {
                 if escaped {
                     escaped = false

@@ -123,7 +123,7 @@ private struct HardwareControlsContent: View {
         let enabled = perDisplay.value[key]?.ddc.enabled ?? PerDisplayDDC().enabled
         Section {
             ToggleSetting(L("Use hardware controls for this display"),
-                          help: L("Off: Snaptic dims this display in software and sends it nothing."),
+                          help: L("Brightness, volume, and contrast go to the display itself."),
                           isOn: CBind.display(env.config, key, \.ddc.enabled),
                           anchor: ControlID("displays.hardware.useDisplay"))
             if enabled {
@@ -538,6 +538,8 @@ private struct HardwareAdvancedSheet: View {
         Section {
             ReorderableList(list, onDelete: { item in
                 list.wrappedValue = list.wrappedValue.filter { $0.id != item.id }
+            }, confirmDelete: { entry in
+                L("Delete “\(entry.name.isEmpty ? VCPPolicy.inputName(entry.value) : TextSanitizer.clean(entry.name, maxScalars: 64))”?")
             }) { entry in
                 HStack {
                     TextField(VCPPolicy.inputName(entry.value), text: Binding(get: { entry.name }, set: { name in
@@ -607,6 +609,8 @@ private struct HardwareAdvancedSheet: View {
         Section {
             ReorderableList(list, onDelete: { item in
                 list.wrappedValue = list.wrappedValue.filter { $0.id != item.id }
+            }, confirmDelete: { control in
+                L("Delete “\(control.name.isEmpty ? VCPPolicy.name(control.code) : TextSanitizer.clean(control.name, maxScalars: 64))”?")
             }) { control in
                 HStack {
                     Text((control.name.isEmpty ? VCPPolicy.name(control.code) : TextSanitizer.clean(control.name, maxScalars: 64))

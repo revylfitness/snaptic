@@ -85,13 +85,6 @@ private let hotKeyHandler: EventHandlerUPP = { _, event, userData in
         return entries.values.first { $0.combo == c }?.owner
     }
 
-    /// Owners and display strings of everything registered (diagnostics, conflict notes).
-    var registrations: [(owner: String, shortcut: String)] {
-        entries.keys.sorted().compactMap { id in
-            entries[id].map { ($0.owner, HotkeyRules.displayString($0.combo)) }
-        }
-    }
-
     fileprivate func fire(_ id: UInt32) {
         entries[id]?.action()
     }

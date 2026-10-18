@@ -48,7 +48,7 @@ final class DisplaySettingsRulesTests: XCTestCase {
         XCTAssertTrue(DisplayShortcutGroup.matches(title: "Brightness Up", group: g, query: "BRI u"))
         XCTAssertFalse(DisplayShortcutGroup.matches(title: "Brightness Up", group: g, query: "down"))
         XCTAssertFalse(DisplayShortcutGroup.matches(title: "Brightness Up", group: g, query: "ightness"))
-        XCTAssertTrue(DisplayShortcutGroup.matches(title: "Toggle Night Shift", group: .color, query: "colo"))
+        XCTAssertTrue(DisplayShortcutGroup.matches(title: "Night Shift On or Off", group: .color, query: "colo"))
         XCTAssertTrue(DisplayShortcutGroup.matches(title: "Écran suivant", group: .tools, query: "ecran"))
     }
 

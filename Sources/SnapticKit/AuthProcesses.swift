@@ -53,8 +53,6 @@ package enum AuthProcesses {
 
     /// Below this alpha a window is treated as invisible.
     package static let minimumAlpha = 0.05
-    /// While an auth window shows, gamma dimming may not go below this.
-    package static let minimumDimDuringAuth = 0.30
     package static let recheckSeconds = 2.0
     package static let maxEpisodeSeconds = 60.0
 

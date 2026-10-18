@@ -60,9 +60,6 @@ import Foundation
         endHandlers.removeAll { $0.id == id }
     }
 
-    /// Handlers waiting for the end (diagnostics, leak checks).
-    var pendingEndHandlers: Int { endHandlers.count }
-
     func end() {
         guard !isEnded else { return }
         isEnded = true

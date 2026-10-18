@@ -431,13 +431,14 @@ package struct PerDisplayPIP: ConfigModel {
 
 /// Names, subtitles and limits the Picture in Picture page and editor show. Plain text, so it's tested here.
 package enum PIPSettingsText {
-    /// A new configuration's name: "Built-in Display PIP", "Window PIP", "Built-in Display → DELL U2720Q".
+    /// A new configuration's name: "Built-in Display Picture in Picture", "Window Picture in Picture",
+    /// "Built-in Display → DELL U2720Q" (0.3 vocabulary: never "PIP").
     package static func defaultName(sourceName: String?, kind: PIPKind, targetName: String?) -> String {
         let source = sourceName.map { PIPConfiguration.cleanName($0) } ?? L("Window")
         if kind == .fullScreen, let targetName {
             return PIPConfiguration.cleanName(L("\(source) → \(PIPConfiguration.cleanName(targetName))"))
         }
-        return PIPConfiguration.cleanName(L("\(source) PIP"))
+        return PIPConfiguration.cleanName(L("\(source) Picture in Picture"))
     }
 
     /// The saved list's subtitle: where it comes from, then what's special about it, in a fixed order.

@@ -5,7 +5,7 @@ import SnapticKit
 
 /// Displays › Picture in Picture (owner E; PLAN 0.3 §4.3 sub-page "Picture in Picture (E)"): the feature switch, the
 /// Screen Recording status row, the Running list (Pause, Show, Stop; Crop in the row menu; Stop All ▾ in the section
-/// header), the Saved list (Start, Edit…), New PIP… / New Stream…, Import Color Lookup Table… and the footer
+/// header), the Saved list (Start, Edit…), New Picture in Picture… / New Stream…, Import Color Lookup Table… and the footer
 /// (Advanced… · ?). Each saved picture in picture opens in `PIPEditorSheet`; the Advanced sheet holds Filters, Never
 /// capture these apps, pause covered PIPs and the ⌃⌥⌘P switch.
 /// Config arrives through slices and session state through `CaptureService` (0.3 §4.5): a write elsewhere doesn't
@@ -300,7 +300,7 @@ private struct PIPListsSection: View, ControlDeclaring {
         return PIPSettingsText.subtitle(c, sourceName: source, targetName: target)
     }
 
-    /// New PIP… (a window or a display in a floating window) and New Stream… (with two displays or more).
+    /// New Picture in Picture… (a window or a display in a floating window) and New Stream… (with two displays or more).
     private func newButtons(config: DisplaysConfig) -> some View {
         let displays = PIPPageText.connected(runtime)
         let windowSource = PIPSettingsText.canAdd(source: .window, in: config)
@@ -313,7 +313,7 @@ private struct PIPListsSection: View, ControlDeclaring {
                     .help(L("Show one display full screen on another."))
                     .modifier(SettingsAnchor(ControlID("displays.pip.newStream")))
             }
-            Button(L("New PIP…")) { newPIP(windowSource: windowSource, sources: displaySources) }
+            Button(L("New Picture in Picture…")) { newPIP(windowSource: windowSource, sources: displaySources) }
                 .disabled(!windowSource && displaySources.isEmpty)
                 .help(L("Show a window or a display in a floating window."))
                 .modifier(SettingsAnchor(ControlID("displays.pip.new")))
@@ -485,6 +485,8 @@ private struct PIPLUTSection: View, ControlDeclaring {
     @StateObject private var luts: ConfigSlice<DisplaysConfig, [PIPLUTReference]>
     @State private var importing = false
     @State private var message: String?
+    /// The table whose Delete is waiting for the alert's answer (ux r2 Nit 7: a Picture in Picture may use it).
+    @State private var deleting: PIPLUTReference?
 
     init(env: DisplaysPageEnvironment, switcher: DisplaysFeatureSwitcher) {
         self.env = env
@@ -510,10 +512,10 @@ private struct PIPLUTSection: View, ControlDeclaring {
                         Text(L("\(lut.size) points per side"))
                             .foregroundStyle(.secondary)
                         Spacer(minLength: 8)
-                        PIPIconButton(symbol: "minus.circle", label: L("Delete \(lut.name)")) { delete(lut.id) }
+                        PIPIconButton(symbol: "minus.circle", label: L("Delete \(lut.name)…")) { deleting = lut }
                     }
                     .contextMenu {
-                        Button(L("Delete"), role: .destructive) { delete(lut.id) }
+                        Button(L("Delete…"), role: .destructive) { deleting = lut }
                     }
                 }
             }
@@ -543,6 +545,16 @@ private struct PIPLUTSection: View, ControlDeclaring {
                 Text(L("Color lookup tables"))
                     .modifier(SettingsAnchor(ControlID("displays.pip.luts")))
             }
+        }
+        .alert(L("Delete “\(deleting?.name ?? "")”?"),
+               isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
+            Button(L("Delete"), role: .destructive) {
+                if let id = deleting?.id { delete(id) }
+                deleting = nil
+            }
+            Button(L("Cancel"), role: .cancel) { deleting = nil }
+        } message: {
+            Text(L("Pictures in picture that use this table show without it."))
         }
     }
 
