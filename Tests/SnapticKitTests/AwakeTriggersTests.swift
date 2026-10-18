@@ -2,23 +2,23 @@ import XCTest
 @testable import SnapticKit
 
 final class AwakeTriggersTests: XCTestCase {
-    private let hash = String(repeating: "ab", count: 16)
+    private let digest = String(repeating: "ab", count: 16)
     private func id(_ s: String) -> StableID { StableID.derived(namespace: "rules", name: s) }
 
     private var everyCriterion: [AwakeCriterion] {
         [
             .app(bundleID: "com.apple.dt.Xcode", name: "Xcode", frontmost: true),
-            .display(.anyExternal), .display(.specific(record: FingerprintRecord(t2: hash), name: "DELL U2720Q")),
+            .display(.anyExternal), .display(.specific(record: FingerprintRecord(t2: digest), name: "DELL U2720Q")),
             .display(.mirroring),
             .power(.onAdapter), .power(.onBattery), .power(.charging), .power(.batteryAtLeast(40)),
             .schedule(days: .weekdays, startMinute: 540, endMinute: 1_020),
             .cpuAbove(percent: 50), .audio(.outputActive), .audio(.microphoneActive), .idle(atLeastMinutes: 10),
             .volumeMounted(uuid: "1B4E28BA-2FA1-11D2-883F-0016D3CCA427", name: "Backup"),
-            .usbDevice(vendor: 0x05AC, product: 0x1234, serialHash: hash, name: "Dock"),
+            .usbDevice(vendor: 0x05AC, product: 0x1234, serialHash: digest, name: "Dock"),
             .usbDevice(vendor: 1, product: 2, serialHash: nil, name: "Keyboard"),
-            .network(.subnet(cidr: "10.0.0.0/8")), .network(.router(hash: hash, label: "Home")), .network(.vpnConnected),
+            .network(.subnet(cidr: "10.0.0.0/8")), .network(.router(hash: digest, label: "Home")), .network(.vpnConnected),
             .networkActivity(atLeastKBps: 500),
-            .bluetooth(.audio(uidHash: hash, name: "AirPods")), .bluetooth(.input(hash: hash, name: "Keyboard")),
+            .bluetooth(.audio(uidHash: digest, name: "AirPods")), .bluetooth(.input(hash: digest, name: "Keyboard")),
             .bluetooth(.anyAudio),
         ]
     }
@@ -192,10 +192,10 @@ final class AwakeTriggersTests: XCTestCase {
     func testStrippingHashes() throws {
         var c = AwakeTriggersConfig()
         c.triggers = [
-            AwakeTrigger(id: id("1"), name: "", criteria: [AwakeCriterionEntry(.display(.specific(record: FingerprintRecord(t3: hash), name: "D"))),
+            AwakeTrigger(id: id("1"), name: "", criteria: [AwakeCriterionEntry(.display(.specific(record: FingerprintRecord(t3: digest), name: "D"))),
                                                            AwakeCriterionEntry(.power(.onAdapter))]),
-            AwakeTrigger(id: id("2"), name: "", criteria: [AwakeCriterionEntry(.network(.router(hash: hash, label: "Home")))]),
-            AwakeTrigger(id: id("3"), name: "", criteria: [AwakeCriterionEntry(.usbDevice(vendor: 1, product: 2, serialHash: hash, name: "Dock"), negated: true)]),
+            AwakeTrigger(id: id("2"), name: "", criteria: [AwakeCriterionEntry(.network(.router(hash: digest, label: "Home")))]),
+            AwakeTrigger(id: id("3"), name: "", criteria: [AwakeCriterionEntry(.usbDevice(vendor: 1, product: 2, serialHash: digest, name: "Dock"), negated: true)]),
         ]
         let s = c.strippingHashes()
         XCTAssertEqual(s.triggers[0].criteria, [AwakeCriterionEntry(.power(.onAdapter))])
@@ -203,7 +203,7 @@ final class AwakeTriggersTests: XCTestCase {
         XCTAssertFalse(s.triggers[1].enabled)
         XCTAssertEqual(s.triggers[2].criteria,
                        [AwakeCriterionEntry(.usbDevice(vendor: 1, product: 2, serialHash: nil, name: "Dock"), negated: true)])
-        XCTAssertFalse(try text(s).contains(hash))
+        XCTAssertFalse(try text(s).contains(digest))
     }
 
     func testWeekdaySet() throws {

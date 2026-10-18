@@ -2,7 +2,7 @@ import XCTest
 @testable import SnapticKit
 
 final class AwakeTriggerEngineTests: XCTestCase {
-    private let hash = String(repeating: "cd", count: 16)
+    private let digest = String(repeating: "cd", count: 16)
     private func id(_ s: String) -> StableID { StableID.derived(namespace: "engine", name: s) }
     private func power(ac: Bool = true, battery: Bool = true, percent: Int? = 80, charging: Bool = false) -> PowerFacts {
         PowerFacts(batteryPresent: battery, onAC: ac, percent: percent, charging: charging, falling: false,
@@ -26,7 +26,7 @@ final class AwakeTriggerEngineTests: XCTestCase {
         let empty = CriterionFacts()
         let all: [AwakeCriterion] = [
             .app(bundleID: "a.b", name: "", frontmost: false), .app(bundleID: "a.b", name: "", frontmost: true),
-            .display(.anyExternal), .display(.specific(record: FingerprintRecord(t2: hash), name: "")), .display(.mirroring),
+            .display(.anyExternal), .display(.specific(record: FingerprintRecord(t2: digest), name: "")), .display(.mirroring),
             .power(.onAdapter), .schedule(days: .everyDay, startMinute: 0, endMinute: 60), .cpuAbove(percent: 50),
             .audio(.outputActive), .audio(.microphoneActive), .idle(atLeastMinutes: 5), .volumeMounted(uuid: "U", name: ""),
             .usbDevice(vendor: 1, product: 2, serialHash: nil, name: ""), .network(.vpnConnected),
@@ -53,14 +53,14 @@ final class AwakeTriggerEngineTests: XCTestCase {
 
     func testDisplay() {
         var f = CriterionFacts()
-        let builtin = DisplayFact(record: FingerprintRecord(t5: hash), isBuiltin: true)
-        let external = DisplayFact(record: FingerprintRecord(t2: hash, t3: hash), isBuiltin: false)
+        let builtin = DisplayFact(record: FingerprintRecord(t5: digest), isBuiltin: true)
+        let external = DisplayFact(record: FingerprintRecord(t2: digest, t3: digest), isBuiltin: false)
         f.displays = [builtin]
         XCTAssertEqual(holds(.display(.anyExternal), f), false)
         f.displays = [builtin, external]
         XCTAssertEqual(holds(.display(.anyExternal), f), true)
         // Specific matching goes through B's Fingerprint.matches, whatever it decides.
-        let stored = FingerprintRecord(t2: hash)
+        let stored = FingerprintRecord(t2: digest)
         XCTAssertEqual(holds(.display(.specific(record: stored, name: "")), f),
                        Fingerprint.matches(stored, builtin.record) || Fingerprint.matches(stored, external.record))
         f.displays = []
@@ -151,22 +151,22 @@ final class AwakeTriggerEngineTests: XCTestCase {
         f.volumes = ["1b4e28ba-2fa1-11d2-883f-0016d3cca427"]
         XCTAssertEqual(holds(.volumeMounted(uuid: "1B4E28BA-2FA1-11D2-883F-0016D3CCA427", name: ""), f), true)
         XCTAssertEqual(holds(.volumeMounted(uuid: "00000000-2FA1-11D2-883F-0016D3CCA427", name: ""), f), false)
-        f.usb = [USBFact(vendor: 1, product: 2, serialHash: hash)]
+        f.usb = [USBFact(vendor: 1, product: 2, serialHash: digest)]
         XCTAssertEqual(holds(.usbDevice(vendor: 1, product: 2, serialHash: nil, name: ""), f), true)
-        XCTAssertEqual(holds(.usbDevice(vendor: 1, product: 2, serialHash: hash, name: ""), f), true)
-        XCTAssertEqual(holds(.usbDevice(vendor: 1, product: 2, serialHash: "ee" + hash, name: ""), f), false)
+        XCTAssertEqual(holds(.usbDevice(vendor: 1, product: 2, serialHash: digest, name: ""), f), true)
+        XCTAssertEqual(holds(.usbDevice(vendor: 1, product: 2, serialHash: "ee" + digest, name: ""), f), false)
         XCTAssertEqual(holds(.usbDevice(vendor: 1, product: 3, serialHash: nil, name: ""), f), false)
-        f.network = NetworkFacts(addresses: ["10.1.2.3", "fe80::1"], routerHashes: [hash], vpn: false)
-        XCTAssertEqual(holds(.network(.router(hash: hash, label: "")), f), true)
-        XCTAssertEqual(holds(.network(.router(hash: "00" + hash, label: "")), f), false)
+        f.network = NetworkFacts(addresses: ["10.1.2.3", "fe80::1"], routerHashes: [digest], vpn: false)
+        XCTAssertEqual(holds(.network(.router(hash: digest, label: "")), f), true)
+        XCTAssertEqual(holds(.network(.router(hash: "00" + digest, label: "")), f), false)
         XCTAssertEqual(holds(.network(.vpnConnected), f), false)
         XCTAssertEqual(holds(.network(.subnet(cidr: "10.0.0.0/8")), f),
                        NetworkMath.cidrContains("10.0.0.0/8", address: "10.1.2.3")
                         || NetworkMath.cidrContains("10.0.0.0/8", address: "fe80::1"))
-        f.bluetooth = BluetoothFact(audioUIDHashes: [], inputHashes: [hash])
+        f.bluetooth = BluetoothFact(audioUIDHashes: [], inputHashes: [digest])
         XCTAssertEqual(holds(.bluetooth(.anyAudio), f), false)
-        XCTAssertEqual(holds(.bluetooth(.input(hash: hash, name: "")), f), true)
-        XCTAssertEqual(holds(.bluetooth(.audio(uidHash: hash, name: "")), f), false)
+        XCTAssertEqual(holds(.bluetooth(.input(hash: digest, name: "")), f), true)
+        XCTAssertEqual(holds(.bluetooth(.audio(uidHash: digest, name: "")), f), false)
     }
 
     // MARK: Conditions
@@ -355,7 +355,7 @@ final class AwakeTriggerEngineTests: XCTestCase {
         XCTAssertEqual(TriggerEngine.summary(s), "When it's 9:00 AM–5:00 PM on weekdays")
         XCTAssertEqual(TriggerEngine.summary(s, text: AwakeTextContext(uses24Hour: true, decimalSeparator: ",")),
                        "When it's 09:00–17:00 on weekdays")
-        XCTAssertEqual(TriggerEngine.summary(rule("", [.display(.specific(record: FingerprintRecord(t2: hash), name: "DELL U2720Q"))])),
+        XCTAssertEqual(TriggerEngine.summary(rule("", [.display(.specific(record: FingerprintRecord(t2: digest), name: "DELL U2720Q"))])),
                        "When “DELL U2720Q” is connected")
         XCTAssertEqual(TriggerEngine.summary(rule("", [])), "No conditions")
         XCTAssertEqual(TriggerEngine.daysText([.day(1), .day(3), .day(5)]), "on Mon, Wed, Fri")
@@ -368,12 +368,12 @@ final class AwakeTriggerEngineTests: XCTestCase {
     func testEveryPhraseIsNonEmptyAndDiffersWhenNegated() {
         let all: [AwakeCriterion] = [
             .app(bundleID: "a.b", name: "", frontmost: true), .display(.anyExternal), .display(.mirroring),
-            .display(.specific(record: FingerprintRecord(t2: hash), name: "")), .power(.onBattery), .power(.charging),
+            .display(.specific(record: FingerprintRecord(t2: digest), name: "")), .power(.onBattery), .power(.charging),
             .power(.batteryAtLeast(50)), .schedule(days: .everyDay, startMinute: 0, endMinute: 0), .cpuAbove(percent: 50),
             .audio(.outputActive), .audio(.microphoneActive), .idle(atLeastMinutes: 1), .volumeMounted(uuid: "u", name: ""),
             .usbDevice(vendor: 1, product: 1, serialHash: nil, name: "Dock"), .network(.subnet(cidr: "10.0.0.0/8")),
-            .network(.router(hash: hash, label: "Home")), .network(.vpnConnected), .networkActivity(atLeastKBps: 10),
-            .bluetooth(.audio(uidHash: hash, name: "")), .bluetooth(.input(hash: hash, name: "")), .bluetooth(.anyAudio),
+            .network(.router(hash: digest, label: "Home")), .network(.vpnConnected), .networkActivity(atLeastKBps: 10),
+            .bluetooth(.audio(uidHash: digest, name: "")), .bluetooth(.input(hash: digest, name: "")), .bluetooth(.anyAudio),
         ]
         for c in all {
             let yes = TriggerEngine.phrase(AwakeCriterionEntry(c), text: .standard)
