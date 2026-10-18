@@ -208,7 +208,7 @@ import SnapticKit
                 let entries = ddc.inputList(for: key, includeHidden: true).filter { $0.value == input }
                 let entry = entries.first(where: { !$0.lgAlt }) ?? entries.first
                     ?? DDCInputEntry(value: input, name: VCPPolicy.inputName(input))
-                ddc.setInput(entry, on: key)
+                _ = ddc.setInput(entry, on: key)
             }
         }
         if eff.contains(.virtualScreens), let virtual = ctx.connectPlanner.virtual {
