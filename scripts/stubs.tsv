@@ -444,6 +444,11 @@ Sources/Snaptic/Awake/UI/CriterionEditors.swift	G	K18	CriterionEditors	Condition
 Sources/Snaptic/Awake/UI/AwakeAdvancedSheet.swift	G	K19	AwakeAdvancedSheet	Awake Advanced Settings
 Sources/Snaptic/Awake/UI/OtherAssertionsSection.swift	G	K18	OtherAssertionsSection	Other apps keeping your Mac awake;AwakeAdvancedSheet
 Sources/Snaptic/Awake/UI/AwakeHistoryPage.swift	G	K18	AwakeHistoryPage	History
+Sources/SnapticKit/AwakeSessionPolicy.swift	G	L	-	-
+Sources/SnapticKit/AwakePresentation.swift	G	L	-	-
+Tests/SnapticKitTests/AwakeSessionPolicyTests.swift	G	L	-	-
+Tests/SnapticKitTests/AwakePresentationTests.swift	G	L	-	-
+Sources/Snaptic/Awake/Core/AwakeFormat.swift	G	L	-	-
 # 0.3: J (Awake sources)
 Sources/SnapticKit/CPUMath.swift	J	S	CPUMath	-
 Sources/SnapticKit/PowerMath.swift	J	S	PowerMath	-

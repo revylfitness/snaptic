@@ -209,4 +209,110 @@ final class ConfigAwakeSessionsTests: XCTestCase {
         XCTAssertTrue(d.resumeAfterRestart)
         XCTAssertNil(d.startAtLaunch)
     }
+
+    // MARK: AwakeConfig transforms (step 2: restoringDefaults, exportable, importable)
+
+    private let digest = String(repeating: "ab", count: 16)
+    private func sid(_ n: String) -> StableID { StableID.derived(namespace: "test", name: n) }
+
+    /// A config with every risky field set: nudge everywhere, volumes, start at launch, hashes, a low floor.
+    private func hostile() -> AwakeConfig {
+        var c = AwakeConfig()
+        c.features[.pointerNudge] = true
+        c.features[.activity] = true
+        c.features[.driveAlive] = true
+        c.sessions.defaultOptions.activity = .nudge
+        c.sessions.presets.append(AwakePreset(id: sid("p"), name: "Nudge", kind: .duration(seconds: 600),
+                                              options: AwakeSessionOptions(activity: .nudge)))
+        c.sessions.behavior.startAtLaunch = sid("p")
+        c.sessions.recentApps = ["com.apple.dt.Xcode"]
+        var rule = AwakeTrigger(id: sid("r"), name: "Home", criteria: [
+            AwakeCriterionEntry(.network(.router(hash: digest, label: "Home"))),
+            AwakeCriterionEntry(.power(.onAdapter)),
+        ])
+        rule.options = AwakeSessionOptions(activity: .nudge)
+        let plain = AwakeTrigger(id: sid("q"), name: "Plain", criteria: [AwakeCriterionEntry(.power(.onAdapter))])
+        c.triggers.triggers = [rule, plain]
+        let key = VolumeUUIDKey(rawValue: "6F9619FF-8B86-D011-B42D-00C04FC964FF")!
+        c.drives.volumes[key] = DriveAliveVolume(name: "Backup", enabled: true, firstWriteDone: true)
+        c.drives.evenWithoutSession = true
+        c.guards.batteryFloorEnabled = false
+        c.guards.batteryFloor = 5
+        c.indicator.style = .iconAndTime
+        c.shortcuts[.toggle] = HotkeyCombo(keyCode: 0, carbonModifiers: 0x0900)
+        return c
+    }
+
+    private func hasNudge(_ c: AwakeConfig) -> Bool {
+        c.sessions.defaultOptions.activity == .nudge || c.sessions.presets.contains { $0.options?.activity == .nudge }
+            || c.triggers.triggers.contains { $0.options.activity == .nudge }
+    }
+
+    func testRestoringDefaultsTurnsPointerMovementAndDrivesOff() {
+        let r = hostile().restoringDefaults()
+        XCTAssertNil(r.features[.pointerNudge])
+        XCTAssertFalse(hasNudge(r))
+        XCTAssertTrue(r.drives.volumes.values.isEmpty)
+        XCTAssertFalse(r.drives.evenWithoutSession)
+        XCTAssertEqual(r.sessions.presets, AwakeSessionsConfig().presets, "the default presets with their derived ids")
+        XCTAssertEqual(r.sessions.presets.map(\.id), AwakeConfig().restoringDefaults().sessions.presets.map(\.id))
+        XCTAssertNil(r.sessions.behavior.startAtLaunch)
+        XCTAssertEqual(r.guards, AwakeGuardsConfig())
+        // Other scopes and user content stay.
+        XCTAssertEqual(r.triggers.triggers.map(\.id), [sid("r"), sid("q")])
+        XCTAssertEqual(r.indicator.style, .iconAndTime)
+        XCTAssertNotNil(r.shortcuts[.toggle])
+        XCTAssertEqual(r.sessions.recentApps, ["com.apple.dt.Xcode"])
+        XCTAssertEqual(AwakeConfig().restoringDefaults(), AwakeConfig().sanitized())
+    }
+
+    func testExportableStripsPersonalAndRiskyFields() throws {
+        let e = hostile().exportable(includeTriggers: true)
+        XCTAssertNil(e.features[.pointerNudge])
+        XCTAssertEqual(e.features[.activity], true, "other feature choices travel")
+        XCTAssertFalse(hasNudge(e))
+        XCTAssertTrue(e.drives.volumes.values.isEmpty)
+        XCTAssertTrue(e.sessions.recentApps.isEmpty)
+        XCTAssertNil(e.sessions.behavior.startAtLaunch)
+        XCTAssertEqual(e.triggers.triggers.count, 2)
+        XCTAssertFalse(e.triggers.triggers[0].enabled, "lost its router condition")
+        XCTAssertTrue(e.triggers.triggers[1].enabled)
+        let json = String(decoding: try JSONEncoder().encode(e), as: UTF8.self)
+        XCTAssertFalse(json.contains(digest), "no salted hash leaves")
+        XCTAssertFalse(json.contains("Backup"))
+        XCTAssertTrue(hostile().exportable(includeTriggers: false).triggers.triggers.isEmpty, "rules are opt-in")
+    }
+
+    func testImportableNeverLoosensAnything() {
+        var current = AwakeConfig()
+        current.guards.batteryFloor = 30
+        current.guards.endOnLowPowerMode = true
+        let key = VolumeUUIDKey(rawValue: "1F9619FF-8B86-D011-B42D-00C04FC964FF")!
+        current.drives.volumes[key] = DriveAliveVolume(name: "Mine", enabled: false)
+        current.sessions.recentApps = ["com.apple.Safari"]
+        let i = hostile().importable(current: current)
+        XCTAssertNil(i.features[.pointerNudge], "kept from current")
+        XCTAssertFalse(hasNudge(i))
+        XCTAssertEqual(Array(i.drives.volumes.values.keys), [key], "volumes kept from current")
+        XCTAssertFalse(i.drives.evenWithoutSession)
+        XCTAssertEqual(i.sessions.recentApps, ["com.apple.Safari"])
+        XCTAssertNil(i.sessions.behavior.startAtLaunch)
+        XCTAssertTrue(i.guards.batteryFloorEnabled, "guards only tighten")
+        XCTAssertEqual(i.guards.batteryFloor, 30)
+        XCTAssertTrue(i.guards.endOnLowPowerMode)
+        XCTAssertFalse(i.triggers.triggers[0].enabled)
+        var on = AwakeConfig()
+        on.features[.pointerNudge] = true
+        XCTAssertEqual(AwakeConfig().importable(current: on).features[.pointerNudge], true,
+                       "an import can't turn pointer movement off behind the user's back either")
+        var stricter = AwakeConfig()
+        stricter.guards.batteryFloor = 40
+        XCTAssertEqual(stricter.importable(current: current).guards.batteryFloor, 40)
+    }
+
+    func testImportedConfigSurvivesARoundTrip() throws {
+        let i = hostile().importable(current: AwakeConfig())
+        let back = try JSONDecoder().decode(AwakeConfig.self, from: JSONEncoder().encode(i))
+        XCTAssertEqual(back.sanitized(), i)
+    }
 }

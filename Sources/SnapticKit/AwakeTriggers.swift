@@ -511,8 +511,20 @@ package struct AwakeTriggersConfig: ConfigModel {
         return c
     }
 
+    /// Every rule's options without pointer movement (rules never move the pointer, N10).
+    package func withoutNudge() -> AwakeTriggersConfig {
+        var c = self
+        c.triggers = triggers.map { t -> AwakeTrigger in
+            var t = t
+            t.options = t.options.withoutNudge()
+            return t
+        }
+        return c
+    }
+
     /// Exports without salted hashes (useless on another Mac): specific displays, routers, USB serials and Bluetooth
-    /// devices lose those conditions; a rule left with none is disabled.
+    /// devices lose those conditions. A rule that lost or changed a condition is disabled, because a rule with fewer
+    /// conditions could apply more often than the user chose.
     package func strippingHashes() -> AwakeTriggersConfig {
         var c = self
         c.triggers = triggers.map { original -> AwakeTrigger in
@@ -528,7 +540,7 @@ package struct AwakeTriggersConfig: ConfigModel {
                     return e
                 }
             }
-            if t.criteria.isEmpty { t.enabled = false }
+            if t.criteria.isEmpty || t.criteria != original.criteria { t.enabled = false }
             return t
         }
         return c

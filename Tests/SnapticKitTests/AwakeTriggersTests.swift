@@ -199,11 +199,16 @@ final class AwakeTriggersTests: XCTestCase {
         ]
         let s = c.strippingHashes()
         XCTAssertEqual(s.triggers[0].criteria, [AwakeCriterionEntry(.power(.onAdapter))])
-        XCTAssertTrue(s.triggers[0].enabled)
+        XCTAssertFalse(s.triggers[0].enabled, "fewer conditions could apply more often: disabled")
         XCTAssertFalse(s.triggers[1].enabled)
         XCTAssertEqual(s.triggers[2].criteria,
                        [AwakeCriterionEntry(.usbDevice(vendor: 1, product: 2, serialHash: nil, name: "Dock"), negated: true)])
+        XCTAssertFalse(s.triggers[2].enabled)
         XCTAssertFalse(try text(s).contains(digest))
+        // A rule without salted conditions is untouched.
+        var plain = AwakeTriggersConfig()
+        plain.triggers = [AwakeTrigger(id: id("4"), name: "", criteria: [AwakeCriterionEntry(.power(.onAdapter))])]
+        XCTAssertEqual(plain.strippingHashes(), plain)
     }
 
     func testWeekdaySet() throws {

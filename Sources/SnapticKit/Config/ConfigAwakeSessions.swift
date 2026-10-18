@@ -315,6 +315,18 @@ package struct AwakeSessionsConfig: ConfigModel {
         return o
     }
 
+    /// Presets and the default options without pointer movement (restore, export and import).
+    package func withoutNudge() -> AwakeSessionsConfig {
+        var c = self
+        c.defaultOptions = defaultOptions.withoutNudge()
+        c.presets = presets.map { p -> AwakePreset in
+            var p = p
+            p.options = p.options?.withoutNudge()
+            return p
+        }
+        return c
+    }
+
     /// The "Default (…)" label; R5-11: `defaultOptions.display` for every kind.
     package func defaultDisplayPolicy(for kind: AwakePresetKind) -> AwakeDisplayPolicy { defaultOptions.display }
 }
