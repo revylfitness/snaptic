@@ -378,7 +378,9 @@ final class AwakeSessionTests: XCTestCase {
         let all: [AwakeRefusal] = [.guardActive(.batteryLow), .guardActive(.lowPowerMode), .guardActive(.thermal),
                                    .guardActive(.adapterDisconnected), .guardActive(.user), .unavailable(.featureOff),
                                    .unavailable(.safeMode), .unavailable(.turnedOffByDefaults), .invalid,
-                                   .notAllowedFromCLI, .uiSessionRunning, .holdLimit, .rateLimited]
+                                   .notAllowedFromCLI, .uiSessionRunning, .holdLimit, .rateLimited,
+                                   .endedAtStart(.userSwitch), .endedAtStart(.lockedTooLong),
+                                   .endedAtStart(.assertionFailed), .endedAtStart(.systemSleep)]
         for r in all {
             XCTAssertEqual(r.exitCode, 4)
             XCTAssertFalse(r.text.isEmpty)
@@ -386,6 +388,9 @@ final class AwakeSessionTests: XCTestCase {
         }
         XCTAssertEqual(Set(all.map(\.text)).count, all.count, "every refusal reads differently")
         XCTAssertEqual(AwakeRefusal.holdLimit.text, "Snaptic is already holding for 8 commands.")
+        // N2: a start its own first arbitration ended says why, not "can't start".
+        XCTAssertEqual(AwakeRefusal.endedAtStart(.userSwitch).text, "Awake ended at once: another user is using this Mac.")
+        XCTAssertEqual(AwakeRefusal.endedAtStart(.systemSleep).text, "Awake ended at once: your Mac went to sleep.")
         // A kill switch reads the same everywhere (review ux m9).
         XCTAssertEqual(AwakeRefusal.unavailable(.turnedOffByDefaults).text, DefaultsLock.text)
         XCTAssertEqual(AwakeRefusal.uiSessionRunning.text,

@@ -29,6 +29,14 @@ import SnapticKit
         }
     }
 
+    /// Published as `AwakeRuntimeState.keepAwakeRegistered` (Kit rule `AwakeShortcutRegistration`).
+    private(set) var keepAwakeRegistered = false {
+        didSet {
+            guard let runtime = context?.runtime, runtime.keepAwakeRegistered != keepAwakeRegistered else { return }
+            runtime.keepAwakeRegistered = keepAwakeRegistered
+        }
+    }
+
     init() {}
 
     // MARK: Hotkeys
@@ -37,8 +45,17 @@ import SnapticKit
         hotkeysLifetime?.end()
         hotkeysLifetime = nil
         var failed: Set<AwakeActionID> = []
-        defer { failedShortcuts = failed }   // one publish per registration pass
-        guard let ctx = context, let lifetime, effective.contains(.shortcuts) else { return }
+        var registered: Set<AwakeActionID> = []
+        let shortcutsEffective = effective.contains(.shortcuts)
+        let hasToggleCombo = context?.config.value.shortcuts[.toggle] != nil
+        defer {
+            // One publish per registration pass.
+            failedShortcuts = failed
+            keepAwakeRegistered = AwakeShortcutRegistration.keepAwakeRegistered(
+                shortcutsEffective: shortcutsEffective && lifetime != nil,
+                hasCombo: hasToggleCombo, registered: registered.contains(.toggle))
+        }
+        guard let ctx = context, let lifetime, shortcutsEffective else { return }
         let life = lifetime.child()
         hotkeysLifetime = life
         for action in AwakeActionID.allAwake {
@@ -47,6 +64,7 @@ import SnapticKit
                 _ = try ctx.host.hotkeys.register(combo, owner: L("Awake"), lifetime: life) { [weak self] in
                     self?.perform(action)
                 }
+                registered.insert(action)
             } catch {
                 failed.insert(action)
             }
@@ -319,6 +337,7 @@ import SnapticKit
         hotkeysLifetime = nil
         verbsLifetime = nil
         failedShortcuts = []
+        keepAwakeRegistered = false
         lifetime = nil
         context = nil
     }

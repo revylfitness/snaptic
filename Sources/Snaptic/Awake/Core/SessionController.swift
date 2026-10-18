@@ -48,6 +48,8 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
     private var holderNames: [StableID: String?] = [:]
 
     private var reminders = AwakeReminders()
+    /// The last manual session that ended and why (a start that its own first arbitration ended, N2).
+    private var lastFinished: (id: StableID, reason: AwakeEndReason)?
     private var prompt = AwakePointerPrompt()
     private var lastPower: PowerFacts?
     private var wasUnreadable = false
@@ -185,7 +187,11 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         if source == .commandLine { announceCommandLine(now) }
         watch(session, life: life)
         arbitrate()
-        guard let running = manual, running.id == session.id else { return .failure(.invalid) }
+        guard let running = manual, running.id == session.id else {
+            // Ended inside its own first arbitration (N2): the reply names that end.
+            if let last = lastFinished, last.id == session.id { return .failure(.endedAtStart(last.reason)) }
+            return .failure(.invalid)
+        }
         return .success(running)
     }
 
@@ -700,6 +706,7 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
     private func finishManual(_ reason: AwakeEndReason, notify: Bool = true, arbitrateAfter: Bool = true) {
         guard let ctx = context, let s = manual else { return }
         manual = nil
+        lastFinished = (s.id, reason)
         sessionLifetime?.end()
         sessionLifetime = nil
         prompt.reset()
