@@ -298,8 +298,11 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
         snapshot.update(state)
     }
 
+    /// D's mirroring toggle, when registered and its feature is on (⌘ + brightness down).
     private func mirrorAction() -> Action? {
-        context?.actions.all.first { $0.id.rawValue.lowercased().contains("mirror") && $0.id.rawValue.lowercased().contains("toggle") }
+        guard let context, let action = context.actions.action(.dMirrorToggle),
+              context.runtime.isEffective(action.feature) else { return nil }
+        return action
     }
 
     /// CGEvent-style location of the pointer (top-left origin).
@@ -322,7 +325,8 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
             case .openSettings:
                 if !isRepeat { context.openSettings("displays.brightness") }
             case .toggleMirror:
-                if !isRepeat, let action = mirrorAction() { action.perform(.pointer) }
+                // Through the registry, so the feature check applies.
+                if !isRepeat, mirrorAction() != nil { context.actions.perform(.dMirrorToggle, on: .pointer) }
             case .adjust(let keys):
                 let fine = flags & KeyDecisionSnapshot.option != 0 && flags & KeyDecisionSnapshot.shift != 0
                 let skipSync = flags & KeyDecisionSnapshot.shift != 0 && flags & (KeyDecisionSnapshot.command | KeyDecisionSnapshot.option) == 0
@@ -333,14 +337,12 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
         case .volumeUp, .volumeDown:
             let fine = flags & KeyDecisionSnapshot.option != 0 && flags & KeyDecisionSnapshot.shift != 0
             let step = context.config.value.keys.step(fine: fine) * (key == .volumeUp ? 1 : -1)
-            for k in KeyDecisionSnapshot.volumeTargets(state, at: location) {
-                context.actions.perform(DisplayActionID(rawValue: "c.volume\(step > 0 ? "Up" : "Down")\(fine ? "Fine" : "")"),
-                                        on: .display(k))
-            }
+            let action = DDCController.volumeAction(up: step > 0, fine: fine)
+            for k in KeyDecisionSnapshot.volumeTargets(state, at: location) { context.actions.perform(action, on: .display(k)) }
         case .mute:
             guard !isRepeat else { return }
             for k in KeyDecisionSnapshot.volumeTargets(state, at: location) {
-                context.actions.perform(DisplayActionID(rawValue: "c.mute"), on: .display(k))
+                context.actions.perform(DDCController.muteAction, on: .display(k))
             }
         }
     }
@@ -376,9 +378,12 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
                 let title = context.actions.action(id)?.title ?? id.rawValue
                 if let problem = PerDisplayEdit.registerHotkey(context, combo, owner: title, lifetime: life, action: { [weak self] in
                     guard let ctx = self?.context else { return }
-                    if !ctx.actions.perform(id, on: DisplayTargets.keyTarget(ctx)) {
+                    // A registered action whose feature is off: the registry refuses it and shows its own toast.
+                    guard ctx.actions.action(id) != nil else {
                         ctx.toasts.show(L("“\(title)” isn't available right now."), lifetime: self?.lifetime)
+                        return
                     }
+                    ctx.actions.perform(id, on: DisplayTargets.keyTarget(ctx))
                 }) {
                     hotkeyProblems[id] = problem
                     EventLog.shared.record(.keys, "Shortcut not registered: \(problem)")

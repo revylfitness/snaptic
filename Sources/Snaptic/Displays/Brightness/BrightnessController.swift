@@ -44,42 +44,57 @@ enum DisplayTargets {
         }
     }
 
-    /// "main", "pointer", "all", a 32-hex key, a 1-based menu index, or a name prefix.
-    @MainActor static func select(_ text: String, _ ctx: DisplaysContext) -> DisplayTarget? {
-        let t = text.trimmingCharacters(in: .whitespaces)
-        switch t.lowercased() {
-        case "main": return .main
-        case "pointer", "mouse": return .pointer
-        case "all": return .all
-        default: break
-        }
-        if let key = DisplayKey(rawValue: t.lowercased()) { return .display(key) }
-        let online = ctx.registry.displays.filter { $0.isOnline }
-        if let index = Int(t), index >= 1, index <= online.count { return .display(online[index - 1].key) }
-        let lower = t.lowercased()
-        if let match = online.first(where: { $0.name.lowercased() == lower })
-            ?? online.first(where: { $0.name.lowercased().hasPrefix(lower) }) {
-            return .display(match.key)
-        }
-        return nil
+    /// A CLI verb's values and the display(s) they apply to.
+    struct CLIArguments {
+        let target: DisplayTarget
+        let values: [String]
     }
 
-    /// Splits CLI arguments into values and an optional trailing display selector.
-    @MainActor static func cliTarget(_ arguments: [String], valueCount: Int, _ ctx: DisplaysContext)
-        -> (target: DisplayTarget, values: [String])? {
-        var args = arguments
-        var target: DisplayTarget = .main
-        if let i = args.firstIndex(of: "--display"), i + 1 < args.count {
-            guard let t = select(args[i + 1], ctx) else { return nil }
-            target = t
-            args.removeSubrange(i...(i + 1))
-        } else if args.count > valueCount, let last = args.last {
-            guard let t = select(last, ctx) else { return nil }
-            target = t
-            args.removeLast()
+    /// Splits CLI arguments into `valueCount` values and an optional display selector
+    /// (Kit `DisplayCommandArguments`), resolved with `DisplaySelectorResolver` (the same
+    /// numbers `snaptic list` and Identify show). Either the arguments or the response to
+    /// return: `ControlExit.usage` for a bad shape or an ambiguous name, `.notFound` when
+    /// no display matches.
+    @MainActor static func cliArguments(_ arguments: [String], valueCount: Int, default fallback: DisplayTarget = .main,
+                                        usage: String, _ ctx: DisplaysContext) -> (parsed: CLIArguments?, error: ControlResponse?) {
+        guard let split = DisplayCommandArguments.split(arguments, valueCount: valueCount) else {
+            return (nil, .failure(ControlExit.usage, usage))
         }
-        guard args.count == valueCount else { return nil }
-        return (target, args)
+        guard let selector = split.selector else { return (CLIArguments(target: fallback, values: split.values), nil) }
+        let resolved = DisplaySelectorResolver.resolveForCLI(selector, ctx)
+        guard let target = resolved.target else {
+            return (nil, resolved.error ?? .failure(ControlExit.notFound, L("No display matches.")))
+        }
+        return (CLIArguments(target: target, values: split.values), nil)
+    }
+
+    /// Displays isn't running (the controller's context is gone).
+    static func notRunning() -> ControlResponse { .failure(ControlExit.unavailable, L("Displays isn't running")) }
+
+    /// One line per display for `get` verbs: "<n>\t<name>\t<value…>" with n as in
+    /// `snaptic list`, or a JSON array with `--json`. Empty rows: nothing matched.
+    @MainActor static func rows(_ rows: [(display: DisplayInfo, text: [String], json: [String: Any])], json: Bool,
+                                none: String, _ ctx: DisplaysContext) -> ControlResponse {
+        guard !rows.isEmpty else { return .failure(ControlExit.notFound, none) }
+        let order = DisplaySelectorResolver.ordered(ctx).map(\.key)
+        func number(_ d: DisplayInfo) -> Int { (order.firstIndex(of: d.key) ?? -1) + 1 }
+        if json {
+            let objects: [[String: Any]] = rows.map { row in
+                var o = row.json
+                o["display"] = number(row.display)
+                o["name"] = TextSanitizer.clean(row.display.name, maxScalars: 64)
+                o["key"] = row.display.key.rawValue
+                return o
+            }
+            guard let data = try? JSONSerialization.data(withJSONObject: objects, options: [.sortedKeys]) else {
+                return .failure(ControlExit.unavailable, L("Couldn't encode the reply"))
+            }
+            return .ok(String(decoding: data, as: UTF8.self))
+        }
+        let lines = rows.map { row in
+            (["\(number(row.display))", TextSanitizer.clean(row.display.name, maxScalars: 64)] + row.text).joined(separator: "\t")
+        }
+        return .ok(lines.joined(separator: "\n"))
     }
 
     /// "50", "50%", "+10", "-5" → a 0…max level relative to `current` (percent units).
@@ -92,7 +107,7 @@ enum DisplayTargets {
         return Swift.min(max, Swift.max(0, v))
     }
 
-    static let usage = L("Display: main, pointer, all, a number from the menu, or a name.")
+    static let usage = L("Display: a number from `snaptic list`, main, mouse, focus, all, id:N, or a name.")
 }
 
 /// OSD plus VoiceOver feedback (announcements happen whenever VoiceOver runs, R3.7).
@@ -339,32 +354,37 @@ enum PerDisplayEdit {
         ctx.commands.register("set brightness", policy: .low, offOnly: false, cliAllowed: true,
                               summary: L("Set brightness: set brightness 60 [display] (or +10 / -10)"),
                               lifetime: lifetime) { [weak self] request in
-            guard let self, let ctx = self.context else { return .failure(2, L("Displays isn't running")) }
-            guard let parsed = DisplayTargets.cliTarget(request.arguments, valueCount: 1, ctx) else {
-                return .failure(64, L("Usage: set brightness <percent|+n|-n> [display]. ") + DisplayTargets.usage)
-            }
+            guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
+            let usage = L("Usage: set brightness <percent|+n|-n> [display]. ") + DisplayTargets.usage
+            let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 1, usage: usage, ctx)
+            guard let parsed else { return error ?? .failure(ControlExit.usage, usage) }
+            guard self.effective.contains(.brightness) else { return .failure(ControlExit.unavailable, L("Brightness is off")) }
             let displays = DisplayTargets.resolve(parsed.target, ctx).filter { ctx.brightness.value(for: $0.key) != nil }
-            guard !displays.isEmpty else { return .failure(3, L("No display with brightness control matches")) }
+            guard !displays.isEmpty else { return .failure(ControlExit.notFound, L("No display with brightness control matches")) }
             for d in displays {
                 let current = ctx.brightness.value(for: d.key) ?? 1
                 let range = ctx.brightness.range(for: d.key)
                 guard let v = DisplayTargets.level(parsed.values[0], current: current, max: range.upperBound) else {
-                    return .failure(64, L("Not a brightness value"))
+                    return .failure(ControlExit.usage, L("Not a brightness value"))
                 }
                 ctx.brightness.set(v, for: d.key, source: .cli)
             }
             return .ok()
         }
         ctx.commands.register("get brightness", policy: .read, offOnly: false, cliAllowed: true,
-                              summary: L("Print brightness per display"), lifetime: lifetime) { [weak self] request in
-            guard let self, let ctx = self.context else { return .failure(2, L("Displays isn't running")) }
-            let target = request.arguments.first.flatMap { DisplayTargets.select($0, ctx) } ?? .all
-            let lines = DisplayTargets.resolve(target, ctx).compactMap { d -> String? in
+                              summary: L("Print brightness per display: get brightness [display]"), lifetime: lifetime) {
+            [weak self] request in
+            guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
+            let usage = L("Usage: get brightness [display]. ") + DisplayTargets.usage
+            let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 0, default: .all, usage: usage, ctx)
+            guard let parsed else { return error ?? .failure(ControlExit.usage, usage) }
+            let rows = DisplayTargets.resolve(parsed.target, ctx).compactMap { d -> (display: DisplayInfo, text: [String], json: [String: Any])? in
                 guard let v = ctx.brightness.value(for: d.key) else { return nil }
                 let method = ctx.brightness.activeMethod(for: d.key)?.rawValue ?? "-"
-                return "\(TextSanitizer.clean(d.name, maxScalars: 64))\t\(Int((v * 100).rounded()))%\t\(method)"
+                let percent = Int((v * 100).rounded())
+                return (d, ["\(percent)%", method], ["brightness": percent, "method": method])
             }
-            return .ok(lines.joined(separator: "\n"))
+            return DisplayTargets.rows(rows, json: request.json, none: L("No display with brightness control matches"), ctx)
         }
     }
 

@@ -50,13 +50,44 @@ import SnapticShims
         didSet {
             guard isAllowed != oldValue else { return }
             if !isAllowed { releaseAll() }
-            onAllowedChange?()
+            if isStopping { silentlyReset = true } else { notifyAllowedChange() }
         }
     }
     /// True while a custom ColorSync profile blocks gamma (and the user didn't override).
     private(set) var blockedByCustomProfile = false
-    /// Called when `isAllowed` changes (BrightnessService re-chooses methods).
-    var onAllowedChange: (@MainActor () -> Void)?
+    /// Observers of `isAllowed` (BrightnessService re-chooses methods) and of give-ups.
+    /// Bound to the observer's lifetime, so this service stopping and starting again never
+    /// drops another service's callbacks.
+    private var allowedObservers: [(UInt64, @MainActor () -> Void)] = []
+    private var giveUpObservers: [(UInt64, @MainActor (DisplayKey) -> Void)] = []
+    private var observerSerial: UInt64 = 0
+    /// True inside `deactivate()`: resetting `isAllowed` there must not make observers
+    /// re-apply gamma after the ColorSync restore.
+    private var isStopping = false
+    /// `deactivate()` reset `isAllowed` without telling observers; the next activate does.
+    private var silentlyReset = false
+
+    private func notifyAllowedChange() {
+        for (_, handler) in allowedObservers { handler() }
+    }
+
+    /// Calls `handler` whenever `isAllowed` changes, until `lifetime` ends.
+    func observeAllowedChange(lifetime: Lifetime, _ handler: @escaping @MainActor () -> Void) {
+        guard !lifetime.isEnded else { return }
+        observerSerial &+= 1
+        let mine = observerSerial
+        allowedObservers.append((mine, handler))
+        lifetime.onEnd { [weak self] in self?.allowedObservers.removeAll { $0.0 == mine } }
+    }
+
+    /// Calls `handler` when gamma gave up on a display (3 fights in 60 s), until `lifetime` ends.
+    func observeGiveUp(lifetime: Lifetime, _ handler: @escaping @MainActor (DisplayKey) -> Void) {
+        guard !lifetime.isEnded else { return }
+        observerSerial &+= 1
+        let mine = observerSerial
+        giveUpObservers.append((mine, handler))
+        lifetime.onEnd { [weak self] in self?.giveUpObservers.removeAll { $0.0 == mine } }
+    }
 
     /// The custom-profile safeguard (PLAN §6.1, parity §5.8): while any display uses a
     /// custom profile, gamma is off on all displays unless the user overrides it.
@@ -66,9 +97,6 @@ import SnapticShims
         blockedByCustomProfile = custom && !context.config.value.color.allowGammaWithCustomProfile
         isAllowed = !blockedByCustomProfile
     }
-    /// Called when gamma gave up on a display (3 fights in 60 s): suggest the overlay method.
-    var onGiveUp: (@MainActor (DisplayKey) -> Void)?
-
     static let watchdogInterval: TimeInterval = 3
     static let rampDuration: TimeInterval = 0.15
     /// While an authentication window is on screen, dim to black is raised to this.
@@ -114,7 +142,11 @@ import SnapticShims
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.refreshSafeguard() } }
             .store(in: &sinks)
+        let wasReset = silentlyReset
+        silentlyReset = false
         refreshSafeguard()
+        // The last deactivate() flipped `isAllowed` silently: tell observers what it is now.
+        if wasReset, isAllowed { notifyAllowedChange() }
     }
 
     func deactivate() {
@@ -126,9 +158,10 @@ import SnapticShims
         restoreAll()
         nudgeWindows.values.forEach { $0.orderOut(nil) }
         nudgeWindows.removeAll()
-        onAllowedChange = nil
-        onGiveUp = nil
+        // Observer lists belong to the observers' lifetimes: keep them across a restart.
+        isStopping = true
         isAllowed = true
+        isStopping = false
         context = nil
     }
 
@@ -400,7 +433,7 @@ import SnapticShims
                     states[key] = State(adjustments: s.adjustments, brightness: s.brightness, xdrScale: s.xdrScale,
                                         floor: s.floor, written: nil, writtenTo: 0, collapses: 0, fights: s.fights,
                                         gaveUp: true, ramp: nil)
-                    onGiveUp?(key)
+                    for (_, handler) in giveUpObservers { handler(key) }
                 } else {
                     states[key] = s
                     write(expected, to: s.writtenTo)

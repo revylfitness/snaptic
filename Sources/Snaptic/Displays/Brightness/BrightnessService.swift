@@ -101,13 +101,13 @@ enum HostInfo {
             .store(in: &sinks)
         context.ddc.observeChanges(lifetime: lifetime) { [weak self] key in self?.hardwareInfoChanged(key) }
         context.appleBrightness.onChange = { [weak self] key in self?.hardwareInfoChanged(key) }
-        context.gamma.onGiveUp = { [weak self] key in
+        context.gamma.observeGiveUp(lifetime: lifetime) { [weak self] key in
             guard let self, let context = self.context else { return }
             context.toasts.show(L("Another app keeps changing this display's colors. Snaptic switched to overlay dimming."),
                                 lifetime: self.lifetime)
             self.reevaluate(key)
         }
-        context.gamma.onAllowedChange = { [weak self] in self?.reevaluate() }
+        context.gamma.observeAllowedChange(lifetime: lifetime) { [weak self] in self?.reevaluate() }
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.didWake() }
@@ -137,8 +137,6 @@ enum HostInfo {
         if let context {
             for state in states.values { if let token = state.overlay { context.overlays.remove(token) } }
             context.appleBrightness.onChange = nil
-            context.gamma.onGiveUp = nil
-            context.gamma.onAllowedChange = nil
             for key in states.keys { context.gamma.setSoftwareBrightness(1, for: key) }
         }
         states.removeAll()

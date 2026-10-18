@@ -11,8 +11,6 @@ import SnapticShims
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
     private var lifetime: Lifetime?
-    /// True when this controller attached the presenter for broadcast-only use.
-    private var attachedPresenter = false
 
     init() {}
 
@@ -41,9 +39,7 @@ import SnapticShims
             context.osd.isEnabled = true
             context.osd.broadcastEnabled = false
             context.osd.hideAll()
-            if attachedPresenter { context.osd.context = nil }
         }
-        attachedPresenter = false
         lifetime = nil
         context = nil
     }
@@ -51,13 +47,9 @@ import SnapticShims
     private func apply(_ effective: Set<DisplayFeature>) {
         guard let context else { return }
         context.osd.isEnabled = effective.contains(.osd)
+        // Both features use the OSD service (FeatureGraph), so the presenter is active and
+        // has its context whenever either is on.
         context.osd.broadcastEnabled = effective.contains(.osdBroadcast)
-        // `osdBroadcast` alone doesn't activate the OSD service; the presenter still needs
-        // the context to read the session gate.
-        if context.osd.context == nil {
-            context.osd.context = context
-            attachedPresenter = true
-        }
         if !effective.contains(.osd) { context.osd.hideAll() }
     }
 

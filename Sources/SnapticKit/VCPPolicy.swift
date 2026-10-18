@@ -46,6 +46,10 @@ package enum VCPPolicy {
 
     /// Power values: 1 on, 2 standby, 3 suspend, 4 off (DPM), 5 hard off (denied).
     package static let powerOn: UInt16 = 1
+    package static let powerValues: ClosedRange<UInt16> = 1...4
+    /// 0x8D values ever sent: 1 mute, 2 unmute, 3–4 the screen-blank variants some
+    /// displays list. Anything else is refused.
+    package static let muteValues: ClosedRange<UInt16> = 1...4
 
     /// The tier of writing `value` to `code`. `capabilities` narrows the discrete codes.
     package static func tier(code: UInt8, value: UInt16, capabilities: DDCCapabilities?) -> VCPTier {
@@ -62,21 +66,55 @@ package enum VCPPolicy {
         case mute:
             // MCCS 0x8D is "audio mute / screen blank". If the display lists anything
             // beyond 1 (mute) and 2 (unmute), a write may blank the screen.
+            guard muteValues.contains(value) else { return .denied }
             let listed = capabilities?.vcp[mute] ?? []
             if listed.contains(where: { $0 > 2 }) { return .preConfirm }
             return value == 1 || value == 2 ? .safe : .preConfirm
         case power:
-            switch value {
-            case 1: return .safe
-            case 2, 3, 4: return .preConfirm
-            default: return .denied
-            }
+            guard powerValues.contains(value) else { return .denied }
+            return value == powerOn ? .safe : .preConfirm
         default:
             break
         }
         if preConfirmCodes.contains(code) { return .preConfirm }
         if code >= 0xE0 { return .unlockable }
         return .denied
+    }
+
+    /// The capability-free check the transport shim (SNDDC.m) repeats in C as a backstop,
+    /// whatever the Swift side decided: `.safe` is sent as is, `.preConfirm` and
+    /// `.unlockable` only when the caller says the write was confirmed (a PreConfirm token,
+    /// plus the per-display unlock for manufacturer codes 0xE0–0xFF), `.denied` never.
+    /// Never stricter than `tier` for a value `tier` allows, never laxer for one it refuses,
+    /// except the capability-listed codes (color preset, display mode), which it bounds to
+    /// one byte. Keep SNDDCSetTier in SNDDC.m identical.
+    package static func backstopTier(code: UInt8, value: UInt16) -> VCPTier {
+        if deniedCodes.contains(code) { return .denied }
+        if safeCodes.contains(code) { return .safe }
+        switch code {
+        case colorPreset, displayMode:
+            return value <= 0xFF ? .safe : .denied
+        case mute:
+            guard muteValues.contains(value) else { return .denied }
+            return value == 1 || value == 2 ? .safe : .preConfirm
+        case power:
+            guard powerValues.contains(value) else { return .denied }
+            return value == powerOn ? .safe : .preConfirm
+        default:
+            break
+        }
+        if preConfirmCodes.contains(code) { return .preConfirm }
+        if code >= 0xE0 { return .unlockable }
+        return .denied
+    }
+
+    /// Whether the shim lets a Set VCP through (see `backstopTier`).
+    package static func backstopAllows(code: UInt8, value: UInt16, confirmed: Bool) -> Bool {
+        switch backstopTier(code: code, value: value) {
+        case .safe: return true
+        case .preConfirm, .unlockable: return confirmed
+        case .denied: return false
+        }
     }
 
     /// Codes Snaptic treats as continuous sliders.

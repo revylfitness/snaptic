@@ -136,11 +136,21 @@ import SnapticShims
                                     cliAllowed: true) { [weak self] _ in self?.stepNightShift(1) }, lifetime: lifetime)
         ctx.actions.register(Action(id: Self.nightShiftDownAction, title: L("Night Shift Cooler"), feature: .nightShift,
                                     cliAllowed: true) { [weak self] _ in self?.stepNightShift(-1) }, lifetime: lifetime)
-        ctx.commands.register("toggle night-shift", policy: .low, offOnly: false, cliAllowed: true,
-                              summary: L("Turn Night Shift on or off"), lifetime: lifetime) { [weak self] _ in
-            guard let self else { return .failure(2, L("Displays isn't running")) }
-            guard let on = self.toggleNightShift() else { return .failure(3, L("Night Shift isn't available")) }
-            return .ok(on ? L("Night Shift on") : L("Night Shift off"))
+        // `toggle nightShift` matches too: verbs compare case-insensitively.
+        let verbs = [("toggle night-shift", L("Turn Night Shift on or off")), ("toggle nightshift", L("Same as toggle night-shift"))]
+        for (verb, summary) in verbs {
+            ctx.commands.register(verb, policy: .low, offOnly: false, cliAllowed: true,
+                                  summary: summary, lifetime: lifetime) { [weak self] request in
+                guard let self, self.context != nil else { return DisplayTargets.notRunning() }
+                guard request.arguments.isEmpty else { return .failure(ControlExit.usage, L("Usage: toggle night-shift")) }
+                guard self.effective.contains(.nightShift) else {
+                    return .failure(ControlExit.unavailable, L("Night Shift control is off"))
+                }
+                guard let on = self.toggleNightShift() else {
+                    return .failure(ControlExit.unavailable, L("Night Shift isn't available"))
+                }
+                return .ok(on ? L("Night Shift on") : L("Night Shift off"))
+            }
         }
     }
 

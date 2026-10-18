@@ -43,6 +43,7 @@ Sources/SnapticKit/CombinedScale.swift	C	K1	CombinedScale	-
 Sources/SnapticKit/AffectedModels.swift	C	K1	AffectedModels	-
 Sources/SnapticKit/SyncMath.swift	C	K1	SyncMath	-
 Sources/SnapticKit/NitsModel.swift	C	K1	NitsModel	-
+Sources/SnapticKit/DisplayCommandArguments.swift	C	L	-	-
 Sources/SnapticKit/Config/ConfigBrightness.swift	C	S	ConfigBrightness	BrightnessConfig,PerDisplayBrightness
 Sources/SnapticKit/Config/ConfigDDC.swift	C	K2	ConfigDDC	DDCConfig,PerDisplayDDC
 Sources/SnapticKit/Config/ConfigKeys.swift	C	S	ConfigKeys	KeysConfig,PerDisplayKeys
@@ -265,6 +266,7 @@ Tests/SnapticKitTests/CombinedScaleTests.swift	C	K3	CombinedScaleTests	-
 Tests/SnapticKitTests/AffectedModelsTests.swift	C	K3	AffectedModelsTests	-
 Tests/SnapticKitTests/SyncMathTests.swift	C	K3	SyncMathTests	-
 Tests/SnapticKitTests/NitsModelTests.swift	C	K3	NitsModelTests	-
+Tests/SnapticKitTests/DisplayCommandArgumentsTests.swift	C	L	-	-
 Tests/SnapticKitTests/ConfigBrightnessTests.swift	C	K3	ConfigBrightnessTests	-
 Tests/SnapticKitTests/ConfigDDCTests.swift	C	K3	ConfigDDCTests	-
 Tests/SnapticKitTests/ConfigKeysTests.swift	C	K3	ConfigKeysTests	-

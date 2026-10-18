@@ -75,12 +75,14 @@ final class DDCTransport: @unchecked Sendable {
             : DDCPacket.encode(request, framing: framing, dataAddress: dataAddress)
     }
 
-    private func send(_ request: [UInt8], dataAddress: UInt8, replyLength: Int) -> [UInt8]? {
+    /// `confirmed`: the write holds a PreConfirm token (the shim refuses confirm-tier Set VCP otherwise).
+    private func send(_ request: [UInt8], dataAddress: UInt8, replyLength: Int, confirmed: Bool = false) -> [UInt8]? {
         guard request.count <= DDCPacket.maxBufferLength, replyLength <= DDCPacket.maxBufferLength,
               DDCPacket.isAllowedChip(endpoint.chipAddress), DDCPacket.isAllowedDataAddress(dataAddress) else { return nil }
         guard let data = try? SNDDC.transact(Data(request), endpoint: endpoint, dataAddress: dataAddress,
                                              replyLength: UInt(replyLength),
-                                             replyDelayMicroseconds: replyLength > 0 ? replyDelayMicroseconds : 0)
+                                             replyDelayMicroseconds: replyLength > 0 ? replyDelayMicroseconds : 0,
+                                             confirmed: confirmed)
         else { return nil }
         return [UInt8](data)
     }
@@ -116,15 +118,16 @@ final class DDCTransport: @unchecked Sendable {
         return .failure(lastFailure)
     }
 
-    /// Set VCP (single write by default; `writeCount` 2 for flaky displays).
-    func write(_ code: UInt8, _ value: UInt16, dataAddress: UInt8 = DDCPacket.sourceAddress) -> Bool {
+    /// Set VCP (single write by default; `writeCount` 2 for flaky displays). `confirmed`: the
+    /// policy gate saw a PreConfirm token for this value.
+    func write(_ code: UInt8, _ value: UInt16, dataAddress: UInt8 = DDCPacket.sourceAddress, confirmed: Bool = false) -> Bool {
         let request = bytes(.setVCP(code, value), framing: learnedFraming ?? .field, dataAddress: dataAddress)
         for attempt in 0..<attempts {
             if attempt > 0 { Self.pause(milliseconds: 20) }
             var ok = true
             for n in 0..<max(1, min(2, tuning.writeCount)) {
                 if n > 0 { Self.pause(milliseconds: DDCPacket.defaultReplyDelayMs) }
-                if send(request, dataAddress: dataAddress, replyLength: 0) == nil { ok = false }
+                if send(request, dataAddress: dataAddress, replyLength: 0, confirmed: confirmed) == nil { ok = false }
             }
             if ok {
                 consecutiveFailures = 0

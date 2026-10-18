@@ -76,25 +76,51 @@ static NSError *SNDDCError(NSInteger code, NSString *message) {
     return [NSError errorWithDomain:SNDDCErrorDomain code:code userInfo:@{NSLocalizedDescriptionKey: message}];
 }
 
-// MARK: Policy (mirrors Kit VCPPolicy; the shim refuses denied requests itself)
+// MARK: Policy (mirrors Kit VCPPolicy.backstopTier; the shim refuses denied requests itself)
 
-static BOOL SNDDCSetAllowed(uint8_t code, uint16_t value) {
+typedef NS_ENUM(NSInteger, SNDDCSetTier) {
+    SNDDCSetTierDenied = 0,
+    SNDDCSetTierSafe = 1,
+    /// Sent only when the caller says the write was confirmed (PreConfirm token, plus the
+    /// per-display unlock for manufacturer codes).
+    SNDDCSetTierConfirm = 2,
+};
+
+static SNDDCSetTier SNDDCSetTierFor(uint8_t code, uint16_t value) {
     switch (code) {
         case 0x01: case 0x04: case 0x05: case 0x06: case 0x08: case 0x0A: case 0xB0: case 0xCA: case 0xCC:
-            return NO;
+            return SNDDCSetTierDenied;
+        case 0x10: case 0x12: case 0x13: case 0x16: case 0x18: case 0x1A: case 0x62: case 0x6B: case 0x6C:
+        case 0x6E: case 0x70: case 0x87: case 0x8A:
+            return SNDDCSetTierSafe;
+        case 0x14: case 0xDC:
+            // Capability-listed values: the Swift policy narrows them; here, one byte.
+            return value <= 0xFF ? SNDDCSetTierSafe : SNDDCSetTierDenied;
+        case 0x8D:
+            if (value == 1 || value == 2) { return SNDDCSetTierSafe; }
+            return (value == 3 || value == 4) ? SNDDCSetTierConfirm : SNDDCSetTierDenied;
         case 0xD6:
-            return value >= 1 && value <= 4;
-        case 0x10: case 0x12: case 0x13: case 0x14: case 0x16: case 0x18: case 0x1A: case 0x60: case 0x62:
-        case 0x6B: case 0x6C: case 0x6E: case 0x70: case 0x87: case 0x8A: case 0x8D: case 0xDC:
-            return YES;
+            if (value == 1) { return SNDDCSetTierSafe; }
+            return (value >= 2 && value <= 4) ? SNDDCSetTierConfirm : SNDDCSetTierDenied;
+        case 0x60:
+            return SNDDCSetTierConfirm;
         default:
-            return code >= 0xE0;
+            // 0xE0–0xFF: manufacturer codes (0xE7–0xE9, 0xF3, 0xF4 confirmed; the rest unlocked
+            // and confirmed). Both need the caller's flag.
+            return code >= 0xE0 ? SNDDCSetTierConfirm : SNDDCSetTierDenied;
     }
+}
+
+static BOOL SNDDCSetAllowed(uint8_t code, uint16_t value, BOOL confirmed) {
+    SNDDCSetTier tier = SNDDCSetTierFor(code, value);
+    if (tier == SNDDCSetTierSafe) { return YES; }
+    if (tier == SNDDCSetTierConfirm) { return confirmed; }
+    return NO;
 }
 
 /// Checks framing, exact length and opcode. `offset` is 1 when the buffer starts with the
 /// source byte (Intel), else 0.
-static BOOL SNDDCRequestAllowed(const uint8_t *bytes, size_t length, size_t offset) {
+static BOOL SNDDCRequestAllowed(const uint8_t *bytes, size_t length, size_t offset, BOOL confirmed) {
     if (length > SNDDCMaxBuffer || length < offset + 3) { return NO; }
     if (offset == 1 && bytes[0] != 0x51 && bytes[0] != 0x50) { return NO; }
     uint8_t lengthByte = bytes[offset];
@@ -111,7 +137,7 @@ static BOOL SNDDCRequestAllowed(const uint8_t *bytes, size_t length, size_t offs
             if (n != 4) { return NO; }
             uint8_t code = bytes[offset + 2];
             uint16_t value = (uint16_t)((bytes[offset + 3] << 8) | bytes[offset + 4]);
-            return SNDDCSetAllowed(code, value);
+            return SNDDCSetAllowed(code, value, confirmed);
         }
         default:
             return NO;
@@ -320,6 +346,7 @@ static NSUInteger SNDDCExternalOnlineDisplays(void) {
                   dataAddress:(uint8_t)dataAddress
                   replyLength:(NSUInteger)replyLength
        replyDelayMicroseconds:(uint32_t)replyDelayMicroseconds
+                    confirmed:(BOOL)confirmed
                         error:(NSError **)error {
     if (!SNDDCChipAllowed(endpoint.chipAddress)) {
         if (error) { *error = SNDDCError(10, @"Chip address refused"); }
@@ -340,7 +367,7 @@ static NSUInteger SNDDCExternalOnlineDisplays(void) {
     SNDDCSymbols s = SNDDCLoad();
 
     if (endpoint.kind == SNDDCTransportKindIntel) {
-        if (!SNDDCRequestAllowed(buffer, request.length, 1)) {
+        if (!SNDDCRequestAllowed(buffer, request.length, 1, confirmed)) {
             if (error) { *error = SNDDCError(13, @"Request refused by the VCP policy"); }
             return nil;
         }
@@ -411,7 +438,7 @@ static NSUInteger SNDDCExternalOnlineDisplays(void) {
         return nil;
     }
 
-    if (!SNDDCRequestAllowed(buffer, request.length, 0)) {
+    if (!SNDDCRequestAllowed(buffer, request.length, 0, confirmed)) {
         if (error) { *error = SNDDCError(13, @"Request refused by the VCP policy"); }
         return nil;
     }

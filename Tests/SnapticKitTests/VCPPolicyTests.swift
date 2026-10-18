@@ -43,6 +43,14 @@ final class VCPPolicyTests: XCTestCase {
         XCTAssertEqual(tier(0x8D, 1, caps: caps), .preConfirm)
     }
 
+    func testMuteValuesOutsideTheKnownOnesAreDenied() {
+        for v: UInt16 in [0, 5, 0xFF, 0x0101, 0xFFFF] { XCTAssertEqual(tier(0x8D, v), .denied, "\(v)") }
+        var caps = DDCCapabilities()
+        caps.vcp[0x8D] = [1, 2, 3, 4, 5]
+        XCTAssertEqual(tier(0x8D, 5, caps: caps), .denied, "caps never widen 0x8D")
+        XCTAssertEqual(tier(0x8D, 4, caps: caps), .preConfirm)
+    }
+
     func testPowerValues() {
         XCTAssertEqual(tier(0xD6, 1), .safe, "R5.8: power on is safe")
         for v: UInt16 in [2, 3, 4] { XCTAssertEqual(tier(0xD6, v), .preConfirm) }
@@ -106,5 +114,67 @@ final class VCPPolicyTests: XCTestCase {
         XCTAssertNil(VCPPolicy.parseCode(""))
         XCTAssertEqual(VCPPolicy.inputName(0x11), "HDMI 1")
         XCTAssertEqual(VCPPolicy.name(0x10), "Brightness")
+    }
+
+    // MARK: Shim backstop (SNDDC.m repeats this table in C)
+
+    private let sampleValues: [UInt16] = [0, 1, 2, 3, 4, 5, 6, 0x0B, 0x0D, 0x0E, 0x0F, 0x11, 0x7F, 0xFF, 0x100, 0x0101, 0x8000, 0xFFFF]
+
+    func testBackstopNeverRefusesWhatThePolicyAllows() {
+        var rng = SeededGenerator(seed: 0xBAC5)
+        for code in 0...255 {
+            let c = UInt8(code)
+            let values = sampleValues + (0..<16).map { _ in UInt16(truncatingIfNeeded: rng.next()) }
+            for v in values {
+                let policy = tier(c, v)
+                let backstop = VCPPolicy.backstopTier(code: c, value: v)
+                let label = "\(VCPPolicy.hex(c)) = \(v)"
+                if policy == .safe { XCTAssertTrue(VCPPolicy.backstopAllows(code: c, value: v, confirmed: false), label) }
+                if policy != .denied { XCTAssertTrue(VCPPolicy.backstopAllows(code: c, value: v, confirmed: true), label) }
+                if policy.needsConfirmation {
+                    XCTAssertFalse(VCPPolicy.backstopAllows(code: c, value: v, confirmed: false), "unconfirmed \(label)")
+                }
+                if policy == .denied, c != VCPPolicy.colorPreset, c != VCPPolicy.displayMode {
+                    XCTAssertEqual(backstop, .denied, label)
+                }
+            }
+        }
+    }
+
+    func testBackstopAllowsCapabilityListedValuesWithinOneByte() {
+        var caps = DDCCapabilities()
+        caps.vcp[0x14] = [0x05, 0x20]
+        caps.vcp[0xDC] = [0x00, 0x07]
+        let pairs: [(UInt8, UInt16)] = [(0x14, 0x20), (0xDC, 0x07), (0xDC, 0x00)]
+        for (code, value) in pairs {
+            XCTAssertEqual(tier(code, value, caps: caps), .safe)
+            XCTAssertTrue(VCPPolicy.backstopAllows(code: code, value: value, confirmed: false))
+        }
+        XCTAssertFalse(VCPPolicy.backstopAllows(code: 0x14, value: 0x100, confirmed: true))
+        XCTAssertFalse(VCPPolicy.backstopAllows(code: 0xDC, value: 0xFFFF, confirmed: true))
+    }
+
+    func testBackstopManufacturerCodesNeedConfirmation() {
+        for code in 0xE0...0xFF {
+            let c = UInt8(code)
+            XCTAssertFalse(VCPPolicy.backstopAllows(code: c, value: 1, confirmed: false), VCPPolicy.hex(c))
+            XCTAssertTrue(VCPPolicy.backstopAllows(code: c, value: 1, confirmed: true), VCPPolicy.hex(c))
+        }
+    }
+
+    func testBackstopPowerAndMute() {
+        XCTAssertTrue(VCPPolicy.backstopAllows(code: 0xD6, value: 1, confirmed: false))
+        for v: UInt16 in 2...4 {
+            XCTAssertFalse(VCPPolicy.backstopAllows(code: 0xD6, value: v, confirmed: false))
+            XCTAssertTrue(VCPPolicy.backstopAllows(code: 0xD6, value: v, confirmed: true))
+        }
+        for v: UInt16 in [0, 5, 0x0101] { XCTAssertFalse(VCPPolicy.backstopAllows(code: 0xD6, value: v, confirmed: true)) }
+        XCTAssertTrue(VCPPolicy.backstopAllows(code: 0x8D, value: 1, confirmed: false))
+        XCTAssertTrue(VCPPolicy.backstopAllows(code: 0x8D, value: 2, confirmed: false))
+        XCTAssertFalse(VCPPolicy.backstopAllows(code: 0x8D, value: 3, confirmed: false))
+        XCTAssertTrue(VCPPolicy.backstopAllows(code: 0x8D, value: 3, confirmed: true))
+        for v: UInt16 in [0, 5, 0x0101] { XCTAssertFalse(VCPPolicy.backstopAllows(code: 0x8D, value: v, confirmed: true)) }
+        XCTAssertFalse(VCPPolicy.backstopAllows(code: 0x60, value: 0x0F, confirmed: false), "input switches need confirmation")
+        XCTAssertTrue(VCPPolicy.backstopAllows(code: 0x60, value: 0x0F, confirmed: true))
     }
 }

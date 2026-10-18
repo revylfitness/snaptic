@@ -12,8 +12,11 @@
 //    sub-address 0x51. The buffer includes the source byte: [0x51, 0x80|n, body…, checksum].
 //
 // Both paths refuse, in C, any chip address outside {0x37, 0xB7}, any buffer over 64 bytes,
-// and any request the Snaptic VCP policy denies (reset/lock codes, power value 5, any
-// opcode but Get VCP, Set VCP and Capabilities). All calls block (they sleep between the
+// and any request the Snaptic VCP policy denies (reset/lock codes, power values outside
+// 1–4, mute values outside 1–4, any opcode but Get VCP, Set VCP and Capabilities). Set VCP
+// writes the policy only allows after confirmation (input 0x60, standby, screen-blank
+// mute values, every manufacturer code 0xE0–0xFF) also need `confirmed`. The table mirrors
+// Kit `VCPPolicy.backstopTier`. All calls block (they sleep between the
 // request and the reply): call them from one serial queue, never the main thread.
 
 NS_ASSUME_NONNULL_BEGIN
@@ -50,14 +53,17 @@ typedef NS_ENUM(NSInteger, SNDDCTransportKind) {
 
 /// Sends `request` and, when `replyLength` > 0, reads that many reply bytes after waiting
 /// `replyDelayMicroseconds`. `dataAddress` is 0x51 (or 0x50 for LG alternate input).
+/// `confirmed`: the caller holds a PreConfirm token for this write (and, for manufacturer
+/// codes, the per-display unlock); without it only safe Set VCP values are sent.
 /// Returns the reply (empty for writes) or nil on failure.
 + (nullable NSData *)transact:(NSData *)request
                    onEndpoint:(SNDDCEndpoint *)endpoint
                   dataAddress:(uint8_t)dataAddress
                   replyLength:(NSUInteger)replyLength
        replyDelayMicroseconds:(uint32_t)replyDelayMicroseconds
+                    confirmed:(BOOL)confirmed
                         error:(NSError **)error
-    NS_SWIFT_NAME(transact(_:endpoint:dataAddress:replyLength:replyDelayMicroseconds:));
+    NS_SWIFT_NAME(transact(_:endpoint:dataAddress:replyLength:replyDelayMicroseconds:confirmed:));
 
 @end
 

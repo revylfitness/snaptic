@@ -235,28 +235,33 @@ import SnapticKit
         for (verb, summary, range, path) in setters {
             ctx.commands.register(verb, policy: .low, offOnly: false, cliAllowed: true, summary: summary,
                                   lifetime: lifetime) { [weak self] request in
-                guard let self, let ctx = self.context else { return .failure(2, L("Displays isn't running")) }
-                guard let parsed = DisplayTargets.cliTarget(request.arguments, valueCount: 1, ctx),
-                      let value = Double(parsed.values[0]), value.isFinite else {
-                    return .failure(64, L("Usage: ") + summary)
-                }
+                guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
+                let usage = L("Usage: ") + summary
+                let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 1, usage: usage, ctx)
+                guard let parsed else { return error ?? .failure(ControlExit.usage, usage) }
+                guard let value = Double(parsed.values[0]), value.isFinite else { return .failure(ControlExit.usage, usage) }
+                guard ctx.runtime.isEffective(.color) else { return .failure(ControlExit.unavailable, L("Color adjustments are off")) }
                 let displays = DisplayTargets.resolve(parsed.target, ctx).filter { self.canAdjust($0) }
-                guard !displays.isEmpty else { return .failure(3, L("No display with color adjustments matches")) }
+                guard !displays.isEmpty else { return .failure(ControlExit.notFound, L("No display with color adjustments matches")) }
                 for d in displays { self.update(d.key) { $0[keyPath: path] = min(range.upperBound, max(range.lowerBound, value)) } }
                 return .ok()
             }
         }
         ctx.commands.register("color", policy: .low, offOnly: false, cliAllowed: true,
                               summary: L("color reset|invert|suspend [display]"), lifetime: lifetime) { [weak self] request in
-            guard let self, let ctx = self.context else { return .failure(2, L("Displays isn't running")) }
-            guard let parsed = DisplayTargets.cliTarget(request.arguments, valueCount: 1, ctx) else {
-                return .failure(64, L("Usage: color reset|invert|suspend [display]"))
+            guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
+            let usage = L("Usage: color reset|invert|suspend [display]")
+            let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 1, usage: usage, ctx)
+            guard let parsed else { return error ?? .failure(ControlExit.usage, usage) }
+            guard ctx.runtime.isEffective(.color) else { return .failure(ControlExit.unavailable, L("Color adjustments are off")) }
+            guard !DisplayTargets.resolve(parsed.target, ctx).isEmpty else {
+                return .failure(ControlExit.notFound, L("No display matches"))
             }
             switch parsed.values[0].lowercased() {
             case "reset": self.reset(parsed.target)
             case "invert": self.toggleInvert(parsed.target)
             case "suspend": self.toggleSuspend(parsed.target)
-            default: return .failure(64, L("Usage: color reset|invert|suspend [display]"))
+            default: return .failure(ControlExit.usage, usage)
             }
             return .ok()
         }

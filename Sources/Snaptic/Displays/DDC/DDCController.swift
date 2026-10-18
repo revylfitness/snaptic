@@ -11,6 +11,23 @@ import SnapticShims
     static var id: DisplayControllerID { .ddc }
     static var privateSymbols: [PrivateSymbol] { [] }
 
+    /// Action ids other controllers call (KeysController's volume and mute keys).
+    static let volumeUpAction = DisplayActionID(rawValue: "c.volumeUp")
+    static let volumeDownAction = DisplayActionID(rawValue: "c.volumeDown")
+    static let volumeUpFineAction = DisplayActionID(rawValue: "c.volumeUpFine")
+    static let volumeDownFineAction = DisplayActionID(rawValue: "c.volumeDownFine")
+    static let muteAction = DisplayActionID(rawValue: "c.mute")
+
+    /// The volume step action for a direction and step size.
+    static func volumeAction(up: Bool, fine: Bool) -> DisplayActionID {
+        switch (up, fine) {
+        case (true, false): return volumeUpAction
+        case (false, false): return volumeDownAction
+        case (true, true): return volumeUpFineAction
+        case (false, true): return volumeDownFineAction
+        }
+    }
+
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
     private var lifetime: Lifetime?
@@ -157,33 +174,59 @@ import SnapticShims
 
     // MARK: Writes
 
+    /// How an interactive write ended (the CLI maps these to `ControlExit`).
+    enum WriteOutcome: Equatable {
+        case done
+        /// The policy refused it (denied code, locked manufacturer code).
+        case refused
+        /// The user declined the confirmation, or it timed out.
+        case declined
+        /// The monitor didn't answer, or DDC refused it for this display.
+        case failed
+
+        var exitCode: Int32 {
+            switch self {
+            case .done: return ControlExit.ok
+            case .refused: return ControlExit.refused
+            case .declined: return ControlExit.cancelled
+            case .failed: return ControlExit.unavailable
+            }
+        }
+    }
+
     /// Writes one VCP value, asking first when the policy needs it. Interactive only.
     @discardableResult
     func write(_ code: UInt8, _ value: UInt16, to key: DisplayKey, message: String? = nil, lgAlt: Bool = false) async -> Bool {
-        guard let context else { return false }
+        await writeOutcome(code, value, to: key, message: message, lgAlt: lgAlt) == .done
+    }
+
+    func writeOutcome(_ code: UInt8, _ value: UInt16, to key: DisplayKey, message: String? = nil,
+                      lgAlt: Bool = false) async -> WriteOutcome {
+        guard let context else { return .failed }
         let tier = VCPPolicy.tier(code: code, value: value, capabilities: context.ddc.cachedCapabilities(key))
         var token: PreConfirmToken?
         switch tier {
         case .denied:
             context.toasts.show(L("Snaptic never sends that command (it can reset or lock the monitor)."), lifetime: lifetime)
-            return false
+            return .refused
         case .unlockable:
             guard context.config.value.perDisplay[key]?.ddc.isUnlocked(code) == true else {
                 context.toasts.show(L("Unlock VCP \(VCPPolicy.hex(code)) for this display in Monitor Controls first."),
                                     lifetime: lifetime)
-                return false
+                return .refused
             }
             fallthrough
         case .preConfirm:
             let text = message ?? L("Send VCP \(VCPPolicy.hex(code)) = \(value) to this display? Some commands switch the picture away from this Mac.")
             token = await context.preConfirm.confirm(key: key, vcp: code, value: value, message: text,
                                                      allowKey: PreConfirmAllowList.entry(vcp: code, value: value))
-            guard token != nil else { return false }
+            guard token != nil else { return .declined }
         case .safe:
             break
         }
+        guard let ctx = self.context else { return .failed }
         let address = lgAlt ? DDCPacket.alternateSourceAddress : DDCPacket.sourceAddress
-        return await context.ddc.write(code, value, to: key, interactive: true, token: token, dataAddress: address)
+        return await ctx.ddc.write(code, value, to: key, interactive: true, token: token, dataAddress: address) ? .done : .failed
     }
 
     func setFraction(_ code: UInt8, _ fraction: Double, for key: DisplayKey) {
@@ -236,8 +279,15 @@ import SnapticShims
         }
     }
 
-    func setInput(_ entry: DDCInputEntry, on key: DisplayKey) {
-        guard let context, let lifetime, let display = context.registry.info(for: key) else { return }
+    /// Callers: menus, the panel, input slots, layouts. Refused (false) while `ddcInput`
+    /// is off; true means the switch was started (it may still ask first).
+    @discardableResult
+    func setInput(_ entry: DDCInputEntry, on key: DisplayKey) -> Bool {
+        guard let context, let lifetime, let display = context.registry.info(for: key) else { return false }
+        guard effective.contains(.ddcInput) else {
+            EventLog.shared.record(.ddc, "Input switch refused: input switching is off")
+            return false
+        }
         let name = TextSanitizer.clean(display.name, maxScalars: 64)
         let message = L("Switch “\(name)” to \(inputName(entry))? It shows that source until you switch back with the monitor's buttons or from Snaptic.")
         let code = entry.lgAlt ? VCPPolicy.lgAlternateInput : VCPPolicy.input
@@ -251,16 +301,23 @@ import SnapticShims
                 VoiceOverAnnouncer.announce(L("Input: ") + self.inputName(entry))
             }
         }
+        return true
     }
 
     /// Power on is safe; standby is confirmed and refused on the only display you can see.
-    func setPower(_ on: Bool, on key: DisplayKey) {
-        guard let context, let lifetime, let display = context.registry.info(for: key) else { return }
+    /// Refused (false) while `ddcPower` is off.
+    @discardableResult
+    func setPower(_ on: Bool, on key: DisplayKey) -> Bool {
+        guard let context, let lifetime, let display = context.registry.info(for: key) else { return false }
+        guard effective.contains(.ddcPower) else {
+            EventLog.shared.record(.ddc, "DDC power change refused: DDC power is off")
+            return false
+        }
         if !on {
             let others = context.registry.displays.contains { $0.key != key && $0.isOnline && $0.isStronglyVisible }
             guard others else {
                 context.toasts.show(L("That's the only display you can see, so Snaptic won't put it on standby."), lifetime: lifetime)
-                return
+                return false
             }
         }
         let value: UInt16 = on ? VCPPolicy.powerOn : (context.config.value.perDisplay[key]?.ddc.standbyValue ?? 4)
@@ -272,6 +329,7 @@ import SnapticShims
                 self.context?.runtime.runtime(for: key).powerOn = on
             }
         }
+        return true
     }
 
     func runCustom(_ control: DDCCustomControl, on key: DisplayKey, fraction: Double? = nil) {
@@ -342,24 +400,24 @@ import SnapticShims
     private var slotLifetime: Lifetime?
 
     private func registerActions(_ ctx: DisplaysContext, lifetime: Lifetime) {
-        let steps: [(String, String, UInt8, Double, Bool)] = [
-            ("c.volumeUp", L("Volume Up"), VCPPolicy.volume, 1, false),
-            ("c.volumeDown", L("Volume Down"), VCPPolicy.volume, -1, false),
-            ("c.volumeUpFine", L("Volume Up (Fine)"), VCPPolicy.volume, 1, true),
-            ("c.volumeDownFine", L("Volume Down (Fine)"), VCPPolicy.volume, -1, true),
-            ("c.contrastUp", L("Contrast Up"), VCPPolicy.contrast, 1, false),
-            ("c.contrastDown", L("Contrast Down"), VCPPolicy.contrast, -1, false),
-            ("c.contrastUpFine", L("Contrast Up (Fine)"), VCPPolicy.contrast, 1, true),
-            ("c.contrastDownFine", L("Contrast Down (Fine)"), VCPPolicy.contrast, -1, true),
+        let steps: [(DisplayActionID, String, UInt8, Double, Bool)] = [
+            (Self.volumeUpAction, L("Volume Up"), VCPPolicy.volume, 1, false),
+            (Self.volumeDownAction, L("Volume Down"), VCPPolicy.volume, -1, false),
+            (Self.volumeUpFineAction, L("Volume Up (Fine)"), VCPPolicy.volume, 1, true),
+            (Self.volumeDownFineAction, L("Volume Down (Fine)"), VCPPolicy.volume, -1, true),
+            (DisplayActionID(rawValue: "c.contrastUp"), L("Contrast Up"), VCPPolicy.contrast, 1, false),
+            (DisplayActionID(rawValue: "c.contrastDown"), L("Contrast Down"), VCPPolicy.contrast, -1, false),
+            (DisplayActionID(rawValue: "c.contrastUpFine"), L("Contrast Up (Fine)"), VCPPolicy.contrast, 1, true),
+            (DisplayActionID(rawValue: "c.contrastDownFine"), L("Contrast Down (Fine)"), VCPPolicy.contrast, -1, true),
         ]
         for (id, title, code, sign, fine) in steps {
-            ctx.actions.register(Action(id: DisplayActionID(rawValue: id), title: title, feature: .ddcControls,
+            ctx.actions.register(Action(id: id, title: title, feature: .ddcControls,
                                         cliAllowed: true) { [weak self] target in
                 guard let self, let ctx = self.context else { return }
                 self.step(code, target, delta: sign * ctx.config.value.keys.step(fine: fine))
             }, lifetime: lifetime)
         }
-        ctx.actions.register(Action(id: DisplayActionID(rawValue: "c.mute"), title: L("Mute"), feature: .ddcControls,
+        ctx.actions.register(Action(id: Self.muteAction, title: L("Mute"), feature: .ddcControls,
                                     cliAllowed: true) { [weak self] target in self?.toggleMute(target) }, lifetime: lifetime)
         ctx.actions.register(Action(id: DisplayActionID(rawValue: "c.ddcPowerOn"), title: L("Wake Display (DDC)"),
                                     feature: .ddcPower, cliAllowed: true) { [weak self] target in
@@ -398,91 +456,185 @@ import SnapticShims
     private func registerCommands(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("set volume", policy: .low, offOnly: false, cliAllowed: true,
                               summary: L("Set DDC volume: set volume 40 [display] (or +5 / -5)"), lifetime: lifetime) {
-            [weak self] request in await self?.setLevelCommand(VCPPolicy.volume, request) ?? .failure(2, L("Displays isn't running"))
+            [weak self] request in await self?.setLevelCommand(VCPPolicy.volume, request) ?? DisplayTargets.notRunning()
         }
         ctx.commands.register("set contrast", policy: .low, offOnly: false, cliAllowed: true,
                               summary: L("Set DDC contrast: set contrast 70 [display]"), lifetime: lifetime) {
-            [weak self] request in await self?.setLevelCommand(VCPPolicy.contrast, request) ?? .failure(2, L("Displays isn't running"))
+            [weak self] request in await self?.setLevelCommand(VCPPolicy.contrast, request) ?? DisplayTargets.notRunning()
+        }
+        ctx.commands.register("get volume", policy: .read, offOnly: false, cliAllowed: true,
+                              summary: L("Print DDC volume per display: get volume [display]"), lifetime: lifetime) {
+            [weak self] request in await self?.getLevelCommand(VCPPolicy.volume, request) ?? DisplayTargets.notRunning()
+        }
+        ctx.commands.register("get contrast", policy: .read, offOnly: false, cliAllowed: true,
+                              summary: L("Print DDC contrast per display: get contrast [display]"), lifetime: lifetime) {
+            [weak self] request in await self?.getLevelCommand(VCPPolicy.contrast, request) ?? DisplayTargets.notRunning()
+        }
+        ctx.commands.register("get input", policy: .read, offOnly: false, cliAllowed: true,
+                              summary: L("Print the current input per display: get input [display]"), lifetime: lifetime) {
+            [weak self] request in await self?.getInputCommand(request) ?? DisplayTargets.notRunning()
         }
         ctx.commands.register("input", policy: .preConfirm, offOnly: false, cliAllowed: true,
                               summary: L("Switch input: input <name|hex value> [display] (asks first unless allowed)"),
                               lifetime: lifetime) { [weak self] request in
-            guard let self, let ctx = self.context else { return .failure(2, L("Displays isn't running")) }
-            guard self.effective.contains(.ddcInput) else { return .failure(3, L("Input switching is off")) }
-            guard let parsed = DisplayTargets.cliTarget(request.arguments, valueCount: 1, ctx),
-                  let display = DisplayTargets.resolve(parsed.target, ctx).first else {
-                return .failure(64, L("Usage: input <name|hex value> [display]"))
+            guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
+            let usage = L("Usage: input <name|hex value> [display]. ") + DisplayTargets.usage
+            let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 1, usage: usage, ctx)
+            guard let parsed else { return error ?? .failure(ControlExit.usage, usage) }
+            guard self.effective.contains(.ddcInput) else { return .failure(ControlExit.unavailable, L("Input switching is off")) }
+            guard let display = DisplayTargets.resolve(parsed.target, ctx).first(where: { ctx.ddc.isAvailable($0.key) }) else {
+                return .failure(ControlExit.notFound, L("No DDC display matches"))
             }
             let wanted = parsed.values[0].lowercased()
             let list = self.inputList(for: display.key, includeHidden: true)
             let entry = list.first { self.inputName($0).lowercased() == wanted }
                 ?? VCPPolicy.parseCode(wanted).map { v in list.first { $0.value == UInt16(v) } ?? DDCInputEntry(value: UInt16(v), name: "") }
-            guard let entry else { return .failure(64, L("Unknown input")) }
+            guard let entry else { return .failure(ControlExit.notFound, L("Unknown input. Try `snaptic get input`.")) }
             let code = entry.lgAlt ? VCPPolicy.lgAlternateInput : VCPPolicy.input
-            let ok = await self.write(code, entry.value, to: display.key, lgAlt: entry.lgAlt)
-            return ok ? .ok() : .failure(5, L("The monitor didn't switch, or the change wasn't confirmed"))
+            let outcome = await self.writeOutcome(code, entry.value, to: display.key, lgAlt: entry.lgAlt)
+            if outcome == .done { self.context?.runtime.runtime(for: display.key).input = entry.value }
+            return outcome == .done ? .ok() : .failure(outcome.exitCode, Self.message(outcome))
         }
         ctx.commands.register("ddc", policy: .preConfirm, offOnly: false, cliAllowed: true,
                               summary: L("Raw DDC: ddc get <code> | ddc set <code> <value> | ddc caps [display]"),
                               lifetime: lifetime) { [weak self] request in
-            guard let self, let ctx = self.context else { return .failure(2, L("Displays isn't running")) }
+            guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
+            let usage = L("Usage: ddc get <code> | ddc set <code> <value> | ddc caps [display]")
             var args = request.arguments
-            guard let op = args.first?.lowercased() else { return .failure(64, L("Usage: ddc get|set|caps …")) }
+            guard let op = args.first?.lowercased(), ["get", "set", "caps"].contains(op) else {
+                return .failure(ControlExit.usage, usage)
+            }
             args.removeFirst()
             let valueCount = op == "set" ? 2 : (op == "get" ? 1 : 0)
-            guard let parsed = DisplayTargets.cliTarget(args, valueCount: valueCount, ctx),
-                  let display = DisplayTargets.resolve(parsed.target, ctx).first(where: { ctx.ddc.isAvailable($0.key) }) else {
-                return .failure(3, L("No DDC display matches. ") + DisplayTargets.usage)
+            let (parsed, error) = DisplayTargets.cliArguments(args, valueCount: valueCount, usage: usage, ctx)
+            guard let parsed else { return error ?? .failure(ControlExit.usage, usage) }
+            guard let display = DisplayTargets.resolve(parsed.target, ctx).first(where: { ctx.ddc.isAvailable($0.key) }) else {
+                return .failure(ControlExit.notFound, L("No DDC display matches. ") + DisplayTargets.usage)
             }
             switch op {
             case "caps":
                 guard let caps = await ctx.ddc.capabilities(of: display.key, refresh: true) else {
-                    return .failure(5, L("The display returned no capabilities"))
+                    return .failure(ControlExit.unavailable, L("The display returned no capabilities"))
                 }
                 let codes = caps.vcp.keys.sorted().map { VCPPolicy.hex($0) }.joined(separator: " ")
-                return .ok("model \(caps.model ?? "?"), mccs \(caps.mccsVersion ?? "?")\nvcp \(codes)")
+                let model = TextSanitizer.clean(caps.model ?? "?", maxScalars: 64)
+                return .ok("model \(model), mccs \(caps.mccsVersion ?? "?")\nvcp \(codes)")
             case "get":
-                guard self.effective.contains(.ddcControls) || self.effective.contains(.ddcCustom),
-                      let code = VCPPolicy.parseCode(parsed.values[0]) else { return .failure(64, L("Not a VCP code")) }
-                guard let r = await ctx.ddc.read(code, from: display.key) else { return .failure(5, L("No reply")) }
+                guard let code = VCPPolicy.parseCode(parsed.values[0]) else { return .failure(ControlExit.usage, L("Not a VCP code")) }
+                guard self.effective.contains(.ddcControls) || self.effective.contains(.ddcCustom) else {
+                    return .failure(ControlExit.unavailable, L("DDC controls are off"))
+                }
+                guard let r = await ctx.ddc.read(code, from: display.key) else {
+                    return .failure(ControlExit.unavailable, L("No reply"))
+                }
                 return .ok("\(r.current)/\(r.max)")
-            case "set":
+            default:
                 guard let code = VCPPolicy.parseCode(parsed.values[0]),
-                      let value = UInt16(parsed.values[1]) ?? UInt16(parsed.values[1].replacingOccurrences(of: "0x", with: ""), radix: 16)
-                else { return .failure(64, L("Usage: ddc set <code> <value>")) }
-                // Power on is allowed with ddcPower; everything else raw needs ddcCustom (or a standard control).
+                      let value = Self.parseValue(parsed.values[1]) else {
+                    return .failure(ControlExit.usage, L("Usage: ddc set <code> <value>"))
+                }
+                // Power is allowed with ddcPower; other raw writes need ddcCustom (or a standard control).
                 let standard = VCPPolicy.continuousCodes.contains(code) && self.effective.contains(.ddcControls)
                 let power = code == VCPPolicy.power && self.effective.contains(.ddcPower)
                 guard standard || power || self.effective.contains(.ddcCustom) else {
-                    return .failure(3, L("Turn on Custom DDC controls for raw writes"))
+                    return .failure(ControlExit.unavailable, L("Turn on Custom DDC controls for raw writes"))
                 }
                 if code == VCPPolicy.power, value != VCPPolicy.powerOn,
                    !ctx.registry.displays.contains(where: { $0.key != display.key && $0.isOnline && $0.isStronglyVisible }) {
-                    return .failure(6, L("That's the only display you can see"))
+                    return .failure(ControlExit.refused, L("That's the only display you can see"))
                 }
-                let ok = await self.write(code, value, to: display.key)
-                return ok ? .ok() : .failure(5, L("Refused, not confirmed, or no reply"))
-            default:
-                return .failure(64, L("Usage: ddc get|set|caps …"))
+                let outcome = await self.writeOutcome(code, value, to: display.key)
+                return outcome == .done ? .ok() : .failure(outcome.exitCode, Self.message(outcome))
             }
         }
     }
 
-    private func setLevelCommand(_ code: UInt8, _ request: ControlRequest) async -> ControlResponse {
-        guard let ctx = context else { return .failure(2, L("Displays isn't running")) }
-        guard let parsed = DisplayTargets.cliTarget(request.arguments, valueCount: 1, ctx) else {
-            return .failure(64, L("Usage: <percent|+n|-n> [display]. ") + DisplayTargets.usage)
+    /// "50", "0x32", "32h" → a 16-bit value.
+    static func parseValue(_ text: String) -> UInt16? {
+        let t = text.trimmingCharacters(in: .whitespaces).lowercased()
+        if let v = UInt16(t) { return v }
+        var hex = t
+        if hex.hasPrefix("0x") { hex.removeFirst(2) } else if hex.hasSuffix("h") { hex.removeLast() } else { return nil }
+        guard (1...4).contains(hex.count) else { return nil }
+        return UInt16(hex, radix: 16)
+    }
+
+    private static func message(_ outcome: WriteOutcome) -> String {
+        switch outcome {
+        case .done: return ""
+        case .refused: return L("Refused by the DDC safety policy")
+        case .declined: return L("Not confirmed")
+        case .failed: return L("The monitor didn't accept it or didn't reply")
         }
+    }
+
+    private func setLevelCommand(_ code: UInt8, _ request: ControlRequest) async -> ControlResponse {
+        guard let ctx = context else { return DisplayTargets.notRunning() }
+        let usage = L("Usage: <percent|+n|-n> [display]. ") + DisplayTargets.usage
+        let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 1, usage: usage, ctx)
+        guard let parsed else { return error ?? .failure(ControlExit.usage, usage) }
+        guard effective.contains(.ddcControls) else { return .failure(ControlExit.unavailable, L("DDC controls are off")) }
         let displays = DisplayTargets.resolve(parsed.target, ctx).filter { ctx.ddc.isAvailable($0.key) && isControlEnabled(code, for: $0.key) }
-        guard !displays.isEmpty else { return .failure(3, L("No DDC display with that control matches")) }
+        guard !displays.isEmpty else { return .failure(ControlExit.notFound, L("No DDC display with that control matches")) }
         for d in displays {
             let live = ctx.runtime.runtime(for: d.key)
             let current = (code == VCPPolicy.volume ? live.volume : live.contrast) ?? 0.5
-            guard let v = DisplayTargets.level(parsed.values[0], current: current) else { return .failure(64, L("Not a value")) }
-            if !(await write(code, raw(d.key, code, fraction: v), to: d.key)) { return .failure(5, L("The monitor didn't accept it")) }
+            guard let v = DisplayTargets.level(parsed.values[0], current: current) else {
+                return .failure(ControlExit.usage, L("Not a value"))
+            }
+            let outcome = await writeOutcome(code, raw(d.key, code, fraction: v), to: d.key)
+            guard outcome == .done else { return .failure(outcome.exitCode, Self.message(outcome)) }
             if code == VCPPolicy.volume { live.volume = v } else { live.contrast = v }
         }
         return .ok()
+    }
+
+    /// Reads the control fresh (falls back to the last value seen).
+    private func getLevelCommand(_ code: UInt8, _ request: ControlRequest) async -> ControlResponse {
+        guard let ctx = context else { return DisplayTargets.notRunning() }
+        let what = code == VCPPolicy.volume ? "volume" : "contrast"
+        let usage = L("Usage: get \(what) [display]. ") + DisplayTargets.usage
+        let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 0, default: .all, usage: usage, ctx)
+        guard let parsed else { return error ?? .failure(ControlExit.usage, usage) }
+        guard effective.contains(.ddcControls) else { return .failure(ControlExit.unavailable, L("DDC controls are off")) }
+        let displays = DisplayTargets.resolve(parsed.target, ctx).filter { ctx.ddc.isAvailable($0.key) && isControlEnabled(code, for: $0.key) }
+        var rows: [(display: DisplayInfo, text: [String], json: [String: Any])] = []
+        for d in displays {
+            let reading = await ctx.ddc.read(code, from: d.key) ?? ctx.ddc.lastReading(code, of: d.key)
+            guard let reading, reading.max > 0 else { continue }
+            let percent = Int((fraction(d.key, code, reading) * 100).rounded())
+            var text = ["\(percent)%"]
+            var json: [String: Any] = [what: percent, "raw": Int(reading.current), "max": Int(reading.max)]
+            if code == VCPPolicy.volume, let muted = self.context?.runtime.runtime(for: d.key).muted {
+                text.append(muted ? "muted" : "unmuted")
+                json["muted"] = muted
+            }
+            rows.append((d, text, json))
+        }
+        guard let ctx = context else { return DisplayTargets.notRunning() }
+        return DisplayTargets.rows(rows, json: request.json, none: L("No DDC display with that control matches"), ctx)
+    }
+
+    private func getInputCommand(_ request: ControlRequest) async -> ControlResponse {
+        guard let ctx = context else { return DisplayTargets.notRunning() }
+        let usage = L("Usage: get input [display]. ") + DisplayTargets.usage
+        let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 0, default: .all, usage: usage, ctx)
+        guard let parsed else { return error ?? .failure(ControlExit.usage, usage) }
+        guard effective.contains(.ddcInput) else { return .failure(ControlExit.unavailable, L("Input switching is off")) }
+        let displays = DisplayTargets.resolve(parsed.target, ctx).filter { ctx.ddc.isAvailable($0.key) }
+        var rows: [(display: DisplayInfo, text: [String], json: [String: Any])] = []
+        for d in displays {
+            let fresh = await ctx.ddc.read(VCPPolicy.input, from: d.key).map { $0.current & 0xFF }
+            guard let value = fresh ?? context?.runtime.runtime(for: d.key).input else { continue }
+            if fresh != nil { context?.runtime.runtime(for: d.key).input = value }
+            let entry = inputList(for: d.key, includeHidden: true).first { $0.value == value && !$0.lgAlt }
+            let name = entry.map { inputName($0) } ?? VCPPolicy.inputName(value)
+            let hex = "0x" + VCPPolicy.hex(UInt8(truncatingIfNeeded: value))
+            let available = inputList(for: d.key).map { inputName($0) }
+            rows.append((d, [name, hex, available.joined(separator: ", ")], ["input": name, "value": Int(value), "inputs": available]))
+        }
+        guard let ctx = context else { return DisplayTargets.notRunning() }
+        return DisplayTargets.rows(rows, json: request.json, none: L("No DDC display matches"), ctx)
     }
 
     // MARK: Diagnostics (DDC caps appear when ddc is active)

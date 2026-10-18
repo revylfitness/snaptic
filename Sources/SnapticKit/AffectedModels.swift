@@ -68,6 +68,25 @@ package enum AffectedModels {
         }
     }
 
+    /// XDR extra brightness availability from static host facts only (PLAN §6.4): it needs
+    /// Apple silicon (EDR + gamma > 1 and the EDR overlay are verified only there). Whether a
+    /// given display has EDR headroom is checked per display, where the method is chosen.
+    /// Nil when available, else the reason.
+    package static func xdrUnavailableReason(_ host: HostDescription) -> String? {
+        if host.isAppleSilicon { return nil }
+        // `machdep.cpu.brand_string` can be empty; Apple silicon-only model ids ("Mac14,6") still tell.
+        if host.chipName.isEmpty, isAppleSiliconOnlyModel(host.modelIdentifier) { return nil }
+        return L("Extra brightness needs a Mac with Apple silicon")
+    }
+
+    /// "MacNN,M" model ids (2022 on) exist only on Apple silicon.
+    package static func isAppleSiliconOnlyModel(_ modelIdentifier: String) -> Bool {
+        guard modelIdentifier.hasPrefix("Mac") else { return false }
+        let rest = modelIdentifier.dropFirst(3)
+        guard let comma = rest.firstIndex(of: ","), let major = Int(rest[rest.startIndex..<comma]) else { return false }
+        return major >= 13 && Int(rest[rest.index(after: comma)...]) != nil
+    }
+
     private static func matches(_ entry: Entry, _ host: HostDescription) -> Bool {
         if let chip = entry.chipPrefix {
             guard host.chipName.lowercased().hasPrefix(chip.lowercased()) else { return false }

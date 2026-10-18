@@ -41,6 +41,8 @@ final class DDCService: @unchecked Sendable {
 
     private struct PendingWrite {
         var value: UInt16
+        /// The policy gate saw a PreConfirm token for `value` (passed to the shim's backstop).
+        var confirmed: Bool
         var continuations: [CheckedContinuation<Bool, Never>]
         var enqueuedAt: UInt64
         var retries: Int
@@ -242,9 +244,12 @@ final class DDCService: @unchecked Sendable {
             EventLog.shared.record(.ddc, "Refused VCP \(VCPPolicy.hex(vcp)) write: \(refusal)")
             return false
         }
+        // The shim's backstop sends confirm-tier values only with this flag.
+        let confirmed = token?.authorizes(key, vcp, value) ?? false
         let ok: Bool = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
             queue.async { [self] in
-                self.enqueue(Slot(key: key, code: vcp, dataAddress: dataAddress), value: value, continuation: continuation)
+                self.enqueue(Slot(key: key, code: vcp, dataAddress: dataAddress), value: value, confirmed: confirmed,
+                             continuation: continuation)
             }
         }
         await MainActor.run { [weak self] in self?.notifyChange(key) }
@@ -284,13 +289,16 @@ final class DDCService: @unchecked Sendable {
     }
 
     /// On the queue.
-    private func enqueue(_ slot: Slot, value: UInt16, continuation: CheckedContinuation<Bool, Never>) {
+    private func enqueue(_ slot: Slot, value: UInt16, confirmed: Bool, continuation: CheckedContinuation<Bool, Never>) {
         if var existing = pending[slot] {
+            // The newest value wins, with its own confirmation.
             existing.value = value
+            existing.confirmed = confirmed
             existing.continuations.append(continuation)
             pending[slot] = existing
         } else {
-            pending[slot] = PendingWrite(value: value, continuations: [continuation], enqueuedAt: Self.now(), retries: 0)
+            pending[slot] = PendingWrite(value: value, confirmed: confirmed, continuations: [continuation],
+                                         enqueuedAt: Self.now(), retries: 0)
             pendingOrder.append(slot)
         }
         scheduleDrain(slot.key, after: 0)
@@ -341,7 +349,7 @@ final class DDCService: @unchecked Sendable {
         if lastWritten[slot] == write.value {
             finish(slot, true)
         } else if let transport = ensureTransport(key) {
-            let ok = transport.write(slot.code, write.value, dataAddress: slot.dataAddress)
+            let ok = transport.write(slot.code, write.value, dataAddress: slot.dataAddress, confirmed: write.confirmed)
             lastWriteAt[key] = Self.now()
             if ok {
                 lastWritten[slot] = write.value

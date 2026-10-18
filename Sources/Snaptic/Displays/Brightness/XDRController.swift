@@ -23,11 +23,11 @@ import SnapticKit
 
     init() {}
 
+    /// Static host facts only: displays come and go, so whether one has EDR headroom is
+    /// checked per display in `EDRBoost.xdrMethod` (menus, toggles, keys and the slider).
     func availability(of feature: DisplayFeature, context: DisplaysContext) -> FeatureAvailability {
-        if NSScreen.screens.contains(where: { $0.maximumPotentialExtendedDynamicRangeColorComponentValue > 1.01 }) {
-            return .available
-        }
-        return .unavailable(L("No connected display has extra (EDR) brightness"))
+        if let reason = AffectedModels.xdrUnavailableReason(HostInfo.current) { return .unavailable(reason) }
+        return .available
     }
 
     func start(_ context: DisplaysContext, lifetime: Lifetime, effective: Set<DisplayFeature>) {
@@ -50,10 +50,34 @@ import SnapticKit
         context.commands.register("toggle xdr", policy: .low, offOnly: false, cliAllowed: true,
                                   summary: L("Toggle extra brightness: toggle xdr [display]"),
                                   lifetime: lifetime) { [weak self] request in
-            guard let self, let ctx = self.context else { return .failure(2, L("Displays isn't running")) }
-            let target = request.arguments.first.flatMap { DisplayTargets.select($0, ctx) } ?? .main
-            let changed = self.toggle(target)
-            return changed ? .ok() : .failure(3, L("No display with extra brightness matches"))
+            guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
+            let usage = L("Usage: toggle xdr [display]. ") + DisplayTargets.usage
+            let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 0, usage: usage, ctx)
+            guard let parsed else { return error ?? .failure(ControlExit.usage, usage) }
+            guard ctx.runtime.isEffective(.xdr) else { return .failure(ControlExit.unavailable, L("Extra brightness is off")) }
+            let changed = self.toggle(parsed.target)
+            return changed ? .ok() : .failure(ControlExit.notFound, L("No display with extra brightness matches"))
+        }
+        context.commands.register("get xdr", policy: .read, offOnly: false, cliAllowed: true,
+                                  summary: L("Print extra brightness per display: get xdr [display]"),
+                                  lifetime: lifetime) { [weak self] request in
+            guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
+            let usage = L("Usage: get xdr [display]. ") + DisplayTargets.usage
+            let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 0, default: .all, usage: usage, ctx)
+            guard let parsed else { return error ?? .failure(ControlExit.usage, usage) }
+            guard ctx.runtime.isEffective(.xdr) else { return .failure(ControlExit.unavailable, L("Extra brightness is off")) }
+            let rows = DisplayTargets.resolve(parsed.target, ctx).compactMap { d -> (display: DisplayInfo, text: [String], json: [String: Any])? in
+                let (method, _) = self.method(for: d.key)
+                guard let method else { return nil }
+                let on = self.isEnabled(d.key)
+                let boost = Int((ctx.edr.isBoosting(d.key) ? ctx.edr.appliedBoost(d.key) : 1) * 100)
+                var state = on ? "on" : "off"
+                if on, ctx.edr.pauseReason != nil { state = "paused" }
+                var json: [String: Any] = ["xdr": state, "boost": boost, "method": method.rawValue]
+                if let reason = ctx.edr.pauseReason, on { json["pausedBecause"] = reason }
+                return (d, [state, "\(boost)%", method.rawValue], json)
+            }
+            return DisplayTargets.rows(rows, json: request.json, none: L("No display with extra brightness matches"), ctx)
         }
         context.registry.changes
             .receive(on: DispatchQueue.main)
