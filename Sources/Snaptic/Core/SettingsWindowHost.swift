@@ -57,7 +57,7 @@ import SnapticKit
     }
 
     private func makeWindow(host: ModuleHost) -> NSWindow {
-        let window = NSWindow(
+        let window = SettingsWindow(
             contentRect: NSRect(origin: .zero, size: NSSize(width: Self.width, height: Self.defaultHeight)),
             styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
             backing: .buffered,
@@ -81,36 +81,28 @@ import SnapticKit
         // Whatever a saved frame says, the width is fixed and the height at least the minimum.
         let height = window.contentRect(forFrameRect: window.frame).height
         window.setContentSize(NSSize(width: Self.width, height: max(Self.minimumHeight, height)))
+        window.focusSearch = { [weak self, weak window] in
+            guard let self, let window else { return false }
+            return self.focusSearch(in: window)
+        }
         self.window = window
         installEventMonitor()
         return window
     }
 
-    /// R5-8: the first mouse-down in the window clears the pending external open. ⌘F focuses the search field
-    /// (System Settings precedent).
+    /// R5-8: the first mouse-down in the window clears the pending external open. (⌘F is Edit › Find…, handled by
+    /// `SettingsWindow`.)
     private func installEventMonitor() {
         guard eventMonitor == nil else { return }
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .keyDown]) { [weak self] event in
-            let isMouseDown = event.type == .leftMouseDown
-            let isFind = Self.isFindShortcut(event)
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
             let windowNumber = event.windowNumber
-            let consumed = MainActor.assumeIsolated { () -> Bool in
+            MainActor.assumeIsolated {
                 guard let self, let window = self.window, window.isVisible, window.windowNumber == windowNumber
-                else { return false }
-                if isMouseDown {
-                    self.shell.mouseDown()
-                    return false
-                }
-                return isFind && self.focusSearch(in: window)
+                else { return }
+                self.shell.mouseDown()
             }
-            return consumed ? nil : event
+            return event
         }
-    }
-
-    nonisolated private static func isFindShortcut(_ event: NSEvent) -> Bool {
-        event.type == .keyDown
-            && event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command
-            && event.charactersIgnoringModifiers?.lowercased() == "f"
     }
 
     /// Puts the cursor in the sidebar search field. False when there is none.
@@ -138,5 +130,27 @@ import SnapticKit
                 if !settingsOpen && !onboardingOpen { NSApp.setActivationPolicy(.accessory) }
             }
         }
+    }
+}
+
+/// The Settings window. Edit › Find… (⌘F, `performFindPanelAction:` with the show-find tag) puts the focus in the
+/// sidebar search field, as in System Settings; Find Next, Find Previous and Use Selection for Find have nothing to
+/// act on here and stay disabled (a focused text view earlier in the responder chain still handles them).
+final class SettingsWindow: NSWindow {
+    var focusSearch: (@MainActor () -> Bool)?
+
+    @objc func performFindPanelAction(_ sender: Any?) {
+        guard Self.isShowFind(sender) else { return }
+        _ = focusSearch?()
+    }
+
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(performFindPanelAction(_:)) { return Self.isShowFind(item) }
+        return super.validateUserInterfaceItem(item)
+    }
+
+    /// Only Find… (tag `NSTextFinder.Action.showFindInterface`, 1); never ⌘G or ⌘E.
+    static func isShowFind(_ sender: Any?) -> Bool {
+        (sender as? NSValidatedUserInterfaceItem)?.tag == NSTextFinder.Action.showFindInterface.rawValue
     }
 }
