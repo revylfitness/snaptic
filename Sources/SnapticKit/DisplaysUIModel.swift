@@ -342,6 +342,52 @@ package enum DisplaysOnboardingPlan {
     }
 }
 
+// MARK: - Turning a feature off (FIXES-R2 W7)
+
+package enum FeatureTurnOff {
+    /// What "Also turns off: …" lists: features that stop with `feature`, whether they run
+    /// now or are only switched on (paused, waiting for a permission). Never Always-on
+    /// features, never `feature` itself; declaration order.
+    package static func dependents(of feature: DisplayFeature, raw: [DisplayFeature: Bool],
+                                   effective: Set<DisplayFeature>) -> [DisplayFeature] {
+        let rawOn = Set(DisplayFeature.allCases.filter { FeatureGraph.rawState($0, in: raw) })
+        let stopping = FeatureGraph.dependents(of: feature, effective: effective)
+            .union(FeatureGraph.dependents(of: feature, effective: rawOn))
+        return DisplayFeature.allCases.filter {
+            $0 != feature && stopping.contains($0) && FeatureGraph.spec($0).defaultState != .always
+        }
+    }
+
+    /// The raw flags to write: the feature and every listed dependent off, so turning the
+    /// feature on again later doesn't silently bring the dependents back.
+    package static func changes(_ feature: DisplayFeature, dependents: [DisplayFeature]) -> [DisplayFeature: Bool] {
+        var result: [DisplayFeature: Bool] = [:]
+        for f in [feature] + dependents where FeatureGraph.spec(f).defaultState != .always { result[f] = false }
+        return result
+    }
+}
+
+// MARK: - Display block disclosure in the menu (FIXES-R2 W17a)
+
+/// The header row is a label (name and badges) that never acts when clicked; collapsing
+/// and expanding go through a dedicated "Collapse/Expand in Menu" item in its submenu.
+package enum DisplayBlockDisclosure: Equatable, Sendable {
+    /// No control (the floating panel's "More options" menu, single display without header).
+    case none
+    /// The block is collapsed: its submenu starts with "Expand in Menu".
+    case expand
+    /// The block is expanded: its submenu offers "Collapse in Menu".
+    case collapse
+
+    package static func control(showHeader: Bool, forceExpanded: Bool, collapsed: Bool) -> DisplayBlockDisclosure {
+        guard showHeader, !forceExpanded else { return .none }
+        return collapsed ? .expand : .collapse
+    }
+
+    /// Whether clicking the header row itself does anything (never: W17a).
+    package static let headerClickActs = false
+}
+
 // MARK: - EDID view (Display Names page only; never in the diagnostics report)
 
 package enum EDIDText {

@@ -41,7 +41,11 @@ import SnapticKit
             return items
         }
 
-        let collapsed = !forceExpanded && menu.isCollapsed(key)
+        // W17a: the header row is a label; clicking it never collapses the block. The
+        // dedicated "Collapse/Expand in Menu" item lives in the header's submenu.
+        let disclosure = DisplayBlockDisclosure.control(showHeader: showHeader, forceExpanded: forceExpanded,
+                                                        collapsed: menu.isCollapsed(key))
+        let collapsed = disclosure == .expand
         let header = headerItem(badges: menu.showBadges && !menu.compact)
         if collapsed {
             let expand = Self.actionItem(L("Expand in Menu"), symbol: "chevron.down") { [weak ctx] in
@@ -59,11 +63,7 @@ import SnapticKit
         }
         if menu.compact {
             var inner: [NSMenuItem] = []
-            if !forceExpanded {
-                inner.append(Self.actionItem(L("Collapse in Menu"), symbol: "chevron.up") { [weak ctx] in
-                    ctx?.config.value.menu.setCollapsed(true, for: key)
-                })
-            }
+            if disclosure == .collapse { inner.append(Self.collapseItem(key, context: ctx)) }
             if !content.more.isEmpty {
                 if !inner.isEmpty { inner.append(.separator()) }
                 inner += content.more
@@ -71,13 +71,19 @@ import SnapticKit
             if !inner.isEmpty { header.submenu = Self.menu(inner, title: display.name) }
             return [header] + content.header + content.visible
         }
-        if !forceExpanded {
-            Self.attach(header) { [weak ctx] in ctx?.config.value.menu.setCollapsed(true, for: key) }
-            header.toolTip = L("Click to collapse this display in the menu")
+        if disclosure == .collapse {
+            header.submenu = Self.menu([Self.collapseItem(key, context: ctx)], title: display.name)
         }
         var items = [header] + content.header + content.visible
         if !content.more.isEmpty { items.append(Self.submenuItem(L("More"), symbol: "ellipsis.circle", content.more)) }
         return items
+    }
+
+    /// "Collapse in Menu": the only way to collapse a block (the header row never acts).
+    private static func collapseItem(_ key: DisplayKey, context ctx: DisplaysContext) -> NSMenuItem {
+        actionItem(L("Collapse in Menu"), symbol: "chevron.up") { [weak ctx] in
+            ctx?.config.value.menu.setCollapsed(true, for: key)
+        }
     }
 
     // MARK: Content

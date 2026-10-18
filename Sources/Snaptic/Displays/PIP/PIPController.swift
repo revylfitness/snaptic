@@ -125,9 +125,10 @@ fileprivate extension DisplayActionID {
 
     func availability(of feature: DisplayFeature, context: DisplaysContext) -> FeatureAvailability {
         guard feature == .pip || feature == .pipFilters else { return .unavailable(L("Not handled by Picture in Picture")) }
-        if context.permissions.state(.screenRecording) == .denied {
-            return .unavailable(L("Needs Screen Recording. Allow Snaptic in System Settings › Privacy & Security › Screen Recording, then relaunch Snaptic."))
-        }
+        // W3: static facts only (ScreenCaptureKit is always there on macOS 14+). Screen
+        // Recording is a permission, not availability: Features shows "Needs Screen
+        // Recording" with Grant, the feature can be turned on first, and starting a picture
+        // without it asks for the permission.
         return .available
     }
 
@@ -361,9 +362,14 @@ fileprivate extension DisplayActionID {
         if origin == .cli, entry.source == .window {
             return refuse(ControlExit.refused, L("“\(c.name)” uses a window chosen in a picker, so it can't start from the command line."))
         }
-        if ctx.permissions.state(.screenRecording) == .denied {
-            ctx.permissions.request(.screenRecording, reason: L("Picture in Picture shows the contents of your displays."),
-                                    lifetime: lifetime)
+        if ctx.permissions.state(.screenRecording) != .granted {
+            if origin == .user {
+                // Someone just asked for a picture: always show the guide.
+                ctx.permissions.presentGuide(.screenRecording, reason: L("Picture in Picture shows the contents of your displays."))
+            } else {
+                ctx.permissions.request(.screenRecording, reason: L("Picture in Picture shows the contents of your displays."),
+                                        lifetime: lifetime)
+            }
             return refuse(ControlExit.unavailable, CaptureError.permission.message)
         }
         var sourceInfo: DisplayInfo?

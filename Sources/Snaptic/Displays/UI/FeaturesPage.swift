@@ -4,7 +4,8 @@ import SnapticKit
 /// Display Features (PLAN §2.1): every DisplayFeature grouped by its settings page, with
 /// its switch, Beta/Experimental labels, why it is unavailable or inactive, what it
 /// needs, and what else turns off with it. Turning on goes through `env.enableFeature`
-/// (the feature plus everything it requires); turning off clears only that flag.
+/// (the feature plus everything it requires); turning off clears that flag and the flags
+/// of everything listed under "Also turns off" (W7).
 struct FeaturesPage: View {
     @ObservedObject private var env: DisplaysPageEnvironment
     @State private var pendingOff: PendingOff?
@@ -52,7 +53,7 @@ struct FeaturesPage: View {
         .alert(item: $pendingOff) { pending in
             Alert(title: Text(L("Turn off \(DisplaysUIText.title(pending.feature))?")),
                   message: Text(L("Also turns off: \(pending.dependents.map(DisplaysUIText.title).joined(separator: ", ")).")),
-                  primaryButton: .destructive(Text(L("Turn Off"))) { turnOff(pending.feature) },
+                  primaryButton: .destructive(Text(L("Turn Off"))) { turnOff(pending.feature, dependents: pending.dependents) },
                   secondaryButton: .cancel())
         }
     }
@@ -78,17 +79,21 @@ struct FeaturesPage: View {
     }
 
     private func requestOff(_ feature: DisplayFeature) {
-        let dependents = FeatureGraph.dependents(of: feature, effective: env.runtime.effectiveFeatures)
+        let dependents = FeatureTurnOff.dependents(of: feature, raw: env.config.value.rawFeatures,
+                                                   effective: env.runtime.effectiveFeatures)
         if dependents.isEmpty {
-            turnOff(feature)
+            turnOff(feature, dependents: [])
         } else {
-            pendingOff = PendingOff(feature: feature, dependents: DisplayFeature.allCases.filter { dependents.contains($0) })
+            pendingOff = PendingOff(feature: feature, dependents: dependents)
         }
     }
 
-    private func turnOff(_ feature: DisplayFeature) {
+    /// One config write: the feature and the dependents the alert named.
+    private func turnOff(_ feature: DisplayFeature, dependents: [DisplayFeature]) {
         guard FeatureGraph.spec(feature).defaultState != .always else { return }
-        env.config.value.features[feature] = false
+        var value = env.config.value
+        for (f, on) in FeatureTurnOff.changes(feature, dependents: dependents) { value.features[f] = on }
+        env.config.value = value
         notice = nil
     }
 }
