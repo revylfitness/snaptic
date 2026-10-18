@@ -26,7 +26,7 @@ struct AwakeDisplayChoice: Equatable {
     private var context: AwakeContext?
     private var borrowed: Set<AwakeServiceID> = []
     private var lifetime: Lifetime?
-    static let pickerServices: [AwakeServiceID] = [.usb, .volumes, .network]
+    static let pickerServices: [AwakeServiceID] = [.usb, .volumes, .network, .bluetooth]
 
     func begin(_ ctx: AwakeContext?) {
         displays = Self.readDisplays()
@@ -39,7 +39,7 @@ struct AwakeDisplayChoice: Equatable {
             ctx.service(id).activate(ctx, lifetime: life)
             borrowed.insert(id)
         }
-        let sources: [any CriterionSource] = [ctx.usb, ctx.volumes, ctx.network]
+        let sources: [any CriterionSource] = [ctx.usb, ctx.volumes, ctx.network, ctx.bluetooth]
         for source in sources {
             source.observe(life) { [weak self] in self?.revision &+= 1 }
         }
@@ -83,6 +83,9 @@ struct AwakeDisplayChoice: Equatable {
     }
 
     var usbDevices: [USBWatcher.USBDevice] { context?.usb.connected ?? [] }
+
+    /// Connected Bluetooth audio and input devices (J's BluetoothPresence; Beta).
+    var bluetoothDevices: [BluetoothPresence.Device] { context?.bluetooth.devices ?? [] }
 
     /// The current router's salted hash ("Connected to this network").
     var currentRouterHash: String? { context?.network.currentRouterHash }
@@ -151,7 +154,7 @@ struct CriterionEditors: View, ControlDeclaring {
             HStack(spacing: 8) {
                 Picker(L("Condition"), selection: kind) {
                     ForEach(AwakeCriterionChoice.allCases, id: \.self) { c in
-                        Text(c.isBeta ? c.title + L(" (Beta)") : c.title)
+                        Text(c.kind == .bluetooth && BluetoothPresence.isBeta ? c.title + L(" (Beta)") : c.title)
                             .tag(c)
                             .disabled(c != choice && c.defaultCriterion == nil && sources.firstCriterion(c) == nil)
                     }
@@ -264,9 +267,34 @@ private struct CriterionValueEditor: View {
             number(Double(k), range: AwakeCriterion.networkActivityRange, step: 10, format: .plain(digits: 0),
                    title: L("Network activity in KB/s")) { .networkActivity(atLeastKBps: $0) }
             Text(L("KB/s")).foregroundStyle(.secondary)
-        case .bluetooth:
-            Text(L("connected")).foregroundStyle(.secondary)
+        case .bluetooth(let match):
+            bluetoothPicker(match)
         }
+    }
+
+    /// Any Bluetooth audio device, or one of the connected devices (a saved one that isn't connected stays listed).
+    @ViewBuilder private func bluetoothPicker(_ match: BluetoothMatch) -> some View {
+        let devices = sources.bluetoothDevices
+        let current: Int = match == .anyAudio ? -1 : (devices.firstIndex { $0.match == match } ?? -2)
+        Picker(L("Bluetooth device"), selection: Binding(get: { current }, set: { tag in
+            if tag == -1 {
+                criterion.wrappedValue = .bluetooth(.anyAudio)
+            } else if devices.indices.contains(tag) {
+                criterion.wrappedValue = .bluetooth(devices[tag].match)
+            }
+        })) {
+            Text(L("any audio device")).tag(-1)
+            if current == -2 {
+                Text(L("a saved device (not connected)")).tag(-2)
+            }
+            if !devices.isEmpty { Divider() }
+            ForEach(Array(devices.enumerated()), id: \.offset) { i, d in
+                Text("“" + d.name + "”").tag(i)
+            }
+        }
+        .labelsHidden()
+        .frame(maxWidth: 220)
+        Text(L("connected")).foregroundStyle(.secondary)
     }
 
     private func number(_ value: Double, range: ClosedRange<Int>, step: Double, format: ValueFormat, title: String,
@@ -475,6 +503,14 @@ private struct CriterionDetailEditor: View {
             }
         case .network(.subnet(let cidr)) where !AwakeCriterion.looksLikeCIDR(cidr):
             SettingsRowNote(L("Enter an address and prefix, for example 192.168.1.0/24 or fd00::/8."))
+        case .bluetooth:
+            HStack(spacing: 6) {
+                SettingsBadgeView(.beta)
+                Text(BluetoothPresence.scopeNote)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         case .network(.router(let hash, _)) where !Fingerprint.isHexDigest(hash):
             SettingsRowNote(L("Connect to the network, then choose Use Current Network."))
         default:

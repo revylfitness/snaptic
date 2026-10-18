@@ -31,7 +31,8 @@ struct PresetEditorSheet: View, ControlDeclaring {
                               effective: runtime.effectiveFeatures,
                               isExpanded: Binding(get: { expanded == preset.id },
                                                   set: { expanded = $0 ? preset.id : nil }),
-                              delete: presets.count > 1 ? { deleting = preset.id } : nil)
+                              delete: presets.count > 1 ? { deleting = preset.id } : nil,
+                              revealsHere: preset.id == presets.first?.id)
                 }
             } header: {
                 Text(L("Sessions in the menu"))
@@ -96,6 +97,8 @@ private struct PresetRow: View {
     let effective: Set<AwakeFeature>
     let isExpanded: Binding<Bool>
     let delete: (@MainActor () -> Void)?
+    /// The first row opens when search reveals one of the per-session rows.
+    let revealsHere: Bool
 
     var body: some View {
         DisclosureGroup(isExpanded: isExpanded) {
@@ -145,7 +148,14 @@ private struct PresetRow: View {
                 }
             }
         }
+        .modifier(SettingsRevealExpansion(revealsHere ? Self.revealIDs : [], isExpanded: isExpanded))
     }
+
+    private static let revealIDs = [
+        ControlID("awake.sessions.name"), ControlID("awake.sessions.kind"), ControlID("awake.sessions.duration"),
+        ControlID("awake.sessions.untilTime"), ControlID("awake.sessions.atMost"), ControlID("awake.sessions.thresholds"),
+        ControlID("awake.sessions.display"), ControlID("awake.sessions.activity"),
+    ]
 
     // MARK: Kind
 
@@ -337,6 +347,7 @@ private struct ThresholdsDisclosure: View {
             .padding(.vertical, 4)
         }
         .modifier(SettingsAnchor(ControlID("awake.sessions.thresholds")))
+        .modifier(SettingsRevealExpansion([ControlID("awake.sessions.thresholds")], isExpanded: $open))
     }
 
     private func field(_ path: WritableKeyPath<UntilIdleSpec, Int>) -> Binding<Int> {

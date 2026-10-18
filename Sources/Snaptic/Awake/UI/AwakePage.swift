@@ -87,13 +87,10 @@ struct AwakePage: View, ControlDeclaring {
         }
     }
 
-    /// The pages the root page's navigation rows open (`AwakeModule.settingsDestination(_:)`).
-    @MainActor static func destination(_ route: SettingsRoute, env: AwakePageEnvironment) -> AnyView? {
-        switch route.id {
-        case AwakePageControls.historyRoute.id: return AnyView(AwakeHistoryPage(env: env))
-        case AwakePageControls.drivesRoute.id: return AnyView(DrivesPage())
-        default: return nil
-        }
+    /// The History sub-page (`AwakeModule.settingsDestination(_:)` routes `awake.history` here; J's Drives page is
+    /// `awake.drives`).
+    @MainActor static func historyPage(env: AwakePageEnvironment) -> AnyView {
+        AnyView(AwakeHistoryPage(env: env))
     }
 
     /// Awake's search entries, derived from its control tables (R5-13; `AwakeModule.settingsIndex()`).
@@ -425,18 +422,21 @@ private struct AwakeNavigationSection: View {
     @ObservedObject private var history: ConfigStore<AwakeHistory>
     @ObservedObject private var shell = SettingsShell.shared
     @StateObject private var drives: ConfigSlice<AwakeConfig, DriveAliveConfig>
+    @StateObject private var features: ConfigSlice<AwakeConfig, LossyMap<AwakeFeature, Bool>>
 
     init(env: AwakePageEnvironment) {
         self.env = env
         _runtime = ObservedObject(wrappedValue: env.runtime)
         _history = ObservedObject(wrappedValue: env.history)
         _drives = StateObject(wrappedValue: ConfigSlice(env.config, \.drives))
+        _features = StateObject(wrappedValue: ConfigSlice(env.config, \.features))
     }
 
     var body: some View {
         Section {
-            NavigationRow(L("Drives"), symbol: "externaldrive.fill", tint: .gray, value: drivesValue,
-                          route: AwakePageControls.drivesRoute, control: ControlID("awake.page.nav.drives"))
+            NavigationRow(L("Drives"), symbol: "externaldrive.fill", tint: .gray,
+                          value: DrivesPage.navigationValue(config: env.config.value),
+                          route: DrivesPage.route, control: ControlID("awake.page.nav.drives"))
             if runtime.isEffective(.history) {
                 NavigationRow(L("History"), symbol: "clock.arrow.circlepath", tint: .orange, value: todayValue,
                               route: AwakePageControls.historyRoute, control: ControlID("awake.page.nav.history"))
@@ -448,14 +448,6 @@ private struct AwakeNavigationSection: View {
             .buttonStyle(.link)
             .modifier(SettingsAnchor(ControlID("awake.page.menuBar")))
         }
-    }
-
-    /// "Off", or how many drives are kept awake.
-    private var drivesValue: String {
-        guard runtime.isEffective(.driveAlive) else { return L("Off") }
-        let n = drives.value.volumes.values.values.filter(\.enabled).count
-        if n == 0 { return L("On") }
-        return n == 1 ? L("1 drive") : L("\(n) drives")
     }
 
     /// "Today 2h 10m".

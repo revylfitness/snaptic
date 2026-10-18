@@ -183,6 +183,8 @@ struct TriggerEditorSheet: View, ControlDeclaring {
                               options: delayOptions(rule.wrappedValue.endDelaySeconds), style: .popUp,
                               defaultValue: AwakeTrigger.defaultEndDelaySeconds, anchor: ControlID("awake.rule.endDelay"))
             }
+            .modifier(SettingsRevealExpansion([ControlID("awake.rule.startDelay"), ControlID("awake.rule.endDelay")],
+                                              isExpanded: $timingOpen))
             PickerSetting(L("After I turn it off"),
                           help: L("When this rule may start a session again after you turn its session off."),
                           selection: rule.resumeAfterManualEndMinutes, options: resumeOptions(rule.wrappedValue),

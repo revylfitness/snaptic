@@ -51,13 +51,8 @@ struct AwakeAdvancedSheet: View, ControlDeclaring {
             if appearActive {
                 ToggleSetting(L("Move the pointer slightly"),
                               help: L("Moves the pointer 1 point and back. Only for sessions you start in Snaptic. Needs Accessibility."),
-                              isOn: Binding(get: { nudge }, set: { on in
-                                  let next = env.config.value.settingPointerNudge(on)
-                                  if next != env.config.value { env.config.value = next }
-                              }),
-                              subordinate: true, anchor: ControlID("awake.advanced.pointerNudge"), badge: .experimental,
-                              disabledReason: nudge || trusted ? nil : L("Needs Accessibility."),
-                              fix: nudge || trusted ? nil : accessibilityFix)
+                              isOn: Binding(get: { nudge }, set: { on in setPointerNudge(on) }),
+                              subordinate: true, anchor: ControlID("awake.advanced.pointerNudge"), badge: .experimental)
                 if nudge && !trusted {
                     SettingsRowNote(L("Snaptic needs Accessibility to move the pointer; until then it only appears active."),
                                     fix: accessibilityFix)
@@ -73,6 +68,16 @@ struct AwakeAdvancedSheet: View, ControlDeclaring {
         } header: {
             Text(L("Activity"))
         }
+    }
+
+    /// On asks for Accessibility at once (PermissionFlow's guide, polled while Awake runs); until it is granted
+    /// Awake only appears active.
+    private func setPointerNudge(_ on: Bool) {
+        let next = env.config.value.settingPointerNudge(on)
+        if next != env.config.value { env.config.value = next }
+        guard on, !PermissionFlow.isGranted(.accessibility), let host = SettingsShell.shared.host,
+              let lifetime = env.context?.host.lifetime else { return }
+        host.permissions.request(.accessibility, reason: L("Awake moves the pointer slightly."), lifetime: lifetime)
     }
 
     private var accessibilityFix: StatusAction {

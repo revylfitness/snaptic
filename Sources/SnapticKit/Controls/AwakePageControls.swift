@@ -10,9 +10,8 @@ package enum AwakePageControls: ControlTable {
     package static let surface = "awake.page"
     /// `SettingsShell.openSheet` id of the Keyboard Shortcuts sheet.
     package static let shortcutsSheet = "awake.shortcuts"
-    /// The History and Drives sub-pages (`AwakeModule.settingsDestination`).
-    package static let historyRoute = SettingsRoute("awake.history")
-    package static let drivesRoute = SettingsRoute("awake.drives")
+    /// The History sub-page (`AwakeModule.settingsDestination`); Drives is J's `DrivesPage.route`.
+    package static let historyRoute = SettingsRoute(AwakeHistoryPageControls.surface)
 
     private static let root = SettingsRootID.awake
     private static let awake: [ControlCondition] = [.module(.awake)]
