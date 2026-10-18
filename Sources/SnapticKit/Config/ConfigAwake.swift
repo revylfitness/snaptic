@@ -60,13 +60,53 @@ package struct AwakeConfig: ConfigModel {
     /// Raw feature choices as a plain dictionary (for AwakeFeatureGraph).
     package var rawFeatures: [AwakeFeature: Bool] { features.values }
 
-    /// Page Restore Defaults: everything back to defaults; pointerNudge off, Drive Alive volumes cleared (r1 security
-    /// L6). G refines it in step 2; the step-0 body is already safe (all defaults).
-    package func restoringDefaults() -> AwakeConfig { AwakeConfig() }
+    /// Page Restore Defaults (G, §4.6, r1 security L6): features, sessions (the default presets with their derived
+    /// ids, default options, behavior), guards, activity and Drive Alive back to defaults, so pointer movement is off
+    /// and no volume is kept awake. Kept: the rules (user content; every `nudge` → `declare`, as always), the indicator
+    /// (the Menu Bar page's scope), the shortcuts (the Keyboard Shortcuts sheet's scope) and the recent apps.
+    package func restoringDefaults() -> AwakeConfig {
+        var c = AwakeConfig()
+        c.triggers = triggers.withoutNudge().sanitized()
+        c.indicator = indicator.sanitized()
+        c.shortcuts = shortcuts
+        c.sessions.recentApps = sessions.sanitized().recentApps
+        return c.sanitized()
+    }
 
-    /// Backup export (security M7). Stub until G's step 2: defaults only (nothing personal leaves).
-    package func exportable(includeTriggers: Bool) -> AwakeConfig { AwakeConfig() }
+    /// Backup export (G, security M7): nudge → declare everywhere, without `drives`, `features.pointerNudge`,
+    /// `sessions.recentApps` and `sessions.behavior.startAtLaunch`; rules only with `includeTriggers`, and then
+    /// without salted hashes (a rule that lost a condition is disabled).
+    package func exportable(includeTriggers: Bool) -> AwakeConfig {
+        var c = sanitized().strippedForBackup()
+        c.triggers = includeTriggers ? c.triggers.strippingHashes() : AwakeTriggersConfig()
+        return c.sanitized()
+    }
 
-    /// Backup import, applied after KitBackup's merge. Stub until G's step 2: keeps `current` (nothing comes in).
-    package func importable(current: AwakeConfig) -> AwakeConfig { current }
+    /// Backup import (G, security M7/L5/L7), applied by KitBackup after its generic merge: the same stripping as
+    /// export; guards may only become stricter than `current`; `features.pointerNudge`, `drives`, the recent apps
+    /// and start-at-launch are kept from `current`, so a backup can't turn pointer movement on, pick volumes or
+    /// start a session at launch.
+    package func importable(current: AwakeConfig) -> AwakeConfig {
+        var c = sanitized().strippedForBackup()
+        c.triggers = c.triggers.strippingHashes()
+        let now = current.sanitized()
+        c.guards = c.guards.monotonic(over: now.guards)
+        c.features[.pointerNudge] = now.features[.pointerNudge]
+        c.drives = now.drives
+        c.sessions.recentApps = now.sessions.recentApps
+        c.sessions.behavior.startAtLaunch = now.sessions.behavior.startAtLaunch
+        return c.sanitized()
+    }
+
+    /// The fields no backup carries, and no pointer movement.
+    private func strippedForBackup() -> AwakeConfig {
+        var c = self
+        c.features[.pointerNudge] = nil
+        c.drives = DriveAliveConfig()
+        c.sessions = sessions.withoutNudge()
+        c.sessions.recentApps = []
+        c.sessions.behavior.startAtLaunch = nil
+        c.triggers = triggers.withoutNudge()
+        return c
+    }
 }
