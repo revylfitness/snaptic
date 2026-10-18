@@ -289,6 +289,9 @@ Sources/SnapticKit/MediaKeyPress.swift	C	L	-	-
 Sources/SnapticKit/BrightnessFirstRead.swift	C	L	-	-
 Tests/SnapticKitTests/MediaKeyPressTests.swift	C	L	-	-
 Tests/SnapticKitTests/BrightnessFirstReadTests.swift	C	L	-	-
+Sources/SnapticKit/LiveMailbox.swift	C	L	-	-
+Sources/SnapticKit/ProfileMenuOrder.swift	C	L	-	-
+Tests/SnapticKitTests/LiveMailboxTests.swift	C	L	-	-
 Tests/SnapticKitTests/SoCCapsTests.swift	D	K3	SoCCapsTests	-
 Tests/SnapticKitTests/ScaleMatchTests.swift	D	K3	ScaleMatchTests	-
 Tests/SnapticKitTests/LayoutPresetModelTests.swift	D	K3	LayoutPresetModelTests	-

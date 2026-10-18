@@ -10,10 +10,7 @@ import SnapticShims
     static var id: DisplayControllerID { .systemColors }
     static var privateSymbols: [PrivateSymbol] { [] }
 
-    static let profilesItem = DisplayMenuItemID(rawValue: "c.color.profiles")
-    static let presetsItem = DisplayMenuItemID(rawValue: "c.color.applePresets")
-    static let autoBrightnessItem = DisplayMenuItemID(rawValue: "c.color.autoBrightness")
-    static let nightShiftItem = DisplayMenuItemID(rawValue: "c.tools.nightShift")
+    static var observedSections: Set<DisplaysConfigSection> { [] }
     static let nightShiftAction = DisplayActionID(rawValue: "c.nightShiftToggle")
     static let nightShiftUpAction = DisplayActionID(rawValue: "c.nightShiftUp")
     static let nightShiftDownAction = DisplayActionID(rawValue: "c.nightShiftDown")
@@ -24,6 +21,7 @@ import SnapticShims
     private var effective: Set<DisplayFeature> = []
     private(set) var nightShiftOn: Bool?
     private(set) var nightShiftStrength: Double?
+    private var menuItems: ColorMenuItems?
 
     init() {}
 
@@ -49,14 +47,21 @@ import SnapticShims
         self.effective = effective
         context.diagnostics.register(self, section: L("System colors"), lifetime: lifetime)
         context.colorSync.systemColors = self
-        context.menus.register(self, lifetime: lifetime)
-        context.colorSync.onProfilesChanged = { [weak self] in self?.context?.requestMenuRebuild() }
+        let items = ColorMenuItems(context: context, part: .systemColors, owner: self)
+        menuItems = items
+        context.menus.register(items, lifetime: lifetime)
+        context.colorSync.onProfilesChanged = { [weak self] in
+            self?.context?.runtime.revision(.systemColors).bump()
+            self?.context?.requestMenuRebuild()
+        }
         registerNightShift(context, lifetime: lifetime)
         refreshNightShift()
     }
 
     func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) {
         self.effective = effective
+        refreshNightShift()
+        context?.runtime.revision(.systemColors).bump()
         context?.requestMenuRebuild()
     }
 
@@ -65,6 +70,7 @@ import SnapticShims
     func stop() {
         context?.colorSync.onProfilesChanged = nil
         if context?.colorSync.systemColors === self { context?.colorSync.systemColors = nil }
+        menuItems = nil
         lifetime = nil
         context = nil
     }
@@ -87,18 +93,25 @@ import SnapticShims
             context.toasts.show(L("macOS didn't accept that color profile."), lifetime: lifetime)
         }
         context.gamma.refreshSafeguard()
+        context.runtime.revision(.systemColors).bump()
     }
 
     // MARK: Night Shift
 
     func refreshNightShift() {
-        guard effective.contains(.nightShift) else {
-            nightShiftOn = nil
-            nightShiftStrength = nil
-            return
+        let on: Bool?
+        let strength: Double?
+        if effective.contains(.nightShift) {
+            on = SNNightShift.enabledState()?.boolValue
+            strength = SNNightShift.currentStrength()?.doubleValue
+        } else {
+            on = nil
+            strength = nil
         }
-        nightShiftOn = SNNightShift.enabledState()?.boolValue
-        nightShiftStrength = SNNightShift.currentStrength()?.doubleValue
+        guard on != nightShiftOn || strength != nightShiftStrength else { return }
+        nightShiftOn = on
+        nightShiftStrength = strength
+        context?.runtime.revision(.systemColors).bump()
     }
 
     @discardableResult
@@ -163,6 +176,7 @@ import SnapticShims
         }
         // A fixed-brightness preset disables Apple native brightness: let brightness re-check.
         context.brightness.reevaluate(key)
+        context.runtime.revision(.systemColors).bump()
         context.requestMenuRebuild()
     }
 
@@ -171,61 +185,19 @@ import SnapticShims
         if !context.appleBrightness.setAutoBrightness(on, of: key) {
             context.toasts.show(L("Auto-brightness couldn't be changed."), lifetime: lifetime)
         }
+        context.runtime.revision(.systemColors).bump()
         context.requestMenuRebuild()
     }
 
     // MARK: Menu
 
-    var descriptors: [DisplayMenuItemDescriptor] {
-        [
-            DisplayMenuItemDescriptor(id: Self.profilesItem, title: L("Color profile"), slot: .display, defaultVisibility: .inSubmenu),
-            DisplayMenuItemDescriptor(id: Self.presetsItem, title: L("Apple display preset"), slot: .display,
-                                      defaultVisibility: .inSubmenu),
-            DisplayMenuItemDescriptor(id: Self.autoBrightnessItem, title: L("Auto-brightness"), slot: .display,
-                                      defaultVisibility: .inSubmenu),
-            DisplayMenuItemDescriptor(id: Self.nightShiftItem, title: L("Night Shift"), slot: .tools, defaultVisibility: .visible),
-        ]
-    }
+    /// The items moved to `ColorMenuItems` (R5-13), registered in start(). The conformance stays only while
+    /// `DisplaysModule.menuContributorTypes` lists this type; it contributes nothing itself.
+    var descriptors: [DisplayMenuItemDescriptor] { [] }
 
-    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] {
-        guard let context else { return [] }
-        let key = display.key
-        var result: [(DisplayMenuItemID, NSMenuItem)] = []
-        if effective.contains(.colorProfiles) {
-            let current = context.colorSync.currentProfile(for: key)
-            var items: [NSMenuItem] = [CMenu.item(L("Factory Profile"), on: !context.colorSync.hasCustomProfile(for: key)) {
-                [weak self] in self?.applyProfile(nil, to: key)
-            }, .separator()]
-            for profile in context.colorSync.installedProfiles().prefix(60) {
-                items.append(CMenu.item(TextSanitizer.clean(profile.name, maxScalars: 64), on: profile.url == current?.url) {
-                    [weak self] in self?.applyProfile(profile, to: key)
-                })
-            }
-            result.append((Self.profilesItem, CMenu.submenu(L("Color Profile"), items)))
-        }
-        if effective.contains(.applePresets) {
-            let presets = context.monitorPanel.presetList(for: key)
-            if !presets.isEmpty {
-                let items = presets.map { preset in
-                    CMenu.item(preset.name, on: preset.isActive) { [weak self] in self?.applyPreset(preset, to: key) }
-                }
-                result.append((Self.presetsItem, CMenu.submenu(L("Display Preset"), items)))
-            }
-        }
-        if effective.contains(.autoBrightness), let on = context.appleBrightness.autoBrightness(of: key) {
-            result.append((Self.autoBrightnessItem, CMenu.item(L("Automatically Adjust Brightness"), on: on) { [weak self] in
-                self?.setAutoBrightness(!on, for: key)
-            }))
-        }
-        return result
-    }
+    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
 
-    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] {
-        guard slot == .tools, effective.contains(.nightShift) else { return [] }
-        return [(Self.nightShiftItem, CMenu.item(L("Night Shift"), on: nightShiftOn ?? false) { [weak self] in
-            _ = self?.toggleNightShift()
-        })]
-    }
+    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
 
     func diagnostics() -> [(String, String)] {
         guard let context else { return [] }

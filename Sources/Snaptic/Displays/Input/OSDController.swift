@@ -29,6 +29,8 @@ import SnapticShims
 
     func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) { apply(effective) }
 
+    static var observedSections: Set<DisplaysConfigSection> { [.keys] }
+
     func configDidChange(from old: DisplaysConfig, to new: DisplaysConfig) {
         if old.keys.osdStyle != new.keys.osdStyle || old.keys.osdPosition != new.keys.osdPosition { context?.osd.hideAll() }
     }

@@ -137,14 +137,14 @@ struct DDCPage: View {
             let live = env.runtime.runtime(for: key)
             if let controller {
                 if controller.isControlEnabled(VCPPolicy.volume, for: key) {
-                    CSlider(title: L("Volume"), value: Binding(get: { live.volume ?? 0.5 },
-                                                              set: { controller.setFraction(VCPPolicy.volume, $0, for: key) }),
-                            range: 0...1)
+                    CLiveSlider(title: L("Volume"), live: live, value: \.volume) {
+                        controller.setFraction(VCPPolicy.volume, $0, for: key)
+                    }
                 }
                 if controller.isControlEnabled(VCPPolicy.contrast, for: key) {
-                    CSlider(title: L("Contrast"), value: Binding(get: { live.contrast ?? 0.5 },
-                                                                set: { controller.setFraction(VCPPolicy.contrast, $0, for: key) }),
-                            range: 0...1)
+                    CLiveSlider(title: L("Contrast"), live: live, value: \.contrast) {
+                        controller.setFraction(VCPPolicy.contrast, $0, for: key)
+                    }
                 }
             }
             ForEach(knownCodes(ctx, key), id: \.self) { code in

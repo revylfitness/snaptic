@@ -189,6 +189,7 @@ enum PerDisplayEdit {
     static let downAction = DisplayActionID(rawValue: "c.brightnessDown")
     static let fineUpAction = DisplayActionID(rawValue: "c.brightnessUpFine")
     static let fineDownAction = DisplayActionID(rawValue: "c.brightnessDownFine")
+    static var observedSections: Set<DisplaysConfigSection> { [.brightness, .perDisplayBrightness] }
 
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
@@ -240,6 +241,7 @@ enum PerDisplayEdit {
         self.effective = effective
         if !effective.contains(.dimOnLock) { context?.brightness.setLockDim(nil) }
         context?.brightness.reevaluate()
+        context?.runtime.revision(.brightness).bump()
         context?.requestMenuRebuild()
     }
 
@@ -252,7 +254,10 @@ enum PerDisplayEdit {
                 || a.gammaWorks != b.gammaWorks || a.nits != b.nits
         }
         for key in changedKeys { context?.brightness.reevaluate(key) }
-        if !changedKeys.isEmpty { context?.requestMenuRebuild() }
+        if !changedKeys.isEmpty {
+            context?.runtime.revision(.brightness).bump()
+            context?.requestMenuRebuild()
+        }
     }
 
     func stop() {
@@ -303,8 +308,8 @@ enum PerDisplayEdit {
 
     // MARK: Changes
 
+    /// Menus, pages and the panel follow `DisplayRuntime` (BrightnessService writes it); this only asks about gamma.
     private func brightnessChanged(_ change: BrightnessService.Change) {
-        menuItems?.update(change.key, value: change.value)
         if change.source == .user || change.source == .keys { askDidItGetDarker(change.key) }
     }
 

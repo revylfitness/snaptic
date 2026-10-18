@@ -17,6 +17,8 @@ import SnapticShims
     static let volumeUpFineAction = DisplayActionID(rawValue: "c.volumeUpFine")
     static let volumeDownFineAction = DisplayActionID(rawValue: "c.volumeDownFine")
     static let muteAction = DisplayActionID(rawValue: "c.mute")
+    /// DDC settings, per-display tuning and the input slots (in `keys`).
+    static var observedSections: Set<DisplaysConfigSection> { [.ddc, .perDisplayDDC, .keys] }
 
     /// The volume step action for a direction and step size.
     static func volumeAction(up: Bool, fine: Bool) -> DisplayActionID {
@@ -39,6 +41,14 @@ import SnapticShims
     private var muteRestore: [DisplayKey: UInt16] = [:]
     private var paused = false
     private var sinks: [AnyCancellable] = []
+    /// The user's last live change per display and code (value, uptime): read-backs that disagree are ignored for
+    /// a second after it (0.3 §4.5, Kit `LiveReadback`).
+    private var userSets: [DisplayKey: [UInt8: (value: Double, at: TimeInterval)]] = [:]
+    /// Last link status seen per display, so the page revision bumps only when it changes.
+    private var linkSeen: [DisplayKey: DDCService.LinkStatus] = [:]
+    /// Live values of custom range controls (fractions), for the menu's sliders.
+    private var customValues: [DisplayKey: [UInt8: Double]] = [:]
+    private let customSubject = PassthroughSubject<(key: DisplayKey, code: UInt8, value: Double), Never>()
 
     init() {}
 
@@ -62,7 +72,10 @@ import SnapticShims
             guard let ctx = self?.context else { return }
             PerDisplayEdit.update(ctx, key) { $0.ddc.framing = framing }
         }
-        context.ddc.observeChanges(lifetime: lifetime) { [weak self] key in self?.ddcChanged(key) }
+        context.ddc.observeChanges(lifetime: lifetime) { [weak self] key in
+            self?.linkMayHaveChanged(key)
+            self?.ddcChanged(key)
+        }
         registerActions(context, lifetime: lifetime)
         registerCommands(context, lifetime: lifetime)
         updateReadback()
@@ -71,6 +84,7 @@ import SnapticShims
 
     func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) {
         self.effective = effective
+        context?.runtime.revision(.ddc).bump()
         context?.requestMenuRebuild()
     }
 
@@ -78,6 +92,7 @@ import SnapticShims
         if old.ddc != new.ddc || old.perDisplay.values.mapValues(\.ddc) != new.perDisplay.values.mapValues(\.ddc) {
             nextReadback.removeAll()
             updateReadback()
+            context?.runtime.revision(.ddc).bump()
             context?.requestMenuRebuild()
         }
         if old.keys.inputSlots != new.keys.inputSlots, let ctx = context, let lifetime { registerSlotActions(ctx, lifetime: lifetime) }
@@ -92,6 +107,9 @@ import SnapticShims
         nextReadback.removeAll()
         loaded.removeAll()
         muteRestore.removeAll()
+        userSets.removeAll()
+        linkSeen.removeAll()
+        customValues.removeAll()
         menuItems = nil
         slotLifetime = nil
         lifetime = nil
@@ -113,13 +131,17 @@ import SnapticShims
             let live = ctx.runtime.runtime(for: key)
             func supported(_ code: UInt8) -> Bool { caps == nil || caps?.supports(code) == true }
             if supported(VCPPolicy.volume), let r = await ddc.read(VCPPolicy.volume, from: key), r.max > 0 {
-                live.volume = self.fraction(key, VCPPolicy.volume, r)
+                self.noteReadback(VCPPolicy.volume, self.fraction(key, VCPPolicy.volume, r), for: key)
             }
             if caps?.supports(VCPPolicy.mute) == true, let r = await ddc.read(VCPPolicy.mute, from: key) {
                 live.muted = r.current == 1
             }
             if supported(VCPPolicy.contrast), let r = await ddc.read(VCPPolicy.contrast, from: key), r.max > 0 {
-                live.contrast = self.fraction(key, VCPPolicy.contrast, r)
+                self.noteReadback(VCPPolicy.contrast, self.fraction(key, VCPPolicy.contrast, r), for: key)
+            }
+            for control in ctx.config.value.perDisplay[key]?.ddc.customControls ?? [] where control.kind == .range {
+                guard supported(control.code), let r = await ddc.read(control.code, from: key), r.max > 0 else { continue }
+                self.noteReadback(control.code, self.fraction(key, control.code, r), for: key)
             }
             if self.effective.contains(.ddcInput), supported(VCPPolicy.input), let r = await ddc.read(VCPPolicy.input, from: key) {
                 live.input = r.current & 0xFF
@@ -128,7 +150,86 @@ import SnapticShims
                let r = await ddc.read(VCPPolicy.power, from: key) {
                 live.powerOn = r.current == 1
             }
+            ctx.runtime.revision(.ddc).bump()
             ctx.requestMenuRebuild()
+        }
+    }
+
+    /// Link status or capabilities changed (probe answered, failed, replug): pages showing them refresh.
+    private func linkMayHaveChanged(_ key: DisplayKey) {
+        guard let context else { return }
+        let status = context.ddc.linkStatus(key)
+        guard linkSeen[key] != status else { return }
+        linkSeen[key] = status
+        context.runtime.revision(.ddc).bump()
+    }
+
+    // MARK: Live values (0.3 §4.5)
+
+    /// A read-back of a continuous control: shown unless the user just set a different value. A 0.5% wobble
+    /// isn't a change.
+    func noteReadback(_ code: UInt8, _ fraction: Double, for key: DisplayKey) {
+        guard let context, fraction.isFinite else { return }
+        if let shown = shownValue(code, for: key), abs(shown - fraction) <= 0.005 { return }
+        let set = userSets[key]?[code]
+        guard LiveReadback.accepts(fraction, setValue: set?.value, setAt: set?.at,
+                                   now: ProcessInfo.processInfo.systemUptime) else { return }
+        showValue(code, fraction, for: key, context: context)
+    }
+
+    private func showValue(_ code: UInt8, _ fraction: Double, for key: DisplayKey, context: DisplaysContext) {
+        let live = context.runtime.runtime(for: key)
+        switch code {
+        case VCPPolicy.volume:
+            if abs((live.volume ?? -1) - fraction) > 0.0005 { live.volume = fraction }
+        case VCPPolicy.contrast:
+            if abs((live.contrast ?? -1) - fraction) > 0.0005 { live.contrast = fraction }
+        default:
+            if abs((customValues[key]?[code] ?? -1) - fraction) > 0.0005 {
+                customValues[key, default: [:]][code] = fraction
+                customSubject.send((key: key, code: code, value: fraction))
+            }
+        }
+    }
+
+    private func shownValue(_ code: UInt8, for key: DisplayKey) -> Double? {
+        switch code {
+        case VCPPolicy.volume: return context?.runtime.runtime(for: key).volume
+        case VCPPolicy.contrast: return context?.runtime.runtime(for: key).contrast
+        default: return customValues[key]?[code]
+        }
+    }
+
+    /// The live fraction of a custom range control (nil until read or set).
+    func customValue(_ code: UInt8, for key: DisplayKey) -> Double? {
+        if let v = customValues[key]?[code] { return v }
+        guard let context, let reading = context.ddc.lastReading(code, of: key), reading.max > 0 else { return nil }
+        return fraction(key, code, reading)
+    }
+
+    /// Live updates of one custom control, for a menu slider (starts with the current value).
+    func customPublisher(_ code: UInt8, for key: DisplayKey) -> AnyPublisher<Double?, Never> {
+        customSubject
+            .filter { $0.key == key && $0.code == code }
+            .map { Optional($0.value) }
+            .prepend(customValue(code, for: key))
+            .eraseToAnyPublisher()
+    }
+
+    /// A live drag began: read-backs hold off as after a change.
+    func holdReadbacks(_ code: UInt8, for key: DisplayKey) {
+        guard let current = shownValue(code, for: key) ?? customValue(code, for: key) else { return }
+        userSets[key, default: [:]][code] = (current, ProcessInfo.processInfo.systemUptime)
+    }
+
+    /// DisplayLiveController's delivery: shows the value at once, remembers it against read-backs and writes it
+    /// (DDCService keeps the newest value per code and paces writes). `final` ends a drag.
+    func setLive(_ code: UInt8, _ fraction: Double, for key: DisplayKey, final: Bool) {
+        let standard = code == VCPPolicy.volume || code == VCPPolicy.contrast
+        guard effective.contains(standard ? .ddcControls : .ddcCustom), fraction.isFinite else { return }
+        setFraction(code, min(1, max(0, fraction)), for: key)
+        if final, code == VCPPolicy.volume, context?.runtime.runtime(for: key).muted == true {
+            context?.runtime.runtime(for: key).muted = false
         }
     }
 
@@ -230,11 +331,10 @@ import SnapticShims
     }
 
     func setFraction(_ code: UInt8, _ fraction: Double, for key: DisplayKey) {
-        guard let context, let lifetime else { return }
+        guard let context, let lifetime, fraction.isFinite else { return }
         let value = raw(key, code, fraction: fraction)
-        let live = context.runtime.runtime(for: key)
-        if code == VCPPolicy.volume { live.volume = fraction }
-        if code == VCPPolicy.contrast { live.contrast = fraction }
+        userSets[key, default: [:]][code] = (fraction, ProcessInfo.processInfo.systemUptime)
+        showValue(code, fraction, for: key, context: context)
         lifetime.spawn { [weak self] in _ = await self?.write(code, value, to: key) }
     }
 
@@ -334,12 +434,11 @@ import SnapticShims
 
     func runCustom(_ control: DDCCustomControl, on key: DisplayKey, fraction: Double? = nil) {
         guard let lifetime else { return }
-        let value: UInt16
         if control.kind == .range, let fraction {
-            value = raw(key, control.code, fraction: fraction)
-        } else {
-            value = control.value
+            setFraction(control.code, fraction, for: key)
+            return
         }
+        let value = control.value
         lifetime.spawn { [weak self] in _ = await self?.write(control.code, value, to: key) }
     }
 
@@ -384,11 +483,12 @@ import SnapticShims
                     let live = ctx.runtime.runtime(for: key)
                     switch code {
                     case VCPPolicy.brightness: ctx.brightness.noteHardwareChanged(key, hardware: f)
-                    case VCPPolicy.volume: if abs((live.volume ?? -1) - f) > 0.005 { live.volume = f }
-                    case VCPPolicy.contrast: if abs((live.contrast ?? -1) - f) > 0.005 { live.contrast = f }
                     case VCPPolicy.input: live.input = reading.current & 0xFF
                     case VCPPolicy.power: live.powerOn = reading.current == 1
-                    default: break
+                    default:
+                        // Volume, contrast and custom controls.
+                        guard reading.max > 0 else { return }
+                        self.noteReadback(code, f, for: key)
                     }
                 }
             }

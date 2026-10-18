@@ -12,7 +12,7 @@ import SnapticKit
     static var id: DisplayControllerID { .color }
     static var privateSymbols: [PrivateSymbol] { [] }
 
-    static let colorItem = DisplayMenuItemID(rawValue: "c.color.submenu")
+    static var observedSections: Set<DisplaysConfigSection> { [.color, .perDisplayColor] }
 
     enum Control: String, CaseIterable {
         case gamma, contrast, temperature
@@ -34,6 +34,7 @@ import SnapticKit
     private var heldByPanic = false
     /// Restore "off" or Safe Mode: saved adjustments wait for the user's next change.
     private var heldAtLaunch = false
+    private var menuItems: ColorMenuItems?
 
     init() {}
 
@@ -50,7 +51,9 @@ import SnapticKit
         context.registerPanic(self, lifetime: lifetime)
         context.gamma.colorController = self
         context.diagnostics.register(self, section: L("Color adjustments"), lifetime: lifetime)
-        context.menus.register(self, lifetime: lifetime)
+        let items = ColorMenuItems(context: context, part: .color, owner: self)
+        menuItems = items
+        context.menus.register(items, lifetime: lifetime)
         registerActions(context, lifetime: lifetime)
         registerCommands(context, lifetime: lifetime)
         let restore = context.config.value.brightness.restoreMode
@@ -93,6 +96,7 @@ import SnapticKit
         if let context {
             for d in context.registry.displays { context.gamma.setAdjustments(ColorAdjustments(), for: d.key) }
         }
+        menuItems = nil
         lifetime = nil
         context = nil
     }
@@ -102,6 +106,7 @@ import SnapticKit
         guard let context else { return }
         for d in context.registry.displays { context.gamma.setAdjustments(ColorAdjustments(), for: d.key) }
         context.colorSync.restoreAll()
+        context.runtime.revision(.color).bump()
     }
 
     // MARK: Applying
@@ -125,6 +130,8 @@ import SnapticKit
     }
 
     private func applyAll() {
+        // Pages show whether adjustments apply now (held, safeguard, give-up), so they refresh on every pass.
+        context?.runtime.revision(.color).bump()
         guard let context, !heldByPanic, !heldAtLaunch else { return }
         let config = context.config.value
         for display in context.registry.displays where display.isOnline {
@@ -275,25 +282,11 @@ import SnapticKit
 
     // MARK: Menu
 
-    var descriptors: [DisplayMenuItemDescriptor] {
-        [DisplayMenuItemDescriptor(id: Self.colorItem, title: L("Color adjustments"), slot: .display, defaultVisibility: .inSubmenu)]
-    }
+    /// The items moved to `ColorMenuItems` (R5-13), registered in start(). The conformance stays only while
+    /// `DisplaysModule.menuContributorTypes` lists this type; it contributes nothing itself.
+    var descriptors: [DisplayMenuItemDescriptor] { [] }
 
-    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] {
-        guard let context, canAdjust(display) else { return [] }
-        let key = display.key
-        let per = context.config.value.perDisplay[key]?.color ?? PerDisplayColor()
-        let items: [NSMenuItem] = [
-            CMenu.item(L("Invert Colors"), on: per.adjustments.inverted) { [weak self] in self?.toggleInvert(.display(key)) },
-            CMenu.item(L("Suspend Adjustments"), on: per.suspended) { [weak self] in self?.toggleSuspend(.display(key)) },
-            CMenu.item(L("Reset Adjustments"), enabled: !per.adjustments.suspended.isIdentity || !per.adjustments.isIdentity) {
-                [weak self] in self?.reset(.display(key))
-            },
-            .separator(),
-            CMenu.item(L("Color Settings…")) { [weak self] in self?.context?.openSettings("displays.color") },
-        ]
-        return [(Self.colorItem, CMenu.submenu(L("Color"), items))]
-    }
+    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
 
     func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
 
