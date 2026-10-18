@@ -51,7 +51,12 @@ extension DisplayMenuItemID {
     package static let dPowerSwitch = Self(rawValue: "d.powerSwitch")
     package static let dDisconnectItem = Self(rawValue: "d.disconnectItem")
     package static let dConnectAll = Self(rawValue: "d.connectAll")
+    /// The right-click quick menu's own Connect All (visibility separate from Tools).
+    package static let dConnectAllQuick = Self(rawValue: "d.connectAll.quick")
     package static let dDisconnectAllButMain = Self(rawValue: "d.disconnectAllButMain")
+    /// Tools › "Arrange…" (opens the Arrangement page).
+    package static let dArrange = Self(rawValue: "d.arrange")
+    package static let dUnderscanMenu = Self(rawValue: "d.underscanMenu")
     package static let dSleepPrevention = Self(rawValue: "d.sleepPrevention")
     package static let dProtection = Self(rawValue: "d.protection")
     package static let dLayoutsMenu = Self(rawValue: "d.layoutsMenu")
@@ -61,15 +66,7 @@ extension DisplayMenuItemID {
 
     package static var managementItems: [DisplayMenuItemID] {
         [dResolutionSlider, dResolutionMenu, dMatchUI, dSetMain, dMirrorMenu, dRotationMenu, dHDRToggle, dPowerSwitch,
-         dDisconnectItem, dConnectAll, dDisconnectAllButMain, dSleepPrevention, dProtection, dLayoutsMenu, dLayoutMatch,
-         dVirtualMenu, dSmartHiDPI]
+         dDisconnectItem, dConnectAll, dConnectAllQuick, dDisconnectAllButMain, dArrange, dUnderscanMenu, dSleepPrevention,
+         dProtection, dLayoutsMenu, dLayoutMatch, dVirtualMenu, dSmartHiDPI]
     }
-}
-
-/// CLI exit codes used by the management verbs (README lists them).
-package enum ManagementExit {
-    package static let usage: Int32 = 2
-    package static let notFound: Int32 = 3
-    package static let refused: Int32 = 4
-    package static let unavailable: Int32 = 5
 }

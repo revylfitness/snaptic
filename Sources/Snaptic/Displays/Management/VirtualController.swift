@@ -399,7 +399,7 @@ import SnapticShims
         ctx.commands.register("virtual", policy: .low, offOnly: false, cliAllowed: true,
                               summary: L("virtual list | connect <name> | disconnect <name>"), lifetime: lifetime) { [weak self] req in
             guard let self, self.effective.contains(.virtualScreens) else {
-                return .failure(ManagementExit.unavailable, L("Virtual screens are off"))
+                return .failure(ControlExit.unavailable, L("Virtual screens are off"))
             }
             let a = req.arguments
             switch a.first?.lowercased() {
@@ -410,16 +410,16 @@ import SnapticShims
                 }.joined(separator: "\n"))
             case "connect", "disconnect":
                 guard a.count > 1, let s = self.find(a.dropFirst().joined(separator: " ")) else {
-                    return .failure(ManagementExit.notFound, L("No such virtual screen"))
+                    return .failure(ControlExit.notFound, L("No such virtual screen"))
                 }
                 if a[0].lowercased() == "connect" {
                     await self.connect(s.id)
-                    return self.isLive(s.id) ? .ok(s.name) : .failure(ManagementExit.refused, self.lastError ?? "")
+                    return self.isLive(s.id) ? .ok(s.name) : .failure(ControlExit.refused, self.lastError ?? "")
                 }
                 await self.disconnect(s.id)
                 return .ok(s.name)
             default:
-                return .failure(ManagementExit.usage, L("Usage: virtual list | connect <name> | disconnect <name>"))
+                return .failure(ControlExit.usage, L("Usage: virtual list | connect <name> | disconnect <name>"))
             }
         }
     }

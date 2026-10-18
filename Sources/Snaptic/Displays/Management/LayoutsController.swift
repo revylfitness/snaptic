@@ -117,10 +117,11 @@ import SnapticKit
         for d in all {
             let mirror = d.mirrorOf.flatMap { src in all.first { $0.desktopID == src || $0.hardwareID == src }?.key }
             let r = ManagedDisplays.rect(d)
+            let ddc = capturedDDC(ctx, d.key)
             displays[d.key] = SavedDisplaySettings(
                 mode: d.currentMode?.ref ?? ManagedModes.current(for: d.desktopID)?.ref, x: r.x, y: r.y, isMain: d.isMain,
                 rotation: d.rotation, mirrorOf: mirror, mirrorSet: true, brightness: ctx.brightness.value(for: d.key),
-                identity: ManagedIdentity.identity(hardwareID: d.hardwareID))
+                ddcInput: ddc.input, volume: ddc.volume, identity: ManagedIdentity.identity(hardwareID: d.hardwareID))
         }
         guard !displays.isEmpty else { return nil }
         var virtuals: [StableID: Bool] = [:]
@@ -132,6 +133,20 @@ import SnapticKit
             ctx.toasts.show(L("Some displays have no serial number; '\(layout.name)' matches them by UUID only"), lifetime: lifetime)
         }
         return layout
+    }
+
+    /// DDC volume and input as C's controller last read or set them (live values; nothing is
+    /// read from the monitor here). Only when the feature is on and the control is enabled.
+    private func capturedDDC(_ ctx: DisplaysContext, _ key: DisplayKey) -> (volume: Double?, input: UInt16?) {
+        guard ctx.ddc.isAvailable(key), let ddc = ctx.ddc.controller else { return (nil, nil) }
+        let eff = ctx.runtime.effectiveFeatures
+        let live = ctx.runtime.runtime(for: key)
+        var volume: Double?
+        if eff.contains(.ddcControls), ddc.isControlEnabled(VCPPolicy.volume, for: key), let v = live.volume, v.isFinite {
+            volume = min(1, max(0, v))
+        }
+        let input = eff.contains(.ddcInput) ? live.input : nil
+        return (volume, input)
     }
 
     // MARK: Apply
@@ -176,23 +191,24 @@ import SnapticKit
     }
 
     /// Brightness, volume (and, for manual applies, DDC input) after the layout transaction.
+    /// DDC goes through C's controller: its per-control tuning maps the saved fraction, and
+    /// `setInput` asks first (PreConfirm) with the user's input names and LG addressing.
     private func applyExtras(_ l: SavedLayout, ctx: DisplaysContext, manual: Bool) async {
         let eff = ctx.runtime.effectiveFeatures
         for (key, s) in l.displays.values {
             guard ManagedDisplays.info(ctx, key: key) != nil else { continue }
             if let b = s.brightness, eff.contains(.brightness) { ctx.brightness.set(b, for: key, source: .automation) }
-            if let v = s.volume, eff.contains(.ddcControls), ctx.ddc.isAvailable(key),
-               let reading = await ctx.ddc.read(0x62, from: key), reading.max > 0 {
-                let value = UInt16((Double(reading.max) * v).rounded())
-                _ = await ctx.ddc.write(0x62, value, to: key, interactive: false, token: nil)
+            guard ctx.ddc.isAvailable(key), let ddc = ctx.ddc.controller else { continue }
+            if let v = s.volume, eff.contains(.ddcControls), ddc.isControlEnabled(VCPPolicy.volume, for: key) {
+                let current = ctx.runtime.runtime(for: key).volume
+                if current.map({ abs($0 - v) > 0.005 }) ?? true { ddc.setFraction(VCPPolicy.volume, v, for: key) }
             }
             // DDC input is never part of auto-apply (§9.7) and always confirms (preConfirm code).
-            if manual, let input = s.ddcInput, eff.contains(.ddcInput), ctx.ddc.isAvailable(key) {
-                let name = ManagedDisplays.info(ctx, key: key)?.name ?? ""
-                if let token = await ctx.preConfirm.confirm(key: key, vcp: 0x60, value: input,
-                                                            message: L("Switch \(name) to input \(input)?"), allowKey: nil) {
-                    _ = await ctx.ddc.write(0x60, input, to: key, interactive: true, token: token)
-                }
+            if manual, let input = s.ddcInput, eff.contains(.ddcInput), ctx.runtime.runtime(for: key).input != input {
+                let entries = ddc.inputList(for: key, includeHidden: true).filter { $0.value == input }
+                let entry = entries.first(where: { !$0.lgAlt }) ?? entries.first
+                    ?? DDCInputEntry(value: input, name: VCPPolicy.inputName(input))
+                _ = ddc.setInput(entry, on: key)
             }
         }
         if eff.contains(.virtualScreens), let virtual = ctx.connectPlanner.virtual {
@@ -330,7 +346,7 @@ import SnapticKit
     private func registerCommands(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("layout", policy: .trial, offOnly: false, cliAllowed: true,
                               summary: L("layout list | apply <name|number> | capture <name>"), lifetime: lifetime) { [weak self] req in
-            guard let self, self.effective.contains(.layouts) else { return .failure(ManagementExit.unavailable, L("Layouts are off")) }
+            guard let self, self.effective.contains(.layouts) else { return .failure(ControlExit.unavailable, L("Layouts are off")) }
             let a = req.arguments
             switch a.first?.lowercased() {
             case "list", nil:
@@ -343,17 +359,17 @@ import SnapticKit
                 }.joined(separator: "\n"))
             case "apply":
                 guard a.count > 1, let l = self.find(a.dropFirst().joined(separator: " ")) else {
-                    return .failure(ManagementExit.notFound, L("No such layout"))
+                    return .failure(ControlExit.notFound, L("No such layout"))
                 }
-                guard self.matches(l) != nil else { return .failure(ManagementExit.refused, L("The layout doesn't match the connected displays")) }
+                guard self.matches(l) != nil else { return .failure(ControlExit.refused, L("The layout doesn't match the connected displays")) }
                 self.apply(l.id)
                 return .ok(l.name)
             case "capture":
                 let name = a.count > 1 ? TextSanitizer.clean(a.dropFirst().joined(separator: " "), maxScalars: SavedLayout.maxNameScalars) : nil
-                guard let l = self.captureCurrent(name: name) else { return .failure(ManagementExit.refused, L("Couldn't capture a layout")) }
+                guard let l = self.captureCurrent(name: name) else { return .failure(ControlExit.refused, L("Couldn't capture a layout")) }
                 return .ok(l.name)
             default:
-                return .failure(ManagementExit.usage, L("Usage: layout list | apply <name> | capture <name>"))
+                return .failure(ControlExit.usage, L("Usage: layout list | apply <name> | capture <name>"))
             }
         }
     }
