@@ -1,10 +1,8 @@
 import SwiftUI
 import SnapticKit
 
-// Stub (owner: H). Hand-written by the lead in step 0 from PLAN 0.3 §4.1 + R5-13 (kind S): plain controls with the
-// contract signatures; H replaces the bodies in step 1.
-
-/// Icon tile + title + trailing value + chevron.
+/// Icon tile + title + trailing value + chevron; pushes `route` onto the page's NavigationStack (the shell resolves
+/// it through `settingsDestination`). Full-width grouped row, System Settings style.
 struct NavigationRow: View {
     let title: String
     let symbol: String
@@ -27,12 +25,23 @@ struct NavigationRow: View {
     }
 
     var body: some View {
-        HStack {
-            SettingsIcon(symbol, tint: tint)
-            Text(title)
-            Spacer()
-            if let value { Text(value).foregroundStyle(.secondary) }
-            Image(systemName: "chevron.right").foregroundStyle(.secondary)
+        NavigationLink(value: route) {
+            HStack(spacing: 8) {
+                SettingsIcon(symbol, tint: tint, size: 20)
+                Text(title)
+                if let badge { SettingsBadgeView(badge) }
+                Spacer(minLength: 8)
+                if let value {
+                    Text(value)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .contentShape(Rectangle())
         }
+        .accessibilityLabel(title)
+        .accessibilityValue(value ?? "")
+        .onAppear { SettingsShell.shared.noteTitle(title, for: route) }
+        .modifier(OptionalSettingsAnchor(control))
     }
 }

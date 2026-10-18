@@ -1,10 +1,9 @@
 import SwiftUI
 import SnapticKit
 
-// Stub (owner: H). Hand-written by the lead in step 0 from PLAN 0.3 §4.1 + R5-13 (kind S): plain controls with the
-// contract signatures; H replaces the bodies in step 1.
-
-/// Each page's scroll scaffold owns its ScrollViewReader; anchors register here.
+/// Every page's scroll scaffold: a grouped form inside the `ScrollViewReader` that scrolls to a revealed row
+/// (code minor 3). Rows register as anchors with `SettingsAnchor`. A reveal whose row isn't on the page (hardware
+/// can't do it, so the row is omitted) leaves the page at the top.
 struct SettingsPageScaffold<Content: View>: View {
     let route: SettingsRoute
     let content: Content
@@ -15,7 +14,9 @@ struct SettingsPageScaffold<Content: View>: View {
     }
 
     var body: some View {
-        Form { content }
-            .formStyle(.grouped)
+        SettingsAnchorScroller {
+            Form { content }
+                .formStyle(.grouped)
+        }
     }
 }

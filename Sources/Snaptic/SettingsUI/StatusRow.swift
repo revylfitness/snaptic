@@ -1,9 +1,6 @@
 import SwiftUI
 import SnapticKit
 
-// Stub (owner: H). Hand-written by the lead in step 0 from PLAN 0.3 §4.1 + R5-13 (kind S): plain controls with the
-// contract signatures; H replaces the bodies in step 1.
-
 struct StatusAction {
     let title: String
     let action: @MainActor () -> Void
@@ -17,8 +14,36 @@ struct StatusAction {
     }
 }
 
-enum StatusStyle { case info, warning, error }
+enum StatusStyle {
+    case info, warning, error
 
+    var symbol: String {
+        switch self {
+        case .info: return "info.circle.fill"
+        case .warning: return "exclamationmark.triangle.fill"
+        case .error: return "xmark.octagon.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .info: return .secondary
+        case .warning: return .yellow
+        case .error: return .red
+        }
+    }
+
+    /// Spoken before the text, so the state never rests on color alone.
+    var spokenPrefix: String {
+        switch self {
+        case .info: return ""
+        case .warning: return L("Warning: ")
+        case .error: return L("Error: ")
+        }
+    }
+}
+
+/// A state line with its actions: "Safe Mode is on." [Leave Safe Mode]. Shown only while the state is true.
 struct StatusRow: View {
     let text: String
     let symbol: String?
@@ -33,13 +58,21 @@ struct StatusRow: View {
     }
 
     var body: some View {
-        HStack {
-            if let symbol { Image(systemName: symbol) }
+        HStack(alignment: .center, spacing: 8) {
+            Image(systemName: symbol ?? style.symbol)
+                .symbolRenderingMode(style == .warning ? .multicolor : .monochrome)
+                .foregroundStyle(style.color)
+                .accessibilityHidden(true)
             Text(text)
-            Spacer()
-            ForEach(actions.indices, id: \.self) { i in
-                Button(actions[i].title) { actions[i].action() }
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityLabel(style.spokenPrefix + text)
+            Spacer(minLength: 8)
+            ForEach(Array(actions.enumerated()), id: \.offset) { _, action in
+                Button(action.title) { action.action() }
+                    .fixedSize()
+                    .modifier(OptionalSettingsAnchor(action.control))
             }
         }
+        .accessibilityElement(children: .contain)
     }
 }

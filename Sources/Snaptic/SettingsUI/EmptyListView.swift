@@ -1,10 +1,8 @@
 import SwiftUI
 import SnapticKit
 
-// Stub (owner: H). Hand-written by the lead in step 0 from PLAN 0.3 §4.1 + R5-13 (kind S): plain controls with the
-// contract signatures; H replaces the bodies in step 1.
-
-/// Empty lists: ContentUnavailableView with the page's own copy.
+/// An empty list: `ContentUnavailableView` with the page's own copy and, optionally, the action that fills it
+/// ("Save your current arrangement to restore it later." [Save Current Layout…]).
 struct EmptyListView: View {
     let title: String
     let symbol: String
@@ -19,11 +17,15 @@ struct EmptyListView: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: symbol).font(.largeTitle).foregroundStyle(.secondary)
-            Text(title).font(.headline)
-            if let text { Text(text).foregroundStyle(.secondary) }
-            if let action { Button(action.title) { action.action() } }
+        ContentUnavailableView {
+            Label(title, systemImage: symbol)
+        } description: {
+            if let text { Text(text) }
+        } actions: {
+            if let action {
+                Button(action.title) { action.action() }
+                    .modifier(OptionalSettingsAnchor(action.control))
+            }
         }
         .frame(maxWidth: .infinity)
     }

@@ -1,10 +1,9 @@
 import SwiftUI
 import SnapticKit
 
-// Stub (owner: H). Hand-written by the lead in step 0 from PLAN 0.3 §4.1 + R5-13 (kind S): plain controls with the
-// contract signatures; H replaces the bodies in step 1.
-
-/// Wraps ShortcutRecorder; shows conflicts by owner.
+/// A keyboard shortcut row wrapping `ShortcutRecorder`. A combo another part of Snaptic has registered is refused
+/// while recording ("This shortcut is used by Displays."), and a stored combo that lost to another owner shows that
+/// owner under the row. `owner` is the name this setting registers its shortcut under.
 struct ShortcutSetting: View {
     let title: String
     let help: String?
@@ -21,8 +20,32 @@ struct ShortcutSetting: View {
     }
 
     var body: some View {
-        LabeledContent(title) {
-            ShortcutRecorder(combo: combo)
+        Group {
+            if let current = combo.wrappedValue, let message = conflict(current) {
+                VStack(alignment: .leading, spacing: 4) {
+                    row
+                    SettingsRowNote(message)
+                }
+            } else {
+                row
+            }
         }
+        .modifier(OptionalSettingsAnchor(anchor))
+    }
+
+    private var row: some View {
+        LabeledContent {
+            ShortcutRecorder(combo: combo, validate: { conflict($0) })
+        } label: {
+            Text(title)
+            if let help { Text(help) }
+        }
+    }
+
+    /// Who else holds this combo, if anyone.
+    private func conflict(_ c: HotkeyCombo) -> String? {
+        guard let hotkeys = SettingsShell.shared.host?.hotkeys,
+              let other = hotkeys.owner(of: c), other != owner else { return nil }
+        return L("This shortcut is used by \(other).")
     }
 }

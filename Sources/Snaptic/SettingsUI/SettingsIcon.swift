@@ -1,14 +1,13 @@
 import SwiftUI
 import SnapticKit
 
-// Stub (owner: H). Hand-written by the lead in step 0 from PLAN 0.3 §4.1 + R5-13 (kind S): plain controls with the
-// contract signatures; H replaces the bodies in step 1.
-
-/// Rounded-square tile, accessibility hidden.
+/// System Settings–style icon tile: a rounded square in the tint's gradient with a white symbol. Sidebar 20 pt,
+/// page header 40 pt, hero header 64 pt. Accessibility hidden (the row's title says what it is).
 struct SettingsIcon: View {
     let symbol: String
     let tint: SettingsTint
     let size: CGFloat
+    @Environment(\.colorSchemeContrast) private var contrast
 
     init(_ symbol: String, tint: SettingsTint, size: CGFloat = 20) {
         self.symbol = symbol
@@ -17,8 +16,19 @@ struct SettingsIcon: View {
     }
 
     var body: some View {
-        Image(systemName: symbol)
-            .foregroundStyle(tint.color)
+        let shape = RoundedRectangle(cornerRadius: size * 0.225, style: .continuous)
+        shape
+            .fill(tint.color.gradient)
+            .overlay {
+                Image(systemName: symbol)
+                    .font(.system(size: size * 0.55, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+            .overlay {
+                if contrast == .increased {
+                    shape.strokeBorder(Color.primary.opacity(0.4), lineWidth: 1)
+                }
+            }
             .frame(width: size, height: size)
             .accessibilityHidden(true)
     }

@@ -44,6 +44,58 @@ enum GeneralPages {
     }
 }
 
+// MARK: - 0.3 shell roots (interim, step 1)
+
+/// The General root: hero header, the Safe Mode status row, and the 0.2 General pages as navigation rows until the
+/// 0.3 General page lands (PLAN 0.3 §4.3, H step 2). Permissions and About have roots of their own.
+struct GeneralRootPage: View {
+    @ObservedObject var host: ModuleHost
+
+    var body: some View {
+        SettingsPageScaffold(route: SettingsRoute(SettingsRootID.general)) {
+            SettingsPageHeader(L("General"), summary: L("Startup, command line, backup, and Safe Mode."),
+                               symbol: "gearshape", tint: .gray)
+            if host.safeMode.isActive {
+                Section {
+                    StatusRow(L("Safe Mode is on."), style: .warning, actions: [
+                        StatusAction(title: L("Leave Safe Mode")) { [weak host] in
+                            host?.relauncher.relaunch(reason: "leave safe mode")
+                        },
+                    ])
+                }
+            }
+            Section {
+                ForEach(GeneralPages.hubPages(host: host)) { page in
+                    NavigationRow(page.title, symbol: page.symbol, tint: .gray, route: SettingsRoute(page.id))
+                }
+            }
+        }
+    }
+}
+
+/// The Permissions root (the 0.2 page until H's step 2).
+struct PermissionsRootPage: View {
+    let host: ModuleHost
+
+    var body: some View {
+        PermissionsPage(host: host, permissions: host.permissions)
+    }
+}
+
+/// The About root (the 0.2 page until H's step 2).
+struct AboutRootPage: View {
+    var body: some View {
+        AboutPage()
+    }
+}
+
+extension GeneralPages {
+    /// The 0.2 pages the interim General root lists (Permissions and About are roots now).
+    @MainActor static func hubPages(host: ModuleHost) -> [SettingsPage] {
+        pages(host: host).filter { $0.id != permissionsID && $0.id != aboutID }
+    }
+}
+
 // MARK: - Modules
 
 private struct ModulesPage: View {
