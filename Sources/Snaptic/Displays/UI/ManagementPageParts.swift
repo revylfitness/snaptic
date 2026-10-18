@@ -63,22 +63,16 @@ enum ManagementText {
     }
 }
 
-/// Binding helpers onto the Displays config store.
+/// Binding helpers onto the Displays config store, collapsed onto `SettingsBinding` (0.3 §4.5): writes only on change
+/// and never call `sanitized()` per tick (the store sanitizes on load and outside changes; the controls clamp).
 @MainActor enum ManagementBindings {
-    static func config<T>(_ env: DisplaysPageEnvironment, _ path: WritableKeyPath<DisplaysConfig, T>) -> Binding<T> {
-        Binding(get: { env.config.value[keyPath: path] }, set: { env.config.value[keyPath: path] = $0 })
+    static func config<T: Equatable>(_ env: DisplaysPageEnvironment, _ path: WritableKeyPath<DisplaysConfig, T>) -> Binding<T> {
+        SettingsBinding.store(env.config, path)
     }
 
-    static func perDisplay<T>(_ env: DisplaysPageEnvironment, _ key: DisplayKey,
-                              _ path: WritableKeyPath<PerDisplayConfig, T>) -> Binding<T> {
-        Binding(get: { (env.config.value.perDisplay[key] ?? PerDisplayConfig())[keyPath: path] },
-                set: { newValue in
-                    var value = env.config.value
-                    var pd = value.perDisplay[key] ?? PerDisplayConfig()
-                    pd[keyPath: path] = newValue
-                    value.perDisplay[key] = pd.sanitized()
-                    env.config.value = value
-                })
+    static func perDisplay<T: Equatable>(_ env: DisplaysPageEnvironment, _ key: DisplayKey,
+                                         _ path: WritableKeyPath<PerDisplayConfig, T>) -> Binding<T> {
+        SettingsBinding.lossyEntry(env.config, \.perDisplay, key, fallback: { PerDisplayConfig() }, path)
     }
 }
 
