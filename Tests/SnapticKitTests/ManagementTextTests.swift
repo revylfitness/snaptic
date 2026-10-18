@@ -43,9 +43,13 @@ final class ManagementTextTests: XCTestCase {
     func testActionTitlesMatchTheMenu() {
         XCTAssertEqual(ManagementText.matchTextSize, "Match Text Size…")
         XCTAssertEqual(ManagementText.useAsMainDisplay, "Use as Main Display")
-        XCTAssertEqual(ManagementText.toggleSharperText, "Toggle Sharper Text")
-        XCTAssertEqual(ManagementText.toggleHighDynamicRange, "Toggle High Dynamic Range")
-        XCTAssertEqual(ManagementText.toggleVirtualDisplay(2), "Toggle Virtual Display 2")
+        XCTAssertEqual(ManagementText.sharperTextOnOff, "Sharper Text On or Off")
+        XCTAssertEqual(ManagementText.highDynamicRangeOnOff, "High Dynamic Range On or Off")
+        XCTAssertEqual(ManagementText.virtualDisplayOnOff(2), "Virtual Display 2 On or Off")
+        XCTAssertEqual(ManagementText.mirroringOnOff, "Mirroring On or Off")
+        XCTAssertEqual(ManagementText.builtInDisplayOnOff, "Built-in Display On or Off")
+        // One verb pattern for switches across the Keyboard Shortcuts sheet (no "Toggle …").
+        for title in ManagementText.all + [ManagementText.hiDPIOnOff] { XCTAssertFalse(title.hasPrefix("Toggle"), title) }
     }
 
     /// New names only: a stored virtual display keeps the name it has.

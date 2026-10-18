@@ -545,13 +545,13 @@ import SnapticKit
         }
         add(.dResolutionUp, L("Increase Resolution")) { $0.step($1, by: 1) }
         add(.dResolutionDown, L("Decrease Resolution")) { $0.step($1, by: -1) }
-        add(.dHiDPIToggle, L("Toggle HiDPI")) { c, k in if let m = c.hiDPIToggleTarget(k) { c.apply(m, to: k) } }
+        add(.dHiDPIToggle, ManagementText.hiDPIOnOff) { c, k in if let m = c.hiDPIToggleTarget(k) { c.apply(m, to: k) } }
         add(.dNativeMode, L("Native Resolution")) { c, k in if let m = c.native(k) { c.apply(m, to: k) } }
         add(.dDefaultMode, L("Default Resolution")) { c, k in if let m = c.defaultMode(k) { c.apply(m, to: k) } }
         add(.dNativeHalved, ManagementText.halfOfNativeResolution) { c, k in if let m = c.nativeHalved(k) { c.apply(m, to: k) } }
         add(.dResolutionUndo, L("Undo Resolution Change")) { $0.undo($1) }
         add(.dResolutionRedo, L("Redo Resolution Change")) { $0.redo($1) }
-        add(.dNotchToggle, ManagementText.toggleNotchArea) { c, k in if let m = c.notchToggleTarget(k) { c.apply(m, to: k) } }
+        add(.dNotchToggle, ManagementText.notchAreaOnOff) { c, k in if let m = c.notchToggleTarget(k) { c.apply(m, to: k) } }
         for n in 1...PerDisplayResolution.maxFavorites {
             add(.dFavorite(n), L("Favorite Resolution \(n)")) { $0.applyFavorite(n - 1, on: $1) }
         }

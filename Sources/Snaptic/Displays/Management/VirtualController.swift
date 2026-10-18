@@ -414,7 +414,7 @@ import SnapticShims
 
     private func registerActions(_ ctx: DisplaysContext, lifetime: Lifetime) {
         for n in 1...VirtualConfig.maxScreens {
-            ctx.actions.register(Action(id: .dVirtualToggle(n), title: ManagementText.toggleVirtualDisplay(n), feature: .virtualScreens,
+            ctx.actions.register(Action(id: .dVirtualToggle(n), title: ManagementText.virtualDisplayOnOff(n), feature: .virtualScreens,
                                         cliAllowed: true) { [weak self] _ in
                 guard let self, self.screens.indices.contains(n - 1) else { return }
                 self.toggle(self.screens[n - 1].id)

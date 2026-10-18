@@ -135,7 +135,7 @@ import SnapticKit
             guard let self, let ctx = self.context else { return }
             ManagedDisplays.resolve(ctx, t).forEach { self.rotateNext($0.key) }
         }, lifetime: lifetime)
-        ctx.actions.register(Action(id: .dHDRToggle, title: ManagementText.toggleHighDynamicRange, feature: .hdrToggle, cliAllowed: true) { [weak self] t in
+        ctx.actions.register(Action(id: .dHDRToggle, title: ManagementText.highDynamicRangeOnOff, feature: .hdrToggle, cliAllowed: true) { [weak self] t in
             guard let self, let ctx = self.context else { return }
             for d in ManagedDisplays.resolve(ctx, t) { self.setHDR(d.key, !(self.hdrEnabled(d) ?? false)) }
         }, lifetime: lifetime)

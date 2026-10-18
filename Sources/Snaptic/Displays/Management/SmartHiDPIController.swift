@@ -56,7 +56,7 @@ import SnapticShims
         context.sessionGate.observeEvents(lifetime: lifetime) { [weak self] event in
             if event == .resignedActive { self?.shutdownForSession() }
         }
-        context.actions.register(Action(id: .dSmartHiDPIToggle, title: ManagementText.toggleSharperText, feature: .smartHiDPI,
+        context.actions.register(Action(id: .dSmartHiDPIToggle, title: ManagementText.sharperTextOnOff, feature: .smartHiDPI,
                                         cliAllowed: true) { [weak self] t in
             guard let self, let ctx = self.context else { return }
             for d in ManagedDisplays.resolve(ctx, t) { self.toggle(d.key) }

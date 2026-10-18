@@ -7,15 +7,18 @@ import Foundation
 // Names already stored in the configuration (a virtual display the person created or renamed) are never rewritten.
 
 package enum ManagementText {
-    // MARK: Action titles (Keyboard Shortcuts sheet; "Toggle …" like every other Displays action)
+    // MARK: Action titles (Keyboard Shortcuts sheet; a switch is "… On or Off", like every other Displays action)
 
-    package static var toggleSharperText: String { L("Toggle Sharper Text") }
+    package static var sharperTextOnOff: String { L("Sharper Text On or Off") }
     package static var matchTextSize: String { L("Match Text Size…") }
     package static var halfOfNativeResolution: String { L("Half of Native Resolution") }
-    package static var toggleNotchArea: String { L("Toggle Notch Area") }
+    package static var notchAreaOnOff: String { L("Notch Area On or Off") }
     package static var useAsMainDisplay: String { L("Use as Main Display") }
-    package static var toggleHighDynamicRange: String { L("Toggle High Dynamic Range") }
-    package static func toggleVirtualDisplay(_ number: Int) -> String { L("Toggle Virtual Display \(number)") }
+    package static var highDynamicRangeOnOff: String { L("High Dynamic Range On or Off") }
+    package static func virtualDisplayOnOff(_ number: Int) -> String { L("Virtual Display \(number) On or Off") }
+    package static var hiDPIOnOff: String { L("HiDPI On or Off") }
+    package static var mirroringOnOff: String { L("Mirroring On or Off") }
+    package static var builtInDisplayOnOff: String { L("Built-in Display On or Off") }
 
     // MARK: "Keep this change?" labels (sentence case, like the other transaction labels)
 
@@ -70,15 +73,15 @@ package enum ManagementText {
 
     // MARK: Checks
 
-    /// 0.2 and developer words the strings above never use (PLAN 0.3 §4.2; "HiDPI" stays only in "Toggle HiDPI",
-    /// the resolution action PLAN §4.3 keeps).
+    /// 0.2 and developer words the strings above never use (PLAN 0.3 §4.2; "HiDPI" stays only in "HiDPI On or Off",
+    /// the resolution action PLAN §4.3 keeps, which `all` leaves out).
     package static let retiredWords = ["HiDPI", "Smart", "Virtual Screen", "virtual screen", "PIP", "OSD", "DDC", "XDR",
                                        "UI Size", "Native-Halved", "Headless", "monitor", "Layouts are"]
 
     /// Every string above, with sample arguments (for the vocabulary test).
     package static var all: [String] {
-        [toggleSharperText, matchTextSize, halfOfNativeResolution, toggleNotchArea, useAsMainDisplay,
-         toggleHighDynamicRange, toggleVirtualDisplay(3),
+        [sharperTextOnOff, matchTextSize, halfOfNativeResolution, notchAreaOnOff, useAsMainDisplay,
+         highDynamicRangeOnOff, virtualDisplayOnOff(3), mirroringOnOff, builtInDisplayOnOff,
          turnOnSharperText, turnOffSharperText, changeSharperTextSize, restoreSharperText, placeVirtualDisplay,
          mirrorVirtualDisplay,
          sharperTextSection, virtualDisplaysSection, savedLayoutsSection, panelPropertiesSection,
