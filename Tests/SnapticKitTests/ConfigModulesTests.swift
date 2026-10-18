@@ -383,6 +383,87 @@ final class ConfigModulesTests: XCTestCase {
         XCTAssertTrue(ledger.has(.newModuleCards))
     }
 
+    // MARK: Awake upgrader insertion (§2.13, marker awakeUpgrade.v1)
+
+    /// One launch as ModuleHost runs it: the stored value (or the first-run value), M3, then the Awake insertion;
+    /// what it returns is what gets saved, so it goes through JSON like the store.
+    private func launch(_ stored: ModulesConfig?, launchedBefore: Bool = true,
+                        ledger: inout MigrationLedger) throws -> ModulesConfig {
+        var c = stored ?? ModulesConfig.firstRun(launchedBefore: launchedBefore)
+        c = c.migrated(ledger: &ledger)
+        c = c.insertingAwakeForUpgrader(modulesExisted: stored != nil, ledger: &ledger)
+        return try roundTrip(c)
+    }
+
+    func testFreshInstallKeepsAwakeOnAcrossLaunches() throws {
+        var ledger = MigrationLedger()
+        var c = try launch(nil, launchedBefore: false, ledger: &ledger)
+        XCTAssertTrue(ledger.has(.awakeUpgrade))
+        XCTAssertNil(c.modules[.awake])
+        // Onboarding finished without touching the Awake switch: still no Awake entry stored.
+        c.onboarding = .done
+        for _ in 0..<3 {
+            c = try launch(c, ledger: &ledger)
+            XCTAssertTrue(c.isEnabled(.awake))
+            XCTAssertEqual(c.presence(.awake), .ownIconWhenActive)
+            XCTAssertFalse(c.newModuleCards.contains(.awake))
+        }
+    }
+
+    func testResetKeepsThePerIDDefaults() throws {
+        var ledger = MigrationLedger()
+        var c = try launch(nil, launchedBefore: false, ledger: &ledger)
+        c.setEnabled(false, for: .awake)
+        c = try launch(c, ledger: &ledger)
+        // General › Reset writes ModulesConfig() and relaunches; the ledger is kept.
+        c = try launch(ModulesConfig(), ledger: &ledger)
+        for id in ModuleID.allCases { XCTAssertEqual(c.preferences(id), ModulesConfig.defaultPreferences(id)) }
+        XCTAssertTrue(c.isEnabled(.awake))
+        XCTAssertEqual(c.newModuleCards, [])
+    }
+
+    func testZeroTwoUpgraderGetsAwakeOffAndItsCardOnce() throws {
+        // A 0.2 store: module entries without Awake, no ledger (0.2 never writes it).
+        var zeroTwo = ModulesConfig()
+        zeroTwo.modules[.windowSwitcher] = ModulePreferences(enabled: true)
+        zeroTwo.modules[.displays] = ModulePreferences(enabled: true)
+        zeroTwo.onboarding = .done
+        var ledger = MigrationLedger()
+        var c = try launch(zeroTwo, ledger: &ledger)
+        XCTAssertEqual(c.modules[.awake], ModulesConfig.awakeUpgradePreferences)
+        XCTAssertFalse(c.isEnabled(.awake))
+        XCTAssertEqual(c.newModuleCards, [.awake])
+        XCTAssertTrue(ledger.has(.awakeUpgrade))
+        // The user dismisses the card, then turns Awake on: later launches change neither.
+        c.newModuleCards = []
+        c = try launch(c, ledger: &ledger)
+        XCTAssertEqual(c.newModuleCards, [])
+        c.setEnabled(true, for: .awake)
+        c = try launch(c, ledger: &ledger)
+        XCTAssertTrue(c.isEnabled(.awake))
+        XCTAssertEqual(c.newModuleCards, [])
+        // Even a stored value that lost its Awake entry later is not an upgrade any more.
+        c.modules[.awake] = nil
+        XCTAssertTrue(try launch(c, ledger: &ledger).isEnabled(.awake))
+    }
+
+    func testZeroOneUpgraderGetsTheEntryFromTheUpgradeDefaultsOnly() throws {
+        var ledger = MigrationLedger()
+        let c = try launch(nil, launchedBefore: true, ledger: &ledger)
+        XCTAssertFalse(c.isEnabled(.awake))
+        XCTAssertEqual(c.newModuleCards, [.displays, .awake])
+        XCTAssertTrue(ledger.has(.awakeUpgrade))
+        XCTAssertEqual(try launch(c, ledger: &ledger), c)
+    }
+
+    func testAwakeInsertionKeepsAStoredAwakeEntry() {
+        var c = ModulesConfig()
+        c.modules[.awake] = ModulePreferences(enabled: true, presence: .ownIcon)
+        var ledger = MigrationLedger()
+        XCTAssertEqual(c.insertingAwakeForUpgrader(modulesExisted: true, ledger: &ledger), c)
+        XCTAssertTrue(ledger.has(.awakeUpgrade))
+    }
+
     func testTurningDisplaysOnRemovesItsCard() {
         var c = ModulesConfig.upgradeDefaults()
         c.newModuleCards = [.displays, .awakeMigrated]

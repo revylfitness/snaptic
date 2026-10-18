@@ -119,7 +119,7 @@ import SnapticKit
     }
 
     /// The one-time migrations, in the R5-2 order: ledger → M3 (modules) → M4, M5, M10 (displays) → Awake inserted
-    /// off for upgraders (§2.13) → M1 → forced saves: modules, displays, Awake, then the ledger last (the commit
+    /// off for upgraders (§2.13, once: marker `awakeUpgrade.v1`) → M1 → forced saves: modules, displays, Awake, then the ledger last (the commit
     /// point; a crash before it re-runs migrations that are idempotent over what that run wrote). Returns M1's
     /// result when it ran in this launch.
     private static func runMigrations(modules: ConfigStore<ModulesConfig>, modulesExisted: Bool,
@@ -128,11 +128,7 @@ import SnapticKit
         var marks = ledger.value
         modules.value = modules.value.migrated(ledger: &marks)
         displays.value = displays.value.migrated(ledger: &marks)
-        if modulesExisted && modules.value.modules[.awake] == nil {
-            modules.value.modules[.awake] = ModulesConfig.awakeUpgradePreferences
-            // C7: upgraders see "New: Awake" on General (hidden by H's card rules once M1 migrated or Awake is on).
-            if !modules.value.newModuleCards.contains(.awake) { modules.value.newModuleCards.append(.awake) }
-        }
+        modules.value = modules.value.insertingAwakeForUpgrader(modulesExisted: modulesExisted, ledger: &marks)
         // M1 (§4.6, R5-12): G's pure migration over the raw 0.2 JSON; the marker is recorded whatever it found.
         var m1: AwakeMigrationResult?
         if !marks.has(.fromDisplays) {

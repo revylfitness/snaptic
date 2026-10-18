@@ -77,6 +77,7 @@ package enum MigrationID: String, CaseIterable, Sendable {
     case fromDisplays = "fromDisplays.v1", fromDisplaysToast = "fromDisplays.toast"
     case newModuleCards = "newModuleCards.v1", menuShortcuts = "menuShortcuts.v1"
     case showNits = "showNits.v1", powerSwitch = "powerSwitch.v1"
+    case awakeUpgrade = "awakeUpgrade.v1"             // step-4 fix round 1: the §2.13 decision, made once
 }
 package struct MigrationLedger: ConfigModel {
     package var done: Set<String>                     // raw strings, so a 0.4 id survives a 0.3 load
@@ -89,6 +90,9 @@ package struct MigrationLedger: ConfigModel {
 extension ModulesConfig {
     /// M3: `showNewDisplaysCard == true` → `newModuleCards` gains `.displays`; runs iff `newModuleCards.v1` is absent, then records it.
     package func migrated(ledger: inout MigrationLedger) -> ModulesConfig
+    /// §2.13: runs iff `awakeUpgrade.v1` is absent, then records it; inserts Awake off + "New: Awake" only when
+    /// `modulesExisted` and `modules[.awake] == nil`.
+    package func insertingAwakeForUpgrader(modulesExisted: Bool, ledger: inout MigrationLedger) -> ModulesConfig
 }
 extension DisplaysConfig {
     /// M4, then M5, then M10, each only when its marker is absent; records each marker it ran.
@@ -100,7 +104,7 @@ extension DisplaysConfig {
 1. Load the ledger.
 2. `modules = modules.migrated(ledger:)`.
 3. `displays = displays.migrated(ledger:)`.
-4. Insert Awake disabled (§2.13).
+4. Insert Awake disabled for upgraders, once (§2.13; `modules.insertingAwakeForUpgrader(modulesExisted:ledger:)`, marker `awakeUpgrade.v1`).
 5. Run M1 (§4.6).
 6. `save(force: true)` in this order: modules, displays, Awake, then the ledger last. Writing the ledger is the commit point.
 
@@ -2088,7 +2092,7 @@ struct CustomItemRow: Equatable {
 - **Displays**: `sleepPrevention` is removed **in step 3**, in one coordinated merge by D and F with the lead's lines and A's Kit rows (code B2): `DisplayFeature.sleepPrevention` and its spec, `PerDisplayManagement.preventSleep` (kept decodable and encoded until 0.4, ignored), PowerController's assertion code, `ManagementIDs.dSleepPrevention*`, `DisplaysRuntimeState.sleepPreventionActive`, the Arrangement-page section, the menu badge, the CLI `prevent-sleep` verb (replaced by a retired-verb stub, R5-12), the KitBackup/KitControl/DisplaysUIModel/Diagnostics rows and their tests. Until then the enum case, spec and runtime property stay and compile; M1 reads raw JSON either way, so it doesn't depend on the case. The ratchet (§6.3) lists `PowerController.swift` for L1 until that merge. Awake never calls Displays code except B's pure `DisplayIdentity`/`Fingerprint.matches` helpers and a read-only look at `DisplaysConfig` custom names.
 - **Switcher**: no functional coupling. Pointer nudges are tagged and suppressed while the switcher panel is visible (`HostSignals.switcherVisible`, set by A). Hotkey conflicts across modules are reported by `GlobalHotkeys` with the owning module's name.
 - **Host**: `ModuleHost` gains `awake: AwakeModule`, `awakeStore`, `awakeStateStore`, `awakeHistoryStore` (one store per key: `SnapticAwakeV1`, `SnapticAwakeStateV1`, `SnapticAwakeHistoryV1`), `case .awake` in `module(_:)`, the `Modules.disable.<id>` read (N14), flushes the stores on quit, and includes them in Reset All Settings (history and state cleared too; `restoringDefaults` turns nudge and Drive Alive off).
-- **Upgraders** (code M4, C7, code minor 8): in `ModuleHost.init`, when module settings existed before this launch and `modules[.awake] == nil`, the host inserts `ModulePreferences(enabled: false, presence: .ownIconWhenActive)` for Awake **before** M1 runs; `ModulesConfig.upgradeDefaults()` (reached through `ModulesConfig.firstRun(launchedBefore: true)` for 0.1 users, who have no module settings yet; r3 consistency m6) inserts the same entry. M1 turns it on only if it produced an enabled rule. `ModulesConfig.defaultPreferences(_:)` becomes per id (fresh installs: Awake enabled, `.ownIconWhenActive`); `ConfigModulesTests` line 16 (`placement(id) == .shared` no longer holds for Awake; R5) is updated by the lead, who owns that test file from step 0 (consistency m9, r3 code minor 7).
+- **Upgraders** (code M4, C7, code minor 8; step-4 code F1): in `ModuleHost.init`, **once per install** (ledger marker `awakeUpgrade.v1`, recorded on the first 0.3 launch whatever was decided), when module settings existed before this launch and `modules[.awake] == nil`, the host inserts `ModulePreferences(enabled: false, presence: .ownIconWhenActive)` for Awake and the "New: Awake" card **before** M1 runs (Kit `ModulesConfig.insertingAwakeForUpgrader(modulesExisted:ledger:)`). Only a real 0.1/0.2 upgrader matches on that first launch: a fresh install never stores an Awake entry (it runs on the per-id default), so without the marker its second launch, and every launch after General › Reset (which keeps the ledger), would turn Awake off; `ModulesConfig.upgradeDefaults()` (reached through `ModulesConfig.firstRun(launchedBefore: true)` for 0.1 users, who have no module settings yet; r3 consistency m6) inserts the same entry. M1 turns it on only if it produced an enabled rule. `ModulesConfig.defaultPreferences(_:)` becomes per id (fresh installs: Awake enabled, `.ownIconWhenActive`); `ConfigModulesTests` line 16 (`placement(id) == .shared` no longer holds for Awake; R5) is updated by the lead, who owns that test file from step 0 (consistency m9, r3 code minor 7).
 
 ### 2.14 Config models (Kit; lossy decode per field, `sanitized()` clamps everything)
 

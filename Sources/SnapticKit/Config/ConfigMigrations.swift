@@ -9,6 +9,10 @@ package enum MigrationID: String, CaseIterable, Sendable {
     case fromDisplays = "fromDisplays.v1", fromDisplaysToast = "fromDisplays.toast"
     case newModuleCards = "newModuleCards.v1", menuShortcuts = "menuShortcuts.v1"
     case showNits = "showNits.v1", powerSwitch = "powerSwitch.v1"
+    /// The §2.13 upgrader decision (Awake inserted off) was made: recorded on every install's first 0.3 launch,
+    /// whether or not it inserted anything, so a fresh install (whose module settings never hold an Awake entry)
+    /// is not taken for an upgrader on its second launch or after General › Reset.
+    case awakeUpgrade = "awakeUpgrade.v1"
 }
 
 /// The migrations that already ran. Raw strings, so an id a newer Snaptic wrote survives this version's saves.
