@@ -519,6 +519,8 @@ Sources/Snaptic/SettingsUI/ModuleSwitchRow.swift	H	L	-	-
 # 0.3: M (menu system)
 Sources/SnapticKit/MenuLayout.swift	M	S	MenuLayout	-
 Tests/SnapticKitTests/MenuLayoutTests.swift	M	K3	MenuLayoutTests	-
+Sources/SnapticKit/DisplaysMenuPlan.swift	M	L	-	-
+Tests/SnapticKitTests/DisplaysMenuPlanTests.swift	M	L	-	-
 Sources/Snaptic/Core/MenuKit.swift	M	S	MenuKit	-
 Sources/Snaptic/Core/MenuSliderRow.swift	M	S	MenuSliderRow	-
 Sources/Snaptic/Core/MenuSwitchHeader.swift	M	S	MenuSwitchHeader	-
