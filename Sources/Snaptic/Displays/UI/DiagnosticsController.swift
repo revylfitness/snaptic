@@ -16,6 +16,8 @@ struct DiagnosticsReport {
     static var privateSymbols: [PrivateSymbol] { [] }
     static let copyAction = DisplayActionID(rawValue: "f.copyDiagnostics")
     static let eventCount = 200
+    /// At least EventLog's capacity, so every entry is considered before filtering.
+    private static let ringSize = 1_000
 
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
@@ -199,11 +201,15 @@ struct DiagnosticsReport {
         return DiagnosticsSection(title: "Private API", rows: rows.isEmpty ? [DiagnosticsRow("Missing symbols", "none")] : rows)
     }
 
+    /// The event tail: the newest `eventCount` exported entries (0.3 §3.6: Awake's events never leave the app this
+    /// way; they have their own counted summary), read from the whole ring so the filter doesn't shorten the tail.
     private static func eventLines() -> [String] {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "HH:mm:ss.SSS"
-        return EventLog.shared.recent(eventCount).map { entry in
+        let entries = DiagnosticsText.exportedEvents(EventLog.shared.recent(ringSize), category: { $0.category },
+                                                     limit: eventCount)
+        return entries.map { entry in
             DiagnosticsText.scrubText("\(formatter.string(from: entry.date)) [\(entry.category.rawValue)] \(entry.message)")
         }
     }
