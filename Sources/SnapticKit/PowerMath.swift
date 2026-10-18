@@ -74,4 +74,29 @@ package enum PowerMath {
         let p = (Double(current) * 100 / Double(max)).rounded()
         return Int(Swift.min(100, Swift.max(0, p)))
     }
+
+    // MARK: Unreadable reads (§2.6, awake-correctness r2 F2)
+
+    /// Upper bound of `unreadableStreak` (it only needs to reach 2).
+    package static let maxUnreadableStreak = 1_000
+
+    /// Consecutive IOPS reads that found a latched battery without a percent: one more after such a read, 0 after a
+    /// readable one or while no battery was ever seen (desktops).
+    package static func unreadableStreak(previous: Int, batteryLatched: Bool, percent: Int?) -> Int {
+        guard batteryLatched, percent == nil else { return 0 }
+        return Swift.min(maxUnreadableStreak, Swift.max(0, previous) + 1)
+    }
+
+    /// The 60 s re-check runs while `falling` holds (so it ages out) and after exactly one unreadable read (so the
+    /// confirming second read happens even when IOPS sends nothing more).
+    package static func needsRecheck(falling: Bool, unreadableStreak: Int) -> Bool {
+        falling || unreadableStreak == 1
+    }
+
+    /// Whether a read is published to observers (`changes`): when the facts changed, and on every read that found the
+    /// battery unreadable even when the facts are identical, so a guard needing a second consecutive unreadable read
+    /// gets a second evaluation.
+    package static func publishes(old: PowerFacts?, new: PowerFacts, unreadableStreak: Int) -> Bool {
+        old != new || unreadableStreak > 0
+    }
 }

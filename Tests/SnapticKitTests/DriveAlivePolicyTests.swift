@@ -142,4 +142,71 @@ final class DriveAlivePolicyTests: XCTestCase {
                                                        driveAliveWriting: writing, guardsHold: false, sessionEnd: nil))
         XCTAssertTrue(plan.preventDiskIdle)
     }
+
+    // MARK: Removal identity (security r2 S2-1)
+
+    private func identity(inode: UInt64 = 42, device: Int64 = 7, size: Int64 = 8, mtime: Int64 = 1_000, nanos: Int64 = 0,
+                          content: [UInt8]? = [0, 0, 0, 0, 0x65, 0x10, 0x20, 0x30]) -> DriveAlivePolicy.FileIdentity {
+        DriveAlivePolicy.FileIdentity(device: device, inode: inode, size: size, modifiedSeconds: mtime,
+                                      modifiedNanoseconds: nanos, content: content)
+    }
+
+    func testTheRemovalNamesAreFixedAndDistinct() {
+        XCTAssertEqual(DriveAlivePolicy.removingFileName, ".snaptic-keepalive.removing")
+        XCTAssertNotEqual(DriveAlivePolicy.removingFileName, DriveAlivePolicy.fileName)
+        XCTAssertTrue(DriveAlivePolicy.removingFileName.hasPrefix(DriveAlivePolicy.fileName + "."))
+    }
+
+    func testTheSameInodeIsTheSameFileOnEveryFileSystem() {
+        for fs in DriveAlivePolicy.allowedFileSystems {
+            XCTAssertTrue(DriveAlivePolicy.isSameFile(checked: identity(), moved: identity(content: nil), fileSystem: fs))
+            XCTAssertFalse(DriveAlivePolicy.isSameFile(checked: identity(), moved: identity(device: 8), fileSystem: fs),
+                           "another device never matches")
+        }
+    }
+
+    func testANewInodeMatchesOnlyOnFATFamiliesWithEqualSizeTimeAndContent() {
+        let moved = identity(inode: 99)
+        XCTAssertFalse(DriveAlivePolicy.isSameFile(checked: identity(), moved: moved, fileSystem: "apfs"))
+        XCTAssertFalse(DriveAlivePolicy.isSameFile(checked: identity(), moved: moved, fileSystem: "hfs"))
+        for fs in ["exfat", "msdos"] {
+            XCTAssertTrue(DriveAlivePolicy.isSameFile(checked: identity(), moved: moved, fileSystem: fs))
+            XCTAssertFalse(DriveAlivePolicy.isSameFile(checked: identity(), moved: identity(inode: 99, mtime: 1_002),
+                                                       fileSystem: fs))
+            XCTAssertFalse(DriveAlivePolicy.isSameFile(checked: identity(), moved: identity(inode: 99, nanos: 1),
+                                                       fileSystem: fs))
+            XCTAssertFalse(DriveAlivePolicy.isSameFile(checked: identity(), moved: identity(inode: 99, size: 9), fileSystem: fs))
+            XCTAssertFalse(DriveAlivePolicy.isSameFile(checked: identity(),
+                                                       moved: identity(inode: 99, content: [1, 0, 0, 0, 0, 0, 0, 0]),
+                                                       fileSystem: fs))
+            XCTAssertFalse(DriveAlivePolicy.isSameFile(checked: identity(), moved: identity(inode: 99, content: nil),
+                                                       fileSystem: fs), "content not read never matches")
+            XCTAssertFalse(DriveAlivePolicy.isSameFile(checked: identity(size: 9), moved: identity(inode: 99, size: 9),
+                                                       fileSystem: fs), "only an 8-byte file")
+            XCTAssertFalse(DriveAlivePolicy.isSameFile(checked: identity(content: [1, 2, 3]), moved: identity(inode: 99, content: [1, 2, 3]),
+                                                       fileSystem: fs), "only 8 bytes of content")
+        }
+    }
+
+    func testSeededIdentityFuzz() {
+        var rng = SeededGenerator(seed: 0x5EED_D21E)
+        let systems = Array(DriveAlivePolicy.allowedFileSystems) + ["ntfs", ""]
+        for _ in 0..<2_000 {
+            func pick() -> DriveAlivePolicy.FileIdentity {
+                identity(inode: rng.next() % 3, device: Int64(rng.next() % 2), size: Int64(7 + rng.next() % 3),
+                         mtime: Int64(rng.next() % 2), nanos: Int64(rng.next() % 2),
+                         content: rng.next() % 4 == 0 ? nil : (0..<8).map { _ in UInt8(rng.next() % 2) })
+            }
+            let a = pick(), b = pick()
+            let fs = systems[Int(rng.next() % UInt64(systems.count))]
+            let same = DriveAlivePolicy.isSameFile(checked: a, moved: b, fileSystem: fs)
+            if a.device != b.device { XCTAssertFalse(same) }
+            if a.device == b.device && a.inode == b.inode { XCTAssertTrue(same) }
+            if same && a.inode != b.inode {
+                XCTAssertTrue(DriveAlivePolicy.renameMayChangeInode.contains(fs))
+                XCTAssertEqual(a.content, b.content)
+                XCTAssertEqual(a.size, 8)
+            }
+        }
+    }
 }

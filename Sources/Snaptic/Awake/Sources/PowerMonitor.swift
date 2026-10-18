@@ -6,7 +6,8 @@ import SnapticKit
 // Power source, battery, Low Power Mode and thermal state (owner: J; PLAN 0.3 §2.6, §2.8, R5-6). Always active with
 // `sessions` (guards need it). Events only: the IOPS run-loop source (power source and percent changes), the Low Power
 // Mode and thermal notifications, and wake; a 60 s `.common` re-check runs only while `falling` is true so the flag
-// ages out. The battery history lives in memory only.
+// ages out, or after a first unreadable read so a second read confirms it. The battery history lives in memory only. Observers hear about changed facts and about every read that
+// finds a latched battery unreadable (PowerMath.publishes).
 
 @MainActor final class PowerMonitor: ObservableObject, CriterionSource {
     static var kinds: Set<AwakeCriterionKind> { [.power] }
@@ -15,6 +16,11 @@ import SnapticKit
     @Published private(set) var facts: PowerFacts?
     /// The R5-6 window (in memory only).
     private(set) var history: [BatteryReading] = []
+    /// Consecutive reads that found the latched battery without a percent (§2.6; 0 after a readable read, on desktops
+    /// and while inactive). Every such read also fires `changes` even when `facts` didn't change, so guards that count
+    /// unreadable reads per evaluation get one evaluation per read (awake-correctness r2 F2); guards may instead read
+    /// this streak directly (≥ 2 = unreadable).
+    private(set) var unreadableStreak = 0
     private let changes = ChangeFanout()
     private var active = false
     private var source: CFRunLoopSource?
@@ -58,6 +64,7 @@ import SnapticKit
         observers = []
         recheck.cancel()
         history = []
+        unreadableStreak = 0
         facts = nil
         context = nil
     }
@@ -92,15 +99,18 @@ import SnapticKit
                              lastRecovery: PowerMath.lastRecovery(history),
                              lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
                              thermal: Self.thermalLevel(ProcessInfo.processInfo.thermalState))
-        scheduleRecheck(falling: falling)
-        guard new != facts else { return }
-        facts = new
+        unreadableStreak = PowerMath.unreadableStreak(previous: unreadableStreak, batteryLatched: present,
+                                                      percent: new.percent)
+        scheduleRecheck(PowerMath.needsRecheck(falling: falling, unreadableStreak: unreadableStreak))
+        guard PowerMath.publishes(old: facts, new: new, unreadableStreak: unreadableStreak) else { return }
+        if new != facts { facts = new }
         changes.fire()
     }
 
-    /// While `falling` holds, recompute every 60 s so it ages out without a new IOPS event (R5-6).
-    private func scheduleRecheck(falling: Bool) {
-        if falling {
+    /// While `falling` holds, recompute every 60 s so it ages out without a new IOPS event (R5-6); also after a first
+    /// unreadable read, so the second read that confirms it doesn't wait for an IOPS event that may never come.
+    private func scheduleRecheck(_ needed: Bool) {
+        if needed {
             guard !recheck.isRunning else { return }
             recheck.start(every: PowerMath.recheckSeconds, tolerance: 5) { [weak self] in self?.refresh() }
         } else {

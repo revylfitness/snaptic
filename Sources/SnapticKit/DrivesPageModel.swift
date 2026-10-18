@@ -55,6 +55,9 @@ package enum DriveRowStatus: Equatable, Sendable {
     /// On, but not mounted now.
     case notConnected
     case unsupported(DriveUnsupportedReason)
+    /// Off, but removing Snaptic's file when it was turned off failed (security r2 S2-1: the error is shown, not
+    /// dropped).
+    case removeFailed(DriveAliveError)
 }
 
 package struct DriveRow: Equatable, Identifiable, Sendable {
@@ -95,6 +98,8 @@ package enum DrivesPageModel {
         package var firstWriteRunning: Set<VolumeUUIDKey>
         /// The page's own first-write failures (the service reports them only for tracked volumes).
         package var firstWriteFailures: [VolumeUUIDKey: DriveAliveError]
+        /// Removals of `.snaptic-keepalive` that failed when the volume was turned off (shown on off rows only).
+        package var removeFailures: [VolumeUUIDKey: DriveAliveError]
         /// `DriveAlivePolicy.shouldWrite` for a confirmed volume with background work allowed: a session governs
         /// that isn't from the command line, or "Also when no session is running" is on.
         package var sessionAllowsWrites: Bool
@@ -103,12 +108,14 @@ package enum DrivesPageModel {
 
         package init(mounted: [DriveCandidate]?, config: DriveAliveConfig, results: [VolumeUUIDKey: DriveWriteResult] = [:],
                      firstWriteRunning: Set<VolumeUUIDKey> = [], firstWriteFailures: [VolumeUUIDKey: DriveAliveError] = [:],
+                     removeFailures: [VolumeUUIDKey: DriveAliveError] = [:],
                      sessionAllowsWrites: Bool, backgroundWorkAllowed: Bool) {
             self.mounted = mounted
             self.config = config
             self.results = results
             self.firstWriteRunning = firstWriteRunning
             self.firstWriteFailures = firstWriteFailures
+            self.removeFailures = removeFailures
             self.sessionAllowsWrites = sessionAllowsWrites
             self.backgroundWorkAllowed = backgroundWorkAllowed
         }
@@ -155,6 +162,8 @@ package enum DrivesPageModel {
                 status = .unsupported(reason)
             } else if let uuid = c.uuid, isOn {
                 status = onStatus(uuid, volume: volume, i)
+            } else if let uuid = c.uuid, let error = i.removeFailures[uuid] {
+                status = .removeFailed(error)
             } else {
                 status = .off
             }
@@ -204,6 +213,19 @@ package enum DrivesPageModel {
         case .paused: return L("Paused while the battery is low or your Mac is very hot.")
         case .notConnected: return L("Not connected.")
         case .unsupported(let r): return unsupportedText(r)
+        case .removeFailed(let error): return removeFailedText(error)
+        }
+    }
+
+    /// An off row whose `.snaptic-keepalive` couldn't be removed: what was left and why.
+    package static func removeFailedText(_ error: DriveAliveError) -> String {
+        switch error {
+        case .notOurFile:
+            return L("Turned off. Snaptic left .snaptic-keepalive on the drive because it changed since Snaptic wrote it.")
+        case .denied:
+            return L("Turned off. macOS denied access, so Snaptic’s hidden .snaptic-keepalive file is still on the drive.")
+        case .notEligible, .mountChanged, .ioError:
+            return L("Turned off. Snaptic couldn’t delete its hidden .snaptic-keepalive file from the drive.")
         }
     }
 
