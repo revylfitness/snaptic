@@ -27,7 +27,7 @@ import SnapticKit
     func build() -> [NSMenuItem] {
         guard let ctx = context else { return [] }
         let global = Self.collectGlobal(ctx)
-        var items = statusRows(ctx)
+        var items = statusRows(ctx, resume: global.resume)
         for section in ctx.config.value.menu.orderedSections {
             switch section {
             case .displays: items += displayRows(ctx)
@@ -39,7 +39,8 @@ import SnapticKit
 
     // MARK: Status rows
 
-    private func statusRows(_ ctx: DisplaysContext) -> [NSMenuItem] {
+    /// `resume`: B's Resume Display Automation items (placed by id); without one the row gets its own.
+    private func statusRows(_ ctx: DisplaysContext, resume: [DisplayMenuBlock.Entry]) -> [NSMenuItem] {
         var items: [NSMenuItem] = []
         if case .degraded(let reason) = ctx.runtime.moduleState {
             items.append(MenuKit.status(L("Displays: \(reason)"), symbol: "exclamationmark.triangle",
@@ -48,9 +49,13 @@ import SnapticKit
         if ctx.panic.isLatched {
             items.append(MenuKit.status(L("Display automation is paused"), symbol: "pause.circle",
                                         control: ControlID("menu.displays.paused")))
-            let panic = ctx.panic
-            items.append(MenuKit.action(L("Resume Display Automation"), symbol: "play.circle",
-                                        control: ControlID("menu.displays.resume")) { [weak panic] in panic?.resume() })
+            if resume.isEmpty {
+                let panic = ctx.panic
+                items.append(MenuKit.action(L("Resume Display Automation"), symbol: "play.circle",
+                                            control: ControlID("menu.displays.resume")) { [weak panic] in panic?.resume() })
+            } else {
+                items += resume.map { topLevel($0, symbol: "play.circle", control: ControlID("menu.displays.resume")) }
+            }
         }
         let paused = ctx.otherApps.pausedDisplayFeatures
         if !paused.isEmpty {
@@ -136,6 +141,7 @@ import SnapticKit
 
     /// The global items (`globalItems(slot: .tools)`), placed with the Kit table and the user's choices.
     struct Global {
+        var resume: [DisplayMenuBlock.Entry] = []
         var restorePending: [DisplayMenuBlock.Entry] = []
         var sectionItems: [DisplayMenuBlock.Entry] = []
         var menus: [DisplaysSectionMenu: [DisplayMenuBlock.Entry]] = [:]
@@ -158,15 +164,15 @@ import SnapticKit
                 // A custom action shows exactly when Automations › "Show in menu" is on (the contributor filters).
                 let visibility = DisplaysMenuPlan.isCustomAction(id) ? MenuItemVisibility.visible
                     : menu.visibility(of: id, default: DisplaysMenuPlan.defaultVisibility(id, declared: defaults[id]))
-                // The paused status row has its own Resume item.
                 switch DisplaysMenuPlan.place(id, visibility: visibility, perDisplay: false, isCustomRow: item.view != nil,
-                                              pendingConfirmation: pending, automationPaused: false) {
+                                              pendingConfirmation: pending, automationPaused: ctx.panic.isLatched) {
+                case .pausedStatus?: global.resume.append(entry)
                 case .sectionItem?:
                     if id.rawValue == "b.restoreAll" { global.restorePending.append(entry) } else { global.sectionItems.append(entry) }
                 case .sectionMenu(let m)?: global.menus[m, default: []].append(entry)
                 case .tools(let toggle)?:
                     if toggle { global.toolToggles.append(entry) } else { global.tools.append(entry) }
-                case .slider?, .underDevice?, .submenu?, .pausedStatus?, nil: break
+                case .slider?, .underDevice?, .submenu?, nil: break
                 }
             }
         }
