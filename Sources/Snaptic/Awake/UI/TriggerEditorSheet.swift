@@ -72,6 +72,7 @@ struct TriggerEditorSheet: View, ControlDeclaring {
         .onAppear {
             load()
             sources.begin(env.context)
+            SettingsShell.shared.sheetDidAppear()
         }
         .onDisappear { sources.end() }
         .alert(L("Delete this rule?"), isPresented: $confirmDelete) {

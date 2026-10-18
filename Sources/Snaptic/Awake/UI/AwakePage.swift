@@ -225,9 +225,19 @@ private struct AwakeRootContent: View {
         .sheet(isPresented: shell.sheetBinding(AwakePageControls.shortcutsSheet)) {
             AwakeShortcutsSheet(env: env)
         }
-        .sheet(item: $editing) { target in
-            TriggerEditorSheet(env: env, target: target)
+        .sheet(isPresented: shell.sheetBinding(TriggerEditorSheetControls.sheet)) {
+            if let editing {
+                TriggerEditorSheet(env: env, target: editing)
+            } else {
+                Color.clear.frame(width: 1, height: 1).onAppear { shell.openSheet = nil }
+            }
         }
+    }
+
+    /// Opens the rule editor through the shell (one sheet at a time, §4.3).
+    private func edit(_ target: AwakeRuleEditTarget) {
+        editing = target
+        shell.openSheet = TriggerEditorSheetControls.sheet
     }
 
     private var openAdvanced: (() -> Void)? {
@@ -262,12 +272,12 @@ private struct AwakeRootContent: View {
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 ReorderableList(SettingsBinding.store(env.config, \.triggers.triggers),
-                                onEdit: { rule in editing = .existing(rule.id) }, onDelete: nil) { rule in
-                    AwakeRuleRow(rule: rule, runtime: runtime) { editing = .existing(rule.id) }
+                                onEdit: { rule in edit(.existing(rule.id)) }, onDelete: nil) { rule in
+                    AwakeRuleRow(rule: rule, runtime: runtime) { edit(.existing(rule.id)) }
                 }
             }
             ButtonRow(L("Add Rule…"), control: ControlID("awake.page.addRule")) {
-                editing = .new(StableID())
+                edit(.new(StableID()))
             }
             .disabled(list.count >= AwakeTrigger.maxTriggers)
         } header: {

@@ -7,6 +7,8 @@ import Foundation
 
 package enum TriggerEditorSheetControls: ControlTable {
     package static let surface = "awake.rule"
+    /// `SettingsShell.openSheet` id of the editor (the Awake page keeps which rule it edits).
+    package static let sheet = "awake.rule"
 
     private static let root = SettingsRootID.awake
     private static let rule: [ControlCondition] = [.module(.awake), .perItem("rule")]
