@@ -3,7 +3,7 @@ import SnapticKit
 
 /// A module's on/off row, as a card: icon tile, name, what it does, and a switch (General's module chooser while
 /// every module is off, and onboarding's Choose modules step). A module turned off by `Modules.disable.<id>` shows
-/// its switch off and disabled, with "Turned off by a defaults setting.".
+/// its switch off and disabled, with `DefaultsLock.text` and an (i) naming the command that turns it back on.
 struct ModuleSwitchRow: View {
     let id: ModuleID
     let title: String
@@ -34,18 +34,23 @@ struct ModuleSwitchRow: View {
             SettingsIcon(style.symbol, tint: style.tint, size: 32)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                Text(blocked ? L("Turned off by a defaults setting.") : Self.summary(id))
+                Text(blocked ? DefaultsLock.text : Self.summary(id))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .accessibilityElement(children: .combine)
             Spacer(minLength: 8)
+            if blocked {
+                InfoButton(L("Turning It Back On"),
+                           message: DefaultsLock.details(domain: ConfigStore<ModulesConfig>.persistentDomainName,
+                                                         key: ModuleHost.disableKey(id)))
+            }
             Toggle(title, isOn: blocked ? .constant(false) : isOn)
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .disabled(blocked)
                 .accessibilityLabel(L("Use \(title)"))
-                .accessibilityHint(blocked ? L("Turned off by a defaults setting.") : Self.summary(id))
+                .accessibilityHint(blocked ? DefaultsLock.text : Self.summary(id))
         }
         .padding(.vertical, 2)
         .modifier(OptionalSettingsAnchor(anchor))

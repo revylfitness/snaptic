@@ -1,6 +1,6 @@
 import Foundation
 
-/// Window Switcher › Advanced… (H; PLAN 0.3 §4.3, 21 controls): the feature switches, behavior, mouse, keys and
+/// Window Switcher › Advanced… (H; PLAN 0.3 §4.3, 19 controls): window thumbnails, behavior, mouse, keys and
 /// the app lists. Footer: Restore Window Switcher Defaults….
 package enum SwitcherAdvancedSheetControls: ControlTable {
     package static let surface = "switcher.advanced"
@@ -14,15 +14,13 @@ package enum SwitcherAdvancedSheetControls: ControlTable {
     package static let controls: [ControlSpec] = [
         ControlSpec("switcher.advanced.thumbnails", .setting, replaces: ["l.sw.feature.thumbnails"], keys: ["disabledFeatures"],
                     search: find("Window thumbnails", ["screen recording", "previews", "capture"])),
-        ControlSpec("switcher.advanced.otherSpaces", .setting, replaces: ["l.sw.feature.otherSpaces", "l.sw.showOtherSpaces"],
-                    keys: ["showOtherSpaces", "disabledFeatures"],
-                    search: find("Windows on other Spaces", ["spaces", "desktops"])),
-        ControlSpec("switcher.advanced.windowlessApps", .setting, replaces: ["l.sw.feature.windowlessApps"],
-                    keys: ["disabledFeatures"], search: find("Apps with no open windows", ["windowless"])),
         ControlSpec("switcher.advanced.showOn", .setting, replaces: ["l.sw.showOnScreen"], keys: ["showOnScreen"],
                     search: find("Show on", ["display", "pointer", "screen"])),
-        ControlSpec("switcher.advanced.includeWindowless", .setting, replaces: ["l.sw.shortcut.includeWindowlessApps"],
-                    keys: ["shortcuts.*.includeWindowlessApps"], search: find("Include apps with no open windows")),
+        // The per-shortcut switch is also the windowless feature's only control (ux M3): turning it on turns it on.
+        ControlSpec("switcher.advanced.includeWindowless", .setting,
+                    replaces: ["l.sw.shortcut.includeWindowlessApps", "l.sw.feature.windowlessApps"],
+                    keys: ["shortcuts.*.includeWindowlessApps", "disabledFeatures"],
+                    search: find("Include apps with no open windows", ["windowless", "apps with no open windows"])),
         ControlSpec("switcher.advanced.oneWindowPerApp", .setting, replaces: ["l.sw.shortcut.oneWindowPerApp"],
                     keys: ["shortcuts.*.oneWindowPerApp"], search: find("One entry per app", ["most recent window"])),
         ControlSpec("switcher.advanced.search", .setting, replaces: ["l.sw.feature.search"], keys: ["disabledFeatures"],

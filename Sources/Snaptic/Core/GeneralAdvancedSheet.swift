@@ -11,7 +11,7 @@ struct GeneralAdvancedSheet: View, ControlDeclaring {
     @State private var confirmingSafeMode = false
 
     var body: some View {
-        AdvancedSheet(L("General"),
+        AdvancedSheet(L("General Advanced Settings"),
                       restoreDefaults: RestoreDefaults(title: L("Reset All Settings…"), destructive: true,
                                                        confirmsItself: { [weak host] in host?.resetAllSettings() }),
                       restoreControl: ControlID("general.advanced.resetAll")) {

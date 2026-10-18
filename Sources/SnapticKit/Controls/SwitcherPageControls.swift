@@ -36,8 +36,13 @@ package enum SwitcherPageControls: ControlTable {
         ControlSpec("switcher.page.includeMinimized", .setting, replaces: ["l.sw.shortcut.includeMinimized"],
                     keys: ["shortcuts.*.includeMinimized"],
                     search: SearchSpec("Include minimized and hidden windows", keywords: ["minimized", "hidden"], root: root)),
-        ControlSpec("switcher.page.spaces", .setting, replaces: ["l.sw.shortcut.spaces"], keys: ["shortcuts.*.spaces"],
-                    search: SearchSpec("Windows from", keywords: ["spaces", "desktops", "current space"], root: root)),
+        // The per-shortcut pop-up is also the other-Spaces feature's only control (ux M3): All Spaces or Other
+        // Spaces turns it on.
+        ControlSpec("switcher.page.spaces", .setting,
+                    replaces: ["l.sw.shortcut.spaces", "l.sw.feature.otherSpaces", "l.sw.showOtherSpaces"],
+                    keys: ["shortcuts.*.spaces", "showOtherSpaces", "disabledFeatures"],
+                    search: SearchSpec("Windows from", keywords: ["spaces", "desktops", "current space",
+                                                                  "windows on other spaces"], root: root)),
         ControlSpec("switcher.page.advanced", .button,
                     search: SearchSpec("Window Switcher Advanced Settings", keywords: ["more", "features", "app lists"],
                                        root: root)),

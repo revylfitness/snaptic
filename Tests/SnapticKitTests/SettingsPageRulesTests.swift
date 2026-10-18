@@ -140,15 +140,23 @@ final class SettingsPageRulesTests: XCTestCase {
 
     // MARK: Window Switcher choices
 
-    func testSpacesGating() {
+    func testSpacesChoicesTurnTheFeatureOn() {
         for raw in SwitcherPageRules.spaces {
-            XCTAssertTrue(SwitcherPageRules.spaceChoiceEnabled(raw, otherSpacesOn: true))
             XCTAssertEqual(SwitcherPageRules.effectiveSpace(raw, otherSpacesOn: true), raw)
             XCTAssertEqual(SwitcherPageRules.effectiveSpace(raw, otherSpacesOn: false), "current")
         }
-        XCTAssertFalse(SwitcherPageRules.spaceChoiceEnabled("all", otherSpacesOn: false))
-        XCTAssertFalse(SwitcherPageRules.spaceChoiceEnabled("others", otherSpacesOn: false))
-        XCTAssertTrue(SwitcherPageRules.spaceChoiceEnabled("current", otherSpacesOn: false))
+        XCTAssertTrue(SwitcherPageRules.spaceChoiceTurnsOnOtherSpaces("all"))
+        XCTAssertTrue(SwitcherPageRules.spaceChoiceTurnsOnOtherSpaces("others"))
+        XCTAssertFalse(SwitcherPageRules.spaceChoiceTurnsOnOtherSpaces("current"))
+        XCTAssertFalse(SwitcherPageRules.spaceChoiceTurnsOnOtherSpaces("bogus"))
+    }
+
+    func testWindowlessChoiceTurnsTheFeatureOn() {
+        XCTAssertTrue(SwitcherPageRules.windowlessChoiceTurnsOnFeature(true))
+        XCTAssertFalse(SwitcherPageRules.windowlessChoiceTurnsOnFeature(false))
+        XCTAssertTrue(SwitcherPageRules.effectiveWindowless(true, featureOn: true))
+        XCTAssertFalse(SwitcherPageRules.effectiveWindowless(true, featureOn: false))
+        XCTAssertFalse(SwitcherPageRules.effectiveWindowless(false, featureOn: true))
     }
 
     func testStyleGating() {
@@ -161,9 +169,18 @@ final class SettingsPageRulesTests: XCTestCase {
         XCTAssertFalse(SwitcherPageRules.showsThumbnailOptions(style: "thumbnails", thumbnailsOn: false))
         XCTAssertFalse(SwitcherPageRules.showsThumbnailOptions(style: "icons", thumbnailsOn: true))
     }
+}
 
-    func testDisabledChoicesKeepTheStoredValue() {
-        XCTAssertEqual(SwitcherPageRules.write("all", current: "others", enabled: false), "others")
-        XCTAssertEqual(SwitcherPageRules.write("all", current: "others", enabled: true), "all")
+final class DefaultsLockTests: XCTestCase {
+    func testWordingAndCommand() {
+        XCTAssertEqual(DefaultsLock.text, "Turned off for this Mac by an administrator or a Terminal command.")
+        XCTAssertFalse(DefaultsLock.text.lowercased().contains("defaults setting"))
+        XCTAssertEqual(DefaultsLock.command(domain: "app.snaptic.Snaptic", key: "Modules.disable.awake"),
+                       "defaults delete app.snaptic.Snaptic Modules.disable.awake")
+        XCTAssertEqual(DefaultsLock.command(domain: "my app", key: "it's"), "defaults delete 'my app' 'it'\\''s'")
+        XCTAssertEqual(DefaultsLock.command(domain: "", key: "k"), "defaults delete '' k")
+        let details = DefaultsLock.details(domain: "app.snaptic.Snaptic", key: "Modules.disable.displays")
+        XCTAssertTrue(details.contains("defaults delete app.snaptic.Snaptic Modules.disable.displays"))
+        XCTAssertTrue(DefaultsLock.state(key: "Modules.disable.awake").contains("Modules.disable.awake"))
     }
 }

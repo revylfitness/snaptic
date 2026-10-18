@@ -70,7 +70,6 @@ private struct ExtraShortcutSection: View {
     let id: UUID
 
     private var thumbnailsOn: Bool { settings.config.isOn(.thumbnails) }
-    private var otherSpacesOn: Bool { settings.config.isOn(.otherSpaces) }
 
     var body: some View {
         Section {
@@ -89,14 +88,12 @@ private struct ExtraShortcutSection: View {
                           options: SwitcherBinding.styleOptions(thumbnailsOn: thumbnailsOn), style: .segmented,
                           defaultValue: nil)
             PickerSetting(L("Windows from"), selection: SwitcherBinding.spaces(settings, id: id),
-                          options: SwitcherBinding.spacesOptions(otherSpacesOn: otherSpacesOn), style: .popUp,
+                          options: SwitcherBinding.spacesOptions, style: .popUp,
                           defaultValue: nil)
             ToggleSetting(L("Include minimized and hidden windows"),
                           isOn: SwitcherBinding.shortcut(settings, id: id, \.includeMinimized))
             ToggleSetting(L("Include apps with no open windows"),
-                          isOn: SwitcherBinding.shortcut(settings, id: id, \.includeWindowlessApps),
-                          disabledReason: settings.config.isOn(.windowlessApps)
-                              ? nil : L("Turn on Apps with no open windows in Advanced to use this."))
+                          isOn: SwitcherBinding.windowless(settings, id: id))
             ToggleSetting(L("One entry per app"), help: L("Lists each app once, with its most recent window."),
                           isOn: SwitcherBinding.shortcut(settings, id: id, \.oneWindowPerApp))
             ButtonRow(L("Delete Shortcut"), control: ControlID("switcher.shortcuts.delete")) {

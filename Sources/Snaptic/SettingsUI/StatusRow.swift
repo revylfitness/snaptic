@@ -76,3 +76,27 @@ struct StatusRow: View {
         .accessibilityElement(children: .contain)
     }
 }
+
+/// A kill switch's status row (review ux m9): the one wording and style for every page and sheet, with an (i) that
+/// shows the Terminal command that turns it back on. Pages use `DefaultsLockRow(module:)` for
+/// `Modules.disable.<id>` and `DefaultsLockRow(key:)` for a feature's own key (`Displays.disable.<feature>`,
+/// `Awake.disable.<feature>`).
+struct DefaultsLockRow: View {
+    let key: String
+
+    init(key: String) {
+        self.key = key
+    }
+
+    init(module: ModuleID) {
+        self.init(key: ModuleHost.disableKey(module))
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 8) {
+            StatusRow(DefaultsLock.text, symbol: "lock.fill")
+            InfoButton(L("Turning It Back On"),
+                       message: DefaultsLock.details(domain: ConfigStore<ModulesConfig>.persistentDomainName, key: key))
+        }
+    }
+}

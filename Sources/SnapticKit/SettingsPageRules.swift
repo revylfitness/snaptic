@@ -135,22 +135,32 @@ package enum HostReport {
     }
 }
 
-/// Choice gating on the Window Switcher page (§4.3): a choice that needs a feature that's off is shown but can't be
-/// chosen, and the stored value reads as what the switcher actually does.
+/// Choices on the Window Switcher page and its sheets (§4.3): the stored value reads as what the switcher actually
+/// does. The per-shortcut "Windows from" and "Include apps with no open windows" are the only controls for other
+/// Spaces and windowless apps: choosing one turns its feature on (review ux M3; no separate feature switch).
 package enum SwitcherPageRules {
     /// The three "Windows from" choices, in order (raw values of the app's `SpacesFilter`).
     package static let spaces = ["all", "current", "others"]
     /// The three styles (raw values of the app's `SwitcherStyle`).
     package static let styles = ["thumbnails", "icons", "titles"]
 
-    /// With "Windows on other Spaces" off, only the current Space can be listed.
-    package static func spaceChoiceEnabled(_ raw: String, otherSpacesOn: Bool) -> Bool {
-        otherSpacesOn || raw == "current"
-    }
-
     package static func effectiveSpace(_ raw: String, otherSpacesOn: Bool) -> String {
         otherSpacesOn ? raw : "current"
     }
+
+    /// Choosing All Spaces or Other Spaces turns the other-Spaces feature on; Current Space leaves it as it is.
+    package static func spaceChoiceTurnsOnOtherSpaces(_ raw: String) -> Bool {
+        spaces.contains(raw) && raw != "current"
+    }
+
+    /// The per-shortcut windowless switch reads on only while the feature is on too.
+    package static func effectiveWindowless(_ stored: Bool, featureOn: Bool) -> Bool {
+        stored && featureOn
+    }
+
+    /// Turning the per-shortcut switch on turns the feature on; turning it off leaves the feature alone (other
+    /// shortcuts may use it).
+    package static func windowlessChoiceTurnsOnFeature(_ on: Bool) -> Bool { on }
 
     /// With window thumbnails off, a Thumbnails shortcut shows icons.
     package static func styleChoiceEnabled(_ raw: String, thumbnailsOn: Bool) -> Bool {
@@ -165,9 +175,38 @@ package enum SwitcherPageRules {
     package static func showsThumbnailOptions(style raw: String, thumbnailsOn: Bool) -> Bool {
         effectiveStyle(raw, thumbnailsOn: thumbnailsOn) == "thumbnails"
     }
+}
 
-    /// Writing a choice the user can't make keeps the stored value (the control was disabled).
-    package static func write(_ chosen: String, current: String, enabled: Bool) -> String {
-        enabled ? chosen : current
+/// The one wording for anything turned off by a `defaults write` kill switch (`Modules.disable.<id>`,
+/// `Displays.disable.<feature>`, `Awake.disable.<feature>`; review ux m9): who did it in user words, and the exact
+/// command that undoes it. Shown by `DefaultsLockRow` (pages), `ModuleSwitchRow` and the diagnostics report.
+package enum DefaultsLock {
+    /// The status line, everywhere a kill switch is the reason.
+    package static var text: String { L("Turned off for this Mac by an administrator or a Terminal command.") }
+
+    /// The same as a value in a list or report ("Window Switcher: …"), naming the key.
+    package static func state(key: String) -> String {
+        L("Turned off by an administrator or a Terminal command (\(key))")
+    }
+
+    /// The Terminal command that removes the kill switch.
+    package static func command(domain: String, key: String) -> String {
+        "defaults delete \(quoted(domain)) \(quoted(key))"
+    }
+
+    /// The (i) popover text: what turns it back on.
+    package static func details(domain: String, key: String) -> String {
+        L("To turn it back on, run this command in Terminal, then quit and open Snaptic again:")
+            + "\n\n" + command(domain: domain, key: key) + "\n\n"
+            + L("If your organization manages this Mac, ask its administrator instead.")
+    }
+
+    /// Plain identifiers stay as they are; anything else is single-quoted for the shell.
+    private static func quoted(_ s: String) -> String {
+        let plain = !s.isEmpty && s.unicodeScalars.allSatisfy {
+            ($0.value >= 0x30 && $0.value <= 0x39) || ($0.value >= 0x41 && $0.value <= 0x5A)
+                || ($0.value >= 0x61 && $0.value <= 0x7A) || $0 == "." || $0 == "_" || $0 == "-"
+        }
+        return plain ? s : "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
