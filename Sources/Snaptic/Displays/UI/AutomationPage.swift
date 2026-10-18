@@ -17,9 +17,7 @@ struct AutomationPage: View {
                 Text(L("Programs run without Snaptic's permissions, with a minimal environment (SNAPTIC_EVENT, SNAPTIC_DISPLAY_NAME, SNAPTIC_DISPLAY_KEY), and are stopped after 30 seconds. They never run in Safe Mode or while display automation is paused."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                if let problem = env.context?.spawner.lastProblem {
-                    Label(problem, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
-                }
+                SpawnerProblemRow(revision: env.runtime.revision(.automation), spawner: env.context?.spawner)
             }
             hooksSection
             actionsSection
@@ -272,5 +270,17 @@ private struct ActionEditor: View {
             }
         }
         .onChange(of: action) { onChange(action) }
+    }
+}
+
+/// The last command problem; re-renders when the automation controller's revision moves (0.3 §4.5).
+private struct SpawnerProblemRow: View {
+    @ObservedObject var revision: ControllerRevision
+    let spawner: SpawnerService?
+
+    var body: some View {
+        if let problem = spawner?.lastProblem {
+            Label(problem, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+        }
     }
 }

@@ -100,6 +100,27 @@ package enum ControlExit {
     }
 }
 
+/// A verb whose command-line rules the host owns, whoever registers it (0.3 §2.10, §3.1): the registry applies these
+/// instead of what a module passes, so a module can't make `awake stop` turn things on or let another verb hold.
+package struct ControlVerbRule: Equatable, Sendable {
+    package let verb: String
+    package let policy: ControlPolicy
+    package let offOnly: Bool
+    /// May keep its connection open with a `holding` reply.
+    package let holds: Bool
+    /// Shares the `KitControl.sessionVerbsPerSecond` window (security L3).
+    package let sessionLimited: Bool
+
+    package init(_ verb: String, _ policy: ControlPolicy, offOnly: Bool = false, holds: Bool = false,
+                 sessionLimited: Bool = false) {
+        self.verb = verb
+        self.policy = policy
+        self.offOnly = offOnly
+        self.holds = holds
+        self.sessionLimited = sessionLimited
+    }
+}
+
 /// The command-line protocol and its rules (PLAN §4.10(3), §11): one JSON line per
 /// request and per reply, over a per-user Unix socket.
 package enum KitControl {
@@ -127,6 +148,27 @@ package enum KitControl {
     /// A held connection only carries pings and one final line, so its send buffer is kept small: a client that
     /// stops reading can make Snaptic queue at most this much for it before the hold ends (security L5).
     package static let heldSendBufferBytes: Int32 = 1024
+
+    /// 0.3 §3.1 (security L3): `awake start`, `hold`, `stop` and `extend` together, per second, on top of
+    /// `maxRequestsPerSecond`.
+    package static let sessionVerbsPerSecond = 1
+
+    /// The §2.10 Awake verb table. `hold` is the only verb that may hold its connection; `stop` and `pause` only
+    /// turn things off.
+    package static let awakeVerbRules: [ControlVerbRule] = [
+        ControlVerbRule("awake status", .read),
+        ControlVerbRule("awake start", .low, sessionLimited: true),
+        ControlVerbRule("awake hold", .low, holds: true, sessionLimited: true),
+        ControlVerbRule("awake preset", .low),
+        ControlVerbRule("awake extend", .low, sessionLimited: true),
+        ControlVerbRule("awake stop", .low, offOnly: true, sessionLimited: true),
+        ControlVerbRule("awake pause", .low, offOnly: true),
+    ]
+
+    /// The host's rule for a verb, if it has one.
+    package static func verbRule(_ verb: String) -> ControlVerbRule? {
+        awakeVerbRules.first { $0.verb == verb }
+    }
 
     /// The ping line servers write on held connections (with its newline).
     package static var pingLine: Data { Data(#"{"ping":true}"#.utf8) + [0x0A] }

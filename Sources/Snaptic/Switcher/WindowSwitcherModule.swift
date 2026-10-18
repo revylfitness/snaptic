@@ -7,6 +7,7 @@ import SnapticKit
 /// reverts everything: the tap is invalidated, ⌘⇥ is given back, focus observers are
 /// removed, thumbnails are purged and every timer and observer goes away.
 @MainActor final class WindowSwitcherModule: SnapticModule {
+    typealias Controls = WindowSwitcherModuleControls
     let id: ModuleID = .windowSwitcher
     let title = L("Window Switcher")
     let symbolName = "rectangle.on.rectangle"
@@ -101,41 +102,46 @@ import SnapticKit
         context.requestMenuRebuild()
     }
 
+    /// The Window Switcher section (0.3 §5.2), on MenuKit; ids in `WindowSwitcherModuleControls`.
     func menuSection() -> [NSMenuItem] {
         guard let context else { return [] }
         var items: [NSMenuItem] = []
         if !tapIsRunning {
-            items.append(ClosureMenuItem(title: L("Grant Accessibility Access…")) {
+            items.append(MenuKit.action(L("Grant Accessibility Access…"),
+                                        control: ControlID("menu.switcher.grantAccessibility")) {
                 context.permissions.presentGuide(.accessibility, reason: L("The window switcher needs it to see its shortcuts."))
-            })
-        }
-        if settings.config.needsScreenCapture && context.permissions.state(.screenRecording) != .granted {
-            items.append(ClosureMenuItem(title: L("Enable Thumbnails (Screen Recording)…")) {
-                context.permissions.presentGuide(.screenRecording, reason: L("Thumbnails and previews of your windows."))
             })
         }
         if let first = settings.config.activeShortcuts.first {
             // 0.3 C8: "Switch Windows ⌥⇥" opens the switcher in sticky mode.
-            let item = ClosureMenuItem(title: L("Switch Windows")) { [weak self] in _ = self?.showStickySwitcher() }
-            Self.showShortcut(first, on: item)
-            if !tapIsRunning {
-                item.isEnabled = false
-                item.toolTip = L("Waiting for Accessibility access")
+            let shown = Self.keyEquivalent(for: first)
+            let item = MenuKit.action(L("Switch Windows"), key: shown?.key ?? "", modifiers: shown?.modifiers ?? [],
+                                      enabled: tapIsRunning, control: ControlID("menu.switcher.switchWindows")) {
+                [weak self] in _ = self?.showStickySwitcher()
             }
+            if !tapIsRunning { item.toolTip = L("Waiting for Accessibility access") }
             items.append(item)
         } else {
             let hint = settings.config.shortcuts.isEmpty
                 ? L("No shortcuts set") : L("Only ⌘ shortcuts are set, and ⌘ shortcuts are turned off")
-            let hintItem = ClosureMenuItem(title: hint) {}
-            hintItem.action = nil
-            hintItem.isEnabled = false
-            items.append(hintItem)
+            items.append(MenuKit.status(hint, control: ControlID("menu.switcher.noShortcut")))
         }
-        items.append(ClosureMenuItem(title: L("Gather Windows on This Display")) { [weak self] in
+        items.append(MenuKit.action(L("Gather Windows on This Display"), control: ControlID("menu.switcher.gather")) {
+            [weak self] in
             guard let self, let life = self.lifetime else { return }
             self.gatherer?.gather(onto: WindowGatherer.pointerScreen, confirm: false, lifetime: life)
         })
+        if settings.config.needsScreenCapture && context.permissions.state(.screenRecording) != .granted {
+            items.append(MenuKit.action(L("Turn On Thumbnails…"), control: ControlID("menu.switcher.turnOnThumbnails")) {
+                context.permissions.presentGuide(.screenRecording, reason: L("Thumbnails and previews of your windows."))
+            })
+        }
         return items
+    }
+
+    /// The Window Switcher root (H's `SwitcherPages.root`, 0.3 §4.3).
+    func settingsRoot() -> SettingsRoot {
+        SwitcherPages.root(module: self)
     }
 
     func settingsPages() -> [SettingsPage] {
@@ -151,21 +157,20 @@ import SnapticKit
         return controller.openSticky(shortcut)
     }
 
-    /// Shows the shortcut beside the item, like a key equivalent (only for keys a menu can draw). The status menu is
+    /// The shortcut shown beside the item, like a key equivalent (only keys a menu can draw). The status menu is
     /// closed by the time the switcher opens, so the equivalent never fires by itself.
-    private static func showShortcut(_ shortcut: Shortcut, on item: NSMenuItem) {
+    private static func keyEquivalent(for shortcut: Shortcut) -> (key: String, modifiers: NSEvent.ModifierFlags)? {
         let key: String
         switch shortcut.keyCode {
         case KeyCode.tab: key = "\t"
         case KeyCode.space: key = " "
         case KeyCode.backtick: key = "`"
-        default: return
+        default: return nil
         }
-        item.keyEquivalent = key
         switch shortcut.modifier {
-        case .option: item.keyEquivalentModifierMask = [.option]
-        case .command: item.keyEquivalentModifierMask = [.command]
-        case .control: item.keyEquivalentModifierMask = [.control]
+        case .option: return (key, [.option])
+        case .command: return (key, [.command])
+        case .control: return (key, [.control])
         }
     }
 

@@ -240,6 +240,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editMenu.addItem(withTitle: L("Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: L("Paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(withTitle: L("Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: L("Find"), action: nil, keyEquivalent: "").submenu = Self.findMenu()
         editItem.submenu = editMenu
         main.addItem(editItem)
 
@@ -252,6 +254,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         NSApp.mainMenu = main
         NSApp.windowsMenu = windowMenu
+    }
+
+    /// Edit › Find, as in Apple's apps. Every item sends `performFindPanelAction:` with the standard
+    /// `NSFindPanelAction` tag through the responder chain: in Settings, Find… (⌘F) puts the focus in the search
+    /// field; text views handle the rest; with nothing to search the items are disabled.
+    private static func findMenu() -> NSMenu {
+        let findMenu = NSMenu(title: L("Find"))
+        let rows: [(String, String, NSEvent.ModifierFlags, NSFindPanelAction)] = [
+            (L("Find…"), "f", [.command], .showFindPanel),
+            (L("Find Next"), "g", [.command], .next),
+            (L("Find Previous"), "g", [.command, .shift], .previous),
+            (L("Use Selection for Find"), "e", [.command], .setFindString),
+        ]
+        for (title, key, modifiers, action) in rows {
+            let item = findMenu.addItem(withTitle: title, action: #selector(NSTextView.performFindPanelAction(_:)),
+                                        keyEquivalent: key)
+            item.keyEquivalentModifierMask = modifiers
+            item.tag = Int(action.rawValue)
+        }
+        return findMenu
     }
 }
 

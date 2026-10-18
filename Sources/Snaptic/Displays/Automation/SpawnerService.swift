@@ -18,6 +18,8 @@ import SnapticKit
     /// Last refusal or failure, for the Automation page (no paths or arguments).
     private(set) var lastProblem: String?
     var onChange: (@MainActor () -> Void)?
+    /// Bumped with every page-visible change (problem, running count), so the page re-renders (0.3 §4.5).
+    private weak var revision: ControllerRevision?
 
     init() {}
 
@@ -26,6 +28,7 @@ import SnapticKit
     func activate(_ context: DisplaysContext, lifetime: Lifetime) {
         self.context = context
         self.lifetime = lifetime
+        revision = context.runtime.revision(.automation)
     }
 
     func deactivate() {
@@ -53,7 +56,7 @@ import SnapticKit
                 guard let self else { return }
                 self.running[id] = nil
                 if status != 0 { EventLog.shared.record(.automation, "Command exited with status \(status)") }
-                self.onChange?()
+                self.changed()
             }
             // Deactivated, or panic latched, while the command was being checked.
             guard context === ctx, self.lifetime === lifetime, !lifetime.isEnded else {
@@ -66,7 +69,7 @@ import SnapticKit
             }
             if handle.isReaped { running[id] = nil } else { running[id] = handle }
             lastProblem = nil
-            onChange?()
+            changed()
             return nil
         } catch HelperSpawnError.refused(let refusal) {
             return report(refusal.message)
@@ -81,13 +84,18 @@ import SnapticKit
     func stopAll() {
         for handle in running.values { handle.signalGroup(SIGKILL) }
         running = [:]
-        onChange?()
+        changed()
     }
 
     private func report(_ problem: String) -> String {
         lastProblem = problem
         EventLog.shared.record(.automation, "Command not run")
-        onChange?()
+        changed()
         return problem
+    }
+
+    private func changed() {
+        revision?.bump()
+        onChange?()
     }
 }
