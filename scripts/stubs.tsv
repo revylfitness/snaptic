@@ -472,8 +472,10 @@ Sources/Snaptic/Awake/UI/DrivesPage.swift	J	K18	DrivesPage	Drives
 # 0.3: H (Settings UI)
 Sources/SnapticKit/SliderMath.swift	H	S	SliderMath	-
 Sources/SnapticKit/SettingsIndex.swift	H	S	SettingsIndex	-
+Sources/SnapticKit/SettingsShellRules.swift	H	L	-	-
 Tests/SnapticKitTests/SliderMathTests.swift	H	K3	SliderMathTests	-
 Tests/SnapticKitTests/SettingsIndexTests.swift	H	K3	SettingsIndexTests	-
+Tests/SnapticKitTests/SettingsShellRulesTests.swift	H	L	-	-
 Sources/Snaptic/SettingsUI/SettingsIcon.swift	H	S	SettingsIcon	-
 Sources/Snaptic/SettingsUI/SettingsPageHeader.swift	H	S	SettingsPageHeader	-
 Sources/Snaptic/SettingsUI/FeatureHighlights.swift	H	S	FeatureHighlights	-
