@@ -268,6 +268,57 @@ final class ConfigPIPTests: XCTestCase {
         XCTAssertFalse(PIPCommand.usage.isEmpty)
     }
 
+    func testDisplaySelectorParsing() {
+        XCTAssertEqual(PIPCommand.parse(["start", "--display", "2"]), .startDisplay("2"))
+        XCTAssertEqual(PIPCommand.parse(["start", "-d", "main"]), .startDisplay("main"))
+        XCTAssertEqual(PIPCommand.parse(["START", "--DISPLAY", "id:5"]), .startDisplay("id:5"))
+        XCTAssertEqual(PIPCommand.parse(["stop", "--display=all"]), .stopDisplay("all"))
+        XCTAssertEqual(PIPCommand.parse(["stop", "--display", "LG", "UltraFine"]), .stopDisplay("LG UltraFine"))
+        XCTAssertEqual(PIPCommand.parse(["stop", "--display=Studio", "Display"]), .stopDisplay("Studio Display"))
+        XCTAssertEqual(PIPCommand.parse(["stop", "-d", "", "  mouse "]), .stopDisplay("mouse"))
+        // A missing or oversized selector is a usage error, never a name lookup.
+        XCTAssertNil(PIPCommand.parse(["start", "--display"]))
+        XCTAssertNil(PIPCommand.parse(["stop", "-d", "  "]))
+        XCTAssertNil(PIPCommand.parse(["stop", "--display="]))
+        XCTAssertNil(PIPCommand.parse(["start", "--display", String(repeating: "x", count: 129)]))
+        XCTAssertEqual(PIPCommand.parse(["start", "--display", String(repeating: "x", count: 128)]),
+                       .startDisplay(String(repeating: "x", count: 128)))
+        // The flag only counts first; elsewhere it is part of a configuration name.
+        XCTAssertEqual(PIPCommand.parse(["start", "Office", "--display"]), .start("Office --display"))
+        XCTAssertEqual(PIPCommand.parse(["stop", "2"]), .stop("2"))
+        XCTAssertNil(PIPCommand.parse(["list", "--display", "2"]))
+        XCTAssertNil(PIPCommand.parse(["stop-all", "--display", "2"]))
+        XCTAssertTrue(PIPCommand.usage.contains("--display"))
+    }
+
+    func testDisplayParsingFuzz() {
+        var rng = SeededGenerator(seed: 0x5E1EC7)
+        let pieces = ["start", "stop", "--display", "-d", "--display=", "2", "main", "all", "id:", "x", " ", "", "é", "\u{0}", "--"]
+        for _ in 0..<2000 {
+            let count = Int(rng.next() % 7)
+            var args: [String] = []
+            for _ in 0..<count { args.append(pieces[Int(rng.next() % UInt64(pieces.count))]) }
+            switch PIPCommand.parse(args) {
+            case .startDisplay(let sel)?, .stopDisplay(let sel)?:
+                XCTAssertFalse(sel.isEmpty)
+                XCTAssertLessThanOrEqual(sel.utf8.count, 128)
+                XCTAssertEqual(sel, sel.trimmingCharacters(in: .whitespacesAndNewlines))
+            case .start(let q)?, .stop(let q)?:
+                XCTAssertFalse(q.isEmpty)
+            default: break
+            }
+        }
+    }
+
+    func testPreferredForDisplay() {
+        let stream = PIPConfiguration(name: "Stream", kind: .fullScreen)
+        let pip = PIPConfiguration(name: "PIP", kind: .window)
+        let pip2 = PIPConfiguration(name: "PIP 2", kind: .window)
+        XCTAssertEqual(PIPLookup.preferredForDisplay([stream, pip, pip2])?.id, pip.id)
+        XCTAssertEqual(PIPLookup.preferredForDisplay([stream])?.id, stream.id)
+        XCTAssertNil(PIPLookup.preferredForDisplay([]))
+    }
+
     func testLookup() {
         let a = PIPConfiguration(name: "Office Left")
         let b = PIPConfiguration(name: "Office Right")

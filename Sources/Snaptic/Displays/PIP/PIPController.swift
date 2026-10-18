@@ -39,6 +39,9 @@ fileprivate extension DisplayActionID {
     var occluded = false
     var suspended = false
     var receivedFirstFrame = false
+    /// Bumped by every capture start and every suspend: a start task whose
+    /// generation is stale after an await stops what it made and gives up.
+    var captureGeneration: UInt64 = 0
     var restoreMode: (displayID: CGDirectDisplayID, mode: ModeRef)?
     var onFirstFrame: (() -> Void)?
 
@@ -51,6 +54,11 @@ fileprivate extension DisplayActionID {
     }
 
     func drain() {
+        // A frame already in flight when the session was suspended is never shown.
+        if suspended {
+            mailbox.clear()
+            return
+        }
         guard let frame = mailbox.take() else { return }
         window?.display(frame)
         if !receivedFirstFrame {
@@ -78,12 +86,10 @@ fileprivate extension DisplayActionID {
 
     enum Origin: String { case user, cli, auto }
 
-    /// CLI exit codes (README): 2 usage or ambiguous, 3 not found, 4 refused, 5 unavailable.
-    private enum Exit {
-        static let usage: Int32 = 2
-        static let notFound: Int32 = 3
-        static let refused: Int32 = 4
-        static let unavailable: Int32 = 5
+    /// Why a start was refused, with the CLI exit code (`ControlExit`) it maps to.
+    struct StartRefusal {
+        let code: Int32
+        let message: String
     }
 
     /// ⌃⌥⌘P: stops full-screen streams and turns click-through off.
@@ -99,8 +105,9 @@ fileprivate extension DisplayActionID {
     private var hotkeyLifetime: Lifetime?
     private var hotkeyToken: GlobalHotkeys.Token?
     private var hotkeyFailed = false
-    private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     private var sinks: [AnyCancellable] = []
+    /// Session-gate event subscription; ends in stop().
+    private var systemLifetime: Lifetime?
     private var knownDisplays: Set<DisplayKey> = []
     private var sessionPaused = false
     /// Between sleep (or display sleep) and wake: nothing resumes.
@@ -140,7 +147,7 @@ fileprivate extension DisplayActionID {
         registerActions(context, lifetime: lifetime)
         registerConfigActions()
         registerCommand(context, lifetime: lifetime)
-        observeSystem(context)
+        observeSystem(context, lifetime: lifetime)
         knownDisplays = Set(context.registry.displays.map(\.key))
         if context.permissions.state(.screenRecording) != .granted {
             context.permissions.request(.screenRecording, reason: L("Picture in Picture shows the contents of your displays."),
@@ -190,9 +197,9 @@ fileprivate extension DisplayActionID {
         for id in order.reversed() { endSession(id, reason: nil) }
         sessions = [:]
         order = []
-        for (center, token) in observers { center.removeObserver(token) }
-        observers = []
         sinks = []
+        systemLifetime?.end()
+        systemLifetime = nil
         resumeTimer?.invalidate()
         resumeTimer = nil
         if let token = hotkeyToken { context?.hotkeys.unregister(token) }
@@ -226,18 +233,25 @@ fileprivate extension DisplayActionID {
 
     func sessionDidResume() { resumeIfPossible() }
 
-    /// Console and unlocked (PLAN §4.9: every resume re-checks the session dictionary).
+    /// Console and unlocked, read fresh (PLAN §4.9: every resume re-checks the session
+    /// dictionary). Fails closed: no dictionary means no capture.
     static func isSessionOpen() -> Bool {
         guard let dict = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
-        let onConsole = (dict["kCGSSessionOnConsoleKey"] as? Bool) ?? false
-        let locked = (dict["CGSSessionScreenIsLocked"] as? Bool) ?? false
+        let onConsole = (dict[kCGSessionOnConsoleKey as String] as? NSNumber)?.boolValue ?? false
+        let locked = (dict["CGSSessionScreenIsLocked"] as? NSNumber)?.boolValue ?? false
         return onConsole && !locked
+    }
+
+    /// The gate is open (not locked, asleep or switched out) and a fresh read agrees.
+    private func sessionUsable() -> Bool {
+        guard let ctx = context, ctx.sessionGate.isOpen else { return false }
+        return Self.isSessionOpen()
     }
 
     /// Lock, sleep, resign: captures stop and last frames clear. Window PIPs resume by
     /// themselves; full-screen streams are offered again (never restarted unattended).
     private func suspendAll() {
-        guard !sessionPaused else { return }
+        guard !sessionPaused, context != nil else { return }
         sessionPaused = true
         for id in order {
             guard let s = sessions[id] else { continue }
@@ -246,6 +260,8 @@ fileprivate extension DisplayActionID {
                 endSession(id, reason: nil)
                 continue
             }
+            // Any start still awaiting is now stale and stops what it made.
+            s.captureGeneration &+= 1
             if let stream = s.stream { context?.capture.stop(stream) }
             s.stream = nil
             s.appliedCaptureKey = ""
@@ -262,7 +278,7 @@ fileprivate extension DisplayActionID {
     }
 
     private func resumeIfPossible() {
-        guard sessionPaused, !displaysAsleep, Self.isSessionOpen(), let ctx = context, let lifetime else { return }
+        guard sessionPaused, !displaysAsleep, sessionUsable(), let ctx = context, let lifetime else { return }
         sessionPaused = false
         resumeTimer?.invalidate()
         resumeTimer = nil
@@ -270,10 +286,10 @@ fileprivate extension DisplayActionID {
             guard let s = sessions[id], s.suspended else { continue }
             s.suspended = false
             s.receivedFirstFrame = false
-            s.window?.setStatus(L("Starting…"))
+            s.window?.setStatus(s.choosingWindow ? L("Choose a window…") : L("Starting…"))
             if let filter = s.windowFilter {
                 beginWindowCapture(s, filter: filter)
-            } else {
+            } else if s.source != .window {
                 beginDisplayCapture(s)
             }
         }
@@ -281,7 +297,8 @@ fileprivate extension DisplayActionID {
         resumeOffers = []
         for id in offers {
             guard let entry = PIPConfig.entry(id, in: ctx.config.value), sessions[id] == nil else { continue }
-            ctx.toasts.show(L("Resume the stream “\(entry.configuration.name)”?"),
+            let name = entry.configuration.name
+            ctx.toasts.show(entry.configuration.kind == .fullScreen ? L("Resume the stream “\(name)”?") : L("Resume “\(name)”?"),
                             action: ToastAction(title: L("Resume")) { [weak self] in self?.userStart(id) },
                             lifetime: lifetime)
         }
@@ -310,8 +327,16 @@ fileprivate extension DisplayActionID {
     /// Starts a saved configuration. Returns a user-facing reason when refused.
     @discardableResult
     func start(_ id: StableID, origin: Origin) -> String? {
+        startChecked(id, origin: origin)?.message
+    }
+
+    /// Starts a saved configuration, or says why not (with the CLI exit code).
+    private func startChecked(_ id: StableID, origin: Origin) -> StartRefusal? {
+        func refuse(_ code: Int32, _ message: String) -> StartRefusal {
+            StartRefusal(code: code, message: remember(message))
+        }
         guard let ctx = context, let lifetime, !lifetime.isEnded, effective.contains(.pip) else {
-            return L("Picture in Picture is off.")
+            return StartRefusal(code: ControlExit.unavailable, message: L("Picture in Picture is off."))
         }
         if let existing = sessions[id] {
             if existing.hidden {
@@ -324,30 +349,35 @@ fileprivate extension DisplayActionID {
         // Someone at the Mac clicking a menu or button means the displays are awake.
         if origin == .user { displaysAsleep = false }
         if sessionPaused { resumeIfPossible() }
-        guard !sessionPaused, Self.isSessionOpen() else { return remember(L("Unlock the Mac first.")) }
+        guard !sessionPaused, sessionUsable() else { return refuse(ControlExit.refused, L("Unlock the Mac first.")) }
         guard sessions.count < PIPConfig.maxConcurrentSessions else {
-            return remember(L("At most \(PIPConfig.maxConcurrentSessions) pictures in picture and streams can run at once."))
+            return refuse(ControlExit.refused,
+                          L("At most \(PIPConfig.maxConcurrentSessions) pictures in picture and streams can run at once."))
         }
-        guard let entry = PIPConfig.entry(id, in: ctx.config.value) else { return remember(L("That configuration no longer exists.")) }
+        guard let entry = PIPConfig.entry(id, in: ctx.config.value) else {
+            return refuse(ControlExit.notFound, L("That configuration no longer exists."))
+        }
         let c = entry.configuration
         if origin == .cli, entry.source == .window {
-            return remember(L("“\(c.name)” uses a window chosen in a picker, so it can't start from the command line."))
+            return refuse(ControlExit.refused, L("“\(c.name)” uses a window chosen in a picker, so it can't start from the command line."))
         }
         if ctx.permissions.state(.screenRecording) == .denied {
             ctx.permissions.request(.screenRecording, reason: L("Picture in Picture shows the contents of your displays."),
                                     lifetime: lifetime)
-            return remember(CaptureError.permission.message)
+            return refuse(ControlExit.unavailable, CaptureError.permission.message)
         }
         var sourceInfo: DisplayInfo?
         if case .display(let key) = entry.source {
-            guard let info = ctx.registry.info(for: key) else {
-                return remember(L("“\(c.name)”: the source display isn't connected."))
+            guard let info = ctx.registry.info(for: key), info.isOnline else {
+                return refuse(ControlExit.unavailable, L("“\(c.name)”: the source display isn't connected."))
             }
             sourceInfo = info
         }
         var targetInfo: DisplayInfo?
         if c.kind == .fullScreen {
-            if let refusal = streamRefusal(source: entry.source, configuration: c, excluding: nil) { return remember(refusal) }
+            if let refusal = streamRefusal(source: entry.source, configuration: c, excluding: nil) {
+                return refuse(ControlExit.refused, refusal)
+            }
             targetInfo = c.target.flatMap { ctx.registry.info(for: $0) }
         }
         if !ctx.config.value.pip.firstRunAcknowledged {
@@ -378,6 +408,12 @@ fileprivate extension DisplayActionID {
                     self.endSession(session.id, reason: nil)
                     return
                 }
+                if session.suspended {
+                    // Picked just as the Mac locked or the displays slept: start on resume.
+                    session.windowFilter = filter
+                    self.publish()
+                    return
+                }
                 self.beginWindowCapture(session, filter: filter)
                 self.publish()
             }
@@ -396,7 +432,13 @@ fileprivate extension DisplayActionID {
     }
 
     private func restart(_ id: StableID) {
+        let paused = sessionPaused
         endSession(id, reason: nil)
+        guard !paused else {
+            // Never start anything while locked or asleep: offer it on resume instead.
+            if !resumeOffers.contains(id) { resumeOffers.append(id) }
+            return
+        }
         userStart(id)
     }
 
@@ -404,16 +446,17 @@ fileprivate extension DisplayActionID {
     func streamRefusal(source: PIPSourceRef, configuration c: PIPConfiguration, excluding: StableID?) -> String? {
         guard let ctx = context else { return L("Picture in Picture is off.") }
         guard let target = c.target else { return L("Choose a display for “\(c.name)” to cover.") }
-        guard let t = ctx.registry.info(for: target) else { return L("The target display isn't connected.") }
+        guard let t = ctx.registry.info(for: target), t.isOnline else { return L("The target display isn't connected.") }
+        // A full-screen window on any member of a mirror set covers the whole set.
+        func mirrorRoot(_ d: DisplayInfo) -> UInt32 { d.mirrorOf ?? d.desktopID }
+        let covered = mirrorRoot(t)
         if case .display(let key) = source {
             if key == target { return L("A display can't stream onto itself.") }
-            if let s = ctx.registry.info(for: key) {
-                if s.desktopID == t.desktopID || t.mirrorOf == s.desktopID || s.mirrorOf == t.desktopID {
-                    return L("A display can't stream onto itself or its mirror.")
-                }
+            if let s = ctx.registry.info(for: key), s.desktopID == t.desktopID || mirrorRoot(s) == covered {
+                return L("A display can't stream onto itself or its mirror.")
             }
         }
-        let others = ctx.registry.displays.filter { $0.key != target && $0.isOnline }
+        let others = ctx.registry.displays.filter { $0.key != target && $0.isOnline && mirrorRoot($0) != covered }
         if t.isStronglyVisible {
             if !others.contains(where: \.isStronglyVisible) {
                 return L("“\(t.name)” is the only display you can see; a full-screen stream would cover it.")
@@ -539,19 +582,26 @@ fileprivate extension DisplayActionID {
         applyCapture(s)
     }
 
+    /// Whether a start task begun at `generation` may still go on after an await.
+    private func isCurrent(_ s: PIPSession, _ generation: UInt64) -> Bool {
+        !s.lifetime.isEnded && !s.suspended && s.captureGeneration == generation && sessions[s.id] === s
+    }
+
     private func beginDisplayCapture(_ s: PIPSession) {
-        guard let displayID = s.sourceDisplayID, context != nil else { return }
+        guard let displayID = s.sourceDisplayID, context != nil, !s.suspended else { return }
         s.starting = true
+        s.captureGeneration &+= 1
+        let generation = s.captureGeneration
         s.lifetime.spawn { [weak self, weak s] in
             guard let self, let s, let capture = self.context?.capture else { return }
             let content: SCShareableContent
             do {
                 content = try await capture.shareableContent()
             } catch {
-                self.captureFailed(s.id, CaptureService.classify(error))
+                if self.isCurrent(s, generation) { self.captureFailed(s.id, CaptureService.classify(error)) }
                 return
             }
-            guard !s.lifetime.isEnded else { return }
+            guard self.isCurrent(s, generation) else { return }
             guard let built = capture.displayFilter(for: displayID, in: content),
                   let display = content.displays.first(where: { $0.displayID == displayID }) else {
                 self.captureFailed(s.id, .sourceMissing)
@@ -562,7 +612,10 @@ fileprivate extension DisplayActionID {
             let (config, key) = self.captureConfiguration(s)
             let result = await capture.start(filter: built.filter, configuration: config, receiver: s.receiver,
                                              privacyDisplay: displayID, signature: built.signature, lifetime: s.lifetime)
-            guard !s.lifetime.isEnded else { return }
+            guard self.isCurrent(s, generation) else {
+                if case .success(let stream) = result { capture.stop(stream) }
+                return
+            }
             switch result {
             case .success(let stream):
                 s.stream = stream
@@ -583,7 +636,10 @@ fileprivate extension DisplayActionID {
             s.sourcePointSize = PIPSize(width: Double(rect.width), height: Double(rect.height))
             s.sourcePixelSize = PIPSize(width: Double(rect.width) * max(scale, 1), height: Double(rect.height) * max(scale, 1))
         }
+        guard !s.suspended else { return }
         s.starting = true
+        s.captureGeneration &+= 1
+        let generation = s.captureGeneration
         applyWindow(s)
         s.window?.setStatus(L("Starting…"))
         s.lifetime.spawn { [weak self, weak s] in
@@ -591,7 +647,10 @@ fileprivate extension DisplayActionID {
             let (config, key) = self.captureConfiguration(s)
             let result = await capture.start(filter: filter, configuration: config, receiver: s.receiver,
                                              privacyDisplay: nil, signature: nil, lifetime: s.lifetime)
-            guard !s.lifetime.isEnded else { return }
+            guard self.isCurrent(s, generation) else {
+                if case .success(let stream) = result { capture.stop(stream) }
+                return
+            }
             switch result {
             case .success(let stream):
                 s.stream = stream
@@ -1010,31 +1069,35 @@ fileprivate extension DisplayActionID {
     private func registerCommand(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("pip", policy: .low, offOnly: false, cliAllowed: true, summary: PIPCommand.usage,
                               lifetime: lifetime) { [weak self] request in
-            guard let self else { return .failure(Exit.unavailable, L("Picture in Picture is off.")) }
+            guard let self else { return .failure(ControlExit.unavailable, L("Picture in Picture is off.")) }
             return self.handleCommand(request.arguments)
         }
     }
 
     /// `pip …` (PLAN §4.10(3)): saved configurations only; starting only while on
-    /// console and unlocked. Stopping is always allowed.
+    /// console and unlocked. Stopping is always allowed. Displays are picked with
+    /// `DisplaySelectorResolver`, so `--display 2` is the "2" Identify shows.
     private func handleCommand(_ arguments: [String]) -> ControlResponse {
-        guard let ctx = context else { return .failure(Exit.unavailable, L("Picture in Picture is off.")) }
-        guard let command = PIPCommand.parse(arguments) else { return .failure(Exit.usage, "usage: " + PIPCommand.usage) }
+        guard let ctx = context else { return .failure(ControlExit.unavailable, L("Picture in Picture is off.")) }
+        guard let command = PIPCommand.parse(arguments) else { return .failure(ControlExit.usage, "usage: " + PIPCommand.usage) }
         let entries = PIPConfig.entries(in: ctx.config.value)
         func lookup(_ query: String) -> (id: StableID?, error: ControlResponse) {
             switch PIPLookup.find(query, in: entries.map(\.configuration)) {
             case .found(let id): return (id, .ok())
-            case .notFound: return (nil, .failure(Exit.notFound, L("No saved configuration matches “\(query)”.")))
-            case .ambiguous(let n): return (nil, .failure(Exit.usage, L("\(n) configurations match “\(query)”; use the id.")))
+            case .notFound: return (nil, .failure(ControlExit.notFound, L("No saved configuration matches “\(query)”.")))
+            case .ambiguous(let n): return (nil, .failure(ControlExit.usage, L("\(n) configurations match “\(query)”; use the id.")))
             }
         }
+        let locked = L("PIP starts from the command line only while the Mac is unlocked and on the console.")
         switch command {
         case .list:
+            let numbers = Dictionary(DisplaySelectorResolver.ordered(ctx).enumerated().map { pair in (pair.element.key, pair.offset + 1) },
+                                     uniquingKeysWith: { first, _ in first })
             let lines = entries.map { e -> String in
                 let c = e.configuration
                 let source: String
                 switch e.source {
-                case .display: source = "display"
+                case .display(let key): source = numbers[key].map { "display \($0)" } ?? "display (not connected)"
                 case .window: source = "window"
                 }
                 let state = sessions[c.id]?.publicState.rawValue ?? "stopped"
@@ -1042,18 +1105,40 @@ fileprivate extension DisplayActionID {
             }
             return .ok(lines.joined(separator: "\n"))
         case .start(let query):
-            guard Self.isSessionOpen() else {
-                return .failure(Exit.refused, L("PIP starts from the command line only while the Mac is unlocked and on the console."))
-            }
+            guard sessionUsable() else { return .failure(ControlExit.refused, locked) }
             let found = lookup(query)
             guard let id = found.id else { return found.error }
-            if let error = start(id, origin: .cli) { return .failure(Exit.refused, error) }
+            if let refusal = startChecked(id, origin: .cli) { return .failure(refusal.code, refusal.message) }
             return .ok()
+        case .startDisplay(let selector):
+            guard sessionUsable() else { return .failure(ControlExit.refused, locked) }
+            let resolved = DisplaySelectorResolver.resolveForCLI(selector, ctx)
+            guard let target = resolved.target else {
+                return resolved.error ?? .failure(ControlExit.notFound, L("No display matches “\(selector)”."))
+            }
+            return startDisplays(displays(for: target), ctx)
         case .stop(let query):
             let found = lookup(query)
             guard let id = found.id else { return found.error }
             endSession(id, reason: nil)
             return .ok()
+        case .stopDisplay(let selector):
+            let resolved = DisplaySelectorResolver.resolveForCLI(selector, ctx)
+            guard let target = resolved.target else {
+                return resolved.error ?? .failure(ControlExit.notFound, L("No display matches “\(selector)”."))
+            }
+            if target == .all {
+                stopAll()
+                return .ok()
+            }
+            let keys = Set(displays(for: target).map(\.key))
+            let matching = order.filter { id in
+                guard let s = sessions[id] else { return false }
+                if case .display(let key) = s.source, keys.contains(key) { return true }
+                return s.configuration.kind == .fullScreen && s.configuration.target.map(keys.contains) == true
+            }
+            matching.forEach { endSession($0, reason: nil) }
+            return .ok(matching.isEmpty ? L("Nothing was running on that display.") : "")
         case .stopAll:
             stopAll()
             return .ok()
@@ -1072,39 +1157,46 @@ fileprivate extension DisplayActionID {
         }
     }
 
+    /// `pip start --display`: each display's preferred saved configuration (never a new one).
+    private func startDisplays(_ targets: [DisplayInfo], _ ctx: DisplaysContext) -> ControlResponse {
+        var started = 0
+        var refusals: [StartRefusal] = []
+        var anySaved = false
+        for display in targets where display.isOnline {
+            let saved = ctx.config.value.perDisplay[display.key]?.pip.configurations ?? []
+            guard let pick = PIPLookup.preferredForDisplay(saved) else { continue }
+            anySaved = true
+            if let refusal = startChecked(pick.id, origin: .cli) { refusals.append(refusal) } else { started += 1 }
+        }
+        guard anySaved else {
+            return .failure(ControlExit.notFound, L("No saved Picture in Picture uses that display as its source. Create one in Settings first."))
+        }
+        if started == 0, let first = refusals.first { return .failure(first.code, first.message) }
+        return .ok(refusals.map(\.message).joined(separator: "\n"))
+    }
+
     // MARK: System events
 
-    private func observeSystem(_ ctx: DisplaysContext) {
-        let ws = NSWorkspace.shared.notificationCenter
-        let sleepNames: [Notification.Name] = [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification]
-        for name in sleepNames {
-            observers.append((ws, ws.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.displaysAsleep = true
-                    self?.suspendAll()
-                }
-            }))
+    /// Lock, sleep and resign arrive as SessionParticipant calls (SessionGate). The gate
+    /// stays open while only the displays sleep, so display sleep comes from its raw events.
+    private func observeSystem(_ ctx: DisplaysContext, lifetime: Lifetime) {
+        systemLifetime?.end()
+        let life = lifetime.child()
+        systemLifetime = life
+        ctx.sessionGate.observeEvents(lifetime: life) { [weak self] event in
+            guard let self, self.context != nil else { return }
+            switch event {
+            case .willSleep, .screensDidSleep:
+                self.displaysAsleep = true
+                self.suspendAll()
+            case .didWake, .screensDidWake:
+                self.displaysAsleep = false
+                // Before the gate recomputes this is a no-op; sessionDidResume follows.
+                self.resumeIfPossible()
+            case .locked, .unlocked, .resignedActive, .becameActive:
+                break
+            }
         }
-        observers.append((ws, ws.addObserver(forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main) {
-            [weak self] _ in MainActor.assumeIsolated { self?.suspendAll() }
-        }))
-        let wakeNames: [Notification.Name] = [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification]
-        for name in wakeNames {
-            observers.append((ws, ws.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.displaysAsleep = false
-                    self?.resumeIfPossible()
-                }
-            }))
-        }
-        observers.append((ws, ws.addObserver(forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: .main) {
-            [weak self] _ in MainActor.assumeIsolated { self?.resumeIfPossible() }
-        }))
-        // Lock notifications only ever stop things (PLAN §4.9).
-        let dnc = DistributedNotificationCenter.default()
-        observers.append((dnc as NotificationCenter, dnc.addObserver(forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main) {
-            [weak self] _ in MainActor.assumeIsolated { self?.suspendAll() }
-        }))
         ctx.registry.changes
             .dropFirst()
             .receive(on: DispatchQueue.main)
@@ -1127,6 +1219,12 @@ fileprivate extension DisplayActionID {
                     continue
                 }
                 if info.desktopID != s.sourceDisplayID {
+                    if s.suspended {
+                        // Locked or asleep: nothing starts now; the resume captures the new id.
+                        s.sourceDisplayID = info.desktopID
+                        readSourceGeometry(s, displayID: info.desktopID)
+                        continue
+                    }
                     // The display id changed (reconnect, Smart HiDPI): capture it afresh.
                     restart(id)
                     continue

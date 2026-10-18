@@ -197,7 +197,8 @@ enum CaptureError: Error, Equatable {
     /// start, the stream is stopped and `.cancelled` returned.
     func start(filter: SCContentFilter, configuration: SCStreamConfiguration, receiver: StreamReceiver,
                privacyDisplay: CGDirectDisplayID?, signature: String?, lifetime: Lifetime) async -> Result<SCStream, CaptureError> {
-        guard self.lifetime != nil, !lifetime.isEnded else { return .failure(.cancelled) }
+        // Never while locked, asleep or switched out (PLAN §4.10(5)); the controller resumes.
+        guard self.lifetime != nil, !lifetime.isEnded, context?.sessionGate.isOpen == true else { return .failure(.cancelled) }
         let stream = SCStream(filter: filter, configuration: configuration, delegate: receiver)
         do {
             try stream.addStreamOutput(receiver, type: .screen, sampleHandlerQueue: receiver.queue)
@@ -215,7 +216,7 @@ enum CaptureError: Error, Equatable {
             lastFailure = classified.message
             return .failure(classified)
         }
-        guard !lifetime.isEnded, self.lifetime != nil, active[key] != nil else {
+        guard !lifetime.isEnded, self.lifetime != nil, active[key] != nil, context?.sessionGate.isOpen == true else {
             stop(stream)
             return .failure(.cancelled)
         }

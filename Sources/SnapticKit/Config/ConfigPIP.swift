@@ -526,15 +526,44 @@ package enum PIPCommand: Equatable, Sendable {
     case list
     case start(String)
     case stop(String)
+    /// `start --display <selector>`: the saved configurations whose source is that
+    /// display (the selector is resolved by `DisplaySelectorResolver` in the app).
+    case startDisplay(String)
+    /// `stop --display <selector>`: every session whose source or target is that display.
+    case stopDisplay(String)
     case stopAll, hideAll, showAll, pauseAll, resumeAll
 
-    package static let usage = "pip list | start <name|id> | stop <name|id> | stop-all | hide-all | show-all | pause-all | resume-all"
+    package static let usage = "pip list | start <name|id> | start --display <display> | stop <name|id> | stop --display <display>"
+        + " | stop-all | hide-all | show-all | pause-all | resume-all"
+
+    /// The display flag: `--display <sel>`, `-d <sel>` or `--display=<sel>`.
+    private static func displaySelector(_ rest: ArraySlice<String>) -> String?? {
+        guard let first = rest.first else { return .none }
+        let flag = first.lowercased()
+        var tail: [String]
+        if flag == "--display" || flag == "-d" {
+            tail = Array(rest.dropFirst())
+        } else if flag.hasPrefix("--display=") {
+            tail = [String(first.dropFirst("--display=".count))] + rest.dropFirst()
+        } else {
+            return .none
+        }
+        tail = tail.filter { !$0.isEmpty }
+        let text = tail.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        // ControlSelector refuses more than 128 UTF-8 bytes; so do we (no silent truncation).
+        guard !text.isEmpty, text.utf8.count <= 128 else { return .some(nil) }
+        return .some(text)
+    }
 
     /// Nil for anything malformed (the caller prints `usage`).
     package static func parse(_ arguments: [String]) -> PIPCommand? {
         guard let verb = arguments.first?.lowercased(), arguments.count <= 32 else { return nil }
         let rest = arguments.dropFirst().joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
         let query = TextSanitizer.clean(rest, maxScalars: 256)
+        if verb == "start" || verb == "stop", let selector = displaySelector(arguments.dropFirst()) {
+            guard let selector else { return nil }
+            return verb == "start" ? .startDisplay(selector) : .stopDisplay(selector)
+        }
         switch verb {
         case "list", "ls": return arguments.count == 1 ? .list : nil
         case "start": return query.isEmpty ? nil : .start(query)
@@ -569,6 +598,12 @@ package enum PIPLookup {
         if prefixed.count == 1 { return .found(prefixed[0].id) }
         if prefixed.count > 1 { return .ambiguous(prefixed.count) }
         return .notFound
+    }
+
+    /// What `pip start --display` starts among a display's saved configurations: the
+    /// first window PIP, else the first stream. Nothing is ever created from the CLI.
+    package static func preferredForDisplay(_ items: [PIPConfiguration]) -> PIPConfiguration? {
+        items.first { $0.kind == .window } ?? items.first
     }
 }
 
