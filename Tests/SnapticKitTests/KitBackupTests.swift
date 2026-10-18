@@ -268,4 +268,194 @@ final class KitBackupTests: XCTestCase {
         XCTAssertFalse(KitBackup.isSafetyRelated(section: "displays", path: "perDisplay"))
         XCTAssertFalse(KitBackup.isSafetyRelated(section: "switcher", path: "(all)"))
     }
+
+    // MARK: Awake (0.3 §2.14, §3.2, §3.6)
+
+    private let volumeID = "6F1C1E8A-1D0B-4C55-9D41-3A6E1B1E2F10"
+    private let digest = String(repeating: "ab", count: 32)
+
+    /// An `awake` section with everything a backup must never carry, beside what it may.
+    private var hostileAwake: [String: Any] {
+        ["features": ["pointerNudge": true, "commandLine": true, "activity": true, "triggers": true],
+         "drives": ["volumes": [volumeID: ["name": "Backup", "enabled": true, "firstWriteDone": true]],
+                    "intervalSeconds": 30, "evenWithoutSession": true],
+         "sessions": ["presets": [["id": "B1C2D3E4-0000-4000-8000-000000000001", "kind": ["type": "indefinite"],
+                                   "options": ["activity": "nudge", "display": "keepOn", "displayIdleMinutes": 30]]],
+                      "recentApps": ["com.example.secret"], "lastCustomSeconds": 600,
+                      "behavior": ["startAtLaunch": "B1C2D3E4-0000-4000-8000-000000000001", "resumeAfterRestart": true],
+                      "defaultOptions": ["activity": "nudge", "display": "keepOn", "displayIdleMinutes": 30]],
+         "guards": ["batteryFloorEnabled": false, "batteryFloor": 5],
+         "triggers": ["triggers": [["id": "B1C2D3E4-0000-4000-8000-000000000002", "name": "Home", "enabled": true,
+                                    "criteria": [["criterion": ["type": "network",
+                                                                "condition": ["type": "router", "hash": digest,
+                                                                              "label": "Home"]],
+                                                  "negated": false],
+                                                 ["criterion": ["type": "usb", "vendor": 1, "product": 2,
+                                                                "serialHash": digest, "name": "Dock"]]]]]],
+         "activity": ["stopAfterHours": 8],
+         "indicator": ["style": "iconAndTime", "glyph": "eye"],
+         "shortcuts": ["awake.toggle": ["keyCode": 5, "carbonModifiers": 2048]],
+         // Never part of AwakeConfig, so never part of a backup (allowlist).
+         "history": ["entries": [["start": 1, "end": 2]]], "snapshot": ["manual": ["x": 1]], "saltHint": "s",
+         "futureField": ["x": 1]]
+    }
+
+    private func awakeText(_ object: Any) -> String {
+        String(decoding: try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]), as: UTF8.self)
+    }
+
+    func testAwakeExportIsAnAllowlist() throws {
+        let doc = try XCTUnwrap(KitBackup.makeDocument(sections: ["awake": json(hostileAwake)], created: "t",
+                                                         appVersion: "0.3.0"))
+        let parsed = object(doc)
+        let awake = try XCTUnwrap((parsed["sections"] as? [String: Any])?["awake"] as? [String: Any])
+        XCTAssertEqual(Set(awake.keys), ["features", "sessions", "guards", "triggers", "activity", "indicator", "shortcuts"])
+        let text = awakeText(awake)
+        for banned in ["pointerNudge", "commandLine", "drives", volumeID, "evenWithoutSession", "recentApps",
+                       "com.example.secret", "startAtLaunch", "history", "snapshot", "saltHint", "futureField",
+                       digest, "serialHash", "\"hash\""] {
+            XCTAssertFalse(text.contains(banned), banned)
+        }
+        for kept in ["activity", "resumeAfterRestart", "lastCustomSeconds", "batteryFloor", "Home", "Dock",
+                     "iconAndTime", "awake.toggle", "stopAfterHours"] {
+            XCTAssertTrue(text.contains(kept), kept)
+        }
+    }
+
+    func testAwakeImportStripsTheSameEvenIfPresent() throws {
+        let file: [String: Any] = ["format": KitBackup.format, "version": 1, "sections": ["awake": hostileAwake]]
+        let parsed = try KitBackup.parseDocument(json(file)).get()
+        let awake = object(try XCTUnwrap(parsed["awake"]))
+        XCTAssertNil(awake["drives"])
+        XCTAssertNil(awake["history"])
+        XCTAssertNil(awake["futureField"])
+        XCTAssertNil((awake["features"] as? [String: Any])?["pointerNudge"])
+        XCTAssertNil((awake["features"] as? [String: Any])?["commandLine"])
+        XCTAssertEqual((awake["features"] as? [String: Any])?["activity"] as? Bool, true)
+        let sessions = awake["sessions"] as? [String: Any]
+        XCTAssertNil(sessions?["recentApps"])
+        XCTAssertNil((sessions?["behavior"] as? [String: Any])?["startAtLaunch"])
+        XCTAssertEqual((sessions?["behavior"] as? [String: Any])?["resumeAfterRestart"] as? Bool, true)
+        XCTAssertFalse(awakeText(awake).contains(digest))
+    }
+
+    func testAwakeAllowlistDropsWrongShapes() {
+        let odd: [String: Any] = ["sessions": "not an object", "guards": [1, 2], "indicator": ["style": "icon"]]
+        let out = KitBackup.strip(odd, section: "awake") as? [String: Any]
+        XCTAssertNil(out?["sessions"], "an allowed path that must go deeper needs an object")
+        XCTAssertEqual(out?["guards"] as? [Int], [1, 2], "a whole allowed key keeps its value; decoding rejects it")
+        XCTAssertNotNil(out?["indicator"])
+        XCTAssertEqual((KitBackup.strip("garbage", section: "awake") as? [String: Any])?.count, 0)
+    }
+
+    /// A hand-made backup with pointer movement, drives, nudge presets and loose guards: none of it survives the
+    /// typed import (stub or G's `importable`), and the guards only ever get stricter (security L5).
+    func testHostileAwakeBackupNeverLoosensAnything() throws {
+        let file: [String: Any] = ["format": KitBackup.format, "version": 1, "sections": ["awake": hostileAwake]]
+        let parsed = try KitBackup.parseDocument(json(file)).get()
+        var current = AwakeConfig()
+        current.guards.batteryFloor = 30
+        current.features[.pointerNudge] = false
+        let volume = try XCTUnwrap(VolumeUUIDKey(rawValue: "0A1B2C3D-0000-4000-8000-00000000AAAA"))
+        current.drives.volumes[volume] = DriveAliveVolume(name: "Mine", enabled: false)
+        current = current.sanitized()
+        // Through the parsed (already stripped) section, and with the raw hostile JSON straight in.
+        for imported in [try XCTUnwrap(parsed["awake"]), json(hostileAwake)] {
+            let result = try XCTUnwrap(KitBackup.importAwake(current: current, imported: imported))
+            XCTAssertEqual(result.features[.pointerNudge], current.features[.pointerNudge])
+            XCTAssertEqual(result.drives, current.drives)
+            XCTAssertTrue(result.guards.batteryFloorEnabled)
+            XCTAssertGreaterThanOrEqual(result.guards.batteryFloor, current.guards.batteryFloor)
+            XCTAssertGreaterThanOrEqual(result.guards.effectiveFloor, current.guards.effectiveFloor)
+            XCTAssertNotEqual(result.sessions.defaultOptions.activity, .nudge)
+            XCTAssertFalse(result.sessions.presets.contains { $0.options?.activity == .nudge })
+            XCTAssertFalse(result.triggers.triggers.contains { $0.options.activity == .nudge })
+            XCTAssertEqual(result.sessions.recentApps, current.sessions.recentApps)
+            XCTAssertEqual(result.sessions.behavior.startAtLaunch, current.sessions.behavior.startAtLaunch)
+            for trigger in result.triggers.triggers {
+                for entry in trigger.criteria {
+                    if case .network(.router) = entry.criterion { XCTFail("a router hash came in from a file") }
+                    if case .usbDevice(_, _, let hash, _) = entry.criterion { XCTAssertNil(hash) }
+                }
+            }
+        }
+    }
+
+    /// `importable(current:)` runs last, on the merged and sanitized value (security L5).
+    func testAwakeImportAppliesImportableLast() throws {
+        var current = AwakeConfig()
+        current.indicator.glyph = .lightbulb
+        current = current.sanitized()
+        let imported = json(["indicator": ["style": "iconAndEndTime"], "guards": ["batteryFloor": 45]])
+        let result = try XCTUnwrap(KitBackup.importAwake(current: current, imported: imported))
+        let before = try JSONEncoder().encode(current)
+        let merged = try XCTUnwrap(KitBackup.merge(current: before, imported: imported, section: "awake"))
+        let expected = try JSONDecoder().decode(AwakeConfig.self, from: merged).sanitized().importable(current: current)
+        XCTAssertEqual(result, expected)
+        XCTAssertNil(KitBackup.importAwake(current: current, imported: Data("[1]".utf8)))
+        XCTAssertNil(KitBackup.importAwake(current: current, imported: Data("nope".utf8)))
+    }
+
+    /// Without the rules checkbox the section has no `triggers` key, so importing it keeps the Mac's rules.
+    func testAwakeRulesAreOptIn() throws {
+        var config = AwakeConfig()
+        config.triggers.triggers = [AwakeTrigger(id: StableID(), name: "Desk", criteria: [AwakeCriterionEntry(.cpuAbove(percent: 50))])]
+        let without = object(try XCTUnwrap(KitBackup.awakeSectionData(config, includeTriggers: false)))
+        XCTAssertNil(without["triggers"])
+        let with = object(try XCTUnwrap(KitBackup.awakeSectionData(config, includeTriggers: true)))
+        XCTAssertNotNil(with["triggers"])
+        for section in [without, with] {
+            let text = awakeText(section)
+            for banned in ["drives", "pointerNudge", "recentApps", "startAtLaunch", "commandLine"] {
+                XCTAssertFalse(text.contains(banned), banned)
+            }
+        }
+        // A section without rules laid over a Mac with rules keeps them.
+        let current = json(["triggers": ["triggers": [["id": "R1", "name": "Desk"]]], "indicator": ["style": "icon"]])
+        let merged = object(try XCTUnwrap(KitBackup.merge(current: current, imported: json(["indicator": ["style": "iconAndTime"]]),
+                                                          section: "awake")))
+        XCTAssertEqual(((merged["triggers"] as? [String: Any])?["triggers"] as? [[String: Any]])?.count, 1)
+    }
+
+    /// Exporting the Mac's own settings and importing them back changes nothing the preview would show.
+    func testAwakeOwnBackupRoundTripChangesNothing() throws {
+        var current = AwakeConfig()
+        current.features[.pointerNudge] = true
+        current = current.sanitized()
+        let section = try XCTUnwrap(KitBackup.awakeSectionData(current, includeTriggers: true))
+        let doc = try XCTUnwrap(KitBackup.makeDocument(sections: ["awake": section], created: "t", appVersion: "0.3.0"))
+        let parsed = try KitBackup.parseDocument(doc).get()
+        let result = try XCTUnwrap(KitBackup.importAwake(current: current, imported: try XCTUnwrap(parsed["awake"])))
+        XCTAssertEqual(result.features[.pointerNudge], true, "kept from the Mac, never from the file")
+        XCTAssertEqual(result.drives, current.drives)
+        XCTAssertGreaterThanOrEqual(result.guards.batteryFloor, current.guards.batteryFloor)
+    }
+
+    func testAwakeSafetyChangesComeFirst() throws {
+        for path in ["features.activity", "features.driveAlive", "guards.batteryFloor", "guards.batteryFloorEnabled",
+                     "activity.stopAfterHours", "triggers.triggers", "shortcuts.awake.toggle.keyCode",
+                     "sessions.presets", "sessions.defaultOptions.activity", "sessions.behavior.keepDisplayOnWhileLocked",
+                     "(all)"] {
+            XCTAssertTrue(KitBackup.isSafetyRelated(section: "awake", path: path), path)
+        }
+        for path in ["indicator.style", "indicator.glyph", "sessions.lastCustomSeconds", "sessions.defaultPresetID"] {
+            XCTAssertFalse(KitBackup.isSafetyRelated(section: "awake", path: path), path)
+        }
+        let old = json(["guards": ["batteryFloor": 20], "indicator": ["style": "icon"],
+                        "sessions": ["defaultOptions": ["activity": "off"], "lastCustomSeconds": 600]])
+        let new = json(["guards": ["batteryFloor": 30], "indicator": ["style": "iconAndTime"],
+                        "sessions": ["defaultOptions": ["activity": "declare"], "lastCustomSeconds": 900]])
+        let preview = KitBackup.previewChanges(section: "awake", from: old, to: new, limit: 1)
+        XCTAssertEqual(preview.safety, ["guards.batteryFloor", "sessions.defaultOptions.activity"])
+        XCTAssertEqual(preview.other, ["indicator.style"], "the rest is shortened, safety never is")
+    }
+
+    func testAwakeSectionIsKnown() {
+        XCTAssertTrue(KitBackup.sections.contains("awake"))
+        for path in [["awake", "drives"], ["awake", "features", "pointerNudge"],
+                     ["awake", "sessions", "behavior", "startAtLaunch"], ["awake", "sessions", "recentApps"]] {
+            XCTAssertTrue(KitBackup.removedPaths.contains(path), path.joined(separator: "."))
+        }
+        XCTAssertTrue(KitBackup.safetyPaths.contains(["awake", "guards"]))
+    }
 }

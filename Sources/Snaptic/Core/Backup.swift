@@ -6,14 +6,19 @@ import UniformTypeIdentifiers
 /// the DisplayKey salt, DDC unlocks, "Allow without asking" flags, preset trust and the
 /// sensitive toggles (Kit `KitBackup`); imports strip the same fields even if present, keep
 /// the current values for them, show what would change, and apply only after a yes.
+/// Awake (0.3 §3.6) goes through `AwakeConfig.exportable(includeTriggers:)` and `KitBackup.importAwake`
+/// (`importable(current:)` last): no Drive Alive, pointer movement, recent apps or launch session either way, rules
+/// only when the user ticks them, guards only stricter, and every safety-related change listed first in full.
 /// Picked files follow §4.10(6): O_NONBLOCK|O_NOFOLLOW, a regular file, ≤ 1 MB, read off main.
 @MainActor enum Backup {
     static let fileExtension = "snapticbackup"
 
     // MARK: Export
 
-    static func export(host: ModuleHost) {
-        guard let document = makeDocument(host: host) else {
+    /// `includeTriggers`: the export sheet's "Include automatic-session rules (contains app, device and network
+    /// names)" checkbox (off by default, 0.3 §4.3).
+    static func export(host: ModuleHost, includeTriggers: Bool = false) {
+        guard let document = makeDocument(host: host, includeTriggers: includeTriggers) else {
             host.toasts.show(L("The settings couldn't be exported."))
             return
         }
@@ -26,19 +31,22 @@ import UniformTypeIdentifiers
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try document.write(to: url, options: [.atomic])
-            EventLog.shared.record(.modules, "Settings exported")
+            EventLog.shared.record(.modules, includeTriggers ? "Settings exported with Awake rules" : "Settings exported")
             host.toasts.show(L("Settings exported."))
         } catch {
             host.toasts.show(L("The settings couldn't be saved there."))
         }
     }
 
-    static func makeDocument(host: ModuleHost) -> Data? {
+    static func makeDocument(host: ModuleHost, includeTriggers: Bool = false) -> Data? {
         let encoder = JSONEncoder()
         var sections: [String: Data] = [:]
         if let data = try? encoder.encode(host.switcherSettings.config) { sections[KitBackup.switcherSection] = data }
         if let data = try? encoder.encode(host.modulesStore.value) { sections[KitBackup.modulesSection] = data }
         if let data = try? encoder.encode(host.displaysStore.value) { sections[KitBackup.displaysSection] = data }
+        if let data = KitBackup.awakeSectionData(host.awakeStore.value, includeTriggers: includeTriggers) {
+            sections[KitBackup.awakeSection] = data
+        }
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
         let created = ISO8601DateFormatter().string(from: Date())
         return KitBackup.makeDocument(sections: sections, created: created, appVersion: version)
@@ -105,25 +113,35 @@ import UniformTypeIdentifiers
         var newSwitcher: Config?
         var newModules: ModulesConfig?
         var newDisplays: DisplaysConfig?
+        var newAwake: AwakeConfig?
 
-        /// Merge, decode, sanitize; collect the preview lines. Nil when nothing usable.
-        func prepare<T: Codable>(_ section: String, label: String, current: T, decode: (Data) -> T?) -> T? {
+        /// Builds the imported value from the section and the current JSON; collects the preview lines, which compare
+        /// the current value with exactly what would be stored. Nil when nothing usable.
+        func prepare<T: Codable>(_ section: String, label: String, current: T,
+                                 build: (_ imported: Data, _ before: Data) -> T?) -> T? {
             guard let imported = sections[section], let before = try? encoder.encode(current),
-                  let merged = KitBackup.merge(current: before, imported: imported, section: section),
-                  let value = decode(merged), let after = try? encoder.encode(value) else { return nil }
+                  let value = build(imported, before), let after = try? encoder.encode(value) else { return nil }
             let lines = KitBackup.previewChanges(section: section, from: before, to: after, limit: 50)
             safety += lines.safety.map { label + $0 }
             other += lines.other.map { label + $0 }
             return value
         }
-        newSwitcher = prepare(KitBackup.switcherSection, label: L("Window Switcher: "), current: host.switcherSettings.config) {
-            (try? decoder.decode(Config.self, from: $0))?.sanitized()
+        /// The generic path: merge over the current JSON, then decode and sanitize.
+        func generic<T>(_ section: String, _ decode: @escaping (Data) -> T?) -> (Data, Data) -> T? {
+            { imported, before in KitBackup.merge(current: before, imported: imported, section: section).flatMap(decode) }
         }
-        newModules = prepare(KitBackup.modulesSection, label: L("Modules: "), current: host.modulesStore.value) {
-            (try? decoder.decode(ModulesConfig.self, from: $0))?.sanitized()
-        }
-        newDisplays = prepare(KitBackup.displaysSection, label: L("Displays: "), current: host.displaysStore.value) {
-            (try? decoder.decode(DisplaysConfig.self, from: $0))?.sanitized()
+        newSwitcher = prepare(KitBackup.switcherSection, label: L("Window Switcher: "), current: host.switcherSettings.config,
+                              build: generic(KitBackup.switcherSection) { (try? decoder.decode(Config.self, from: $0))?.sanitized() })
+        newModules = prepare(KitBackup.modulesSection, label: L("Modules: "), current: host.modulesStore.value,
+                             build: generic(KitBackup.modulesSection) { (try? decoder.decode(ModulesConfig.self, from: $0))?.sanitized() })
+        newDisplays = prepare(KitBackup.displaysSection, label: L("Displays: "), current: host.displaysStore.value,
+                              build: generic(KitBackup.displaysSection) {
+                                  (try? decoder.decode(DisplaysConfig.self, from: $0))?.sanitized()
+                              })
+        // Awake: KitBackup merges, sanitizes and applies `importable(current:)` last (security L5).
+        let currentAwake = host.awakeStore.value
+        newAwake = prepare(KitBackup.awakeSection, label: L("Awake: "), current: currentAwake) { imported, _ in
+            KitBackup.importAwake(current: currentAwake, imported: imported)
         }
         let total = safety.count + other.count
         guard total > 0 else {
@@ -142,6 +160,9 @@ import UniformTypeIdentifiers
             text += (safety.isEmpty ? L("These settings change:") : L("Other changes:")) + "\n" + shown + more + "\n\n"
         }
         text += L("Hooks, actions, command-line settings, sleep prevention, auto-disconnect exceptions and \"allow\" switches are never imported. Protected apps are only ever added.")
+        if newAwake != nil {
+            text += "\n\n" + L("Awake's Drive Alive disks, pointer movement, recent apps and launch session are never imported, and its battery and power limits only get stricter.")
+        }
 
         let alert = NSAlert()
         alert.messageText = L("Import these settings?")
@@ -158,6 +179,7 @@ import UniformTypeIdentifiers
         if let newSwitcher { host.switcherSettings.config = newSwitcher }
         if let newModules { host.modulesStore.value = newModules }
         if let newDisplays { host.displaysStore.value = newDisplays }
+        if let newAwake { host.awakeStore.value = newAwake }
         EventLog.shared.record(.modules, "Settings imported: \(total) changes, \(safety.count) safety-related")
         host.toasts.show(L("Settings imported."))
     }
