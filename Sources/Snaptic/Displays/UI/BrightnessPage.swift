@@ -165,6 +165,10 @@ struct BrightnessPage: View {
                     .joined(separator: ", "))
                     .font(.caption).foregroundStyle(.secondary)
             }
+        } else if b.isAwaitingFirstRead(key) {
+            LabeledContent(L("Brightness")) {
+                Text(L("Reading brightness…")).foregroundStyle(.secondary)
+            }
         }
         LabeledContent(L("Method")) {
             Text([b.hardwareMethod(for: key)?.title, b.softwareMethod(for: key)?.title].compactMap { $0 }

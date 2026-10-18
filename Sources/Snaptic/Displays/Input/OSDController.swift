@@ -70,7 +70,7 @@ import SnapticShims
         let keys = context.config.value.keys
         let os = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
         return [
-            ("HUD", context.osd.isEnabled ? (keys.osdNative && SNOSD.isAvailable() ? "system OSD" : "Snaptic HUD") : "off"),
+            ("HUD", context.osd.isEnabled ? (keys.usesNativeOSD(osMajor: os, nativeAvailable: SNOSD.isAvailable()) ? "system OSD" : "Snaptic HUD") : "off"),
             ("Style", keys.effectiveOSDStyle(osMajor: os).rawValue),
             ("Position", keys.effectiveOSDPosition(osMajor: os).rawValue),
             ("Target", keys.osdTarget.rawValue),

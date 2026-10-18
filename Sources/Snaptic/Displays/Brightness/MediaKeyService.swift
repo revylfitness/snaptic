@@ -13,7 +13,8 @@ import SnapticKit
     /// The running keys controller, for the Keys page.
     weak var keysController: KeysController?
 
-    enum Key: Sendable, Hashable { case brightnessUp, brightnessDown, volumeUp, volumeDown, mute }
+    /// Brightness up/down, volume up/down, mute (decoded in Kit's MediaKeyPress).
+    typealias Key = MediaKeyPress.Key
 
     /// What the tap does with a press (decided once, on the initial key-down).
     enum Verdict: Sendable, Equatable {

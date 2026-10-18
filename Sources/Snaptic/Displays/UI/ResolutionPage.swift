@@ -26,7 +26,7 @@ struct ResolutionPage: View {
             } header: {
                 Text(L("Resolution"))
             } footer: {
-                ManagementNote(L("Unfamiliar modes are applied as a trial: Snaptic reverts them after 15 seconds unless you keep them."))
+                ManagementNote(L("Unfamiliar modes are applied as a trial: Snaptic reverts them after \(env.config.value.safety.confirmSeconds) seconds unless you keep them."))
             }
             Section(L("Slider")) {
                 Picker(L("Show values as"), selection: ManagementBindings.config(env, \.resolution.sliderLabel)) {
@@ -196,7 +196,7 @@ private struct HiddenModesSection: View {
         } header: {
             Text(L("Show all modes"))
         } footer: {
-            ManagementNote(L("Hidden modes can blank a display. They always run as a 15-second trial."))
+            ManagementNote(L("Hidden modes can blank a display. They always run as a trial that reverts after \(env.config.value.safety.confirmSeconds) seconds unless you keep it."))
         }
     }
 }

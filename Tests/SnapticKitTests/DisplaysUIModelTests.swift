@@ -259,4 +259,52 @@ final class DisplaysUIModelTests: XCTestCase {
         XCTAssertTrue(report.contains("## Empty\n(none)\n"))
         XCTAssertTrue(report.contains("## Recent events (1)\n10:00:00 [modules] started\n"))
     }
+
+    // MARK: W7, W17a
+
+    func testTurnOffListsAndClearsDependents() {
+        // .pipFilters requires .pip.
+        var raw: [DisplayFeature: Bool] = [.pip: true, .pipFilters: true]
+        let deps = FeatureTurnOff.dependents(of: .pip, raw: raw, effective: [.pip, .pipFilters])
+        XCTAssertEqual(deps, [.pipFilters])
+        let changes = FeatureTurnOff.changes(.pip, dependents: deps)
+        XCTAssertEqual(changes, [.pip: false, .pipFilters: false])
+        for (f, on) in changes { raw[f] = on }
+        // Turning PIP on again brings only PIP back.
+        let after = FeatureGraph.enabling(.pip, raw: raw, available: Set(DisplayFeature.allCases))
+        XCTAssertEqual(after[.pipFilters], false, "W7: the dependent's flag stays off")
+    }
+
+    func testTurnOffIncludesSwitchedOnButPausedDependents() {
+        let raw: [DisplayFeature: Bool] = [.pip: true, .pipFilters: true]
+        // Filters on but not effective (e.g. paused): still listed, since its flag goes off.
+        XCTAssertEqual(FeatureTurnOff.dependents(of: .pip, raw: raw, effective: [.pip]), [.pipFilters])
+        XCTAssertEqual(FeatureTurnOff.dependents(of: .pipFilters, raw: raw, effective: [.pip, .pipFilters]), [])
+    }
+
+    func testTurnOffNeverTouchesAlwaysOnAndIsClosedForEveryFeature() {
+        let all = Set(DisplayFeature.allCases)
+        var raw: [DisplayFeature: Bool] = [:]
+        for f in DisplayFeature.allCases { raw[f] = true }
+        let effective = FeatureGraph.resolve(raw: raw, killSwitches: [], safeMode: false, unavailable: [], panicLatch: false)
+        for feature in DisplayFeature.allCases where FeatureGraph.spec(feature).defaultState != .always {
+            let deps = FeatureTurnOff.dependents(of: feature, raw: raw, effective: effective)
+            XCTAssertFalse(deps.contains(feature))
+            XCTAssertTrue(deps.allSatisfy { FeatureGraph.spec($0).defaultState != .always })
+            var after = raw
+            for (f, on) in FeatureTurnOff.changes(feature, dependents: deps) { after[f] = on }
+            // Nothing left switched on depends on what went off: the raw flags match what runs.
+            let resolved = FeatureGraph.resolve(raw: after, killSwitches: [], safeMode: false, unavailable: [], panicLatch: false)
+            let switchedOn = all.filter { FeatureGraph.rawState($0, in: after) }
+            XCTAssertEqual(resolved, switchedOn, "turning off \(feature) leaves no orphaned flags")
+        }
+    }
+
+    func testHeaderNeverActsAndDisclosureIsDedicated() {
+        XCTAssertFalse(DisplayBlockDisclosure.headerClickActs)
+        XCTAssertEqual(DisplayBlockDisclosure.control(showHeader: true, forceExpanded: false, collapsed: false), .collapse)
+        XCTAssertEqual(DisplayBlockDisclosure.control(showHeader: true, forceExpanded: false, collapsed: true), .expand)
+        XCTAssertEqual(DisplayBlockDisclosure.control(showHeader: true, forceExpanded: true, collapsed: true), .none)
+        XCTAssertEqual(DisplayBlockDisclosure.control(showHeader: false, forceExpanded: false, collapsed: true), .none)
+    }
 }

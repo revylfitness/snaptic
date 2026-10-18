@@ -73,7 +73,7 @@ struct ArrangementPage: View {
                         }
                     }
                 }
-                ManagementNote(L("Mirroring is a trial: it reverts after 15 seconds unless you keep it."))
+                ManagementNote(L("Mirroring is a trial: it reverts after \(env.config.value.safety.confirmSeconds) seconds unless you keep it."))
             }
         } header: {
             Text(L("Mirroring"))
@@ -129,7 +129,7 @@ private struct PanelPropsSection: View {
         } header: {
             Text(L("Rotation, HDR and underscan"))
         } footer: {
-            ManagementNote(L("These are trials, reverted after 15 seconds unless you keep them, and can't be used on the only visible display (HDR, underscan)."))
+            ManagementNote(L("These are trials, reverted after \(env.config.value.safety.confirmSeconds) seconds unless you keep them, and can't be used on the only visible display (HDR, underscan)."))
         }
     }
 

@@ -34,7 +34,7 @@ struct OSDPage: View {
                     Toggle(L("Show the value"), isOn: CBind.global(env, \.keys.osdShowValue))
                     Toggle(L("Show nits"), isOn: CBind.global(env, \.keys.osdShowNits))
                         .disabled(!env.runtime.isEffective(.nits))
-                    if osMajor < 26 {
+                    if KeysConfig.nativeOSDOffered(osMajor: osMajor) {
                         Toggle(L("Use the system OSD when possible"), isOn: CBind.global(env, \.keys.osdNative))
                             .disabled(!SNOSD.isAvailable())
                         if !SNOSD.isAvailable() {

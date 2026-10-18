@@ -51,6 +51,41 @@ package enum VirtualHostFailure: String, Codable, CaseIterable, Sendable {
     }
 }
 
+/// Why a host process couldn't be started (FIXES-R2 N11): each cause has its own text, so
+/// "helpers are still starting" never reads as "restart to update".
+package enum VirtualHostSpawnFailure: Equatable, Sendable {
+    /// Snaptic's helper identity isn't ready yet (transient, right after launch).
+    case helpersStarting
+    /// Helpers can't run in this launch; the spawner's own reason (already user text).
+    case helpersUnavailable(String)
+    /// The app on disk no longer matches the running one: a restart finishes the update.
+    case appChanged
+    /// The helper failed a post-spawn check (not stopped, wrong responsible process).
+    case checkFailed
+    /// The process or its pipes could not be created.
+    case launchFailed
+
+    package var message: String {
+        switch self {
+        case .helpersStarting: return L("Snaptic is still starting. Try again in a moment.")
+        case .helpersUnavailable(let reason):
+            let clean = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            return clean.isEmpty ? L("The virtual screen helper can't run right now.") : clean
+        case .appChanged: return L("Restart Snaptic to finish updating")
+        case .checkFailed: return L("The virtual screen helper failed a safety check and was stopped. Try again.")
+        case .launchFailed: return L("The virtual screen helper couldn't start. Try again.")
+        }
+    }
+
+    /// Whether trying again later in this launch can work.
+    package var isTransient: Bool {
+        switch self {
+        case .helpersStarting, .checkFailed, .launchFailed: return true
+        case .helpersUnavailable, .appChanged: return false
+        }
+    }
+}
+
 package enum VirtualHostProtocol {
     package static let version = 1
     /// Seconds the parent waits for `ready` and for each reply.

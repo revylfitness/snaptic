@@ -52,6 +52,9 @@ enum HostInfo {
         var lastHardware: Double?
         var lastSetAt: TimeInterval = 0
         var appleVerified = false
+        /// Uptime when a new DDC candidate was first seen; set while waiting for the first
+        /// read (W17b). Nothing is applied or published meanwhile.
+        var awaitingSince: TimeInterval?
     }
 
     private let subject = PassthroughSubject<Change, Never>()
@@ -151,7 +154,14 @@ enum HostInfo {
     // MARK: Queries
 
     /// Combined position (0…1, above 1 = XDR), nil when the display isn't managed.
-    func value(for key: DisplayKey) -> Double? { states[key].map(\.position) }
+    func value(for key: DisplayKey) -> Double? {
+        guard let s = states[key], s.awaitingSince == nil else { return nil }
+        return s.position
+    }
+
+    /// The display was just connected and its first DDC read hasn't answered yet (menus
+    /// show "Reading brightness…"; brightness doesn't manage it until then).
+    func isAwaitingFirstRead(_ key: DisplayKey) -> Bool { states[key]?.awaitingSince != nil }
 
     func methods(for key: DisplayKey) -> [BrightnessMethod] {
         guard let context, let display = context.registry.info(for: key) else { return [] }
@@ -221,7 +231,7 @@ enum HostInfo {
     // MARK: Changes
 
     func set(_ value: Double, for key: DisplayKey, source: Source) {
-        guard var s = states[key], let context else { return }
+        guard var s = states[key], s.awaitingSince == nil, let context else { return }
         let sc = scale(for: key, state: s, context: context)
         var v = value.isFinite ? value : s.position
         v = min(sc.xdrMax, max(0, v))
@@ -415,6 +425,25 @@ enum HostInfo {
         guard let context, let display = context.registry.info(for: key), display.isOnline else { return }
         var s = states[key] ?? State()
         let (hardware, software, reason) = choose(display, context: context)
+        // W17b: a new wired external waits for its first DDC answer (bounded), so switching
+        // from software dimming to DDC never writes a guessed 100% to the monitor.
+        let now = ProcessInfo.processInfo.systemUptime
+        let override = context.config.value.perDisplay[key]?.brightness.method
+        let ddcCandidate = context.runtime.effectiveFeatures.contains(BrightnessMethod.ddc.feature) && context.ddc.isCandidate(key)
+        if BrightnessFirstRead.shouldWait(initialized: s.initialized, hardwareChosen: hardware != nil,
+                                          softwareOverride: override.map { !$0.isHardware } ?? false,
+                                          ddcCandidate: ddcCandidate, ddcUnknown: context.ddc.linkStatus(key) == .unknown,
+                                          waited: now - (s.awaitingSince ?? now)) {
+            if s.awaitingSince == nil {
+                s.awaitingSince = now
+                s.reason = L("Reading brightness…")
+                states[key] = s
+                context.requestMenuRebuild()
+            }
+            return
+        }
+        let finishedWaiting = s.awaitingSince != nil
+        s.awaitingSince = nil
         let changed = hardware != s.hardware || software != s.software
         let oldSoftware = s.software
         s.hardware = hardware
@@ -427,6 +456,7 @@ enum HostInfo {
         if oldSoftware == .gamma, software != .gamma { context.gamma.setSoftwareBrightness(1, for: key) }
         let firstTime = !s.initialized
         states[key] = s
+        if finishedWaiting { context.requestMenuRebuild() }
         if firstTime {
             initialize(key, display: display, context: context)
         } else if changed {
@@ -474,7 +504,7 @@ enum HostInfo {
     // MARK: Applying
 
     private func apply(_ key: DisplayKey, animated: Bool, interactive: Bool) {
-        guard var s = states[key], let context else { return }
+        guard var s = states[key], s.awaitingSince == nil, let context else { return }
         let sc = scale(for: key, state: s, context: context)
         let out = sc.split(s.position)
         let smooth = animated && context.config.value.brightness.smoothTransitions
@@ -632,8 +662,12 @@ enum HostInfo {
 
     /// Picks up changes macOS made to Apple displays (keys, auto-brightness).
     private func pollHardware() {
-        guard let context, let lifetime, context.sessionGate.isOpen else { return }
+        // Displays whose first DDC read never answered: stop waiting after the bound.
         let now = ProcessInfo.processInfo.systemUptime
+        for (key, s) in states {
+            if let since = s.awaitingSince, now - since >= BrightnessFirstRead.maxWaitSeconds { reevaluate(key) }
+        }
+        guard let context, let lifetime, context.sessionGate.isOpen else { return }
         for (key, s) in states where s.hardware == .apple && now - s.lastSetAt > 2 {
             let io = context.appleBrightness
             lifetime.spawn { [weak self] in

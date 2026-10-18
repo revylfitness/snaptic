@@ -212,6 +212,15 @@ package struct KeysConfig: ConfigModel {
 
     package func effectiveOSDStyle(osMajor: Int) -> OSDStyle { osdStyle ?? .osDefault(majorVersion: osMajor) }
     package func effectiveOSDPosition(osMajor: Int) -> OSDPosition { osdPosition ?? .osDefault(majorVersion: osMajor) }
+
+    /// The system OSD option exists only before macOS 26 (FIXES-R2 W11).
+    package static func nativeOSDOffered(osMajor: Int) -> Bool { osMajor < 26 }
+
+    /// Whether to draw with the system OSD: chosen, offered on this macOS, and the private
+    /// OSD service is there. A value saved on macOS 15 is ignored after upgrading.
+    package func usesNativeOSD(osMajor: Int, nativeAvailable: Bool) -> Bool {
+        osdNative && Self.nativeOSDOffered(osMajor: osMajor) && nativeAvailable
+    }
 }
 
 package struct PerDisplayKeys: ConfigModel {

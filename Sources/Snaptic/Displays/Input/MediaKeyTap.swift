@@ -134,26 +134,13 @@ final class MediaKeyTap: @unchecked Sendable {
         DispatchQueue.main.async { lost?() }
     }
 
-    fileprivate static func key(for code: Int) -> MediaKeyService.Key? {
-        switch code {
-        case 0: return .volumeUp
-        case 1: return .volumeDown
-        case 2: return .brightnessUp
-        case 3: return .brightnessDown
-        case 7: return .mute
-        default: return nil
-        }
-    }
-
     /// Tap thread. Returns true to swallow.
     fileprivate func handle(_ event: CGEvent, session: Session) -> Bool {
-        guard let ns = NSEvent(cgEvent: event), ns.type == .systemDefined, ns.subtype.rawValue == 8 else { return false }
-        let data1 = ns.data1
-        let code = (data1 & 0xFFFF_0000) >> 16
-        let state = (data1 & 0xFF00) >> 8
-        let isRepeat = data1 & 0x1 != 0
-        guard let key = Self.key(for: code) else { return false }
-        if state != 0xA {
+        guard let ns = NSEvent(cgEvent: event), ns.type == .systemDefined,
+              let press = MediaKeyPress.parse(subtype: Int(ns.subtype.rawValue), data1: ns.data1) else { return false }
+        let key = press.key
+        let isRepeat = press.isRepeat
+        if !press.isDown {
             // Key-up (0xB) always passes, and ends the press.
             session.verdicts[key] = nil
             return false

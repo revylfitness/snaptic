@@ -79,7 +79,8 @@ enum VoiceOverAnnouncer {
                                            overflow: overflow, valueText: valueText,
                                            detail: config.osdShowNits ? detail : (kind == .xdr ? detail : nil), title: nil,
                                            accessibilityText: valueText)
-        if config.osdNative, SNOSD.isAvailable(), let image = Self.nativeImage(kind, value: v) {
+        let osMajor = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        if config.usesNativeOSD(osMajor: osMajor, nativeAvailable: SNOSD.isAvailable()), let image = Self.nativeImage(kind, value: v) {
             let filled = UInt32((fraction * 16).rounded())
             if SNOSD.show(image: image, display: target(desktopID), filled: filled, total: 16, locked: false) { return }
         }

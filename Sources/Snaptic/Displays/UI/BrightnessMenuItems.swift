@@ -23,9 +23,15 @@ import SnapticKit
     }
 
     func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] {
-        guard let context, context.runtime.isEffective(.brightness), let value = context.brightness.value(for: display.key)
-        else { return [] }
+        guard let context, context.runtime.isEffective(.brightness) else { return [] }
         let key = display.key
+        guard let value = context.brightness.value(for: key) else {
+            // W17b: until the monitor's first DDC read answers (the menu rebuilds then).
+            guard context.brightness.isAwaitingFirstRead(key) else { return [] }
+            let item = CMenu.label(L("Reading brightness…") + " — " + TextSanitizer.clean(display.name, maxScalars: 64))
+            item.image = NSImage(systemSymbolName: "sun.max", accessibilityDescription: nil)
+            return [(Self.sliderItem, item)]
+        }
         var result: [(DisplayMenuItemID, NSMenuItem)] = []
         let range = context.brightness.range(for: key)
         let slider = MenuSliderItem(title: L("Brightness") + " — " + TextSanitizer.clean(display.name, maxScalars: 64),
