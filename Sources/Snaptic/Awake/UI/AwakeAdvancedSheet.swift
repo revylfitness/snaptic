@@ -41,19 +41,33 @@ struct AwakeAdvancedSheet: View, ControlDeclaring {
         let appearActive = config.value.features[.activity] ?? false
         let nudge = config.value.features[.pointerNudge] ?? false
         let trusted = PermissionFlow.isGranted(.accessibility)
+        // ux N2: Safe Mode or a kill switch removes these; the switches say so instead of looking like they work.
+        let activityLock = AwakeFormat.lock([.activity])
+        let nudgeLock = AwakeFormat.lock([.pointerNudge, .activity])
         Section {
             ToggleSetting(L("Appear active"), help: L("Keeps apps from marking you as away while a session runs."),
                           isOn: Binding(get: { appearActive }, set: { on in
                               let next = env.config.value.settingAppearActive(on)
                               if next != env.config.value { env.config.value = next }
                           }),
-                          anchor: ControlID("awake.advanced.appearActive"))
+                          anchor: ControlID("awake.advanced.appearActive"),
+                          disabledReason: activityLock?.lock == .safeMode ? activityLock?.lock.text : nil)
+                .disabled(activityLock != nil)
+            if let activityLock, activityLock.lock == .killSwitch {
+                DefaultsLockRow(key: KillSwitches.key(prefix: "Awake", id: activityLock.feature.rawValue))
+            }
             if appearActive {
                 ToggleSetting(L("Move the pointer slightly"),
                               help: L("Moves the pointer 1 point and back. Only for sessions you start in Snaptic. Needs Accessibility."),
                               isOn: Binding(get: { nudge }, set: { on in setPointerNudge(on) }),
-                              subordinate: true, anchor: ControlID("awake.advanced.pointerNudge"), badge: .experimental)
-                if nudge && !trusted {
+                              subordinate: true, anchor: ControlID("awake.advanced.pointerNudge"), badge: .experimental,
+                              disabledReason: activityLock == nil && nudgeLock?.lock == .safeMode ? nudgeLock?.lock.text : nil)
+                    .disabled(nudgeLock != nil)
+                if activityLock == nil, let nudgeLock, nudgeLock.lock == .killSwitch {
+                    DefaultsLockRow(key: KillSwitches.key(prefix: "Awake", id: nudgeLock.feature.rawValue))
+                        .padding(.leading, 20)
+                }
+                if nudge && !trusted && nudgeLock == nil {
                     SettingsRowNote(L("Snaptic needs Accessibility to move the pointer; until then it only appears active."),
                                     fix: accessibilityFix)
                         .padding(.leading, 20)

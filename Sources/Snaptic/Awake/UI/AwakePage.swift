@@ -171,8 +171,14 @@ private struct AwakeRootContent: View {
                 FeatureHighlights(AwakePage.highlights)
             } else if let context {
                 if host.safeMode.isActive {
+                    // ux N2: Safe Mode removes rules, activity and Drive Alive only; sessions still run. One leave
+                    // confirmation everywhere (ux N5, H's SafeModeLeave).
                     Section {
-                        StatusRow(L("Safe Mode is on, so Awake doesn’t keep your Mac awake."), style: .warning)
+                        StatusRow(AwakeFeatureLock.safeModeStatus, style: .warning, actions: [
+                            StatusAction(title: L("Leave Safe Mode…"), control: ControlID("awake.page.leaveSafeMode")) {
+                                SafeModeLeave.confirm(relauncher: host.relauncher)
+                            },
+                        ])
                     }
                 }
                 AwakeStatusSection(env: env, context: context)
@@ -264,7 +270,16 @@ private struct AwakeRootContent: View {
 
     @ViewBuilder private var rulesSection: some View {
         let list = triggers.value.triggers
+        // ux N2: rules removed by Safe Mode or `Awake.disable.triggers` say so, and no new rule can be added.
+        let lock = AwakeFormat.lock([.triggers])
         Section {
+            if let lock {
+                if lock.lock == .killSwitch {
+                    DefaultsLockRow(key: KillSwitches.key(prefix: "Awake", id: AwakeFeature.triggers.rawValue))
+                } else {
+                    StatusRow(AwakeFeatureLock.rulesNote(lock.lock))
+                }
+            }
             if list.isEmpty {
                 Text(L("Keep your Mac awake automatically, for example while a display is connected."))
                     .foregroundStyle(.secondary)
@@ -278,7 +293,7 @@ private struct AwakeRootContent: View {
             ButtonRow(L("Add Rule…"), control: ControlID("awake.page.addRule")) {
                 edit(.new(StableID()))
             }
-            .disabled(list.count >= AwakeTrigger.maxTriggers)
+            .disabled(list.count >= AwakeTrigger.maxTriggers || lock != nil)
         } header: {
             Text(L("Start automatically"))
                 .modifier(SettingsAnchor(ControlID("awake.page.rules")))

@@ -138,6 +138,45 @@ package enum AwakeEndText {
     }
 }
 
+/// Why a saved-on Awake feature doesn't run (ux N2): a kill switch (`Awake.disable.<feature>`; it outlasts Safe
+/// Mode, so it is named first) or Safe Mode's removals. nil = nothing locks it.
+package enum AwakeFeatureLock: Equatable, Sendable {
+    case killSwitch, safeMode
+
+    package static func of(_ f: AwakeFeature, killSwitches: Set<AwakeFeature>, safeMode: Bool) -> AwakeFeatureLock? {
+        if killSwitches.contains(f) && !AwakeFeatureGraph.unkillable.contains(f) { return .killSwitch }
+        if safeMode && AwakeFeatureGraph.safeModeRemoves.contains(f) { return .safeMode }
+        return nil
+    }
+
+    /// The first lock of `features` in order (a feature and what it requires, e.g. pointer movement and activity).
+    package static func first(_ features: [AwakeFeature], killSwitches: Set<AwakeFeature>,
+                              safeMode: Bool) -> (feature: AwakeFeature, lock: AwakeFeatureLock)? {
+        for f in features {
+            if let lock = of(f, killSwitches: killSwitches, safeMode: safeMode) { return (f, lock) }
+        }
+        return nil
+    }
+
+    /// The row note: "Paused in Safe Mode." or the one kill-switch wording.
+    package var text: String {
+        switch self {
+        case .safeMode: return L("Paused in Safe Mode.")
+        case .killSwitch: return DefaultsLock.text
+        }
+    }
+
+    /// The Awake page's Safe Mode row: what is paused and what still works (sessions do, §2.6 N14).
+    package static let safeModeStatus = L("Safe Mode is on. Rules, Appear active, and Drive Alive are paused; sessions you start still work.")
+    /// Above the rules list while rules can't run.
+    package static func rulesNote(_ lock: AwakeFeatureLock) -> String {
+        switch lock {
+        case .safeMode: return L("Rules don’t run in Safe Mode.")
+        case .killSwitch: return DefaultsLock.text
+        }
+    }
+}
+
 /// Why activity and Drive Alive stopped (§2.6, awake-correctness F2): the unreadable-battery toast and the status
 /// line, naming only what is in use.
 package enum AwakeBackgroundText {
