@@ -614,7 +614,7 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         }
         let input = AwakeArbiterInput(governing: governing, screenLocked: facts.locked, consoleActive: facts.onConsole,
                                       realIdleSeconds: idle, keepDisplayOnWhileLocked: behavior.keepDisplayOnWhileLocked,
-                                      driveAliveWriting: ctx.runtime.isEffective(.driveAlive) && !ctx.driveAlive.volumes.isEmpty,
+                                      driveAliveWriting: ctx.runtime.isEffective(.driveAlive) && ctx.driveAlive.isWriting,
                                       guardsHold: guardMemory.blocksTriggers(at: now.continuous),
                                       sessionEnd: AwakeArbiter.sessionEnd(governing, now: now))
         let plan = AwakeArbiter.plan(input)
