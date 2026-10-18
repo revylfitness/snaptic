@@ -86,7 +86,7 @@ code on `feature/v03` is the contract (R5 rule carried forward).
 2. Isolation: controllers, services, UI `@MainActor`; `DDCService`/`AppleBrightnessIO`
    `@unchecked Sendable` with lifecycle in an extension. C callbacks use
    `CallbackTarget`; closures passed to `asyncAfter`, NotificationCenter, Timer, KVO wrap
-   `MainActor.assumeIsolated`. Never `DispatchQueue.main.sync`. Main thread ≤ 50 ms.
+   `MainActor.assumeIsolated` (linted: `scripts/lint03.py` rule 2). Never `DispatchQueue.main.sync`. Main thread ≤ 50 ms.
 3. No `static let shared` in Displays or Awake (Awake also: observers with `queue: .main`, timers added in
    `.common` modes, lint L10/L14). No `print`/`NSLog` (use `EventLog.shared.record`,
    never with titles, app names, serials, EDID bytes or key codes).
@@ -100,7 +100,7 @@ code on `feature/v03` is the contract (R5 rule carried forward).
    exposure table.
 7. Persisted or cross-process ids are `DisplayKey`, never `CGDirectDisplayID`.
 8. Stubs return safe values (`nil`/`false`/`[]`/`.unavailable(L("Not built yet"))`);
-   never `fatalError`. Real code may not trap on user data or system state either.
+   never `fatalError` (nor `preconditionFailure` or `try!`; linted). Real code may not trap on user data or system state either.
 9. Settings: every config field has a default, a lossy decode (`c.lossy(.key, default)`),
    and clamping in `sanitized()`.
 

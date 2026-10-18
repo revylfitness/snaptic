@@ -3354,6 +3354,7 @@ The 0.2 side, written here once from [UA] §2.2/§3.2 and the 0.2 sources at 871
 | `l.menu.c.brightness.method` | Expert choice; Brightness › Advanced › Brightness methods (no submenus in submenus) |
 | `l.menu.fixed.quickMenu`, `l.menu.d.connectAll.quick`, `l.menu.b.restoreAll.quick`, `l.menu.f.quick.redetect` | Right-click menu removed (C3); each item has a Display Tools twin |
 | `l.menu.fixed.tools.moreFeatures` | "Display Settings…" in each display submenu and "Snaptic Settings…" cover it (parity minor 3) |
+| `l.menu.d.sleepPrevention` | Moved to Awake: a rule keeps the Mac awake while a display is connected (migration M1) (step-4 parity P5) |
 
 ### 4.8.2 Control tables (`ControlRegistry.tables`)
 

@@ -386,7 +386,9 @@ enum SelfTest {
                 MainActor.assumeIsolated {
                     source.cancel()
                     DispatchQueue.main.asyncAfter(deadline: .now() + pidGraceSeconds) {
-                        hold?.finish(.ok("Awake hold ended: the process exited."))
+                        MainActor.assumeIsolated {
+                            hold?.finish(.ok("Awake hold ended: the process exited."))
+                        }
                     }
                 }
             }
