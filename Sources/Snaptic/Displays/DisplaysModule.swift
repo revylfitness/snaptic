@@ -208,6 +208,12 @@ import SnapticKit
         return DisplaysMenuBuilder(context: ctx).build()
     }
 
+    // 0.3 Settings root (F's DisplaysPage, §4.3); `settingsPages()` stays until the step-3 exit.
+    var tint: SettingsTint { DisplaysPage.tint }
+    var highlights: [FeatureHighlight] { DisplaysPage.highlights }
+    func settingsRoot() -> SettingsRoot { DisplaysPage.settingsRoot(env: pageEnvironment) }
+    func settingsDestination(_ route: SettingsRoute) -> AnyView? { DisplaysPage.destination(route, env: pageEnvironment) }
+
     func settingsPages() -> [SettingsPage] {
         let env = pageEnvironment
         let pagesWithFeatures = Set(effective.map { FeatureGraph.spec($0).page })
