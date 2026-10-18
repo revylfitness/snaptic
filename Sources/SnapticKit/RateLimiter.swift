@@ -95,8 +95,11 @@ package struct LatestValueThrottle: Equatable, Sendable {
 
     package init(interval: Double) { self.interval = max(0, interval) }
 
+    // The window test and the delay use the same expression (`last + interval`), so a value
+    // inside the window always gets a delay > 0 (no zero-second timer spinning).
+
     package mutating func offer(at now: Double) -> Decision {
-        if let last = lastSent, now >= last, now - last < interval {
+        if let last = lastSent, now >= last, now < last + interval {
             hasPending = true
             if isScheduled { return .coalesced }
             isScheduled = true
@@ -114,7 +117,7 @@ package struct LatestValueThrottle: Equatable, Sendable {
         guard isScheduled else { return nil }
         isScheduled = false
         guard hasPending else { return nil }
-        if let last = lastSent, now >= last, now - last < interval {
+        if let last = lastSent, now >= last, now < last + interval {
             isScheduled = true
             return .schedule(seconds: last + interval - now)
         }
