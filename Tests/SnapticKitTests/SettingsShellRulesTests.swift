@@ -130,3 +130,35 @@ final class SettingsShellRulesTests: XCTestCase {
         XCTAssertNil(g.externalOpenAt)
     }
 }
+
+final class SettingsHelpAnchorsTests: XCTestCase {
+    func testEveryRootHasAnAnchor() {
+        for root in SettingsRootID.all { XCTAssertNotNil(SettingsHelpAnchors.anchor(for: root), root) }
+    }
+
+    func testMostSpecificPrefixWins() {
+        XCTAssertEqual(SettingsHelpAnchors.anchor(for: "displays.color"), "color")
+        XCTAssertEqual(SettingsHelpAnchors.anchor(for: "displays.color.advanced"), "color")
+        XCTAssertEqual(SettingsHelpAnchors.anchor(for: "displays.pip"), "displays")
+        XCTAssertEqual(SettingsHelpAnchors.anchor(for: "windowSwitcher"), "window-switcher")
+        XCTAssertEqual(SettingsHelpAnchors.anchor(for: "switcher.advanced"), "window-switcher")
+        XCTAssertEqual(SettingsHelpAnchors.anchor(for: "awake.rules"), "awake")
+        XCTAssertNil(SettingsHelpAnchors.anchor(for: "nowhere"))
+        XCTAssertNil(SettingsHelpAnchors.anchor(for: ""))
+    }
+
+    func testURLs() {
+        XCTAssertEqual(SettingsHelpAnchors.url(for: "menuBar"), SettingsHelpAnchors.readme + "#menu-bar")
+        XCTAssertEqual(SettingsHelpAnchors.url(for: "nowhere"), SettingsHelpAnchors.readme)
+        for anchor in SettingsHelpAnchors.anchors.values {
+            XCTAssertTrue(anchor.unicodeScalars.allSatisfy { ($0 >= "a" && $0 <= "z") || $0 == "-" }, anchor)
+        }
+    }
+
+    /// Each page that shows (?) has its own anchor (the README headings these name are listed for the docs).
+    func testPagesWithHelpHaveSpecificAnchors() {
+        for page in ["displays.brightness", "displays.hardware", "displays.color", "displays.keyboard", "displays.info"] {
+            XCTAssertNotEqual(SettingsHelpAnchors.anchor(for: page), "displays", page)
+        }
+    }
+}

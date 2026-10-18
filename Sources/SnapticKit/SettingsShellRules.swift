@@ -116,3 +116,43 @@ package struct SettingsFocusGuard: Equatable, Sendable {
         return true
     }
 }
+
+/// Where each page's (?) leads (review ux m5): a heading of the README, the most specific one for the route (a
+/// page, else its root). GitHub's heading anchors are the heading text, lowercased, spaces as "-".
+package enum SettingsHelpAnchors {
+    package static let readme = "https://github.com/revylfitness/snaptic/blob/main/README.md"
+
+    /// Route id (a root id or a page surface such as "displays.color") → README heading anchor.
+    package static let anchors: [String: String] = [
+        SettingsRootID.general: "modules",
+        SettingsRootID.menuBar: "menu-bar",
+        SettingsRootID.windowSwitcher: "window-switcher",
+        SettingsRootID.displays: "displays",
+        "displays.brightness": "brightness",
+        "displays.hardware": "hardware-controls",
+        "displays.color": "color",
+        "displays.keyboard": "keyboard",
+        "displays.info": "display-information",
+        SettingsRootID.awake: "awake",
+        SettingsRootID.permissions: "permissions",
+        SettingsRootID.about: "snaptic",
+    ]
+
+    /// The anchor of the longest dotted prefix of `routeID` that has one ("displays.color.advanced" →
+    /// "color"); the root's for any other page; nil for an id that names no root.
+    package static func anchor(for routeID: String) -> String? {
+        var id = routeID
+        while true {
+            if let a = anchors[id] { return a }
+            guard let dot = id.lastIndex(of: ".") else { break }
+            id = String(id[..<dot])
+        }
+        let root = SettingsRootID.aliases[id.lowercased()] ?? id
+        return anchors[root]
+    }
+
+    /// The help URL text for a route: the README at its heading, or the README's top.
+    package static func url(for routeID: String) -> String {
+        anchor(for: routeID).map { readme + "#" + $0 } ?? readme
+    }
+}
