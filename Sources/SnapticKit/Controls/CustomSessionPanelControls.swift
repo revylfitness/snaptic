@@ -6,7 +6,7 @@ package enum CustomSessionPanelControls: ControlTable {
     package static let surface = "awake.custom"
 
     package static let controls: [ControlSpec] = [
-        ControlSpec("awake.custom.start", .button),
+        ControlSpec("awake.custom.start", .button, keys: ["sessions.lastCustomSeconds"]),
         ControlSpec("awake.custom.cancel", .button),
     ]
 }
