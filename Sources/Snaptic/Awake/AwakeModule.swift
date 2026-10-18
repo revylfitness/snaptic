@@ -135,6 +135,16 @@ import SnapticKit
     /// §5.4: the compact section (G's AwakeMenuRows through the indicator).
     func menuSection() -> [NSMenuItem] { context == nil ? [] : (indicator?.compactSection() ?? []) }
 
+    /// Awake's sub-pages (§4.3). G's routes join this switch when its page lands.
+    func settingsDestination(_ route: SettingsRoute) -> AnyView? {
+        switch route.id {
+        case DrivesPageControls.surface:   // "awake.drives"
+            return AnyView(DrivesPage(config: config, runtime: runtime, live: { [weak self] in self?.context }))
+        default:
+            return nil
+        }
+    }
+
     /// The Awake section of the shared diagnostics report (G's AwakeDiagnostics; §3.6: no names or identifiers).
     func diagnosticsLines() -> [String] { AwakeDiagnostics().lines(context) }
 
