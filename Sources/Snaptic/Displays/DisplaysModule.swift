@@ -27,11 +27,9 @@ import SnapticKit
     /// Every menu contributor type (lead-owned list; `--selftest-controls` checks the union of their
     /// `menuItemIDs` covers every frozen 0.2 menu id, R5-13). Add a type here when you add a contributor.
     static let menuContributorTypes: [any DisplayMenuContributor.Type] = [
-        PanicCoordinator.self, AutomationController.self, AutomationMenuItems.self, OverviewController.self,
-        OverviewMenuItems.self, VirtualMenuItems.self, LayoutsMenuItems.self, ManagementMenuItems.self,
-        ResolutionMenuItems.self, DDCMenuItems.self, BrightnessMenuItems.self, ColorMenuItems.self,
-        PIPMenuItems.self, SystemColorsController.self, SyncController.self, MenuBarOverlaysController.self,
-        XDRController.self, ColorController.self,
+        PanicCoordinator.self, AutomationMenuItems.self, OverviewMenuItems.self, VirtualMenuItems.self,
+        LayoutsMenuItems.self, ManagementMenuItems.self, ResolutionMenuItems.self, DDCMenuItems.self,
+        BrightnessMenuItems.self, ColorMenuItems.self, PIPMenuItems.self,
     ]
 
     /// Every controller class; the order is the start order (stop runs in reverse).
