@@ -9,13 +9,19 @@ import SnapticKit
 /// have one. In each group the items whose feature is off collapse into one dimmed row that lists them with
 /// "Turn On in Settings…". Choices are stored in `DisplaysConfig.menu` (the one source the menu builder reads);
 /// a custom action's checkbox is its Automations › "Show in menu" flag.
+///
+/// `focus`: the display Display Details' "Customize Displays Menu…" link asked for (parity M6): the Displays group
+/// opens with that display's row marked. A search result opens the group holding its row, so the highlight is
+/// visible (the scroll is asked for again once the group has opened).
 struct CustomizeMenuSheet: View, ControlDeclaring {
     typealias Controls = CustomizeMenuSheetControls
+
+    var focus: DisplayKey?
 
     var body: some View {
         if let host = SettingsShell.shared.host {
             CustomizeMenuContent(host: host, displays: host.displaysStore, env: host.displays.pageEnvironment,
-                                 runtime: host.displays.runtime)
+                                 runtime: host.displays.runtime, focus: focus)
         } else {
             UnavailablePage()
         }
@@ -29,6 +35,8 @@ private struct CustomizeMenuContent: View {
     @ObservedObject var displays: ConfigStore<DisplaysConfig>
     @ObservedObject var env: DisplaysPageEnvironment
     @ObservedObject var runtime: DisplaysRuntimeState
+    let focus: DisplayKey?
+    @ObservedObject private var highlight = SettingsHighlight.shared
     @State private var filter = ""
     @State private var expanded: Set<String> = [DisplayMenuCustomizeGroup.perDisplay.rawValue]
 
@@ -36,7 +44,11 @@ private struct CustomizeMenuContent: View {
 
     var body: some View {
         AdvancedSheet(L("Customize Displays Menu"),
-                      restoreDefaults: RestoreDefaults(scopeName: L("Displays Menu"), destructive: false) {
+                      restoreDefaults: RestoreDefaults(
+                          title: L("Restore Displays Menu Defaults…"),
+                          question: L("Restore the Displays menu to its defaults?"),
+                          message: L("Display order, visibility and every item's place go back to their defaults. Your other Snaptic settings stay as they are."),
+                          button: L("Restore Defaults"), destructive: false) {
                           displays.value.menu = displays.value.menu.restoringDefaults(scope: .displaysMenu)
                       }) {
             Section {
@@ -56,7 +68,7 @@ private struct CustomizeMenuContent: View {
                 if filter.isEmpty || !rows.isEmpty || !actions.isEmpty {
                     Section {
                         DisclosureGroup(isExpanded: isExpanded(group.rawValue, hasMatch: !rows.isEmpty || !actions.isEmpty)) {
-                            itemRows(rows, actions: actions)
+                            itemRows(rows, actions: actions, group: group)
                         } label: {
                             Text(group.title)
                         }
@@ -64,7 +76,50 @@ private struct CustomizeMenuContent: View {
                 }
             }
         }
+        .onAppear { reveal() }
+        .onChange(of: highlight.token) { _, _ in reveal() }
+        .onChange(of: focus) { _, _ in reveal() }
     }
+
+    // MARK: Reveal
+
+    /// Opens the group holding the focused display or the searched row (and its "need features" list when the row
+    /// is in it). When that opened something, the highlight is shown again so the sheet scrolls to the row now that
+    /// it exists.
+    private func reveal() {
+        var open: Set<String> = []
+        if let focus, runtime.displays.contains(where: { $0.key == focus }) { open.insert(Self.displaysGroupID) }
+        if let anchor = highlight.anchor { open.formUnion(Self.groups(holding: anchor, featureOn: featureOn)) }
+        let added = open.subtracting(expanded)
+        guard !added.isEmpty else { return }
+        expanded.formUnion(added)
+        guard let anchor = highlight.anchor else { return }
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                if SettingsHighlight.shared.anchor == anchor { SettingsHighlight.shared.show(anchor) }
+            }
+        }
+    }
+
+    /// The disclosure ids that must be open for `anchor` to be on screen.
+    private static func groups(holding anchor: String, featureOn: (DisplayFeature) -> Bool) -> Set<String> {
+        if displaysGroupAnchors.contains(anchor) { return [displaysGroupID] }
+        if anchor == "menubar.customize.actions" { return [DisplayMenuCustomizeGroup.section.rawValue] }
+        for group in DisplayMenuCustomizeGroup.allCases {
+            let rows = DisplaysMenuPlan.customizeRows(group)
+            guard let info = rows.first(where: { control(for: $0.id)?.rawValue == anchor }) else { continue }
+            if let feature = info.feature, !featureOn(feature) { return [group.rawValue, needGroupID(group)] }
+            return [group.rawValue]
+        }
+        return []
+    }
+
+    private static let displaysGroupAnchors: Set<String> = [
+        "menubar.customize.displays", "menubar.customize.useDefaultOrder", "menubar.customize.sectionOrder",
+        "menubar.customize.showBadges", "menubar.customize.headerForSingleDisplay",
+    ]
+
+    private static func needGroupID(_ group: DisplayMenuCustomizeGroup) -> String { "need." + group.rawValue }
 
     // MARK: Disclosure
 
@@ -130,6 +185,16 @@ private struct CustomizeMenuContent: View {
                 }
                 .toggleStyle(.checkbox)
                 .accessibilityLabel(row.isMain ? L("\(row.name), main display") : row.name)
+                .accessibilityAddTraits(row.id == focus ? .isSelected : [])
+                .background {
+                    if row.id == focus {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color.accentColor.opacity(0.12))
+                            .padding(.horizontal, -6)
+                            .padding(.vertical, -3)
+                            .accessibilityHidden(true)
+                    }
+                }
                 .opacity(filter.isEmpty || rows.contains { $0.id == row.id } ? 1 : 0.4)
             }
             if !menu.displayOrder.isEmpty || !menu.mainFirst {
@@ -207,7 +272,8 @@ private struct CustomizeMenuContent: View {
     }
 
     @ViewBuilder
-    private func itemRows(_ rows: [DisplayMenuItemInfo], actions: [CustomActionSpec]) -> some View {
+    private func itemRows(_ rows: [DisplayMenuItemInfo], actions: [CustomActionSpec],
+                          group: DisplayMenuCustomizeGroup) -> some View {
         let split = DisplaysMenuPlan.partition(rows, featureOn: featureOn)
         ForEach(split.available) { info in
             itemRow(info)
@@ -221,7 +287,7 @@ private struct CustomizeMenuContent: View {
         }
         let off = needFeatureRows(split.needFeatures, actions: actions)
         if !off.isEmpty {
-            DisclosureGroup {
+            DisclosureGroup(isExpanded: isExpanded(Self.needGroupID(group), hasMatch: true)) {
                 ForEach(off) { info in
                     LabeledContent {
                         Button(L("Turn On in Settings…")) { openFeature(info.feature) }
@@ -231,6 +297,7 @@ private struct CustomizeMenuContent: View {
                         Text(info.title)
                         if let feature = info.feature { Text(L("Needs \(DisplaysUIText.title(feature))")) }
                     }
+                    .modifier(OptionalSettingsAnchor(Self.control(for: info.id)))
                 }
             } label: {
                 Text(DisplaysMenuPlan.needFeaturesTitle(off.count))

@@ -11,12 +11,8 @@ import SnapticKit
 /// Phases: `.began` on mouse down, `.changed` while tracking, `.ended` after the slider's tracking loop returns;
 /// each scroll-wheel step (with "Scroll over a slider to adjust it") delivers a `.changed` + `.ended` pair.
 @MainActor final class MenuSliderRow: NSMenuItem {
-    /// "Scroll over a slider to adjust it" (Menu Bar page). Shares 0.2's switch until MenuSliderItem is removed at
-    /// the step-3 exit; the host sets it from `MenuConfig.scrollAdjustsSliders`.
-    static var scrollToAdjust: Bool {
-        get { MenuSliderItem.scrollToAdjust }
-        set { MenuSliderItem.scrollToAdjust = newValue }
-    }
+    /// "Scroll over a slider to adjust it" (Menu Bar page); the host sets it from `MenuConfig.scrollAdjustsSliders`.
+    static var scrollToAdjust = true
 
     static let height: CGFloat = 30
     static let valueWidth: CGFloat = 40
