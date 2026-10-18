@@ -308,3 +308,191 @@ final class DisplaysUIModelTests: XCTestCase {
         XCTAssertEqual(DisplayBlockDisclosure.control(showHeader: false, forceExpanded: false, collapsed: true), .none)
     }
 }
+
+// MARK: - 0.3 root page, feature groups, live resolution, diagnostics events (F step 2)
+
+final class DisplaysRootModelTests: XCTestCase {
+    private func mode(_ w: Int, _ h: Int, hiDPI: Bool = true, hz: Int = 60, id: Int32 = 1, isDefault: Bool = false,
+                      native: Bool = false, depth: Int = 8) -> DisplayModeDescriptor {
+        let scale = hiDPI ? 2 : 1
+        let ref = ModeRef(ioModeID: id, pixelWidth: w * scale, pixelHeight: h * scale, pointWidth: w, pointHeight: h,
+                          refreshMilliHz: hz * 1000)
+        return DisplayModeDescriptor(ref: ref, isNative: native, isDefault: isDefault, isUsableForDesktop: true,
+                                     ioFlags: 0, bitDepth: depth)
+    }
+
+    func testStatusLine() {
+        XCTAssertEqual(DisplaysRootText.status(displayCount: 0), "No displays")
+        XCTAssertEqual(DisplaysRootText.status(displayCount: -3), "No displays")
+        XCTAssertEqual(DisplaysRootText.status(displayCount: 1), "1 display")
+        XCTAssertEqual(DisplaysRootText.status(displayCount: 2), "2 displays")
+        XCTAssertNil(DisplaysRootText.navigationValue(isOn: nil))
+        XCTAssertEqual(DisplaysRootText.navigationValue(isOn: true), "On")
+        XCTAssertEqual(DisplaysRootText.navigationValue(isOn: false), "Off")
+    }
+
+    // MARK: Feature groups (PLAN 0.3 §4.8 "Displays: feature switches")
+
+    func testUseSnapticForMatchesThePlan() {
+        let useFor = Set(DisplaysFeatureGroupsModel.useSnapticFor.flatMap(\.features))
+        XCTAssertEqual(useFor, [.resolution, .brightness, .shortcuts, .osd, .rotation, .disconnect, .mainDisplay,
+                                .arrangement, .mirroring])
+        let experimental = Set(DisplaysFeatureGroupsModel.experimental.flatMap(\.features))
+        XCTAssertEqual(experimental, [.hiddenModes, .autoBrightness, .osdBroadcast, .underscan, .hdrToggle])
+        XCTAssertTrue(useFor.isDisjoint(with: experimental))
+        let all = DisplaysFeatureGroupsModel.useSnapticFor + DisplaysFeatureGroupsModel.experimental
+        XCTAssertEqual(Set(all.map(\.id)).count, all.count)
+        for item in all {
+            XCTAssertFalse(item.title.isEmpty)
+            XCTAssertLessThanOrEqual(item.help.count, 90, item.id)
+            XCTAssertTrue(item.help.hasSuffix("."), item.id)
+            XCTAssertFalse(item.title.lowercased().hasPrefix("enable"), item.id)
+            XCTAssertTrue(item.features.allSatisfy { FeatureGraph.spec($0).defaultState != .always }, item.id)
+        }
+        XCTAssertTrue(DisplaysFeatureGroupsModel.experimental.allSatisfy { $0.badge == .experimental })
+        XCTAssertEqual(DisplaysFeatureGroupsModel.useSnapticFor.first { $0.id == "disconnect" }?.badge, .beta)
+    }
+
+    func testArrangementSwitchWritesAllThreeAndShowsArrangement() {
+        guard let item = DisplaysFeatureGroupsModel.useSnapticFor.first(where: { $0.id == "arrangement" }) else {
+            return XCTFail("arrangement switch")
+        }
+        XCTAssertEqual(item.shown, .arrangement)
+        XCTAssertEqual(DisplaysFeatureGroupsModel.changes(item, on: true),
+                       [.arrangement: true, .mainDisplay: true, .mirroring: true])
+        XCTAssertEqual(DisplaysFeatureGroupsModel.changes(item, on: false),
+                       [.arrangement: false, .mainDisplay: false, .mirroring: false])
+        var raw: [DisplayFeature: Bool] = [.arrangement: true, .mainDisplay: false, .mirroring: true]
+        XCTAssertTrue(item.isOn(raw: raw))
+        XCTAssertTrue(item.isMixed(raw: raw))
+        raw[.mainDisplay] = true
+        XCTAssertFalse(item.isMixed(raw: raw))
+    }
+
+    // MARK: Live resolution
+
+    func testSizesPutDefaultFirstThenLargestAndMarkLowResolutionTwins() {
+        let modes = [
+            mode(1280, 832, id: 1),
+            mode(1512, 982, id: 2, isDefault: true),
+            mode(1512, 982, hz: 120, id: 3),
+            mode(1800, 1169, id: 4),
+            mode(1800, 1169, hiDPI: false, id: 5),
+            mode(3024, 1964, hiDPI: false, id: 6, native: true),
+        ]
+        let sizes = LiveResolution.sizes(modes, current: modes[1].ref, favorites: [modes[0].ref])
+        XCTAssertEqual(sizes.map(\.title), ["Default — 1512 × 982", "3024 × 1964", "1800 × 1169",
+                                            "1800 × 1169 (low resolution)", "1280 × 832"])
+        XCTAssertEqual(sizes.filter(\.isDefault).count, 1)
+        XCTAssertTrue(sizes[4].isFavorite)
+        XCTAssertTrue(sizes[1].isNative)
+        XCTAssertEqual(Set(sizes.map(\.id)).count, sizes.count)
+    }
+
+    func testCurrentSizeIsAlwaysListedAndZeroSizesAreIgnored() {
+        let current = mode(1024, 768, hiDPI: false, id: 9).ref
+        let sizes = LiveResolution.sizes([mode(1920, 1080), mode(0, 0)], current: current)
+        XCTAssertEqual(sizes.map(\.title), ["1920 × 1080", "1024 × 768"])
+        XCTAssertTrue(LiveResolution.sizes([], current: nil).isEmpty)
+    }
+
+    func testOnlyOneDefaultAndTheHiDPIOneWins() {
+        let sizes = LiveResolution.sizes([mode(1920, 1080, hiDPI: false, id: 1, isDefault: true),
+                                          mode(1440, 900, id: 2, isDefault: true)], current: nil)
+        XCTAssertEqual(sizes.first?.title, "Default — 1440 × 900")
+        XCTAssertEqual(sizes.filter(\.isDefault).count, 1)
+    }
+
+    func testSizeChoiceKeepsTheRefreshRateWhenItCan() {
+        let current = mode(1512, 982, hz: 120, id: 3).ref
+        let modes = [mode(1800, 1169, hz: 60, id: 4), mode(1800, 1169, hz: 120, id: 5), mode(1800, 1169, hz: 100, id: 6),
+                     mode(1280, 832, hz: 60, id: 7)]
+        let id1800 = LiveResolution.sizeID(pointWidth: 1800, pointHeight: 1169, hiDPI: true)
+        XCTAssertEqual(LiveResolution.mode(forSize: id1800, in: modes, current: current)?.ioModeID, 5)
+        let id1280 = LiveResolution.sizeID(pointWidth: 1280, pointHeight: 832, hiDPI: true)
+        XCTAssertEqual(LiveResolution.mode(forSize: id1280, in: modes, current: current)?.ioModeID, 7)
+        XCTAssertEqual(LiveResolution.mode(forSize: LiveResolution.sizeID(of: current), in: modes, current: current), current)
+        XCTAssertNil(LiveResolution.mode(forSize: "1x1h", in: modes, current: current))
+    }
+
+    func testSizeChoicePrefersDeeperColorOnATie() {
+        let modes = [mode(1920, 1080, id: 1, depth: 8), mode(1920, 1080, id: 2, depth: 10)]
+        let id = LiveResolution.sizeID(pointWidth: 1920, pointHeight: 1080, hiDPI: true)
+        XCTAssertEqual(LiveResolution.mode(forSize: id, in: modes, current: nil)?.ioModeID, 2)
+    }
+
+    func testRefreshRatesForTheCurrentSize() {
+        let current = mode(1512, 982, hz: 120, id: 3).ref
+        var modes = [mode(1512, 982, hz: 60, id: 2), mode(1512, 982, hz: 120, id: 3), mode(1800, 1169, hz: 50, id: 4)]
+        modes.append(DisplayModeDescriptor(ref: ModeRef(ioModeID: 8, pixelWidth: 3024, pixelHeight: 1964, pointWidth: 1512,
+                                                        pointHeight: 982, refreshMilliHz: 59_940),
+                                           isNative: false, isDefault: false, isUsableForDesktop: true, ioFlags: 0,
+                                           bitDepth: 8))
+        modes.append(DisplayModeDescriptor(ref: ModeRef(ioModeID: 9, pixelWidth: 3024, pixelHeight: 1964, pointWidth: 1512,
+                                                        pointHeight: 982, refreshMilliHz: 60_004),
+                                           isNative: false, isDefault: false, isUsableForDesktop: true, ioFlags: 0,
+                                           bitDepth: 8))
+        let rates = LiveResolution.refreshRates(modes, current: current)
+        XCTAssertEqual(rates.map(\.title), ["120 Hz", "60 Hz", "59.94 Hz"])
+        XCTAssertEqual(LiveResolution.choice(for: 60_003, in: rates), 60_000)
+        XCTAssertNil(LiveResolution.choice(for: 75_000, in: rates))
+        XCTAssertEqual(LiveResolution.mode(forRefresh: 60_000, in: modes, current: current)?.ioModeID, 2)
+        XCTAssertEqual(LiveResolution.mode(forRefresh: 120_000, in: modes, current: current), current)
+        XCTAssertNil(LiveResolution.mode(forRefresh: 50_000, in: modes, current: current))
+        XCTAssertTrue(LiveResolution.refreshRates(modes, current: nil).isEmpty)
+    }
+
+    /// Seeded fuzz: whatever the mode list, the pop-ups are consistent with it.
+    func testResolutionChoicesFuzz() {
+        var rng = SeededGenerator(seed: 0xF0_2026)
+        func pick(_ n: Int) -> Int { Int(rng.next() % UInt64(n)) }
+        let widths = [0, 800, 1024, 1280, 1512, 1920, 2560]
+        let rates = [0, 50_000, 59_940, 60_000, 60_005, 120_000]
+        for _ in 0..<400 {
+            var modes: [DisplayModeDescriptor] = []
+            for i in 0..<pick(12) {
+                let w = widths[pick(widths.count)]
+                modes.append(mode(w, w * 10 / 16, hiDPI: pick(2) == 0, hz: 0, id: Int32(i), isDefault: pick(5) == 0,
+                                  depth: [8, 10][pick(2)]))
+                modes[modes.count - 1].ref.refreshMilliHz = rates[pick(rates.count)]
+            }
+            let current: ModeRef? = modes.isEmpty || pick(4) == 0 ? nil : modes[pick(modes.count)].ref
+            let sizes = LiveResolution.sizes(modes, current: current)
+            XCTAssertEqual(Set(sizes.map(\.id)).count, sizes.count)
+            XCTAssertLessThanOrEqual(sizes.filter(\.isDefault).count, 1)
+            if sizes.contains(where: \.isDefault) { XCTAssertTrue(sizes[0].isDefault) }
+            if let current, current.pointWidth > 0, current.pointHeight > 0 {
+                XCTAssertTrue(sizes.contains { $0.id == LiveResolution.sizeID(of: current) })
+            }
+            for size in sizes {
+                if let chosen = LiveResolution.mode(forSize: size.id, in: modes, current: current) {
+                    XCTAssertEqual(LiveResolution.sizeID(of: chosen), size.id)
+                } else {
+                    XCTAssertEqual(current.map(LiveResolution.sizeID(of:)), size.id, "only the current size may be unlisted")
+                }
+            }
+            let refresh = LiveResolution.refreshRates(modes, current: current)
+            XCTAssertEqual(refresh.map(\.milliHz), refresh.map(\.milliHz).sorted(by: >))
+            for (a, b) in zip(refresh, refresh.dropFirst()) {
+                XCTAssertGreaterThan(a.milliHz - b.milliHz, LiveResolution.refreshTolerance)
+            }
+            for rate in refresh {
+                if let chosen = LiveResolution.mode(forRefresh: rate.milliHz, in: modes, current: current), let current {
+                    XCTAssertEqual(LiveResolution.sizeID(of: chosen), LiveResolution.sizeID(of: current))
+                }
+            }
+        }
+    }
+
+    // MARK: Diagnostics events
+
+    func testExportedEventsDropAwakeAndKeepTheNewest() {
+        let awake = EventCategory(rawValue: "awake")
+        let entries: [(Int, EventCategory)] = [(1, .modules), (2, awake), (3, .ddc), (4, awake), (5, .registry)]
+        let kept = DiagnosticsText.exportedEvents(entries, category: { $0.1 }, limit: 2)
+        XCTAssertEqual(kept.map { $0.0 }, [3, 5])
+        XCTAssertEqual(DiagnosticsText.exportedEvents(entries, category: { $0.1 }, limit: 10).map { $0.0 }, [1, 3, 5])
+        XCTAssertTrue(DiagnosticsText.exportedEvents(entries, category: { $0.1 }, limit: 0).isEmpty)
+        XCTAssertTrue(DiagnosticsText.exportedEvents(entries, category: { $0.1 }, limit: -1).isEmpty)
+    }
+}

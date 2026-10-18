@@ -554,3 +554,248 @@ package enum DiagnosticsText {
         return lines.joined(separator: "\n") + "\n"
     }
 }
+
+// MARK: - 0.3 Displays root page (PLAN 0.3 §4.3; owner F)
+
+package enum DisplaysRootText {
+    /// The header's status line: "No displays", "1 display", "2 displays".
+    package static func status(displayCount: Int) -> String {
+        switch displayCount {
+        case ..<1: return L("No displays")
+        case 1: return L("1 display")
+        default: return L("\(displayCount) displays")
+        }
+    }
+
+    /// A navigation row's trailing value: only rows whose sub-page has a feature switch show one (consistency m14).
+    package static func navigationValue(isOn: Bool?) -> String? {
+        guard let isOn else { return nil }
+        return isOn ? L("On") : L("Off")
+    }
+}
+
+/// One switch of Displays › Advanced (the "Use Snaptic for" and Experimental groups). `features` are written
+/// together; the first one is the switch's state (mixed 0.2 values stay raw until the switch is touched).
+package struct DisplayFeatureSwitch: Equatable, Sendable {
+    package enum Badge: Equatable, Sendable { case beta, experimental }
+
+    /// The control id's last component ("brightness" → "displays.advanced.useFor.brightness").
+    package let id: String
+    package let title: String
+    package let help: String
+    package let features: [DisplayFeature]
+    package let badge: Badge?
+
+    package init(_ id: String, _ title: String, help: String, features: [DisplayFeature], badge: Badge? = nil) {
+        self.id = id
+        self.title = title
+        self.help = help
+        self.features = features
+        self.badge = badge
+    }
+
+    /// The feature whose raw state the switch shows.
+    package var shown: DisplayFeature { features[0] }
+
+    package func isOn(raw: [DisplayFeature: Bool]) -> Bool { FeatureGraph.rawState(shown, in: raw) }
+
+    /// True when the features it writes disagree (a 0.2 config set them separately).
+    package func isMixed(raw: [DisplayFeature: Bool]) -> Bool {
+        Set(features.map { FeatureGraph.rawState($0, in: raw) }).count > 1
+    }
+}
+
+package enum DisplaysFeatureGroupsModel {
+    /// Displays › Advanced › Use Snaptic for: feature switches without a sub-page switch of their own, in plain words.
+    package static let useSnapticFor: [DisplayFeatureSwitch] = [
+        DisplayFeatureSwitch("brightness", L("Brightness control"),
+                             help: L("One brightness slider per display, here and in the menu."),
+                             features: [.brightness]),
+        DisplayFeatureSwitch("resolution", L("Resolution control"),
+                             help: L("Choose resolutions and refresh rates, with favorites and undo."),
+                             features: [.resolution]),
+        DisplayFeatureSwitch("arrangement", L("Arrangement and mirroring"),
+                             help: L("Arrange displays, choose the main display, and mirror displays."),
+                             features: [.arrangement, .mainDisplay, .mirroring]),
+        DisplayFeatureSwitch("rotation", L("Rotation"),
+                             help: L("Rotate a display from here, the menu, or a shortcut."),
+                             features: [.rotation]),
+        DisplayFeatureSwitch("shortcuts", L("Keyboard shortcuts"),
+                             help: L("Your own shortcuts for display actions."),
+                             features: [.shortcuts]),
+        DisplayFeatureSwitch("indicator", L("Brightness indicator"),
+                             help: L("Shows brightness and volume changes on screen."),
+                             features: [.osd]),
+        DisplayFeatureSwitch("disconnect", L("Disconnect displays"),
+                             help: L("Turns a display off without unplugging it."),
+                             features: [.disconnect], badge: .beta),
+    ]
+
+    /// Displays › Advanced › Experimental (F lists them; their owners implement them).
+    package static let experimental: [DisplayFeatureSwitch] = [
+        DisplayFeatureSwitch("hdr", L("High Dynamic Range switch"),
+                             help: L("Turns HDR on or off for displays that support it."),
+                             features: [.hdrToggle], badge: .experimental),
+        DisplayFeatureSwitch("underscan", L("Underscan"),
+                             help: L("Shrinks the picture to fit TVs that cut off its edges."),
+                             features: [.underscan], badge: .experimental),
+        DisplayFeatureSwitch("autoBrightness", L("Built-in auto-brightness"),
+                             help: L("Turns the built-in display's automatic brightness on or off here."),
+                             features: [.autoBrightness], badge: .experimental),
+        DisplayFeatureSwitch("broadcast", L("Brightness broadcast"),
+                             help: L("Tells other apps when Snaptic changes brightness or volume."),
+                             features: [.osdBroadcast], badge: .experimental),
+        DisplayFeatureSwitch("allResolutions", L("Show all resolutions"),
+                             help: L("Also lists resolutions macOS hides, in the Resolution pop-up."),
+                             features: [.hiddenModes], badge: .experimental),
+    ]
+
+    /// The raw flags a switch writes: every feature it covers, on or off.
+    package static func changes(_ item: DisplayFeatureSwitch, on: Bool) -> [DisplayFeature: Bool] {
+        var result: [DisplayFeature: Bool] = [:]
+        for f in item.features where FeatureGraph.spec(f).defaultState != .always { result[f] = on }
+        return result
+    }
+}
+
+// MARK: - Live resolution choices (Displays root page and floating panel; PLAN 0.3 §4.3, §5.6)
+
+/// One entry of the Resolution pop-up: a size (points and HiDPI), applied at the refresh rate closest to the
+/// current one.
+package struct ResolutionSizeChoice: Equatable, Hashable, Sendable {
+    package var pointWidth: Int
+    package var pointHeight: Int
+    package var isHiDPI: Bool
+    package var isDefault: Bool
+    package var isNative: Bool
+    package var isFavorite: Bool
+    /// "Default — 1512 × 982", "1800 × 1169"; a low-resolution twin of a HiDPI size says so.
+    package var title: String
+
+    package var id: String { LiveResolution.sizeID(pointWidth: pointWidth, pointHeight: pointHeight, hiDPI: isHiDPI) }
+}
+
+/// One entry of the Refresh rate pop-up.
+package struct RefreshChoice: Equatable, Hashable, Sendable {
+    package var milliHz: Int
+    package var title: String
+}
+
+package enum LiveResolution {
+    /// Refresh rates closer than this are one choice (59.94 and 60 stay apart; rounding noise doesn't).
+    package static let refreshTolerance = 10
+
+    package static func sizeID(pointWidth: Int, pointHeight: Int, hiDPI: Bool) -> String {
+        "\(pointWidth)x\(pointHeight)" + (hiDPI ? "h" : "l")
+    }
+
+    package static func sizeID(of mode: ModeRef) -> String {
+        sizeID(pointWidth: mode.pointWidth, pointHeight: mode.pointHeight, hiDPI: mode.isHiDPI)
+    }
+
+    /// The Resolution pop-up: the default size first, then every other size from largest to smallest (width, then
+    /// height; HiDPI before its low-resolution twin). The current size is always listed. Modes with a zero size
+    /// are ignored.
+    package static func sizes(_ modes: [DisplayModeDescriptor], current: ModeRef?,
+                              favorites: [ModeRef] = []) -> [ResolutionSizeChoice] {
+        var byID: [String: ResolutionSizeChoice] = [:]
+        var order: [String] = []
+        let favoriteIDs = Set(favorites.map(sizeID(of:)))
+        let hiDPISizes = Set(modes.filter { $0.ref.isHiDPI }.map { "\($0.ref.pointWidth)x\($0.ref.pointHeight)" })
+        var all = modes.map { ($0.ref, $0.isDefault, $0.isNative) }
+        if let current, !modes.contains(where: { sizeID(of: $0.ref) == sizeID(of: current) }) {
+            all.append((current, false, false))
+        }
+        for (ref, isDefault, isNative) in all where ref.pointWidth > 0 && ref.pointHeight > 0 {
+            let id = sizeID(of: ref)
+            if var existing = byID[id] {
+                existing.isDefault = existing.isDefault || isDefault
+                existing.isNative = existing.isNative || isNative
+                byID[id] = existing
+                continue
+            }
+            order.append(id)
+            byID[id] = ResolutionSizeChoice(pointWidth: ref.pointWidth, pointHeight: ref.pointHeight, isHiDPI: ref.isHiDPI,
+                                            isDefault: isDefault, isNative: isNative, isFavorite: favoriteIDs.contains(id),
+                                            title: "")
+        }
+        var list = order.compactMap { byID[$0] }
+        // One default at most: the HiDPI one wins over a low-resolution twin.
+        if let firstDefault = list.firstIndex(where: { $0.isDefault && $0.isHiDPI }) ?? list.firstIndex(where: \.isDefault) {
+            for i in list.indices where i != firstDefault { list[i].isDefault = false }
+        }
+        list.sort { a, b in
+            if a.isDefault != b.isDefault { return a.isDefault }
+            if a.pointWidth != b.pointWidth { return a.pointWidth > b.pointWidth }
+            if a.pointHeight != b.pointHeight { return a.pointHeight > b.pointHeight }
+            return a.isHiDPI && !b.isHiDPI
+        }
+        for i in list.indices {
+            let c = list[i]
+            var title = "\(c.pointWidth) × \(c.pointHeight)"
+            if !c.isHiDPI && hiDPISizes.contains("\(c.pointWidth)x\(c.pointHeight)") { title += " " + L("(low resolution)") }
+            if c.isDefault { title = L("Default — \(title)") }
+            list[i].title = title
+        }
+        return list
+    }
+
+    /// The mode a size choice applies: that size at the refresh rate closest to the current one (the current mode
+    /// itself when it already has that size), then the deeper color, then the lower mode id for a stable answer.
+    package static func mode(forSize id: String, in modes: [DisplayModeDescriptor], current: ModeRef?) -> ModeRef? {
+        if let current, sizeID(of: current) == id { return current }
+        let target = current?.refreshMilliHz ?? 0
+        let candidates = modes.filter { sizeID(of: $0.ref) == id }
+        return candidates.min { a, b in
+            let da = abs(a.ref.refreshMilliHz - target), db = abs(b.ref.refreshMilliHz - target)
+            if da != db { return da < db }
+            if a.bitDepth != b.bitDepth { return a.bitDepth > b.bitDepth }
+            if a.ref.refreshMilliHz != b.ref.refreshMilliHz { return a.ref.refreshMilliHz > b.ref.refreshMilliHz }
+            return a.ref.ioModeID < b.ref.ioModeID
+        }?.ref
+    }
+
+    /// The Refresh rate pop-up for the current size: one entry per distinct rate, highest first. Empty without a
+    /// current mode; the caller hides the row unless there are two or more.
+    package static func refreshRates(_ modes: [DisplayModeDescriptor], current: ModeRef?) -> [RefreshChoice] {
+        guard let current else { return [] }
+        let id = sizeID(of: current)
+        var rates: [Int] = []
+        for m in modes where sizeID(of: m.ref) == id && m.ref.refreshMilliHz > 0 {
+            if !rates.contains(where: { abs($0 - m.ref.refreshMilliHz) <= refreshTolerance }) { rates.append(m.ref.refreshMilliHz) }
+        }
+        if current.refreshMilliHz > 0, !rates.contains(where: { abs($0 - current.refreshMilliHz) <= refreshTolerance }) {
+            rates.append(current.refreshMilliHz)
+        }
+        return rates.sorted(by: >).map { RefreshChoice(milliHz: $0, title: DisplaysUIText.refreshLabel($0)) }
+    }
+
+    /// The listed rate that stands for `milliHz` (within the tolerance), for the pop-up's selection.
+    package static func choice(for milliHz: Int, in rates: [RefreshChoice]) -> Int? {
+        rates.first { abs($0.milliHz - milliHz) <= refreshTolerance }?.milliHz
+    }
+
+    /// The mode with the current size at `milliHz` (deeper color first).
+    package static func mode(forRefresh milliHz: Int, in modes: [DisplayModeDescriptor], current: ModeRef?) -> ModeRef? {
+        guard let current else { return nil }
+        if abs(current.refreshMilliHz - milliHz) <= refreshTolerance { return current }
+        let id = sizeID(of: current)
+        return modes.filter { sizeID(of: $0.ref) == id && abs($0.ref.refreshMilliHz - milliHz) <= refreshTolerance }
+            .min { a, b in
+                if a.bitDepth != b.bitDepth { return a.bitDepth > b.bitDepth }
+                return a.ref.ioModeID < b.ref.ioModeID
+            }?.ref
+    }
+}
+
+// MARK: - Diagnostics events (PLAN 0.3 §3.6)
+
+extension DiagnosticsText {
+    /// The diagnostics report's event tail: the last `limit` entries whose category is exported (Awake's events
+    /// never are), oldest first.
+    package static func exportedEvents<Entry>(_ entries: [Entry], category: (Entry) -> EventCategory,
+                                              limit: Int) -> [Entry] {
+        guard limit > 0 else { return [] }
+        return Array(entries.filter { category($0).isExportedInDiagnostics }.suffix(limit))
+    }
+}

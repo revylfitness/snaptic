@@ -17,7 +17,6 @@ L5	Sources/Snaptic/Displays/UI/DDCPage.swift	10	step
 L7	Sources/Snaptic/Displays/UI/DDCPage.swift	2	step
 L5	Sources/Snaptic/Displays/UI/DiagnosticsPage.swift	3	step
 L5	Sources/Snaptic/Displays/UI/DisplayIdentityPage.swift	2	step
-L5	Sources/Snaptic/Displays/UI/DisplaysOnboardingStep.swift	3	step
 L5	Sources/Snaptic/Displays/UI/DisplaysOverviewPage.swift	13	step
 L5	Sources/Snaptic/Displays/UI/FeaturesPage.swift	6	step
 L5	Sources/Snaptic/Displays/UI/KeysPage.swift	10	step
@@ -25,7 +24,6 @@ L7	Sources/Snaptic/Displays/UI/KeysPage.swift	1	step
 L5	Sources/Snaptic/Displays/UI/ManagementPageParts.swift	3	step
 L5	Sources/Snaptic/Displays/UI/MenuCustomizationPage.swift	2	step
 L5	Sources/Snaptic/Displays/UI/OSDPage.swift	4	step
-L5	Sources/Snaptic/Displays/UI/OverviewController.swift	4	step
 L5	Sources/Snaptic/Displays/UI/PIPPage.swift	15	step
 L5	Sources/Snaptic/Displays/UI/ProtectionLayoutsPage.swift	5	step
 L5	Sources/Snaptic/Displays/UI/ResolutionPage.swift	1	step
