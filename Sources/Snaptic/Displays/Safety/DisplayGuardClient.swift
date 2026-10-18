@@ -11,17 +11,23 @@ import SnapticKit
 // FIXES-R2 N1/N2: every acknowledged request carries a fresh `seq` and waits in a Kit
 // GuardAckTracker under exactly that seq (GuardLinkTests). Each spawned guard is a new
 // generation: its lines and its exit are ignored once another guard (or none) took over.
+//
+// 0.3 §4.5: every change of what Settings shows (running, unprotected, long-armed, can revert rotation and HDR,
+// the last problem) bumps `revision(.diagnostics)` once per main-queue turn; a change of the long-armed state also
+// re-evaluates the panic shortcut (it stays registered while Snaptic holds such a state).
 
 @MainActor final class DisplayGuardClient: DisplayServiceLifecycle, DiagnosticsContributor {
     static var serviceID: DisplayServiceID { .guardProcess }
     static var privateSymbols: [PrivateSymbol] { [] }
     weak var context: DisplaysContext?
+    /// Kept after deactivate (it outlives module starts) so the last change still reaches open pages.
+    private weak var runtime: DisplaysRuntimeState?
 
     init() {}
 
-    private var handle: HelperHandle?
-    private var ready = false
-    private(set) var canMonitorPanel = false
+    private var handle: HelperHandle? { didSet { noteStatus() } }
+    private var ready = false { didSet { noteStatus() } }
+    private(set) var canMonitorPanel = false { didSet { noteStatus() } }
     /// Trial ids (a separate counter from request seqs, which the tracker owns).
     private var nextTrialID: UInt64 = 1
     /// Requests waiting for their ack, keyed by seq, per guard generation.
@@ -39,16 +45,18 @@ import SnapticKit
     private var heartbeat: DispatchSourceTimer?
     private var active = false
     private var spawnTimes: [Double] = []
-    private(set) var lastFailure: String?
+    private(set) var lastFailure: String? { didSet { noteStatus() } }
     /// The guard exited 65 or answered with another protocol version: Snaptic was replaced on
     /// disk. Never respawned until Snaptic restarts (FIXES-R3 5).
-    private(set) var restartRequired = false
+    private(set) var restartRequired = false { didSet { noteStatus() } }
     static var restartText: String { L("Restart Snaptic to finish updating.") }
 
     // State re-sent to a respawned guard.
-    private var longUndo: [UndoOp] = []
-    private var longColorSync = false
-    private var impairment = (dim: false, overlay: false)
+    private var longUndo: [UndoOp] = [] { didSet { noteStatus() } }
+    private var longColorSync = false { didSet { noteStatus() } }
+    private var impairment = (dim: false, overlay: false) { didSet { noteStatus() } }
+    /// What the pages last saw (0.3 §4.5).
+    private var lastStatus: GuardStatus?
     private var classes: [GuardDisplayClass] = []
 
     /// The guard reverted a trial on its own (deadline or hang): (trial id, applied, skipped).
@@ -68,7 +76,9 @@ import SnapticKit
         guard !active else { return }
         active = true
         self.context = context
+        runtime = context.runtime
         context.diagnostics.register(self, section: L("Safety helper"), lifetime: lifetime)
+        noteStatus()
     }
 
     func deactivate() {
@@ -82,7 +92,30 @@ import SnapticKit
         armedTrials = []
         terminate(sendShutdown: !hadLong, grace: hadLong ? Self.undoGraceSeconds : Self.shutdownGraceSeconds)
         updateActivity()
+        noteStatus()
         context = nil
+    }
+
+    // MARK: Observability (0.3 §4.5)
+
+    /// Everything Settings and the menu show about the guard.
+    private struct GuardStatus: Equatable {
+        let alive: Bool
+        let unprotected: Bool
+        let longArmed: Bool
+        let canMonitorPanel: Bool
+        let lastFailure: String?
+        let restartRequired: Bool
+    }
+
+    private func noteStatus() {
+        let now = GuardStatus(alive: isAlive, unprotected: isUnprotected, longArmed: hasLongState,
+                              canMonitorPanel: canMonitorPanel, lastFailure: lastFailure, restartRequired: restartRequired)
+        guard now != lastStatus else { return }
+        let longChanged = now.longArmed != lastStatus?.longArmed
+        lastStatus = now
+        runtime?.revision(.diagnostics).bump()
+        if longChanged { context?.panic.updateHotkey() }
     }
 
     // MARK: Process

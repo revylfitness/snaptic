@@ -9,6 +9,8 @@ import SnapticShims
 // CAS undo → journal + guard ack for trial/restore → apply (HDR, rotation, re-resolved modes,
 // CG batches by scope) → trial panel → Keep (re-apply with final scope, never skipping) or
 // Revert (CAS, single undo order). Also keeps the guard's long-armed set current.
+// 0.3 §4.5: a trial appearing or ending and every journal change bump `revision(.diagnostics)` (Display
+// Information shows "Pending confirmation" and the undo journal; the menu shows Restore All while pending).
 
 @MainActor final class DisplayTransactionQueue: DisplayServiceLifecycle, DiagnosticsContributor {
     static var serviceID: DisplayServiceID { .transactions }
@@ -51,7 +53,9 @@ import SnapticShims
     private var epoch: UInt64 = 0
     private var running = false
     private var waiting: [CheckedContinuation<Void, Never>] = []
-    private var pending: PendingTrial?
+    private var pending: PendingTrial? {
+        didSet { if (oldValue == nil) != (pending == nil) { noteStatus() } }
+    }
     private var trialSerial: UInt64 = 0
     private var supersession = TrialSupersession()
     /// How `stop()` resolved the last trial it interrupted (for that trial's own task).
@@ -72,6 +76,9 @@ import SnapticShims
     private(set) var lastReports: [TransactionReport] = []
     private var longArmWork: DispatchWorkItem?
     private var lifetime: Lifetime?
+    /// Kept after deactivate (it outlives module starts) so the last change still reaches open pages.
+    private weak var runtime: DisplaysRuntimeState?
+    private var lastStatus: QueueStatus?
 
     var isBusy: Bool { running || !waiting.isEmpty }
     var hasPendingTrial: Bool { pending != nil }
@@ -88,7 +95,9 @@ import SnapticShims
         epoch &+= 1
         self.context = context
         self.lifetime = lifetime
+        runtime = context.runtime
         journal = RevertJournal()
+        journal?.onChange = { [weak self] in self?.noteStatus() }
         journaledLong = nil
         journalMayBeStale = true
         context.guardClient.onReverted = { [weak self] trial, _, _ in
@@ -168,6 +177,22 @@ import SnapticShims
         context?.guardClient.onLost = nil
         context = nil
         lifetime = nil
+        noteStatus()
+    }
+
+    // MARK: Observability (0.3 §4.5)
+
+    private struct QueueStatus: Equatable {
+        let pending: Bool
+        let sessionJournal: Bool
+        let permanentOps: Int
+    }
+
+    private func noteStatus() {
+        let now = QueueStatus(pending: pending != nil, sessionJournal: hasSessionJournal, permanentOps: permanentJournalCount)
+        guard now != lastStatus else { return }
+        lastStatus = now
+        runtime?.revision(.diagnostics).bump()
     }
 
     private func isCurrent(_ epoch: UInt64) -> Bool { active && epoch == self.epoch }

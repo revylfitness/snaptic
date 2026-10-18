@@ -1,94 +1,55 @@
 import SwiftUI
 import SnapticKit
 
-// Settings → Displays → Safety (owner: B). Every safety option, the guard and journal
-// status, the panic shortcut, "Allow without asking" and remembered modes.
+// Settings → Displays → Safety (owner: B; 0.2 page, deleted at the 0.3 step-3 exit). Its settings are the 0.3
+// Confirm display changes section (shown here until then); the rest are status rows that move to Display
+// Information (F). Live through `revision(.diagnostics)` (0.3 §4.5): no timer.
 
 struct SafetyPage: View {
     @ObservedObject var env: DisplaysPageEnvironment
-    @State private var tick = 0
-    private let refresh = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
+    @ObservedObject private var revision: ControllerRevision
 
-    private var safety: Binding<SafetyConfig> {
-        Binding(get: { env.config.value.safety }, set: { env.config.value.safety = $0.sanitized() })
+    init(env: DisplaysPageEnvironment) {
+        self.env = env
+        _revision = ObservedObject(wrappedValue: env.runtime.revision(.diagnostics))
     }
 
     var body: some View {
         Form {
-            Section(L("Confirm display changes")) {
-                Picker(L("Confirm resolution changes"), selection: safety.confirmResolution) {
-                    Text(L("New modes only")).tag(ConfirmResolutionChanges.newModesOnly)
-                    Text(L("Always")).tag(ConfirmResolutionChanges.always)
-                    Text(L("Never for listed modes")).tag(ConfirmResolutionChanges.neverForPublic)
-                }
-                Stepper(value: safety.confirmSeconds, in: SafetyConfig.confirmSecondsRange) {
-                    Text(L("Revert automatically after \(env.config.value.safety.confirmSeconds) seconds"))
-                }
-                Text(L("Risky changes (new resolutions, mirroring, disconnecting, rotation, HDR) show “Keep this change?” on every visible display. Esc or no answer reverts them; a separate safety helper reverts them even if Snaptic stops responding."))
-                    .font(.caption).foregroundStyle(.secondary)
-                Toggle(L("Tell me when displays were restored after an unexpected exit"), isOn: safety.announceRecovery)
-            }
+            ConfirmChangesSection(env: env)
 
-            Section(L("Restore All Displays")) {
-                Toggle(L("Keyboard shortcut"), isOn: safety.panicHotkeyEnabled)
-                    .disabled(env.context?.guardClient.hasLongState == true && env.config.value.safety.panicHotkeyEnabled)
-                LabeledContent(L("Shortcut"), value: shortcutText)
-                if env.context?.guardClient.hasLongState == true {
-                    Text(L("The shortcut stays on while a display is disconnected, mirrored to a virtual screen or dimmed to black."))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                if let problem = env.context?.panic.hotkeyProblem {
-                    Text(problem).font(.caption).foregroundStyle(.orange)
-                }
-                HStack {
-                    Button(L("Restore All Displays Now")) {
+            Section {
+                LabeledContent {
+                    Button(L("Restore All Displays")) {
                         env.context?.panic.panic(reason: L("Safety settings"))
                     }
                     .disabled(env.context == nil)
-                    if env.runtime.isPanicLatched {
-                        Button(L("Resume Display Automation")) { _ = env.context?.actions.perform(PanicCoordinator.resumeActionID, on: .all) }
-                    }
+                } label: {
+                    Text(L("Restore all displays now"))
+                    Text(L("Undoes recent resolution changes, reconnects displays, and pauses display automation."))
                 }
-                Text(L("Undoes resolution changes from the last minute, reconnects displays Snaptic turned off, removes dimming and overlays, stops virtual screens and streams, and pauses automation until you resume. Rotation and HDR are not touched. Also available from the menu and as `snaptic panic`."))
-                    .font(.caption).foregroundStyle(.secondary)
                 if let summary = env.runtime.lastPanicSummary {
-                    Text(summary).font(.caption)
+                    Text(summary).foregroundStyle(.secondary)
                 }
             }
 
             Section(L("Safety helper")) {
                 LabeledContent(L("Status"), value: guardStatus)
                 if env.context?.guardClient.isUnprotected == true {
-                    Label(L("Unprotected — restart Snaptic"), systemImage: "exclamationmark.shield")
-                        .foregroundStyle(.orange)
-                    Button(L("Restart Snaptic")) { env.context?.relauncher.relaunch(reason: L("Safety helper")) }
+                    StatusRow(L("The safety helper stopped."), style: .warning, actions: [
+                        StatusAction(title: L("Restart Snaptic")) { [env] in
+                            env.context?.relauncher.relaunch(reason: L("Safety helper"))
+                        },
+                    ])
                 }
                 if let reason = env.context?.helpers.unavailable {
-                    Text(reason).font(.caption).foregroundStyle(.orange)
+                    StatusRow(reason, style: .warning)
                 }
-                LabeledContent(L("Can revert rotation and HDR"), value: env.context?.guardClient.canMonitorPanel == true ? L("Yes") : L("No"))
-                LabeledContent(L("Pending confirmation"), value: env.context?.transactions.hasPendingTrial == true ? L("Yes") : L("No"))
+                LabeledContent(L("Can revert rotation and HDR"),
+                               value: env.context?.guardClient.canMonitorPanel == true ? L("Yes") : L("No"))
+                LabeledContent(L("Change awaiting confirmation"),
+                               value: env.context?.transactions.hasPendingTrial == true ? L("Yes") : L("No"))
                 LabeledContent(L("Undo journal"), value: journalText)
-            }
-
-            Section(L("Allowed without asking")) {
-                let allowed = env.config.value.safety.preConfirmAllowed.values
-                let allowedKeys = allowed.keys.sorted { $0.rawValue < $1.rawValue }
-                if allowedKeys.isEmpty {
-                    Text(L("No monitor commands are allowed without confirmation.")).foregroundStyle(.secondary)
-                }
-                ForEach(allowedKeys, id: \.self) { key in
-                    let list = allowed[key] ?? PreConfirmAllowList()
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(displayName(key))
-                            Text(list.entries.map { L("code \($0)") }.joined(separator: ", "))
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Button(L("Ask Again")) { env.config.value.safety.preConfirmAllowed[key] = nil }
-                    }
-                }
             }
 
             Section(L("Remembered resolutions")) {
@@ -99,54 +60,46 @@ struct SafetyPage: View {
                 }
                 ForEach(keptKeys, id: \.self) { key in
                     let modes = kept[key] ?? KeptModes()
-                    HStack {
-                        Text(displayName(key))
-                        Spacer()
-                        Text(L("\(modes.modes.count) modes")).foregroundStyle(.secondary)
+                    LabeledContent {
                         Button(L("Forget")) { env.config.value.safety.keptModes[key] = nil }
+                    } label: {
+                        Text(displayName(key))
+                        Text(modes.modes.count == 1 ? L("1 resolution") : L("\(modes.modes.count) resolutions"))
                     }
                 }
             }
 
             if let ctx = env.context {
                 let missing = ctx.privateAPI.unavailableFeatures()
-                let missingKeys = missing.keys.sorted { $0.rawValue < $1.rawValue }
+                let missingKeys = missing.keys.sorted { DisplaysUIText.title($0) < DisplaysUIText.title($1) }
                 if !missingKeys.isEmpty {
                     Section(L("Unavailable on this Mac")) {
                         ForEach(missingKeys, id: \.self) { feature in
-                            LabeledContent(feature.rawValue, value: missing[feature] ?? "")
+                            LabeledContent(DisplaysUIText.title(feature), value: missing[feature] ?? "")
                         }
                     }
                 }
             }
         }
         .formStyle(.grouped)
-        .onReceive(refresh) { _ in tick &+= 1 }
-    }
-
-    private var shortcutText: String {
-        if let combo = env.context?.panic.registeredHotkey { return PanicCoordinator.describe(combo) }
-        if !env.config.value.safety.panicHotkeyEnabled { return L("Off") }
-        return env.context == nil ? PanicCoordinator.describe(SafetyConfig.defaultPanicHotkey) : L("Not registered")
     }
 
     private var guardStatus: String {
-        _ = tick
         guard let ctx = env.context else { return L("Displays are off") }
-        if ctx.guardClient.isAlive { return ctx.guardClient.pid.map { L("Running (pid \($0))") } ?? L("Running") }
+        if ctx.guardClient.isAlive { return L("Running") }
         return ctx.guardClient.lastFailure ?? L("Starts when needed")
     }
 
     private var journalText: String {
         guard let ctx = env.context else { return "—" }
-        let session = ctx.transactions.hasSessionJournal ? L("pending change") : L("empty")
+        let session = ctx.transactions.hasSessionJournal ? L("A change can be undone") : L("Empty")
         let permanent = ctx.transactions.permanentJournalCount
-        return permanent > 0 ? L("\(session); \(permanent) rotation/HDR steps to confirm") : session
+        return permanent > 0 ? L("\(session); \(permanent) rotation or HDR steps to confirm") : session
     }
 
     private func displayName(_ key: DisplayKey) -> String {
         if let info = env.runtime.displays.first(where: { $0.key == key }) { return info.name }
         let per = env.config.value.perDisplay[key]?.identity
-        return per?.customName ?? per?.lastKnownName ?? L("Display \(key.rawValue.prefix(6))")
+        return per?.customName ?? per?.lastKnownName ?? L("A display that isn't connected")
     }
 }
