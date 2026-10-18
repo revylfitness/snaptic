@@ -170,7 +170,7 @@ final class OtherAssertionsTests: XCTestCase {
                     if g.next() % 2 == 0 { d[OtherAssertions.levelKey] = pick(values) }
                     if g.next() % 3 == 0 { d[OtherAssertions.onBehalfOfPIDKey] = pick(values) }
                     if g.next() % 4 == 0 { d[OtherAssertions.suspendedKey] = pick(values) }
-                    if g.next() % 2 == 0 { d[OtherAssertions.processKey] = g.next() % 2 == 0 ? "proc" : pick(values) }
+                    if g.next() % 2 == 0 { d[OtherAssertions.processKey] = g.next() % 2 == 0 ? "proc" as Any : pick(values) }
                     list.append(d)
                 }
                 byProcess[pid] = list

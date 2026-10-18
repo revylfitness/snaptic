@@ -51,7 +51,7 @@ import SnapticKit
         let own = getpid()
         let box = CallbackTarget(self)
         queue.async {
-            let read = Self.read(ownPID: own)
+            let read = OtherAssertionsReader.read(ownPID: own)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated { box.target?.finish(read, ticket: ticket) }
             }

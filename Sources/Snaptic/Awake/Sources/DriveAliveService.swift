@@ -176,20 +176,23 @@ import SnapticKit
             return
         }
         inFlight.insert(uuid)
+        // The completion waits here, so only Sendable values cross to the write queue.
+        if let completion { waiters[uuid, default: []].append(completion) }
         let root = mount.path, bsd = mount.facts.bsdName
         let box = CallbackTarget(self)
         queue.async {
             let error = DriveAliveIO.write(root: root, bsdName: bsd, uuid: uuid)
             DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    guard let service = box.target else { return }
-                    service.inFlight.remove(uuid)
-                    let waiting = service.waiters.removeValue(forKey: uuid) ?? []
-                    service.finish(uuid, mount: mount, error: error, completion: completion)
-                    for waiter in waiting { waiter(error) }
-                }
+                MainActor.assumeIsolated { box.target?.written(uuid, mount: mount, error: error) }
             }
         }
+    }
+
+    private func written(_ uuid: VolumeUUIDKey, mount: MountedVolume, error: DriveAliveError?) {
+        inFlight.remove(uuid)
+        let waiting = waiters.removeValue(forKey: uuid) ?? []
+        finish(uuid, mount: mount, error: error, completion: nil)
+        for waiter in waiting { waiter(error) }
     }
 
     private func finish(_ uuid: VolumeUUIDKey, mount: MountedVolume, error: DriveAliveError?,
