@@ -100,6 +100,21 @@ package enum ControlExit {
     }
 }
 
+/// How one request for a verb ended, as `KitControl.counterKey` counts it (a closed set, so the counters stay few).
+package enum ControlVerbOutcome: String, CaseIterable, Sendable {
+    case ok
+    case holding
+    case failed
+    case refusedProtected = "refused.protected"
+    case refusedOffOnly = "refused.offonly"
+    case refusedRate = "refused.rate"
+
+    /// A handler's reply.
+    package init(exitCode: Int32, holding: Bool) {
+        self = exitCode == ControlExit.ok ? (holding ? .holding : .ok) : .failed
+    }
+}
+
 /// A verb whose command-line rules the host owns, whoever registers it (0.3 §2.10, §3.1): the registry applies these
 /// instead of what a module passes, so a module can't make `awake stop` turn things on or let another verb hold.
 package struct ControlVerbRule: Equatable, Sendable {
@@ -148,6 +163,12 @@ package enum KitControl {
     /// A held connection only carries pings and one final line, so its send buffer is kept small: a client that
     /// stops reading can make Snaptic queue at most this much for it before the hold ends (security L5).
     package static let heldSendBufferBytes: Int32 = 1024
+    /// When the server stops (command-line control turned off, R5-14a), a held connection stays open this long so
+    /// its handler can write its own final line ("Command-line control was turned off.", exit 0); after that the
+    /// server writes `serverStopFinal` and closes it. Never EOF without a final line.
+    package static let heldStopGraceSeconds: Double = 2
+    /// The final line a held connection gets when the server stops and its handler wrote none within the grace.
+    package static var serverStopFinal: ControlResponse { .ok(L("Command-line control was turned off.")) }
 
     /// 0.3 §3.1 (security L3): `awake start`, `hold`, `stop` and `extend` together, per second, on top of
     /// `maxRequestsPerSecond`.
@@ -168,6 +189,15 @@ package enum KitControl {
     /// The host's rule for a verb, if it has one.
     package static func verbRule(_ verb: String) -> ControlVerbRule? {
         awakeVerbRules.first { $0.verb == verb }
+    }
+
+    /// Security S-4 (0.3 §3.6): what dispatch may remember about a verb with a host rule (the Awake verbs). These
+    /// are only counted, under a fixed key with no time (`EventLog` counts, shown in the Awake diagnostics section),
+    /// so the exported `.control` log never holds a timeline of when scripts kept the Mac awake. Nil for every other
+    /// verb: those get an ordinary `.control` line.
+    package static func counterKey(verb: String, outcome: ControlVerbOutcome) -> String? {
+        guard let rule = verbRule(verb) else { return nil }
+        return "cli." + rule.verb.split(separator: " ").joined(separator: ".") + "." + outcome.rawValue
     }
 
     /// The ping line servers write on held connections (with its newline).

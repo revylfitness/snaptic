@@ -344,6 +344,34 @@ grep -q 'selftest echo' "$dir/help.out" || fail "case 10: help doesn't list the 
 grep -q 'prevent-sleep' "$dir/help.out" && fail "case 10: help lists prevent-sleep"
 say "case 10 done"
 
+# 11. Server stop while two clients hold (command-line control turned off, R5-14a; SIGUSR1 stops the server but
+#     keeps the process). The first hold's handler writes its own final line; the second gets the server's line
+#     after the grace. Both clients print a final line and exit 0 (EOF without one would be exit 5).
+hold_client 11a
+c1=$client
+wait_pool "held=1 active=0" 30 || fail "case 11: the first hold wasn't held ($(pool))"
+hold_client 11b
+c2=$client
+wait_pool "held=2 active=0" 30 || fail "case 11: the second hold wasn't held ($(pool))"
+kill -USR1 "$server"
+for _ in $(seq 1 60); do
+  kill -0 "$c1" 2>/dev/null || kill -0 "$c2" 2>/dev/null || break
+  sleep 0.1
+done
+kill -0 "$c1" 2>/dev/null && { fail "case 11: the first client didn't exit within 6 s"; kill -9 "$c1"; }
+kill -0 "$c2" 2>/dev/null && { fail "case 11: the second client didn't exit within 6 s"; kill -9 "$c2"; }
+wait "$c1" 2>/dev/null
+s1=$?
+wait "$c2" 2>/dev/null
+s2=$?
+[ "$s1" -eq 0 ] || fail "case 11: the first client exited $s1, not 0 ($(cat "$dir/hold-11a.err"))"
+grep -q '^Hold ended by its handler\.$' "$dir/hold-11a.out" || fail "case 11: the handler's final line is missing"
+[ "$s2" -eq 0 ] || fail "case 11: the second client exited $s2, not 0 ($(cat "$dir/hold-11b.err"))"
+grep -q '^Command-line control was turned off\.$' "$dir/hold-11b.out" || fail "case 11: the server's final line is missing"
+wait_count "closed server" 1 40 || fail "case 11: no 'closed server' for the hold the handler left open"
+wait_pool "held=0 active=0" 20 || fail "case 11: a slot leaked ($(pool))"
+say "case 11 done"
+
 stop_server
 
 # 8. A client that never reads: `closed ping` once its buffer fills; meanwhile echo answers in < 100 ms (L5).

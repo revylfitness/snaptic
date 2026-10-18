@@ -31,7 +31,7 @@ struct SwitcherView: View {
                     .controlSize(.small)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.filtered.isEmpty {
-                Text(model.allItems.isEmpty ? "No open windows" : "No windows match “\(model.query)”")
+                Text(model.allItems.isEmpty ? L("No open windows") : L("No windows match “\(model.query)”"))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -129,7 +129,7 @@ struct SearchHeader: View {
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             } else if query.isEmpty {
-                Text("Type to search")
+                Text(L("Type to search"))
                     .foregroundStyle(.tertiary)
             } else {
                 Text(query)
@@ -145,8 +145,8 @@ struct SearchHeader: View {
     }
 
     private var countText: String {
-        if query.isEmpty { return total == 1 ? "1 window" : "\(total) windows" }
-        return "\(shown) of \(total)"
+        if query.isEmpty { return total == 1 ? L("1 window") : L("\(total) windows") }
+        return L("\(shown) of \(total)")
     }
 }
 
@@ -310,13 +310,13 @@ struct WindowControls: View {
     var body: some View {
         HStack(spacing: 6) {
             if enabled.contains(.actionClose) {
-                control("xmark", Color(red: 1.0, green: 0.37, blue: 0.34), "Close window") { actions.close(item.id) }
+                control("xmark", Color(red: 1.0, green: 0.37, blue: 0.34), L("Close window")) { actions.close(item.id) }
             }
             if enabled.contains(.actionMinimize) {
-                control("minus", Color(red: 1.0, green: 0.74, blue: 0.18), "Minimize window") { actions.minimize(item.id) }
+                control("minus", Color(red: 1.0, green: 0.74, blue: 0.18), L("Minimize window")) { actions.minimize(item.id) }
             }
             if enabled.contains(.actionFullscreen) {
-                control("arrow.up.left.and.arrow.down.right", Color(red: 0.16, green: 0.79, blue: 0.25), "Toggle full screen") {
+                control("arrow.up.left.and.arrow.down.right", Color(red: 0.16, green: 0.79, blue: 0.25), L("Toggle full screen")) {
                     actions.fullscreen(item.id)
                 }
             }

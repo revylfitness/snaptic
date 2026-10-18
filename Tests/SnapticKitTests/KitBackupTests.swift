@@ -454,4 +454,228 @@ final class KitBackupTests: XCTestCase {
         }
         XCTAssertTrue(KitBackup.safetyPaths.contains(["awake", "guards"]))
     }
+
+    // MARK: Seeded fuzz and nesting depth (code review F5)
+
+    private func pick<T>(_ items: [T], _ g: inout SeededGenerator) -> T { items[Int(g.next() % UInt64(items.count))] }
+
+    private static let fuzzKeys = ["unlocks", "trustStamp", "hash", "uidHash", "serialHash", "record", "pointerNudge",
+                                   "drives", "commandLine", "allowWithoutAsking", "saltHint", "secretX", "tokenY",
+                                   "recentApps", "startAtLaunch", "id", "triggers", "guards", "batteryFloor",
+                                   "batteryFloorEnabled", "activity", "features", "sessions", "presets", "automation",
+                                   "disconnect", "hooks", "x"]
+
+    /// A random JSON value, at most `depth` more levels deep.
+    private func garbage(_ g: inout SeededGenerator, depth: Int) -> Any {
+        switch g.next() % (depth > 0 ? 8 : 5) {
+        case 0: return Int(g.next() % 2_001) - 1_000
+        case 1: return pick(["", "x", "nudge", "declare", "keepOn", "router", "network", "∞", volumeID, digest], &g)
+        case 2: return g.next() % 2 == 0
+        case 3: return NSNull()
+        case 4: return Double(Int(g.next() % 10_000)) / 7
+        case 5: return (0..<Int(g.next() % 4)).map { _ in garbage(&g, depth: depth - 1) }
+        case 6:
+            // An id-carrying list element (merged by id), built key by key: a picked key may be "id" too.
+            var row: [String: Any] = [pick(Self.fuzzKeys, &g): garbage(&g, depth: depth - 1)]
+            row["id"] = pick(["R1", "B1C2D3E4-0000-4000-8000-000000000001", "7"], &g)
+            return [row]
+        default:
+            var out: [String: Any] = [:]
+            for _ in 0..<Int(g.next() % 4) { out[pick(Self.fuzzKeys, &g)] = garbage(&g, depth: depth - 1) }
+            return out
+        }
+    }
+
+    /// One mutation somewhere in `value`: drop, replace or duplicate a key, insert a protected one, wrap in more
+    /// nesting, or swap the type.
+    private func mutate(_ value: Any, _ g: inout SeededGenerator) -> Any {
+        if var dict = value as? [String: Any], !dict.isEmpty, g.next() % 3 != 0 {
+            let key = pick(dict.keys.sorted(), &g)
+            switch g.next() % 6 {
+            case 0: dict[key] = nil
+            case 1: dict[key] = garbage(&g, depth: 3)
+            case 2: dict[key + pick(["", "2", "Copy"], &g)] = dict[key]
+            case 3: dict[pick(Self.fuzzKeys, &g)] = garbage(&g, depth: 2)
+            default: if let child = dict[key] { dict[key] = mutate(child, &g) }
+            }
+            return dict
+        }
+        if var array = value as? [Any], !array.isEmpty, g.next() % 3 != 0 {
+            let i = Int(g.next() % UInt64(array.count))
+            switch g.next() % 4 {
+            case 0: array.remove(at: i)
+            case 1: array.append(array[i])
+            default: array[i] = mutate(array[i], &g)
+            }
+            return array
+        }
+        switch g.next() % 3 {
+        case 0:
+            var wrapped = value
+            for _ in 0..<Int(g.next() % 80) { wrapped = g.next() % 2 == 0 ? [wrapped] : ["x": wrapped] }
+            return wrapped
+        default:
+            return garbage(&g, depth: 3)
+        }
+    }
+
+    /// Every key below `object` with its path; array elements add "[]" (never matching a "*" display key). The
+    /// input passed `maxDepth`, so this recursion is bounded.
+    private func keyPaths(_ object: Any, _ path: [String] = [], into out: inout [[String]]) {
+        if let dict = object as? [String: Any] {
+            for (key, value) in dict {
+                out.append(path + [key])
+                keyPaths(value, path + [key], into: &out)
+            }
+        } else if let array = object as? [Any] {
+            for value in array { keyPaths(value, path + ["[]"], into: &out) }
+        }
+    }
+
+    private var fuzzBase: [String: Any] {
+        var config = AwakeConfig()
+        config.triggers.triggers = [AwakeTrigger(id: StableID(), name: "Desk",
+                                                 criteria: [AwakeCriterionEntry(.cpuAbove(percent: 50))])]
+        let awake = object(KitBackup.awakeSectionData(config, includeTriggers: true) ?? Data())
+        return ["format": KitBackup.format, "version": 1, "created": "t", "snaptic": "0.3.0",
+                "sections": ["displays": displays, "modules": modules, "awake": awake.merging(hostileAwake) { a, _ in a },
+                             "switcher": ["shortcuts": [["id": "S1", "keyCode": 48]], "allowList": ["x"]]]]
+    }
+
+    /// Seeded mutations of a valid document: no trap, nothing protected ever comes in, strip is idempotent, and the
+    /// typed Awake import never loosens what it guards (security L5).
+    func testSeededFuzzImportNeverTrapsOrLetsProtectedFieldsIn() throws {
+        var g = SeededGenerator(seed: 0x5EED_BAC0)
+        var current = AwakeConfig()
+        current.guards.batteryFloor = 25
+        current.features[.pointerNudge] = false
+        current = current.sanitized()
+        let currentData = try JSONEncoder().encode(current)
+        var accepted = 0
+        for round in 0..<400 {
+            // Mostly inside the sections (so most documents stay importable), sometimes the wrapper too.
+            var sections = try XCTUnwrap(fuzzBase["sections"] as? [String: Any])
+            for _ in 0...(g.next() % 4) {
+                let name = pick(sections.keys.sorted(), &g)
+                if let section = sections[name] { sections[name] = mutate(section, &g) }
+            }
+            var wrapper = fuzzBase
+            wrapper["sections"] = sections
+            let doc: Any = g.next() % 10 == 0 ? mutate(wrapper, &g) : wrapper as Any
+            guard JSONSerialization.isValidJSONObject(doc),
+                  let data = try? JSONSerialization.data(withJSONObject: doc, options: [.sortedKeys]) else { continue }
+            let deep = KitBackup.nestingDepth(data, limit: KitBackup.maxDepth) == nil
+            guard case .success(let parsed) = KitBackup.parseDocument(data) else { continue }
+            XCTAssertFalse(deep, "round \(round): a document deeper than maxDepth was accepted")
+            accepted += 1
+            for (name, sectionData) in parsed {
+                let section = try XCTUnwrap((try? JSONSerialization.jsonObject(with: sectionData)) as? [String: Any])
+                var paths: [[String]] = []
+                keyPaths(section, into: &paths)
+                for path in paths {
+                    let key = path[path.count - 1]
+                    XCTAssertFalse(KitBackup.isSensitive(key), "round \(round): \(name).\(path)")
+                    XCTAssertFalse(KitBackup.sectionSensitiveKeys[name]?.contains(key) ?? false, "round \(round): \(path)")
+                    for removed in KitBackup.removedPaths where removed.first == name {
+                        let pattern = Array(removed.dropFirst())
+                        let hit = pattern.count == path.count && zip(pattern, path).allSatisfy { $0 == "*" || $0 == $1 }
+                        XCTAssertFalse(hit, "round \(round): \(name).\(path.joined(separator: "."))")
+                    }
+                }
+                if let allowed = KitBackup.allowedPaths[name] {
+                    XCTAssertTrue(Set(section.keys).isSubset(of: Set(allowed.compactMap(\.first))), "round \(round)")
+                }
+                // Stripping again changes nothing.
+                XCTAssertEqual(canonical(json(KitBackup.strip(section, section: name))), canonical(sectionData),
+                               "round \(round): strip isn't idempotent for \(name)")
+                _ = KitBackup.previewChanges(section: name, from: sectionData, to: sectionData)
+            }
+            if let awake = parsed["awake"] {
+                XCTAssertNotNil(KitBackup.merge(current: currentData, imported: awake, section: "awake"))
+                guard let result = KitBackup.importAwake(current: current, imported: awake) else { continue }
+                XCTAssertEqual(result.features[.pointerNudge], current.features[.pointerNudge], "round \(round)")
+                XCTAssertEqual(result.drives, current.drives, "round \(round)")
+                XCTAssertEqual(result.sessions.recentApps, current.sessions.recentApps, "round \(round)")
+                XCTAssertEqual(result.sessions.behavior.startAtLaunch, current.sessions.behavior.startAtLaunch)
+                XCTAssertTrue(result.guards.batteryFloorEnabled, "round \(round)")
+                XCTAssertGreaterThanOrEqual(result.guards.effectiveFloor, current.guards.effectiveFloor, "round \(round)")
+                XCTAssertNotEqual(result.sessions.defaultOptions.activity, .nudge, "round \(round)")
+                XCTAssertFalse(result.sessions.presets.contains { $0.options?.activity == .nudge }, "round \(round)")
+                XCTAssertFalse(result.triggers.triggers.contains { $0.options.activity == .nudge }, "round \(round)")
+            }
+        }
+        XCTAssertGreaterThan(accepted, 200, "the fuzz should mostly produce importable documents")
+    }
+
+    /// Random bytes, truncations and byte flips of a valid document never trap.
+    func testSeededFuzzRawBytesNeverTrap() throws {
+        var g = SeededGenerator(seed: 0xB17E_5)
+        let valid = json(fuzzBase)
+        for _ in 0..<300 {
+            var bytes = [UInt8](valid)
+            switch g.next() % 3 {
+            case 0: bytes = Array(bytes.prefix(Int(g.next() % UInt64(bytes.count))))
+            case 1:
+                for _ in 0..<(1 + Int(g.next() % 8)) {
+                    bytes[Int(g.next() % UInt64(bytes.count))] = pick(Array("{}[]\",:\\0a".utf8) + [0xFF, 0x00], &g)
+                }
+            default: bytes = (0..<Int(g.next() % 512)).map { _ in UInt8(truncatingIfNeeded: g.next()) }
+            }
+            let data = Data(bytes)
+            _ = KitBackup.parseDocument(data)
+            _ = KitBackup.importAwake(current: AwakeConfig(), imported: data)
+            _ = KitBackup.merge(current: valid, imported: data, section: "awake")
+            _ = KitBackup.changedPaths(from: valid, to: data)
+        }
+    }
+
+    /// A 1 MB `[[[[…` file (or an object chain) is refused before anything recursive or JSONSerialization sees it.
+    func testDeepNestingIsRefusedWithoutRecursion() throws {
+        let depth = KitBackup.maxBytes / 2 - 200
+        func wrapped(_ inner: String) -> Data {
+            Data(("{\"format\":\"\(KitBackup.format)\",\"version\":1,\"sections\":{\"awake\":{\"guards\":" + inner
+                  + "}}}").utf8)
+        }
+        let arrays = wrapped(String(repeating: "[", count: depth) + String(repeating: "]", count: depth))
+        XCTAssertLessThanOrEqual(arrays.count, KitBackup.maxBytes)
+        XCTAssertNil(KitBackup.nestingDepth(arrays, limit: KitBackup.maxDepth))
+        XCTAssertEqual(KitBackup.parseDocument(arrays), .failure(.wrongFormat))
+        let chain = String(repeating: "{\"x\":", count: depth / 4) + "1" + String(repeating: "}", count: depth / 4)
+        XCTAssertEqual(KitBackup.parseDocument(wrapped(chain)), .failure(.wrongFormat))
+        XCTAssertNil(KitBackup.importAwake(current: AwakeConfig(), imported: Data(chain.utf8)))
+        XCTAssertNil(KitBackup.merge(current: Data("{}".utf8), imported: Data(chain.utf8), section: "awake"))
+        XCTAssertEqual(KitBackup.changedPaths(from: Data("{}".utf8), to: Data(chain.utf8)), ["(all)"])
+        // Unclosed: still refused, still linear.
+        XCTAssertEqual(KitBackup.parseDocument(Data(String(repeating: "[", count: depth).utf8)), .failure(.wrongFormat))
+    }
+
+    func testNestingDepthCountsOnlyStructure() throws {
+        XCTAssertEqual(KitBackup.nestingDepth(Data("1".utf8), limit: 4), 0)
+        XCTAssertEqual(KitBackup.nestingDepth(Data("{\"a\":[1,{\"b\":[]}]}".utf8), limit: 4), 4)
+        XCTAssertNil(KitBackup.nestingDepth(Data("{\"a\":[1,{\"b\":[]}]}".utf8), limit: 3))
+        // Brackets inside strings, also after escaped quotes and backslashes, don't count.
+        let text = "{\"a\":\"[[[[\\\"[[[\\\\\",\"b\":\"]]}}{{\"}"
+        XCTAssertNotNil(try JSONSerialization.jsonObject(with: Data(text.utf8)))
+        XCTAssertEqual(KitBackup.nestingDepth(Data(text.utf8), limit: 2), 1)
+        // Exactly maxDepth is accepted, one more is not; isShallow agrees with the byte count.
+        func nested(_ n: Int) -> String { String(repeating: "[", count: n) + String(repeating: "]", count: n) }
+        let atLimit = Data(nested(KitBackup.maxDepth).utf8)
+        XCTAssertEqual(KitBackup.nestingDepth(atLimit, limit: KitBackup.maxDepth), KitBackup.maxDepth)
+        XCTAssertNil(KitBackup.nestingDepth(Data(nested(KitBackup.maxDepth + 1).utf8), limit: KitBackup.maxDepth))
+        let object = try JSONSerialization.jsonObject(with: atLimit)
+        XCTAssertTrue(KitBackup.isShallow(object, limit: KitBackup.maxDepth))
+        XCTAssertFalse(KitBackup.isShallow(object, limit: KitBackup.maxDepth - 1))
+        XCTAssertFalse(KitBackup.isShallow([[["x": [1]]]], limit: 3))
+        XCTAssertTrue(KitBackup.isShallow("leaf", limit: 0))
+        // strip drops what is too deep instead of walking it.
+        var deep: Any = 1
+        for _ in 0..<(KitBackup.maxDepth + 5) { deep = ["guards": deep] }
+        XCTAssertEqual((KitBackup.strip(deep, section: "awake") as? [String: Any])?.count, 0)
+        XCTAssertEqual((KitBackup.strip(deep, section: "displays") as? [String: Any])?.count, 0)
+        // Real backups stay far below the limit.
+        let awakeSection = (fuzzBase["sections"] as? [String: Any])?["awake"] ?? [String: Any]()
+        let doc = try XCTUnwrap(KitBackup.makeDocument(sections: ["awake": json(awakeSection), "displays": json(displays)],
+                                                         created: "t", appVersion: "0.3.0"))
+        XCTAssertLessThan(try XCTUnwrap(KitBackup.nestingDepth(doc, limit: KitBackup.maxDepth)), 16)
+    }
 }

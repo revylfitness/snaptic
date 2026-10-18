@@ -25,6 +25,10 @@ package enum KitBackup {
     package static let format = "app.snaptic.backup"
     package static let version = 1
     package static let maxBytes = 1_048_576
+    /// The deepest nesting of objects and arrays an import, merge or preview accepts (code review F5): real settings
+    /// stay far below it (the document wrapper adds 2), and everything recursive here (strip, merge, diff) only ever
+    /// walks input that passed `nestingDepth`/`isShallow` first, so a 1 MB `[[[[…` file can't exhaust the stack.
+    package static let maxDepth = 64
 
     package static let switcherSection = "switcher"
     package static let modulesSection = "modules"
@@ -159,6 +163,8 @@ package enum KitBackup {
     /// everything an export would have left out (imports never carry those fields).
     package static func parseDocument(_ data: Data) -> Result<[String: Data], BackupError> {
         guard data.count <= maxBytes else { return .failure(.tooLarge) }
+        // Before JSONSerialization or anything recursive sees it.
+        guard nestingDepth(data, limit: maxDepth) != nil else { return .failure(.wrongFormat) }
         guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return .failure(.notJSON) }
         guard root["format"] as? String == format else { return .failure(.wrongFormat) }
         guard let v = root["version"] as? Int else { return .failure(.wrongFormat) }
@@ -181,7 +187,8 @@ package enum KitBackup {
     /// `section`, which only grow. Fields the import doesn't carry keep their current value,
     /// which is how stripped fields survive an import.
     package static func merge(current: Data, imported: Data, section: String? = nil) -> Data? {
-        guard let base = try? JSONSerialization.jsonObject(with: current),
+        guard nestingDepth(current, limit: maxDepth) != nil, nestingDepth(imported, limit: maxDepth) != nil,
+              let base = try? JSONSerialization.jsonObject(with: current),
               let overlay = try? JSONSerialization.jsonObject(with: imported) else { return nil }
         var merged = deepMerge(base, overlay)
         if let section {
@@ -215,6 +222,8 @@ package enum KitBackup {
 
     /// Dotted paths of leaves that differ between two JSON documents, sorted, at most `limit`.
     package static func changedPaths(from old: Data, to new: Data, limit: Int = 50) -> [String] {
+        // Too deep to compare: shown as a whole-section change (safety-related, so it is never hidden).
+        guard nestingDepth(old, limit: maxDepth) != nil, nestingDepth(new, limit: maxDepth) != nil else { return ["(all)"] }
         guard let a = try? JSONSerialization.jsonObject(with: old),
               let b = try? JSONSerialization.jsonObject(with: new) else { return [] }
         var paths: [String] = []
@@ -241,7 +250,8 @@ package enum KitBackup {
     /// sanitized, and **then** `importable(current:)` as the last step, so nothing after it can bring back pointer
     /// movement, Drive Alive volumes or a looser guard. Nil when the result isn't usable.
     package static func importAwake(current: AwakeConfig, imported: Data) -> AwakeConfig? {
-        guard let object = try? JSONSerialization.jsonObject(with: imported), object is [String: Any] else { return nil }
+        guard nestingDepth(imported, limit: maxDepth) != nil,
+              let object = try? JSONSerialization.jsonObject(with: imported), object is [String: Any] else { return nil }
         let stripped = strip(object, section: awakeSection)
         guard JSONSerialization.isValidJSONObject(stripped),
               let overlay = try? JSONSerialization.data(withJSONObject: stripped, options: [.sortedKeys]),
@@ -253,7 +263,9 @@ package enum KitBackup {
 
     // MARK: JSON helpers
 
+    /// Too deep (`isShallow`) → an empty object: nothing of it is exported or imported.
     package static func strip(_ object: Any, section: String) -> Any {
+        guard isShallow(object, limit: maxDepth) else { return [String: Any]() }
         var stripped = object
         if let allowed = allowedPaths[section] { stripped = keepOnly(allowed, in: stripped) ?? [String: Any]() }
         stripped = stripSensitive(stripped, exact: sectionSensitiveKeys[section] ?? [])
@@ -261,6 +273,54 @@ package enum KitBackup {
             stripped = remove(Array(path.dropFirst()), from: stripped)
         }
         return stripped
+    }
+
+    /// The deepest nesting of objects and arrays in JSON text (brackets inside strings don't count; a top-level
+    /// object is 1), or nil once it passes `limit`. One linear pass with no recursion, so it is safe on any input.
+    package static func nestingDepth(_ data: Data, limit: Int) -> Int? {
+        var depth = 0, deepest = 0
+        var inString = false, escaped = false
+        for byte in data {
+            if inString {
+                if escaped {
+                    escaped = false
+                } else if byte == 0x5C {   // backslash
+                    escaped = true
+                } else if byte == 0x22 {   // quote
+                    inString = false
+                }
+                continue
+            }
+            switch byte {
+            case 0x22:
+                inString = true
+            case 0x5B, 0x7B:   // [ {
+                depth += 1
+                if depth > limit { return nil }
+                deepest = max(deepest, depth)
+            case 0x5D, 0x7D:   // ] }
+                depth = max(0, depth - 1)
+            default:
+                break
+            }
+        }
+        return deepest
+    }
+
+    /// Whether `object` nests objects and arrays at most `limit` deep (a top-level object is 1). Iterative.
+    package static func isShallow(_ object: Any, limit: Int) -> Bool {
+        var stack: [(value: Any, depth: Int)] = [(object, 1)]
+        while let item = stack.popLast() {
+            let (value, depth) = item
+            if let dict = value as? [String: Any] {
+                guard depth <= limit else { return false }
+                for child in dict.values { stack.append((child, depth + 1)) }
+            } else if let array = value as? [Any] {
+                guard depth <= limit else { return false }
+                for child in array { stack.append((child, depth + 1)) }
+            }
+        }
+        return true
     }
 
     private static func stripSensitive(_ object: Any, exact: Set<String>) -> Any {

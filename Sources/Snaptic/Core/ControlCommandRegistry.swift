@@ -11,7 +11,8 @@ import SnapticKit
 /// - `skipConfirmation` reaches a trial handler only when the user allowed it;
 /// - only `holds: true` verbs get the connection's `ControlHold` and may answer `holding` (0.3 §2.10);
 /// - verbs with a `KitControl.verbRule` (the Awake verbs) get the host's policy, off-only and hold rules whatever
-///   the module passed, and `awake start`/`hold`/`stop`/`extend` share one 1/s window (0.3 §3.1, security L3).
+///   the module passed, and `awake start`/`hold`/`stop`/`extend` share one 1/s window (0.3 §3.1, security L3);
+///   their requests are only counted, never logged with a time (security S-4).
 @MainActor final class ControlCommandRegistry {
     /// 0.3 §2.10: handlers also get the connection's peer and, for `holds: true` verbs, its hold.
     typealias Handler = @MainActor (ControlRequest, ControlContext) async -> ControlResponse
@@ -99,15 +100,15 @@ import SnapticKit
             return .failure(ControlExit.usage, L("Unknown command. Run “snaptic help” for the list."))
         }
         if let setting = KitControl.protectedSetting(verb: entry.verb, arguments: match.arguments) {
-            EventLog.shared.record(.control, "CLI \(entry.verb) refused: protected setting")
+            note(entry.verb, .refusedProtected, "CLI \(entry.verb) refused: protected setting")
             return .failure(ControlExit.refused, L("“") + setting + L("” can't be changed from the command line."))
         }
         if entry.offOnly && KitControl.requestsTurningOn(match.arguments) {
-            EventLog.shared.record(.control, "CLI \(entry.verb) refused: off-only")
+            note(entry.verb, .refusedOffOnly, "CLI \(entry.verb) refused: off-only")
             return .failure(ControlExit.refused, L("From the command line this can only be turned off."))
         }
         if KitControl.verbRule(entry.verb)?.sessionLimited == true, !sessionRate.allow(now: now()) {
-            EventLog.shared.record(.control, "CLI \(entry.verb) refused: rate")
+            note(entry.verb, .refusedRate, "CLI \(entry.verb) refused: rate")
             return .failure(ControlExit.unavailable, L("Too many Awake requests; wait a second and try again."))
         }
         let skip = KitControl.skipsConfirmation(requested: request.skipConfirmation, allowed: skipConfirmationAllowed,
@@ -118,10 +119,20 @@ import SnapticKit
         var response = await entry.handler(forwarded, context)
         // Only a hold verb keeps its connection; from any other verb a `holding` reply is an ordinary close.
         if response.holding && !(entry.holds && response.exitCode == ControlExit.ok) { response.holding = false }
-        EventLog.shared.record(.control, "CLI \(entry.verb) → \(response.exitCode)" + (skip ? " (no panel)" : "")
-                               + (response.holding ? " (holding)" : ""))
+        note(entry.verb, ControlVerbOutcome(exitCode: response.exitCode, holding: response.holding),
+             "CLI \(entry.verb) → \(response.exitCode)" + (skip ? " (no panel)" : "") + (response.holding ? " (holding)" : ""))
         // FIXES-R3 10: with --json every successful reply is JSON.
         return request.json ? KitControl.jsonReply(response) : response
+    }
+
+    /// Security S-4: a verb with a host rule (the Awake verbs) is only counted, under a fixed key with no time, so
+    /// the exported `.control` log keeps no timeline of when scripts kept the Mac awake; other verbs get a line.
+    private func note(_ verb: String, _ outcome: ControlVerbOutcome, _ line: @autoclosure () -> String) {
+        if let key = KitControl.counterKey(verb: verb, outcome: outcome) {
+            EventLog.shared.count(key)
+        } else {
+            EventLog.shared.record(.control, line())
+        }
     }
 
     private func help(_ topic: [String], json: Bool) -> ControlResponse {

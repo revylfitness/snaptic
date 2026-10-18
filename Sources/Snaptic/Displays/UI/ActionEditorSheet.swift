@@ -86,12 +86,10 @@ struct ActionEditorSheet: View, ControlDeclaring {
     /// Footer leading: Delete Action… with the standard confirmation.
     private func deleteAction(_ action: CustomActionSpec) -> RestoreDefaults {
         let store = env.config
-        let id = actionID
-        let name = action.name.isEmpty ? L("this action") : L("“\(action.name)”")
-        return RestoreDefaults(title: L("Delete Action…"), question: L("Delete \(name)?"),
-                               message: L("Its menu item and shortcut go away; the program stays where it is."),
+        let deletion = AutomationDeletion.action(action)
+        return RestoreDefaults(title: L("Delete Action…"), question: deletion.question, message: deletion.message,
                                button: L("Delete"), destructive: true) {
-            store.value.automation.actions.removeAll { $0.id == id }
+            deletion.perform(store)
         }
     }
 }

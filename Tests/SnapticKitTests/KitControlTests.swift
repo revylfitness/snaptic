@@ -541,4 +541,49 @@ final class KitControlTests: XCTestCase {
         }
         XCTAssertEqual(cap, 7_200)
     }
+
+    // MARK: Security S-4 and R5-14a
+
+    func testAwakeVerbsAreCountedNeverLogged() {
+        var keys = Set<String>()
+        for rule in KitControl.awakeVerbRules {
+            for outcome in ControlVerbOutcome.allCases {
+                guard let key = KitControl.counterKey(verb: rule.verb, outcome: outcome) else {
+                    return XCTFail(rule.verb + " isn't counted")
+                }
+                // Fixed text: no digits (no time, pid or code), no spaces, one key per verb and outcome.
+                XCTAssertNil(key.rangeOfCharacter(from: .decimalDigits), key)
+                XCTAssertFalse(key.contains(" "), key)
+                XCTAssertTrue(key.hasPrefix("cli.awake."), key)
+                keys.insert(key)
+            }
+        }
+        XCTAssertEqual(keys.count, KitControl.awakeVerbRules.count * ControlVerbOutcome.allCases.count)
+        XCTAssertEqual(KitControl.counterKey(verb: "awake hold", outcome: .holding), "cli.awake.hold.holding")
+        for verb in ["layout apply", "display brightness", "prevent-sleep", "awake", "awake holdx", ""] {
+            XCTAssertNil(KitControl.counterKey(verb: verb, outcome: .ok), verb)
+        }
+    }
+
+    func testVerbOutcomeFromReply() {
+        XCTAssertEqual(ControlVerbOutcome(exitCode: ControlExit.ok, holding: false), .ok)
+        XCTAssertEqual(ControlVerbOutcome(exitCode: ControlExit.ok, holding: true), .holding)
+        for code in [ControlExit.usage, ControlExit.notFound, ControlExit.refused, ControlExit.unavailable,
+                     ControlExit.cancelled, 99] {
+            XCTAssertEqual(ControlVerbOutcome(exitCode: code, holding: true), .failed)
+        }
+    }
+
+    func testServerStopGivesHeldClientsAFinalLineWithExitZero() throws {
+        // R5-14a: turning command-line control off ends holds with a final line and exit 0, never a bare EOF.
+        let final = KitControl.serverStopFinal
+        XCTAssertEqual(final.exitCode, ControlExit.ok)
+        XCTAssertFalse(final.holding)
+        XCTAssertEqual(final.output, "Command-line control was turned off.")
+        let line = try XCTUnwrap(KitControl.encode(final))
+        XCTAssertEqual(line.last, 0x0A)
+        XCTAssertLessThanOrEqual(line.count, Int(KitControl.heldSendBufferBytes))
+        XCTAssertGreaterThan(KitControl.heldStopGraceSeconds, 0)
+        XCTAssertLessThanOrEqual(KitControl.heldStopGraceSeconds, 5)
+    }
 }

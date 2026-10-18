@@ -35,12 +35,12 @@ struct WindowItem: Identifiable {
     }
 
     var badge: String? {
-        if isWindowless { return "No windows" }
-        if groupedCount > 1 { return "\(groupedCount) windows" }
-        if isMinimized { return "Minimized" }
-        if isHidden { return "Hidden" }
-        if isOnOtherSpace { return "Other Space" }
-        if isFullscreen { return "Full Screen" }
+        if isWindowless { return L("No windows") }
+        if groupedCount > 1 { return L("\(groupedCount) windows") }
+        if isMinimized { return L("Minimized") }
+        if isHidden { return L("Hidden") }
+        if isOnOtherSpace { return L("Other Space") }
+        if isFullscreen { return L("Full Screen") }
         return nil
     }
 }
@@ -476,7 +476,7 @@ final class WindowManager {
 
     private static func appName(_ app: NSRunningApplication) -> String {
         let name = TextSanitizer.clean(app.localizedName ?? "", maxScalars: 64)
-        return name.isEmpty ? "App" : name
+        return name.isEmpty ? L("App") : name
     }
 
     private func makeSyntheticID() -> CGWindowID {

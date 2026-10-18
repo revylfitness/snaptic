@@ -32,20 +32,14 @@ package struct SwitcherFeaturesConfig: ConfigModel {
     }
 
     package init(from decoder: Decoder) throws {
-        var container = try decoder.unkeyedContainer()
+        // Kit's LossyArray: element by element (a non-string is skipped), at most `maxElements` attempts.
         var known = Set<SwitcherFeature>()
         var other: [String] = []
-        var count = 0
-        while !container.isAtEnd && count < 256 {
-            count += 1
-            if let name = try? container.decode(String.self) {
-                if let feature = SwitcherFeature(rawValue: name) {
-                    known.insert(feature)
-                } else {
-                    other.append(name)
-                }
-            } else if (try? container.decode(Skip.self)) == nil {
-                break   // can't advance past this element
+        for name in try LossyArray<String>(from: decoder).items {
+            if let feature = SwitcherFeature(rawValue: name) {
+                known.insert(feature)
+            } else {
+                other.append(name)
             }
         }
         disabled = known
@@ -130,10 +124,5 @@ package struct SwitcherFeaturesConfig: ConfigModel {
         case .commandTabTakeover: return L("Off: shortcuts that use ⌘ are ignored and macOS keeps ⌘⇥.")
         case .passthrough: return L("Off: the app exceptions list is ignored.")
         }
-    }
-
-    /// Consumes any JSON value without reading it.
-    private struct Skip: Decodable {
-        init(from decoder: Decoder) throws {}
     }
 }
