@@ -40,7 +40,7 @@ extension CGDirectDisplayID {
         var count: UInt32 = 0
         guard CGGetOnlineDisplayList(0, nil, &count) == .success else { return nil }
         guard count > 0 else { return [] }
-        var ids = [CGDirectDisplayID](repeating: 0, count: Int(min(count, 64)))
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(Swift.min(count, 64)))
         guard CGGetOnlineDisplayList(UInt32(ids.count), &ids, &count) == .success else { return nil }
         return Array(ids.prefix(Int(count)))
     }
