@@ -1,8 +1,8 @@
 import XCTest
 @testable import SnapticKit
 
-/// PLAN 0.3 §4.8 tests (R5-13 timing): the per-table tests run from step 0; totality (test 1's home check) and the
-/// key cross-check (test 5) are skipped until the step-3 exit, when the lead turns them on.
+/// PLAN 0.3 §4.8 tests (R5-13): the per-table tests, totality (test 1's home check) and the key cross-check (test 5),
+/// all on since the step-3 exit.
 final class ControlRegistryTests: XCTestCase {
     private var specs: [(table: String, surface: String, spec: ControlSpec)] {
         ControlRegistry.tables.flatMap { t in t.controls.map { (String(describing: t), t.surface, $0) } }
@@ -24,7 +24,7 @@ final class ControlRegistryTests: XCTestCase {
     }
 
     func testRemovalsAreLegacyIDsWithReasons() {
-        XCTAssertEqual(ControlRemovals.removed.count, 16)
+        XCTAssertEqual(ControlRemovals.removed.count, 18)
         for (id, reason) in ControlRemovals.removed {
             XCTAssertTrue(isLegacy(id), id.rawValue)
             XCTAssertFalse(reason.trimmingCharacters(in: .whitespaces).isEmpty, id.rawValue)
@@ -101,14 +101,55 @@ final class ControlRegistryTests: XCTestCase {
         }
     }
 
-    // MARK: Skipped until the step-3 exit
+    // MARK: Totality and the key cross-check (step-3 exit)
 
-    func testEveryLegacyIDHasAHomeOrARemovalReason() throws {
-        throw XCTSkip("Totality is turned on at the 0.3 step-3 exit (R5-13).")
+    /// Test 1: every frozen 0.2 id has a home (some spec's `replaces`) or a removal reason, never both.
+    func testEveryLegacyIDHasAHomeOrARemovalReason() {
+        var homed = Set<LegacyControlID>()
+        for (_, _, spec) in specs { homed.formUnion(spec.replaces) }
+        let removed = ControlRemovals.removed
+        var missing: [String] = []
+        for id in ControlLegacy.ids {
+            let home = homed.contains(id), gone = removed[id] != nil
+            if !home && !gone { missing.append(id.rawValue) }
+            XCTAssertFalse(home && gone, "\(id.rawValue) has a home and a removal reason")
+        }
+        for id in missing { XCTFail("no home or removal reason: \(id)") }
+        XCTAssertTrue(homed.isSubset(of: legacy))
+        XCTAssertTrue(Set(removed.keys).isSubset(of: legacy))
     }
 
-    func testKeyCrossCheck() throws {
-        throw XCTSkip("The key cross-check is turned on at the 0.3 step-3 exit (R5-13).")
+    /// Test 5: every leaf key path of the full fixtures is declared by some spec's `keys` (or an ancestor of it is)
+    /// or is internal state.
+    func testKeyCrossCheck() {
+        var declared = ControlLegacy.internalKeys
+        for (_, _, spec) in specs { declared.formUnion(spec.keys) }
+        let configs: [(String, Any)] = [("DisplaysConfig", ConfigFixtures.fullDisplays()),
+                                        ("ModulesConfig", ConfigFixtures.fullModules()),
+                                        ("AwakeConfig", ConfigFixtures.fullAwake())]
+        for (name, value) in configs {
+            let paths = ConfigFixtures.keyPaths(value)
+            XCTAssertFalse(paths.isEmpty, name)
+            let leaves = paths.filter { path in !paths.contains { $0.hasPrefix(path + ".") } }
+            for path in leaves.sorted() where !ConfigFixtures.isCovered(path, by: declared) {
+                XCTFail("\(name): no control declares \(path) and it isn't in ControlLegacy.internalKeys")
+            }
+        }
+    }
+
+    /// The fixtures reach into every list (one element each), so the cross-check sees list element fields.
+    func testFixturesFillEveryList() {
+        let displays = ConfigFixtures.keyPaths(ConfigFixtures.fullDisplays())
+        for path in ["perDisplay.*.ddc.inputs.*.name", "perDisplay.*.pip.configurations.*.filters.*.kind",
+                     "virtualScreens.screens.*.associations.*.target", "layouts.layouts.*.displays.*.identity.tier1",
+                     "automation.hooks.*.command.arguments", "automation.actions.*.shortcut.keyCode",
+                     "management.protection.*.displays.*.mode.pixelWidth", "safety.keptModes.*.modes.*.ioModeID",
+                     "keys.inputSlots.*.display", "pip.luts.*.size"] {
+            XCTAssertTrue(displays.contains(path), path)
+        }
+        let awake = ConfigFixtures.keyPaths(ConfigFixtures.fullAwake())
+        XCTAssertTrue(awake.contains("triggers.triggers.*.criteria.*.criterion.usbDevice.serialHash"))
+        XCTAssertTrue(awake.contains("sessions.presets.*.kind.untilIdle.maxSeconds"))
     }
 
     /// The walker itself is exercised now, so step 3 only flips the skip.

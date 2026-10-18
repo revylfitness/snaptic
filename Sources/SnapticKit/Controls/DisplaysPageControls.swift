@@ -11,7 +11,7 @@ package enum DisplaysPageControls: ControlTable {
 
     package static let controls: [ControlSpec] = [
         ControlSpec("displays.root.useDisplays", .setting,
-                    replaces: ["l.gen.modules.displays", "l.dfeat.overview", "l.dfeat.diagnostics"],
+                    replaces: ["l.gen.modules.displays"],
                     keys: ["modules.*.enabled"],
                     search: SearchSpec("Use Displays", keywords: ["display", "monitor", "turn on", "turn off"],
                                        root: root)),

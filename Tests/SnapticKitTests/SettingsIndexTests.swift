@@ -226,6 +226,11 @@ final class SettingsIndexTests: XCTestCase {
         XCTAssertEqual(SettingsIndex.pageTitle("displays.brightness.advanced"), "Advanced")
         XCTAssertEqual(SettingsIndex.pageTitle("displays.keyboard.shortcuts"), "Keyboard Shortcuts")
         XCTAssertNil(SettingsIndex.pageTitle("displays.unknown"))
+        for (route, title) in [("displays.resolution", "Resolution"), ("displays.connection", "Connection"),
+                               ("displays.matchTextSize", "Match Text Size"),
+                               ("displays.virtual.editor", "Virtual Display")] {
+            XCTAssertEqual(SettingsIndex.pageTitle(route), title)
+        }
         let sheet = SettingsSearchEntry(id: "a", title: "Search", root: "windowSwitcher", anchor: "a", sheet: "switcher.advanced")
         XCTAssertEqual(SettingsIndex.location(of: sheet, rootTitle: "Window Switcher"), "Window Switcher › Advanced")
         let sub = SettingsSearchEntry(id: "b", title: "Gamma", root: "displays", route: SettingsRoute("displays.color"),

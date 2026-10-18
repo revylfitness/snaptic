@@ -161,6 +161,10 @@ enum AppNames {
         "com.bitwarden.desktop": "Bitwarden", "com.apple.Passwords": "Passwords", "com.apple.keychainaccess": "Keychain Access",
         "in.sinew.Enpass-Desktop": "Enpass", "com.dashlane.dashlanephonefinal": "Dashlane", "com.lastpass.LastPass": "LastPass",
         "org.torproject.torbrowser": "Tor Browser",
+        // Picture in Picture's default privacy prefixes (PIPPrivacy.defaultProtectedPrefixes).
+        "com.1password": "1Password", "com.agilebits": "1Password 7", "com.bitwarden": "Bitwarden",
+        "com.dashlane": "Dashlane", "com.lastpass": "LastPass", "org.keepassxc": "KeePassXC",
+        "org.torproject": "Tor Browser",
     ]
 
     static func runningApps() -> [AppChoice] {

@@ -35,6 +35,17 @@ package enum ControlLegacy {
             // DisplaysConfig: 0.2's per-display sleep prevention, ignored since 0.3 and kept only for 0.2 downgrades
             // until 0.4 (§2.13; its control moved to Awake through migration M1)
             "perDisplay.*.management.preventSleep",
+            // DisplaysConfig: remembered state no control edits
+            "perDisplay.*.brightness.value", "perDisplay.*.identity.fingerprint", "perDisplay.*.identity.lastSeen",
+            "perDisplay.*.identity.lastKnownName", "perDisplay.*.resolution.persisted", "virtualScreens.lastOrigins",
+            "pip.firstRunAcknowledged",
+            // DisplaysConfig: 0.2 fields read only by migrations or kept for 0.2 downgrades (M4 moved the panel and
+            // identify shortcuts into keys.shortcuts; M10 replaced the header power switch); no 0.3 control
+            "menu.showPanelShortcut", "menu.identifyShortcut", "menu.collapsedDisplays",
+            "perDisplay.*.management.powerSwitch",
+            // DisplaysConfig: fixed policies without a control (the 90-day forget of displays not seen again, 0.2's
+            // offline-display listing, the never-exposed bit-depth filter)
+            "identity.forgetAfterDays", "identity.showOfflineDisplays", "perDisplay.*.resolution.bitDepthFilter",
         ]
     }
 

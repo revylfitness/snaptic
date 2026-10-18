@@ -26,6 +26,8 @@ package enum ControlRemovals {
                "Right-click menu removed (C3); each item has a Display Tools twin")
         remove(["l.menu.fixed.tools.moreFeatures"],
                "\u{201C}Display Settings…\u{201D} in each display submenu and \u{201C}Snaptic Settings…\u{201D} cover it (parity minor 3)")
+        remove(["l.dfeat.overview", "l.dfeat.diagnostics"],
+               "Always on, with no switch; the Displays page and Display Information are always there")
         return map
     }
 }
