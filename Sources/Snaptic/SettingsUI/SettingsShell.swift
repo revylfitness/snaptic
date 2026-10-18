@@ -129,8 +129,6 @@ import SnapticKit
 
     // MARK: Navigation
 
-    func push(_ route: SettingsRoute) { paths[root, default: []].append(route) }
-
     func pop() { _ = paths[root]?.popLast() }
 
     func pathBinding(for root: String) -> Binding<[SettingsRoute]> {
@@ -187,12 +185,18 @@ import SnapticKit
     }
 
     /// Sets the root now and pushes the route on the next main-queue turn (macOS 14 drops a push made in the same
-    /// transaction as the root change). A route nothing shows is not pushed.
+    /// transaction as the root change). A route nothing shows is not pushed; a route that names a row
+    /// (`SettingsIndex.anchorEntry`, e.g. "awake.page.rules") reveals that row instead.
     func go(to location: SettingsLocation) {
         searchText = ""
         root = location.root
         paths[location.root] = []
         guard let route = location.route else { return }
+        if destination(route, root: location.root) == nil,
+           let entry = SettingsIndex.anchorEntry(route.id, root: location.root, in: ControlRegistry.tables) {
+            reveal(entry)
+            return
+        }
         revealToken &+= 1
         let token = revealToken
         DispatchQueue.main.async { [weak self] in
