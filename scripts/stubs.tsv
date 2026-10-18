@@ -234,7 +234,6 @@ Sources/Snaptic/Displays/UI/LayoutsMenuItems.swift	D	K9	LayoutsMenuItems	-
 Sources/Snaptic/Displays/UI/PIPPage.swift	E	K10	PIPPage	Picture in Picture
 Sources/Snaptic/Displays/UI/PIPMenuItems.swift	E	K9	PIPMenuItems	-
 Sources/Snaptic/Displays/UI/AutomationPage.swift	A	K10	AutomationPage	Automation
-Sources/Snaptic/Displays/UI/MenuCustomizationPage.swift	M	K10	MenuCustomizationPage	Menu
 Tests/SnapticKitTests/KitModulesTests.swift	lead	L	-	-
 Tests/SnapticKitTests/OtherDisplayAppsTests.swift	lead	K3	OtherDisplayAppsTests	-
 Tests/SnapticKitTests/LineSplitterTests.swift	lead	K3	LineSplitterTests	-

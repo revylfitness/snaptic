@@ -2,8 +2,8 @@ import AppKit
 import Combine
 import SnapticKit
 
-/// A menu item that runs a closure (0.2 factory). New code uses `MenuKit`; this stays for the 0.2 contributors
-/// until they move to MenuKit and it is deleted at the 0.3 step-3 exit (PLAN 0.3 §5.1).
+/// A menu item that runs a closure (0.2 factory). Every menu uses `MenuKit`; only the app's main menu (AppDelegate)
+/// still builds two of these, and the step-3b merge moves it over and deletes this class (PLAN 0.3 §5.1).
 @MainActor final class ClosureMenuItem: NSMenuItem {
     private let handler: @MainActor () -> Void
 
@@ -357,7 +357,7 @@ import SnapticKit
         var items: [NSMenuItem] = []
         if let upgrade = upgradeItem(host: host, config: config) { items.append(upgrade) }
         if let notices = recentNotices(host) { items.append(notices) }
-        let page = plan.noModulesEnabled ? GeneralPages.modulesID : nil
+        let page = plan.noModulesEnabled ? SettingsRootID.general : nil
         items.append(MenuKit.settings(L("Snaptic Settings…"), control: ControlID("menu.snaptic.settings")) { [weak host] in
             host?.openSettings(page: page)
         })
@@ -381,12 +381,13 @@ import SnapticKit
         return items
     }
 
-    /// 0.2's "More display features…" for upgraders who haven't turned Displays on (the General card's twin).
+    /// 0.2's "More display features…" for upgraders who haven't turned Displays on (the General card's twin): opens
+    /// Settings › Displays, whose header switch turns it on.
     private func upgradeItem(host: ModuleHost, config: ModulesConfig) -> NSMenuItem? {
         guard !config.isEnabled(.displays),
               config.showNewDisplaysCard || config.newModuleCards.contains(.displays) else { return nil }
         return MenuKit.action(L("More Display Features…"), control: ControlID("menu.snaptic.upgrade")) { [weak host] in
-            host?.openSettings(page: GeneralPages.modulesID)
+            host?.openSettings(page: SettingsRootID.displays)
         }
     }
 

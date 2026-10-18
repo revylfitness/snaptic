@@ -321,26 +321,7 @@ import SnapticKit
         return .turnOn
     }
 
-    // MARK: 0.2 item helpers (callers move to MenuKit; deleted at the 0.3 step-3 exit)
-
-    static func actionItem(_ title: String, symbol: String? = nil, handler: @escaping @MainActor () -> Void) -> NSMenuItem {
-        MenuKit.action(title, symbol: symbol, handler)
-    }
-
-    /// A disabled line of text (state, reason).
-    static func infoItem(_ title: String, symbol: String? = nil) -> NSMenuItem {
-        MenuKit.status(title, symbol: symbol)
-    }
-
-    /// A submenu row. Unlike `MenuKit.submenu` it keeps nested submenus (0.2 contributors still build them).
-    static func submenuItem(_ title: String, symbol: String? = nil, _ items: [NSMenuItem]) -> NSMenuItem {
-        let item = MenuKit.action(title, symbol: symbol) {}
-        item.action = nil
-        item.target = nil
-        item.submenu = menu(items, title: title)
-        return item
-    }
-
+    /// A plain menu of detached items (the floating panel's "⋯" menu).
     static func menu(_ items: [NSMenuItem], title: String) -> NSMenu {
         let menu = NSMenu(title: title)
         menu.autoenablesItems = false
@@ -349,29 +330,5 @@ import SnapticKit
             menu.addItem(item)
         }
         return menu
-    }
-
-    // MARK: Shared actions
-
-    /// Turns a feature on with everything it requires (the same rule as DisplaysModule.enable, for places that only
-    /// have the context).
-    static func enable(_ feature: DisplayFeature, context: DisplaysContext) {
-        let available = Set(context.runtime.availability.compactMap { $0.value.isAvailable ? $0.key : nil })
-        var value = context.config.value
-        for (f, on) in FeatureGraph.enabling(feature, raw: value.rawFeatures, available: available) {
-            value.features[f] = on
-        }
-        context.config.value = value
-        EventLog.shared.record(.modules, "Turned on \(feature.rawValue) from the Displays menu")
-    }
-
-    /// Posted with `userInfo["page"]` (a settings page id such as "displays.features"); SettingsWindowHost
-    /// observes it.
-    static let openSettingsNotification = Notification.Name("SnapticOpenSettingsPage")
-
-    /// For callers that have no context (E's PIP menu). Everything in F uses `ctx.openSettings(page)`, the host's
-    /// own path.
-    static func openSettings(page: String) {
-        NotificationCenter.default.post(name: openSettingsNotification, object: nil, userInfo: ["page": page])
     }
 }

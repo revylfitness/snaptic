@@ -37,6 +37,11 @@ private struct MenuBarPageContent: View {
     @ObservedObject var displays: ConfigStore<DisplaysConfig>
     @ObservedObject var awake: ConfigStore<AwakeConfig>
     @ObservedObject private var shell = SettingsShell.shared
+    /// The display the Customize sheet opens with (Display Details' "Customize Displays Menu…" link sets
+    /// `SettingsShell.selectedDisplay`, then opens the sheet; parity M6). Nil when opened from this page or search.
+    @State private var customizeFocus: DisplayKey?
+    /// The sheet was opened by this page's own button.
+    @State private var openedHere = false
 
     var body: some View {
         SettingsPageScaffold(route: SettingsRoute(SettingsRootID.menuBar)) {
@@ -62,6 +67,8 @@ private struct MenuBarPageContent: View {
                               isOn: SettingsBinding.store(displays, \.menu.scrollAdjustsSliders),
                               anchor: ControlID("menubar.page.scroll"))
                 ButtonRow(L("Customize Displays Menu…"), control: ControlID("menubar.page.customize")) {
+                    openedHere = true
+                    customizeFocus = nil
                     shell.openSheet = CustomizeMenuSheetControls.sheetID
                 }
             }
@@ -71,14 +78,27 @@ private struct MenuBarPageContent: View {
                                 anchor: ControlID("menubar.page.snapticIcon"))
             }
             PageFooterButtons(advanced: nil, help: SettingsRoute(SettingsRootID.menuBar),
-                              restoreDefaults: RestoreDefaults(scopeName: L("Menu Bar"), destructive: false) {
-                                  restoreDefaults()
-                              },
+                              restoreDefaults: RestoreDefaults(
+                                  title: L("Restore Menu Bar Defaults…"),
+                                  question: L("Restore menu bar settings to their defaults?"),
+                                  message: L("Where modules appear, their icons, and the Displays menu go back to their defaults. Your other Snaptic settings stay as they are."),
+                                  button: L("Restore Defaults"), destructive: false) { restoreDefaults() },
                               restoreControl: ControlID("menubar.page.restoreDefaults"))
         }
-        .sheet(isPresented: shell.sheetBinding(CustomizeMenuSheetControls.sheetID)) {
-            CustomizeMenuSheet()
+        .sheet(isPresented: shell.sheetBinding(CustomizeMenuSheetControls.sheetID),
+               onDismiss: { openedHere = false; customizeFocus = nil }) {
+            CustomizeMenuSheet(focus: customizeFocus)
         }
+        .onAppear { noteCustomizeOpening() }
+        .onChange(of: shell.openSheet) { _, _ in noteCustomizeOpening() }
+    }
+
+    /// The Customize sheet is the shell's sheet `CustomizeMenuSheetControls.surface`. Opened from elsewhere — Display
+    /// Details' link, which selects its display and switches to this page first — it starts with the selected
+    /// display shown; a search result (the sidebar search still has text) shows its own row instead.
+    private func noteCustomizeOpening() {
+        guard shell.openSheet == CustomizeMenuSheetControls.surface, !openedHere else { return }
+        customizeFocus = shell.searchText.isEmpty ? shell.selectedDisplay : nil
     }
 
     // MARK: Modules
@@ -178,7 +198,8 @@ private struct MenuBarPageContent: View {
             }
         } else if config.iconsNeedExternalDisplay {
             Section {
-                StatusRow(L("No Snaptic icon is shown while no external display is connected."), style: .warning,
+                StatusRow(L("The Displays icon only appears while an external display is connected. Without one, no Snaptic icon is shown."),
+                          style: .warning,
                           actions: [
                               StatusAction(title: L("Always Show Displays"), control: ControlID("menubar.page.warning")) {
                                   modules.value.setPresence(.ownIcon, for: .displays)

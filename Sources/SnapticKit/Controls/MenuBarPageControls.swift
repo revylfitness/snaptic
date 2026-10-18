@@ -40,10 +40,12 @@ package enum MenuBarPageControls: ControlTable {
         ControlSpec("menubar.page.scroll", .setting, when: [.module(.displays)],
                     replaces: ["l.gen.menu.scrollAdjustsSliders"], keys: ["menu.scrollAdjustsSliders"],
                     search: search("Scroll over a slider to adjust it", ["scroll wheel", "trackpad"])),
-        ControlSpec("menubar.page.customize", .button, when: [.module(.displays)]),
+        ControlSpec("menubar.page.customize", .button, when: [.module(.displays)],
+                    search: search("Customize Displays Menu", ["menu items", "reorder", "hide", "submenu", "display tools"])),
         ControlSpec("menubar.page.snapticIcon", .setting, replaces: ["l.gen.menu.snaptic.icon"], keys: ["sharedSymbol"],
                     search: search("Snaptic icon", ["glyph", "symbol"])),
         ControlSpec("menubar.page.restoreDefaults", .button, replaces: ["l.gen.menu.reset"],
-                    keys: ["modules.*.presence", "modules.*.symbol", "sharedSymbol"]),
+                    keys: ["modules.*.presence", "modules.*.symbol", "sharedSymbol"],
+                    search: search("Restore Menu Bar Defaults", ["reset"])),
     ]
 }

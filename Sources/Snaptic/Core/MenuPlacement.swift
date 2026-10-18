@@ -3,18 +3,10 @@ import CoreGraphics
 import SnapticKit
 
 /// Where module menus go (PLAN §3.5, 0.3 §5.2): the Snaptic item, an icon of their own (always or while active), or
-/// nowhere (then Settings, shortcuts and a relaunch still reach everything). The `MenuPlacementChoice` titles are
-/// 0.2's and go at the 0.3 step-3 exit; 0.3 UI uses the `MenuPresence` titles.
+/// nowhere (then Settings, shortcuts and a relaunch still reach everything). Titles are the `MenuPresence` ones
+/// (Control Center wording).
 enum MenuPlacement {
     static let defaultSharedSymbol = "rectangle.on.rectangle"
-
-    static func title(_ choice: MenuPlacementChoice) -> String {
-        switch choice {
-        case .shared: return L("In Snaptic's menu")
-        case .ownIcon: return L("Own menu bar icon")
-        case .hidden: return L("Hidden")
-        }
-    }
 
     /// The Menu Bar page's presence pop-up (C2, Control Center wording; one option order for every module).
     static func title(_ presence: MenuPresence) -> String {
@@ -38,14 +30,6 @@ enum MenuPlacement {
 
     /// The presence choices a module's pop-up offers, in menu order (Show When Active only for Displays and Awake).
     static func presences(for id: ModuleID) -> [MenuPresence] { MenuPresence.allowed(for: id) }
-
-    static func title(_ visibility: MenuItemVisibility) -> String {
-        switch visibility {
-        case .visible: return L("Visible")
-        case .inSubmenu: return L("In submenu")
-        case .hidden: return L("Hidden")
-        }
-    }
 
     /// The SF Symbol of a module's own icon.
     @MainActor static func symbol(for module: any SnapticModule, in config: ModulesConfig) -> String {

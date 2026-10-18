@@ -216,9 +216,10 @@ final class DisplaysMenuPlanTests: XCTestCase {
         XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("d.resolutionSlider"), declared: nil), .hidden)
         XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("d.hdrToggle"), declared: nil), .hidden)
         XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("d.setMain"), declared: nil), .inSubmenu)
-        XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("c.ddc.power"), declared: nil), .visible)
+        XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("c.ddc.custom"), declared: nil), .visible)
+        XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("c.ddc.power"), declared: nil), .inSubmenu)
         XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("d.disconnectItem"), declared: nil), .inSubmenu)
-        XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("d.disconnectAllButMain"), declared: nil), .inSubmenu)
+        XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("d.disconnectAllButMain"), declared: nil), .visible)
         XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("f.tools.panel"), declared: nil), .visible)
         XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("z.unknown"), declared: nil), .visible)
         XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(id("z.unknown"), declared: .hidden), .hidden)
@@ -231,6 +232,100 @@ final class DisplaysMenuPlanTests: XCTestCase {
             c.setShown(true, for: id(raw), default: fallback)
             XCTAssertEqual(DisplaysMenuPlan.place(id(raw), visibility: c.visibility(of: id(raw), default: fallback),
                                                   perDisplay: true, isCustomRow: true), .slider)
+        }
+    }
+
+    // MARK: Defaults equal the contributors' descriptors
+
+    /// The repository root (this file is Tests/SnapticKitTests/…), when the app sources are next to the tests.
+    private static var repositoryRoot: URL? {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let app = root.appendingPathComponent("Sources/Snaptic")
+        return FileManager.default.fileExists(atPath: app.path) ? root : nil
+    }
+
+    private static func swiftSources(under dir: URL) -> [String] {
+        guard let walker = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil) else { return [] }
+        var texts: [String] = []
+        for case let url as URL in walker where url.pathExtension == "swift" {
+            if let text = try? String(contentsOf: url, encoding: .utf8) { texts.append(text) }
+        }
+        return texts
+    }
+
+    private static func matches(_ pattern: String, in text: String) -> [[String]] {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let ns = text as NSString
+        return regex.matches(in: text, range: NSRange(location: 0, length: ns.length)).map { m in
+            (1..<m.numberOfRanges).map { m.range(at: $0).location == NSNotFound ? "" : ns.substring(with: m.range(at: $0)) }
+        }
+    }
+
+    /// Every `DisplayMenuItemDescriptor(id: …, defaultVisibility: …)` in the app sources, with its id resolved
+    /// through the `DisplayMenuItemID` constants it names (the app's and Kit's). A custom action (`menuID($0)`) is
+    /// the family.
+    private static func declaredDefaults(_ texts: [String]) -> (resolved: [(String, MenuItemVisibility)], unresolved: [String]) {
+        var constants: [String: Set<String>] = ["menuID": [DisplaysMenuPlan.customActionPrefix]]
+        var aliases: [String: String] = [:]
+        for text in texts {
+            for m in matches(#"static let (\w+)\s*=\s*(?:DisplayMenuItemID|Self)\(rawValue:\s*"([^"]*)"\)"#, in: text) {
+                constants[m[0], default: []].insert(m[1])
+            }
+            for m in matches(#"static let (\w+)\s*=\s*DisplayMenuItemID\.(\w+)\b"#, in: text) { aliases[m[0]] = m[1] }
+        }
+        for (name, target) in aliases { if let raw = constants[target] { constants[name, default: []].formUnion(raw) } }
+        var resolved: [(String, MenuItemVisibility)] = []
+        var unresolved: [String] = []
+        for text in texts {
+            let pattern = #"DisplayMenuItemDescriptor\(\s*id:\s*([\w.]+)(?:\([^)]*\))?\s*,[\s\S]*?defaultVisibility:\s*\.(\w+)"#
+            for m in matches(pattern, in: text) {
+                let name = String(m[0].split(separator: ".").last ?? "")
+                guard let raws = constants[name], raws.count == 1, let raw = raws.first,
+                      let visibility = MenuItemVisibility(rawValue: m[1]) else {
+                    unresolved.append("\(m[0]) \(m[1])")
+                    continue
+                }
+                resolved.append((raw, visibility))
+            }
+        }
+        return (resolved, unresolved)
+    }
+
+    /// The plan's default for each item equals its contributor's descriptor default (the descriptor wins at run
+    /// time; the plan's is used when no contributor runs, so the two must not disagree), and every item the plan
+    /// keeps has a contributor that declares it.
+    func testPlanDefaultsEqualTheContributorsDescriptors() throws {
+        guard let root = Self.repositoryRoot else { throw XCTSkip("App sources aren't next to the tests.") }
+        let texts = Self.swiftSources(under: root.appendingPathComponent("Sources"))
+        let (declared, unresolved) = Self.declaredDefaults(texts)
+        XCTAssertEqual(unresolved, [], "descriptors whose id the test can't resolve")
+        XCTAssertGreaterThanOrEqual(declared.count, 40)
+        var seen: Set<String> = []
+        for (raw, visibility) in declared {
+            guard let info = DisplaysMenuPlan.info(for: id(raw)) else {
+                XCTFail("\(raw) is declared by a contributor but not in the plan")
+                continue
+            }
+            seen.insert(info.id.rawValue)
+            guard info.location != .removed else { continue }
+            XCTAssertEqual(info.menuDefault, visibility, "\(raw): plan vs descriptor")
+            XCTAssertEqual(DisplaysMenuPlan.defaultVisibility(info.id, declared: nil),
+                           DisplaysMenuPlan.defaultVisibility(info.id, declared: visibility), raw)
+        }
+        for info in DisplaysMenuPlan.items where info.location != .removed {
+            XCTAssertTrue(seen.contains(info.id.rawValue), "\(info.id.rawValue) has no contributor descriptor")
+        }
+    }
+
+    /// §4.8: Contrast and Resolution sliders are hidden by default; Brightness and Volume show (§5.2's row budget).
+    func testSliderDefaultsFollowTheMenuTable() {
+        XCTAssertEqual(DisplaysMenuPlan.info(for: id("c.ddc.contrast"))?.menuDefault, .hidden)
+        XCTAssertEqual(DisplaysMenuPlan.info(for: id("d.resolutionSlider"))?.menuDefault, .hidden)
+        XCTAssertEqual(DisplaysMenuPlan.info(for: id("c.brightness.slider"))?.menuDefault, .visible)
+        XCTAssertEqual(DisplaysMenuPlan.info(for: id("c.ddc.volume"))?.menuDefault, .visible)
+        for info in DisplaysMenuPlan.items where info.location == .slider {
+            XCTAssertNotEqual(info.menuDefault, .inSubmenu, "\(info.id.rawValue): a slider is never in a submenu")
         }
     }
 
@@ -289,14 +384,15 @@ final class DisplaysMenuPlanTests: XCTestCase {
 
     // MARK: Control tables (N16 pairing)
 
-    func testEveryKeptMenuIDHasExactlyOneMenuSpecAndOneSheetRow() {
+    /// M places every kept 0.2 menu id exactly once (DisplayMenuBlock or DisplaysMenuBuilder) and the Customize
+    /// sheet has exactly one row for it, with the same kind and location.
+    func testEveryKeptMenuIDHasExactlyOnePlacementAndOneSheetRow() {
         let removed = Set(ControlRemovals.removed.keys)
         let sheet = CustomizeMenuSheetControls.controls
         for legacy in legacyMenuIDs where !removed.contains(legacy) && menuID(legacy) != awakeHome {
-            let homes = menuSpecs.filter { $0.replaces.contains(legacy) }
-            XCTAssertEqual(homes.count, 1, legacy.rawValue)
-            guard let home = homes.first, let placement = home.menu else { XCTFail(legacy.rawValue); continue }
-            XCTAssertEqual(placement.legacyMenuID?.rawValue, menuID(legacy), legacy.rawValue)
+            let placements = menuSpecs.compactMap(\.menu).filter { $0.legacyMenuID?.rawValue == menuID(legacy) }
+            XCTAssertEqual(placements.count, 1, legacy.rawValue)
+            guard let placement = placements.first else { continue }
             let info = DisplaysMenuPlan.info(for: DisplayMenuItemID(rawValue: menuID(legacy)))
             XCTAssertEqual(placement.customize, info?.customize, legacy.rawValue)
             let rows = sheet.filter { $0.menu?.legacyMenuID == placement.legacyMenuID }
@@ -325,15 +421,49 @@ final class DisplaysMenuPlanTests: XCTestCase {
         }
     }
 
-    func testFixedMenuRowsHaveHomes() {
-        let fixed = ControlLegacy.ids.filter { $0.rawValue.hasPrefix("l.menu.fixed.") }
-        let removed = Set(ControlRemovals.removed.keys)
-        let mine = menuSpecs + StatusMenuControls.controls
-        let switcher: Set<String> = ["l.menu.fixed.switcher.enableThumbnails", "l.menu.fixed.switcher.pressHint",
-                                     "l.menu.fixed.switcher.gather"]   // team A's Switcher section
-        for legacy in fixed where !removed.contains(legacy) && !switcher.contains(legacy.rawValue) {
-            XCTAssertTrue(mine.contains { $0.replaces.contains(legacy) }, legacy.rawValue)
+    /// One home each (step 3, R5-13 totality for M's prefixes): every frozen `l.menu.*`, `l.menu.fixed.*` and
+    /// `l.gen.menu.*` id is replaced by exactly one spec across all tables, or has a removal reason and no home.
+    /// A 0.2 menu item's home is the spec of the item its builder makes; that spec names the item's 0.2 id (A's
+    /// custom actions are a family, and Prevent Display Sleep moved to Awake's menu).
+    func testEveryMenuLegacyIDHasExactlyOneHome() {
+        var homes: [LegacyControlID: [ControlSpec]] = [:]
+        for table in ControlRegistry.tables {
+            for spec in table.controls {
+                for legacy in spec.replaces { homes[legacy, default: []].append(spec) }
+            }
         }
+        let removed = Set(ControlRemovals.removed.keys)
+        let prefixes = ["l.menu.", "l.gen.menu."]
+        let ids = ControlLegacy.ids.filter { id in prefixes.contains { id.rawValue.hasPrefix($0) } }
+        XCTAssertEqual(ids.count, 46 + 15 + 16)
+        for legacy in ids {
+            let found = homes[legacy] ?? []
+            if removed.contains(legacy) {
+                XCTAssertTrue(found.isEmpty, "\(legacy.rawValue) is removed but has \(found.map(\.id.rawValue))")
+                continue
+            }
+            XCTAssertEqual(found.count, 1, "\(legacy.rawValue): \(found.map(\.id.rawValue))")
+            guard let home = found.first, legacyMenuIDs.contains(legacy),
+                  ![awakeHome, DisplaysMenuPlan.customActionPrefix].contains(menuID(legacy)) else { continue }
+            XCTAssertEqual(home.menu?.legacyMenuID?.rawValue, menuID(legacy), legacy.rawValue)
+            XCTAssertNotEqual(home.menu?.customize ?? MenuCustomize.none, MenuCustomize.none, legacy.rawValue)
+        }
+    }
+
+    /// The Menu Bar page and the Customize sheet are found by search under the Menu Bar root.
+    func testMenuBarSearchEntries() {
+        let entries = SettingsIndex.entries(ControlRegistry.tables, root: "menuBar")
+        let ids = Set(entries.map(\.id))
+        for spec in MenuBarPageControls.controls + CustomizeMenuSheetControls.controls where spec.kind == .setting {
+            XCTAssertTrue(ids.contains(spec.id.rawValue), spec.id.rawValue)
+        }
+        for raw in ["menubar.page.customize", "menubar.page.restoreDefaults", "menubar.customize.displays",
+                    "menubar.customize.useDefaultOrder"] {
+            XCTAssertTrue(ids.contains(raw), raw)
+        }
+        XCTAssertEqual(entries.first { $0.id == "menubar.page.customize" }?.sheet, nil)
+        XCTAssertEqual(entries.first { $0.id == "menubar.customize.displays" }?.sheet, CustomizeMenuSheetControls.sheetID)
+        XCTAssertTrue(entries.allSatisfy { $0.id.hasPrefix("menubar.") })
     }
 
     func testMenuGeneralSettingsHaveHomesOnTheMenuBarPageOrSheet() {
