@@ -383,12 +383,12 @@ enum SelfTest {
             return .holding("Holding until this command ends. Press Control-C to stop.")
         }
         registry.register("selftest slow", policy: .read, offOnly: false, cliAllowed: true,
-                          summary: "Self-test slow request", lifetime: lifetime) { _ in
+                          summary: "Self-test slow request", lifetime: lifetime) { _, _ in
             try? await Task.sleep(for: .seconds(3))
             return .ok("slow")
         }
         registry.register("selftest echo", policy: .read, offOnly: false, cliAllowed: true,
-                          summary: "Self-test echo", lifetime: lifetime) { request in
+                          summary: "Self-test echo", lifetime: lifetime) { request, _ in
             .ok(request.arguments.isEmpty ? "echo" : request.arguments.joined(separator: " "))
         }
     }

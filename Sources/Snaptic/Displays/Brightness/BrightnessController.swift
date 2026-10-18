@@ -357,7 +357,7 @@ enum PerDisplayEdit {
     private func registerCommands(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("set brightness", policy: .low, offOnly: false, cliAllowed: true,
                               summary: L("Set brightness: set brightness 60 [display] (or +10 / -10)"),
-                              lifetime: lifetime) { [weak self] request in
+                              lifetime: lifetime) { [weak self] request, _ in
             guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
             let usage = L("Usage: set brightness <percent|+n|-n> [display]. ") + DisplayTargets.usage
             let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 1, usage: usage, ctx)
@@ -381,7 +381,7 @@ enum PerDisplayEdit {
         }
         ctx.commands.register("get brightness", policy: .read, offOnly: false, cliAllowed: true,
                               summary: L("Print brightness per display: get brightness [display]"), lifetime: lifetime) {
-            [weak self] request in
+            [weak self] request, _ in
             guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
             let usage = L("Usage: get brightness [display]. ") + DisplayTargets.usage
             let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 0, default: .all, usage: usage, ctx)

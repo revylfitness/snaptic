@@ -258,18 +258,6 @@ import SnapticKit
         return badges
     }
 
-    /// Status badges (0.2 wording, for the 0.2 pages until the step-3 exit).
-    static func badges(for display: DisplayInfo, paused: Bool) -> [String] {
-        var badges: [String] = []
-        if display.isMain { badges.append(L("Main")) }
-        if display.transport == .snapticVirtual || display.transport == .foreignVirtual { badges.append(L("Virtual")) }
-        if display.mirrorOf != nil { badges.append(L("Mirroring")) }
-        if display.isSmartHiDPIPair { badges.append(L("Smart HiDPI")) }
-        if !display.isOnline || !display.isActive { badges.append(L("Disconnected")) }
-        if paused { badges.append(L("Paused")) }
-        return badges
-    }
-
     /// The user's icon (Display Details) when it is a symbol this macOS has, else by transport.
     static func symbol(for display: DisplayInfo, config: DisplaysConfig?) -> String {
         if let chosen = config?.perDisplay[display.key]?.identity.symbol,
@@ -288,24 +276,6 @@ import SnapticKit
         case .snapticVirtual, .foreignVirtual: return "rectangle.dashed"
         case .wired, .displayLink: return "display"
         }
-    }
-
-    // MARK: Feature hints (0.2 Overview page)
-
-    enum Hint: Equatable {
-        case nothing
-        case paused(String)
-        case turnOn
-    }
-
-    /// Why a feature's control is missing, if the user can do something about it.
-    static func hint(for feature: DisplayFeature, context: DisplaysContext) -> Hint {
-        if context.runtime.isEffective(feature) { return .nothing }
-        if let reason = context.otherApps.pauseReason(for: feature) { return .paused(reason) }
-        if let availability = context.runtime.availability[feature], !availability.isAvailable { return .nothing }
-        // On but not effective (Safe Mode, panic latch, missing requirement): the status rows explain that.
-        if FeatureGraph.rawState(feature, in: context.config.value.rawFeatures) { return .nothing }
-        return .turnOn
     }
 
     /// A plain menu of detached items (the floating panel's "⋯" menu).

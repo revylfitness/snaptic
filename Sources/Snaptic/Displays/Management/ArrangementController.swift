@@ -166,7 +166,7 @@ import SnapticKit
 
     private func registerCommands(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("main", policy: .low, offOnly: false, cliAllowed: true, summary: L("main <display>: set the main display"),
-                              lifetime: lifetime) { [weak self] req in
+                              lifetime: lifetime) { [weak self] req, _ in
             guard let self, let ctx = self.context, self.effective.contains(.mainDisplay) else {
                 return .failure(ControlExit.unavailable, L("Main display control is off"))
             }
@@ -181,7 +181,7 @@ import SnapticKit
         }
         ctx.commands.register("arrange", policy: .low, offOnly: false, cliAllowed: true,
                               summary: L("arrange <display> <x> <y> | arrange <display> <placement> <reference>"),
-                              lifetime: lifetime) { [weak self] req in
+                              lifetime: lifetime) { [weak self] req, _ in
             guard let self, let ctx = self.context, self.effective.contains(.arrangement) else {
                 return .failure(ControlExit.unavailable, L("Arrangement is off"))
             }
@@ -224,7 +224,7 @@ import SnapticKit
                                         skipConfirmation: req.skipConfirmation)))
         }
         ctx.commands.register("mirror", policy: .trial, offOnly: false, cliAllowed: true,
-                              summary: L("mirror <display> <source>|off"), lifetime: lifetime) { [weak self] req in
+                              summary: L("mirror <display> <source>|off"), lifetime: lifetime) { [weak self] req, _ in
             guard let self, let ctx = self.context, self.effective.contains(.mirroring) else {
                 return .failure(ControlExit.unavailable, L("Mirroring is off"))
             }

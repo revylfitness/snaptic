@@ -1071,7 +1071,7 @@ fileprivate extension DisplayActionID {
 
     private func registerCommand(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("pip", policy: .low, offOnly: false, cliAllowed: true, summary: PIPCommand.usage,
-                              lifetime: lifetime) { [weak self] request in
+                              lifetime: lifetime) { [weak self] request, _ in
             guard let self else { return .failure(ControlExit.unavailable, L("Picture in Picture is off.")) }
             return self.handleCommand(request.arguments, json: request.json)
         }

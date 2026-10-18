@@ -24,7 +24,7 @@ package struct ModulePreferences: Codable, Equatable, Sendable {
         }
     }
 
-    /// 0.2 initializer, kept until the step-3 exit.
+    /// The 0.2 form (legacy placement); the defaults and the 0.2 decode path still build preferences with it.
     package init(enabled: Bool, placement: MenuPlacementChoice = .shared, symbol: String = "",
                  hideWithoutExternalDisplay: Bool = false) {
         self.enabled = enabled
@@ -345,7 +345,7 @@ package struct StatusItemPlan: Equatable, Sendable {
 }
 
 extension ModulesConfig {
-    /// The 0.2 entry point, kept until the step-3 exit (r3 consistency m7): the MenuLayout plan with Awake idle,
+    /// The 0.2 entry point (r3 consistency m7; its tests pin the 0.2 placement): the MenuLayout plan with Awake idle,
     /// Displays active and the Snaptic item shown at rest.
     package func statusItemPlan(running: Set<ModuleID>) -> StatusItemPlan {
         statusItemPlan(running: running, awakeActive: false, displaysActive: true, awakeShortcutBound: false,

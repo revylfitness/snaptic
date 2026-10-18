@@ -117,7 +117,6 @@ Sources/Snaptic/Core/PermissionsPage.swift	H	L	-	-
 Sources/Snaptic/Core/AboutPage.swift	H	L	-	-
 Sources/Snaptic/Core/MenuPlacement.swift	M	K14	MenuPlacement	-
 Sources/Snaptic/Core/StatusMenu.swift	M	K5	StatusMenu	-
-Sources/Snaptic/Core/MenuSliderItem.swift	M	S	MenuSliderItem	-
 Sources/Snaptic/Core/ControlServer.swift	A	K5	ControlServer	-
 Sources/Snaptic/Core/ControlCommandRegistry.swift	A	S	ControlCommandRegistry	-
 Sources/Snaptic/Core/CLIClient.swift	A	K11	CLIClient	-
@@ -207,33 +206,19 @@ Sources/Snaptic/Displays/Automation/SpawnerService.swift	A	K6	SpawnerService	spa
 Sources/Snaptic/Displays/Automation/AutomationController.swift	A	K8	AutomationController	automation
 Sources/Snaptic/Displays/UI/OverviewController.swift	F	K8	OverviewController	overview
 Sources/Snaptic/Displays/UI/DiagnosticsController.swift	F	K8	DiagnosticsController	diagnostics
-Sources/Snaptic/Displays/UI/DisplaysOverviewPage.swift	F	K10	DisplaysOverviewPage	Displays
-Sources/Snaptic/Displays/UI/FeaturesPage.swift	F	K10	FeaturesPage	Display Features
 Sources/Snaptic/Displays/UI/DisplaysMenuBuilder.swift	M	S	DisplaysMenuBuilder	-
 Sources/Snaptic/Displays/UI/DisplayMenuBlock.swift	M	K12	DisplayMenuBlock	-
-Sources/Snaptic/Displays/UI/DisplayIdentityPage.swift	F	K10	DisplayIdentityPage	Display Names
-Sources/Snaptic/Displays/UI/DiagnosticsPage.swift	F	K10	DiagnosticsPage	Diagnostics
 Sources/Snaptic/Displays/UI/DisplaysOnboardingStep.swift	F	K10	DisplaysOnboardingStep	Displays
 Sources/Snaptic/Displays/UI/IdentifyOverlay.swift	F	K12	IdentifyOverlay	-
-Sources/Snaptic/Displays/UI/SafetyPage.swift	B	K10	SafetyPage	Safety
-Sources/Snaptic/Displays/UI/BrightnessPage.swift	C	K10	BrightnessPage	Brightness
 Sources/Snaptic/Displays/UI/BrightnessMenuItems.swift	C	K9	BrightnessMenuItems	-
 Sources/Snaptic/Displays/UI/ColorPage.swift	C	K10	ColorPage	Color
-Sources/Snaptic/Displays/UI/DDCPage.swift	C	K10	DDCPage	Monitor Controls
 Sources/Snaptic/Displays/UI/DDCMenuItems.swift	C	K9	DDCMenuItems	-
-Sources/Snaptic/Displays/UI/KeysPage.swift	C	K10	KeysPage	Keys & Shortcuts
-Sources/Snaptic/Displays/UI/OSDPage.swift	C	K10	OSDPage	On-Screen Display
-Sources/Snaptic/Displays/UI/ResolutionPage.swift	D	K10	ResolutionPage	Resolution
 Sources/Snaptic/Displays/UI/ResolutionMenuItems.swift	D	K9	ResolutionMenuItems	-
-Sources/Snaptic/Displays/UI/VirtualScreensPage.swift	D	K10	VirtualScreensPage	Virtual Screens
 Sources/Snaptic/Displays/UI/VirtualMenuItems.swift	D	K9	VirtualMenuItems	-
-Sources/Snaptic/Displays/UI/ArrangementPage.swift	D	K10	ArrangementPage	Arrangement
 Sources/Snaptic/Displays/UI/ArrangementCanvas.swift	D	K10	ArrangementCanvas	Arrangement
-Sources/Snaptic/Displays/UI/ProtectionLayoutsPage.swift	D	K10	ProtectionLayoutsPage	Protection & Layouts
 Sources/Snaptic/Displays/UI/LayoutsMenuItems.swift	D	K9	LayoutsMenuItems	-
 Sources/Snaptic/Displays/UI/PIPPage.swift	E	K10	PIPPage	Picture in Picture
 Sources/Snaptic/Displays/UI/PIPMenuItems.swift	E	K9	PIPMenuItems	-
-Sources/Snaptic/Displays/UI/AutomationPage.swift	A	K10	AutomationPage	Automation
 Tests/SnapticKitTests/KitModulesTests.swift	lead	L	-	-
 Tests/SnapticKitTests/OtherDisplayAppsTests.swift	lead	K3	OtherDisplayAppsTests	-
 Tests/SnapticKitTests/LineSplitterTests.swift	lead	K3	LineSplitterTests	-

@@ -24,17 +24,6 @@ struct SafeModeState: Sendable, Equatable {
     static let off = SafeModeState(isActive: false, reason: nil)
 }
 
-/// A page in the Settings sidebar. Identity and hashing use `id` only.
-struct SettingsPage: Identifiable, Hashable {
-    let id: String
-    let title: String
-    let symbol: String
-    let makeView: @MainActor () -> AnyView
-
-    static func == (a: SettingsPage, b: SettingsPage) -> Bool { a.id == b.id }
-    func hash(into hasher: inout Hasher) { hasher.combine(id) }
-}
-
 // MARK: - 0.3 settings shell contracts (PLAN 0.3 §4.1; the shell itself is H's SettingsShell)
 
 /// Icon tile tint of a sidebar row or page header.
@@ -119,13 +108,11 @@ struct CustomItemRow: Equatable {
     /// undoes session/overlay/gamma/virtual/capture/helper state.
     func stop()
     func menuSection() -> [NSMenuItem]
-    /// 0.2 pages; removed at the 0.3 step-3 exit (code R2-M2a).
-    func settingsPages() -> [SettingsPage]
-    // 0.3 (§4.1), with extension defaults so existing conformers compile:
+    // Settings (0.3 §4.1):
     var tint: SettingsTint { get }
     /// Off-state block.
     var highlights: [FeatureHighlight] { get }
-    /// Rendered whether running or not.
+    /// The sidebar root; rendered whether running or not.
     func settingsRoot() -> SettingsRoot
     func settingsDestination(_ route: SettingsRoute) -> AnyView?
     /// Static per module; computed once.
@@ -135,16 +122,6 @@ struct CustomItemRow: Equatable {
 extension SnapticModule {
     var tint: SettingsTint { .gray }
     var highlights: [FeatureHighlight] { [] }
-
-    /// Wraps the module's 0.2 `settingsPages()` content until each module provides its own root.
-    func settingsRoot() -> SettingsRoot {
-        let pages = settingsPages()
-        let moduleID = id
-        return SettingsRoot(id: id.rawValue, title: title, symbol: symbolName, tint: tint) {
-            AnyView(LegacyModuleHub(moduleID: moduleID, pages: pages))
-        }
-    }
-
     func settingsDestination(_ route: SettingsRoute) -> AnyView? { nil }
     func settingsIndex() -> [SettingsSearchEntry] { [] }
 }

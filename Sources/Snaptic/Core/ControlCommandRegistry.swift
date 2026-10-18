@@ -15,8 +15,6 @@ import SnapticKit
 @MainActor final class ControlCommandRegistry {
     /// 0.3 §2.10: handlers also get the connection's peer and, for `holds: true` verbs, its hold.
     typealias Handler = @MainActor (ControlRequest, ControlContext) async -> ControlResponse
-    /// The 0.2 one-argument handler; kept through an overload until the step-3 exit.
-    typealias LegacyHandler = @MainActor (ControlRequest) async -> ControlResponse
 
     struct Entry {
         let verb: String
@@ -67,13 +65,6 @@ import SnapticKit
             self?.entries.removeAll { $0.serial == mine }
             self?.onChange?()
         }
-    }
-
-    /// The 0.2 form: a one-argument handler, never a hold. Removed at the step-3 exit.
-    func register(_ verb: String, policy: ControlPolicy, offOnly: Bool, cliAllowed: Bool, summary: String,
-                  lifetime: Lifetime, _ handler: @escaping LegacyHandler) {
-        register(verb, policy: policy, offOnly: offOnly, cliAllowed: cliAllowed, holds: false, summary: summary,
-                 lifetime: lifetime) { request, _ in await handler(request) }
     }
 
     /// Registered verbs, sorted.

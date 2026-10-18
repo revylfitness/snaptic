@@ -144,10 +144,6 @@ import SnapticKit
         SwitcherPages.root(module: self)
     }
 
-    func settingsPages() -> [SettingsPage] {
-        SwitcherPages.pages(module: self)
-    }
-
     /// Settings search for the Window Switcher root (R5-13: derived from the control specs whose search root is
     /// this module; the page, its Advanced sheet and its shortcuts sheet).
     func settingsIndex() -> [SettingsSearchEntry] { Self.index }

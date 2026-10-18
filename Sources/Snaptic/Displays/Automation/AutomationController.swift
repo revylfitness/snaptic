@@ -7,8 +7,7 @@ import SnapticKit
 /// items, shortcuts and, when the user allows it per action, CLI commands. FeatureGraph
 /// keeps both off in Safe Mode, and hooks off while panic-latched; panic kills running
 /// commands.
-@MainActor final class AutomationController: DisplayFeatureController, PanicParticipant, DisplayMenuContributor,
-    DiagnosticsContributor {
+@MainActor final class AutomationController: DisplayFeatureController, PanicParticipant, DiagnosticsContributor {
     static var id: DisplayControllerID { .automation }
     static var privateSymbols: [PrivateSymbol] { [] }
     /// Only `automation` (0.3 §4.5): feature changes arrive through `effectiveFeaturesDidChange`.
@@ -189,11 +188,11 @@ import SnapticKit
         actionMenu = items
         ctx.menus.register(items, lifetime: life)
         ctx.commands.register("action list", policy: .read, offOnly: false, cliAllowed: true,
-                              summary: L("List the custom actions the command line may run"), lifetime: life) { [weak self] request in
+                              summary: L("List the custom actions the command line may run"), lifetime: life) { [weak self] request, _ in
             self?.listActions(json: request.json) ?? .failure(ControlExit.unavailable, L("Custom actions are off."))
         }
         ctx.commands.register("action run", policy: .low, offOnly: false, cliAllowed: true,
-                              summary: L("Run a custom action: action run <name>"), lifetime: life) { [weak self] request in
+                              summary: L("Run a custom action: action run <name>"), lifetime: life) { [weak self] request, _ in
             guard let self else { return .failure(ControlExit.unavailable, L("Custom actions are off.")) }
             return await self.runActionFromCLI(request)
         }
@@ -260,15 +259,4 @@ import SnapticKit
             (L("Last problem"), ctx.spawner.lastProblem == nil ? L("none") : L("see Displays › Automations")),
         ]
     }
-
-    // MARK: DisplayMenuContributor
-
-    // The items moved to `AutomationMenuItems` (R5-13: table `menu.display.a`), which this controller registers while
-    // custom actions run. The conformance stays while `DisplaysModule.menuContributorTypes` lists this class.
-
-    var descriptors: [DisplayMenuItemDescriptor] { [] }
-
-    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
-
-    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
 }

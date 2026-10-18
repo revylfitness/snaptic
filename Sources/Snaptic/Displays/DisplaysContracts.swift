@@ -100,8 +100,6 @@ enum MenuSlot: String, CaseIterable, Sendable {
     case header
     /// The Tools section (layouts, virtual screens, Match UI size, Connect All, Restore All…).
     case tools
-    /// The right-click quick menu.
-    case quick
 }
 
 struct DisplayMenuItemDescriptor {
@@ -115,7 +113,7 @@ struct DisplayMenuItemDescriptor {
     var descriptors: [DisplayMenuItemDescriptor] { get }
     /// Items for the `.display` and `.header` slots of one display.
     func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)]
-    /// Items for the global `.tools` and `.quick` slots.
+    /// Items for the global `.tools` slot.
     func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)]
     /// Every item id this contributor can ever produce (static, for the controls self-test, R5-13).
     static var menuItemIDs: [DisplayMenuItemID] { get }

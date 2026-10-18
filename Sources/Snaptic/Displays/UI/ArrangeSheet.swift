@@ -31,8 +31,7 @@ struct ArrangeSheet: View, ControlDeclaring {
     }
 }
 
-/// The sheet's sections: canvas, Snap to edges and the keyboard disclosure (also used by the 0.2 Arrangement page
-/// until the step-3 exit removes it).
+/// The sheet's sections: canvas, Snap to edges and the keyboard disclosure.
 struct ArrangeContent: View {
     typealias Controls = ArrangeSheetControls
 

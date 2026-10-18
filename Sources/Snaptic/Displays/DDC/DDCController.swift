@@ -556,27 +556,27 @@ import SnapticShims
     private func registerCommands(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("set volume", policy: .low, offOnly: false, cliAllowed: true,
                               summary: L("Set DDC volume: set volume 40 [display] (or +5 / -5)"), lifetime: lifetime) {
-            [weak self] request in await self?.setLevelCommand(VCPPolicy.volume, request) ?? DisplayTargets.notRunning()
+            [weak self] request, _ in await self?.setLevelCommand(VCPPolicy.volume, request) ?? DisplayTargets.notRunning()
         }
         ctx.commands.register("set contrast", policy: .low, offOnly: false, cliAllowed: true,
                               summary: L("Set DDC contrast: set contrast 70 [display]"), lifetime: lifetime) {
-            [weak self] request in await self?.setLevelCommand(VCPPolicy.contrast, request) ?? DisplayTargets.notRunning()
+            [weak self] request, _ in await self?.setLevelCommand(VCPPolicy.contrast, request) ?? DisplayTargets.notRunning()
         }
         ctx.commands.register("get volume", policy: .read, offOnly: false, cliAllowed: true,
                               summary: L("Print DDC volume per display: get volume [display]"), lifetime: lifetime) {
-            [weak self] request in await self?.getLevelCommand(VCPPolicy.volume, request) ?? DisplayTargets.notRunning()
+            [weak self] request, _ in await self?.getLevelCommand(VCPPolicy.volume, request) ?? DisplayTargets.notRunning()
         }
         ctx.commands.register("get contrast", policy: .read, offOnly: false, cliAllowed: true,
                               summary: L("Print DDC contrast per display: get contrast [display]"), lifetime: lifetime) {
-            [weak self] request in await self?.getLevelCommand(VCPPolicy.contrast, request) ?? DisplayTargets.notRunning()
+            [weak self] request, _ in await self?.getLevelCommand(VCPPolicy.contrast, request) ?? DisplayTargets.notRunning()
         }
         ctx.commands.register("get input", policy: .read, offOnly: false, cliAllowed: true,
                               summary: L("Print the current input per display: get input [display]"), lifetime: lifetime) {
-            [weak self] request in await self?.getInputCommand(request) ?? DisplayTargets.notRunning()
+            [weak self] request, _ in await self?.getInputCommand(request) ?? DisplayTargets.notRunning()
         }
         ctx.commands.register("input", policy: .preConfirm, offOnly: false, cliAllowed: true,
                               summary: L("Switch input: input <name|hex value> [display] (asks first unless allowed)"),
-                              lifetime: lifetime) { [weak self] request in
+                              lifetime: lifetime) { [weak self] request, _ in
             guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
             let usage = L("Usage: input <name|hex value> [display]. ") + DisplayTargets.usage
             let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 1, usage: usage, ctx)
@@ -597,7 +597,7 @@ import SnapticShims
         }
         ctx.commands.register("ddc", policy: .preConfirm, offOnly: false, cliAllowed: true,
                               summary: L("Raw DDC: ddc get <code> | ddc set <code> <value> | ddc caps [display]"),
-                              lifetime: lifetime) { [weak self] request in
+                              lifetime: lifetime) { [weak self] request, _ in
             guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
             let usage = L("Usage: ddc get <code> | ddc set <code> <value> | ddc caps [display]")
             var args = request.arguments

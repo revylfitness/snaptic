@@ -143,7 +143,7 @@ import SnapticKit
 
     private func registerCommands(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("rotate", policy: .trial, offOnly: false, cliAllowed: true, summary: L("rotate <display> 0|90|180|270"),
-                              lifetime: lifetime) { [weak self] req in
+                              lifetime: lifetime) { [weak self] req, _ in
             guard let self, let ctx = self.context, self.effective.contains(.rotation) else {
                 return .failure(ControlExit.unavailable, L("Rotation is off"))
             }

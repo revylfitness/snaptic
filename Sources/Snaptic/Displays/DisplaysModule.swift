@@ -45,27 +45,6 @@ import SnapticKit
         PIPController.self, MenuBarOverlaysController.self, AutomationController.self,
     ]
 
-    /// Settings pages: (page id, title, symbol, view). Page ids match FeatureGraph `page`.
-    private static let pageTable: [(id: String, title: String, symbol: String, always: Bool,
-                                     make: @MainActor (DisplaysPageEnvironment) -> AnyView)] = [
-        ("overview", L("Displays"), "display.2", true, { AnyView(DisplaysOverviewPage(env: $0)) }),
-        ("features", L("Display Features"), "switch.2", true, { AnyView(FeaturesPage(env: $0)) }),
-        ("resolution", L("Resolution"), "rectangle.arrowtriangle.2.outward", false, { AnyView(ResolutionPage(env: $0)) }),
-        ("brightness", L("Brightness"), "sun.max", false, { AnyView(BrightnessPage(env: $0)) }),
-        ("color", L("Color"), "paintpalette", false, { AnyView(ColorPage(env: $0)) }),
-        ("ddc", L("DDC & Monitor Controls"), "slider.horizontal.3", false, { AnyView(DDCPage(env: $0)) }),
-        ("keys", L("Keys & Shortcuts"), "keyboard", false, { AnyView(KeysPage(env: $0)) }),
-        ("osd", L("On-Screen Display"), "rectangle.inset.filled", false, { AnyView(OSDPage(env: $0)) }),
-        ("arrangement", L("Arrangement"), "rectangle.3.group", false, { AnyView(ArrangementPage(env: $0)) }),
-        ("protection", L("Protection & Layouts"), "lock.rectangle", false, { AnyView(ProtectionLayoutsPage(env: $0)) }),
-        ("virtual", L("Virtual Screens & HiDPI"), "display.and.arrow.down", false, { AnyView(VirtualScreensPage(env: $0)) }),
-        ("pip", L("Picture in Picture"), "pip", false, { AnyView(PIPPage(env: $0)) }),
-        ("automation", L("Automation"), "gearshape.2", false, { AnyView(AutomationPage(env: $0)) }),
-        ("identity", L("Display Names"), "tag", true, { AnyView(DisplayIdentityPage(env: $0)) }),
-        ("safety", L("Safety"), "lifepreserver", true, { AnyView(SafetyPage(env: $0)) }),
-        ("diagnostics", L("Diagnostics"), "stethoscope", true, { AnyView(DiagnosticsPage(env: $0)) }),
-    ]
-
     private let controllers: [DisplayControllerID: any DisplayFeatureController]
     /// Owned here so private symbols are registered once, before any availability check.
     private let privateAPI = PrivateDisplayAPI()
@@ -206,22 +185,11 @@ import SnapticKit
         return DisplaysMenuBuilder(context: ctx).build()
     }
 
-    // 0.3 Settings root (F's DisplaysPage, §4.3); `settingsPages()` stays until the step-3 exit.
+    // Settings root and sub-pages (F's DisplaysPage, §4.3).
     var tint: SettingsTint { DisplaysPage.tint }
     var highlights: [FeatureHighlight] { DisplaysPage.highlights }
     func settingsRoot() -> SettingsRoot { DisplaysPage.settingsRoot(env: pageEnvironment) }
     func settingsDestination(_ route: SettingsRoute) -> AnyView? { DisplaysPage.destination(route, env: pageEnvironment) }
-
-    func settingsPages() -> [SettingsPage] {
-        let env = pageEnvironment
-        let pagesWithFeatures = Set(effective.map { FeatureGraph.spec($0).page })
-        return Self.pageTable
-            .filter { $0.always || pagesWithFeatures.contains($0.id) }
-            .map { row in
-                let make = row.make
-                return SettingsPage(id: "displays.\(row.id)", title: row.title, symbol: row.symbol) { make(env) }
-            }
-    }
 
     /// Runs a registered action (quick menu, floating panel, CLI). False if unknown.
     @discardableResult

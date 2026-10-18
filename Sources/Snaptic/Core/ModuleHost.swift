@@ -223,11 +223,11 @@ import SnapticKit
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.scheduleApply() } }
             .store(in: &sinks)
         // "Scroll on a slider to adjust" lives in the Displays menu settings (MenuConfig).
-        MenuSliderItem.scrollToAdjust = displaysStore.value.menu.scrollAdjustsSliders
+        MenuSliderRow.scrollToAdjust = displaysStore.value.menu.scrollAdjustsSliders
         displaysStore.$value
             .map(\.menu.scrollAdjustsSliders)
             .removeDuplicates()
-            .sink { on in MainActor.assumeIsolated { MenuSliderItem.scrollToAdjust = on } }
+            .sink { on in MainActor.assumeIsolated { MenuSliderRow.scrollToAdjust = on } }
             .store(in: &sinks)
         watchM1Toast()
         applyNow()
@@ -383,13 +383,13 @@ import SnapticKit
 
     private func registerHostCommands() {
         commands.register("version", policy: .read, offOnly: false, cliAllowed: true,
-                          summary: L("Show Snaptic's version"), lifetime: lifetime) { _ in
+                          summary: L("Show Snaptic's version"), lifetime: lifetime) { _, _ in
             let info = Bundle.main.infoDictionary
             let version = (info?["CFBundleShortVersionString"] as? String ?? "?") + " (" + (info?["CFBundleVersion"] as? String ?? "?") + ")"
             return .ok("Snaptic " + version)
         }
         commands.register("modules", policy: .read, offOnly: false, cliAllowed: true,
-                          summary: L("List the modules and whether they run"), lifetime: lifetime) { [weak self] request in
+                          summary: L("List the modules and whether they run"), lifetime: lifetime) { [weak self] request, _ in
             guard let self else { return .failure(ControlExit.unavailable, "") }
             let rows: [(String, String)] = self.modules.map { module in
                 let state: String
@@ -409,7 +409,7 @@ import SnapticKit
         }
         commands.register("module disable", policy: .low, offOnly: true, cliAllowed: true,
                           summary: L("Turn a module off: module disable <windowSwitcher|displays|awake>"),
-                          lifetime: lifetime) { [weak self] request in
+                          lifetime: lifetime) { [weak self] request, _ in
             guard let self else { return .failure(ControlExit.unavailable, "") }
             guard let name = request.arguments.first?.lowercased(),
                   let id = ModuleID.allCases.first(where: { $0.rawValue.lowercased() == name || (name == "switcher" && $0 == .windowSwitcher) })
@@ -418,27 +418,27 @@ import SnapticKit
             return .ok()
         }
         commands.register("open-settings", policy: .low, offOnly: false, cliAllowed: true,
-                          summary: L("Open Snaptic's Settings, optionally at a page"), lifetime: lifetime) { [weak self] request in
+                          summary: L("Open Snaptic's Settings, optionally at a page"), lifetime: lifetime) { [weak self] request, _ in
             let page = request.arguments.first.flatMap(SettingsWindowHost.validPageID)
             self?.settingsWindow.show(page: page, external: true)
             return .ok()
         }
         commands.register("safe-mode", policy: .read, offOnly: false, cliAllowed: true,
-                          summary: L("Show whether Snaptic runs in Safe Mode"), lifetime: lifetime) { [weak self] _ in
+                          summary: L("Show whether Snaptic runs in Safe Mode"), lifetime: lifetime) { [weak self] _, _ in
             .ok(self?.safeMode.isActive == true ? "on" : "off")
         }
         commands.register("list", policy: .read, offOnly: false, cliAllowed: true,
                           summary: L("List the displays (number, key, name, size, state)"),
-                          lifetime: lifetime) { [weak self] request in
+                          lifetime: lifetime) { [weak self] request, _ in
             self?.listDisplays(json: request.json) ?? .failure(ControlExit.unavailable, "")
         }
         commands.register("features", policy: .read, offOnly: false, cliAllowed: true,
-                          summary: L("List the Displays features and whether they are on"), lifetime: lifetime) { [weak self] request in
+                          summary: L("List the Displays features and whether they are on"), lifetime: lifetime) { [weak self] request, _ in
             self?.listFeatures(json: request.json) ?? .failure(ControlExit.unavailable, "")
         }
         commands.register("feature disable", policy: .low, offOnly: true, cliAllowed: true,
                           summary: L("Turn a Displays feature off: feature disable <feature>"),
-                          lifetime: lifetime) { [weak self] request in
+                          lifetime: lifetime) { [weak self] request, _ in
             self?.disableFeature(request.arguments) ?? .failure(ControlExit.unavailable, "")
         }
     }

@@ -298,18 +298,18 @@ import SnapticKit
 
     private func registerCommands(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("connect", policy: .low, offOnly: false, cliAllowed: true, summary: L("connect all|<display>"),
-                              lifetime: lifetime) { [weak self] req in
+                              lifetime: lifetime) { [weak self] req, _ in
             guard let self else { return .failure(ControlExit.unavailable, L("Disconnect is off")) }
             return await self.connectCommand(req.arguments.first ?? "all")
         }
         // §11 verb list: the same as `connect all`.
         ctx.commands.register("reconnect-all", policy: .low, offOnly: false, cliAllowed: true,
-                              summary: L("reconnect-all: reconnect every display Snaptic disconnected"), lifetime: lifetime) { [weak self] _ in
+                              summary: L("reconnect-all: reconnect every display Snaptic disconnected"), lifetime: lifetime) { [weak self] _, _ in
             guard let self else { return .failure(ControlExit.unavailable, L("Disconnect is off")) }
             return await self.connectCommand("all")
         }
         ctx.commands.register("disconnect", policy: .trial, offOnly: false, cliAllowed: true, summary: L("disconnect <display>"),
-                              lifetime: lifetime) { [weak self] req in
+                              lifetime: lifetime) { [weak self] req, _ in
             guard let self, let ctx = self.context, self.effective.contains(.disconnect) else {
                 return .failure(ControlExit.unavailable, L("Disconnect is off"))
             }

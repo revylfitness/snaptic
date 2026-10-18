@@ -429,7 +429,7 @@ import SnapticShims
 
     private func registerCommands(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("virtual", policy: .low, offOnly: false, cliAllowed: true,
-                              summary: L("virtual list | connect <name> | disconnect <name>"), lifetime: lifetime) { [weak self] req in
+                              summary: L("virtual list | connect <name> | disconnect <name>"), lifetime: lifetime) { [weak self] req, _ in
             guard let self, self.effective.contains(.virtualScreens) else {
                 return .failure(ControlExit.unavailable, L("Virtual screens are off"))
             }

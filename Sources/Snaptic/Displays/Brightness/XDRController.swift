@@ -57,7 +57,7 @@ import SnapticKit
         registerActions(context, lifetime: lifetime)
         context.commands.register("toggle xdr", policy: .low, offOnly: false, cliAllowed: true,
                                   summary: L("Toggle extra brightness: toggle xdr [display]"),
-                                  lifetime: lifetime) { [weak self] request in
+                                  lifetime: lifetime) { [weak self] request, _ in
             guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
             let usage = L("Usage: toggle xdr [display]. ") + DisplayTargets.usage
             let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 0, usage: usage, ctx)
@@ -68,7 +68,7 @@ import SnapticKit
         }
         context.commands.register("get xdr", policy: .read, offOnly: false, cliAllowed: true,
                                   summary: L("Print extra brightness per display: get xdr [display]"),
-                                  lifetime: lifetime) { [weak self] request in
+                                  lifetime: lifetime) { [weak self] request, _ in
             guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
             let usage = L("Usage: get xdr [display]. ") + DisplayTargets.usage
             let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 0, default: .all, usage: usage, ctx)

@@ -153,7 +153,7 @@ import SnapticShims
         let verbs = [("toggle night-shift", L("Turn Night Shift on or off")), ("toggle nightshift", L("Same as toggle night-shift"))]
         for (verb, summary) in verbs {
             ctx.commands.register(verb, policy: .low, offOnly: false, cliAllowed: true,
-                                  summary: summary, lifetime: lifetime) { [weak self] request in
+                                  summary: summary, lifetime: lifetime) { [weak self] request, _ in
                 guard let self, self.context != nil else { return DisplayTargets.notRunning() }
                 guard request.arguments.isEmpty else { return .failure(ControlExit.usage, L("Usage: toggle night-shift")) }
                 guard self.effective.contains(.nightShift) else {

@@ -7,8 +7,7 @@ import SnapticKit
 /// Displays panel and the Identify labels. Their shortcuts are ordinary Displays shortcuts
 /// (`keys.shortcuts[.fShowPanel]` / `[.fIdentify]`, migration M4), registered by `KeysController` like every other
 /// action's (0.3 §4.4 #5). Its menu items live in `OverviewMenuItems`; the controller itself contributes none.
-@MainActor final class OverviewController: DisplayFeatureController, DisplayMenuContributor, DiagnosticsContributor,
-    SessionParticipant {
+@MainActor final class OverviewController: DisplayFeatureController, DiagnosticsContributor, SessionParticipant {
     static var id: DisplayControllerID { .overview }
     static var privateSymbols: [PrivateSymbol] { [] }
 
@@ -77,13 +76,13 @@ import SnapticKit
     private func registerCommands(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("identify", policy: .low, offOnly: false, cliAllowed: true,
                               summary: L("Show each display's number and name for 3 seconds"),
-                              lifetime: lifetime) { [weak self] _ in
+                              lifetime: lifetime) { [weak self] _, _ in
             guard let self else { return .failure(ControlExit.unavailable, L("Displays isn't running")) }
             let count = self.identifyDisplays()
             return .ok(L("Identifying \(count) displays"))
         }
         ctx.commands.register("redetect", policy: .low, offOnly: false, cliAllowed: true,
-                              summary: L("Look for connected displays again"), lifetime: lifetime) { [weak self] _ in
+                              summary: L("Look for connected displays again"), lifetime: lifetime) { [weak self] _, _ in
             guard let self else { return .failure(ControlExit.unavailable, L("Displays isn't running")) }
             self.redetect()
             return .ok(L("Looking for displays"))
@@ -154,16 +153,6 @@ import SnapticKit
             _ = menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
         }
     }
-
-    // MARK: DisplayMenuContributor (its items are OverviewMenuItems')
-
-    static var menuItemIDs: [DisplayMenuItemID] { [] }
-
-    var descriptors: [DisplayMenuItemDescriptor] { [] }
-
-    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
-
-    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
 
     // MARK: DiagnosticsContributor
 
