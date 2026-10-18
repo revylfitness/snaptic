@@ -223,46 +223,32 @@ private struct PanicShortcutSettings: Equatable {
     /// Every item id this contributor can produce (R5-13). The 0.2 quick-menu copy is gone (C3).
     static var menuItemIDs: [DisplayMenuItemID] { [.restoreAll, .resumeAutomation] }
 
-    /// Only Restore All Displays is customizable (Show/Hide in Display Tools); Resume is always there while
-    /// automation is paused, so it has no descriptor.
     var descriptors: [DisplayMenuItemDescriptor] {
-        [DisplayMenuItemDescriptor(id: .restoreAll, title: L("Restore All Displays"), slot: .tools, defaultVisibility: .visible)]
+        [DisplayMenuItemDescriptor(id: .restoreAll, title: L("Restore All Displays"), slot: .tools, defaultVisibility: .visible),
+         DisplayMenuItemDescriptor(id: .resumeAutomation, title: L("Resume Display Automation"), slot: .tools,
+                                   defaultVisibility: .visible)]
     }
 
     func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
 
-    /// Display Tools: Restore All Displays.
+    /// The menu builder places these by id (§4.8): Restore All Displays in Display Tools, and at the top level of
+    /// the Displays section while a change awaits confirmation; Resume Display Automation under the "Display
+    /// automation is paused" status row, produced only while paused.
     func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] {
         guard slot == .tools else { return [] }
-        let item = MenuKit.action(L("Restore All Displays"), control: ControlID("menu.display.b.restoreAll")) { [weak self] in
+        let restore = MenuKit.action(L("Restore All Displays"), symbol: "arrow.uturn.backward.circle",
+                                     control: ControlID("menu.display.b.restoreAll")) { [weak self] in
             self?.panic(reason: L("Menu"))
         }
-        if let combo = registeredHotkey { item.toolTip = Self.describe(combo) }
-        return [(.restoreAll, item)]
-    }
-
-    /// The top of the Displays section while automation is paused: the status row and its action (§5.2
-    /// "Display automation is paused" + Resume Display Automation). Empty otherwise.
-    func sectionStatusItems() -> [NSMenuItem] {
-        guard isLatched else { return [] }
-        return [
-            MenuKit.status(L("Display automation is paused"), symbol: "pause.circle",
-                           control: ControlID("menu.display.b.paused")),
-            MenuKit.action(L("Resume Display Automation"), symbol: "play.circle",
-                           control: ControlID("menu.display.b.resume")) { [weak self] in self?.resume() },
-        ]
-    }
-
-    /// The top-level copy of Restore All Displays in the Displays section, only while a change awaits
-    /// confirmation (§4.8 `b.restoreAll`; always shown then, whatever Customize says). Empty otherwise.
-    func sectionPendingItems() -> [NSMenuItem] {
-        guard let ctx = context, ctx.transactions.hasPendingTrial else { return [] }
-        let item = MenuKit.action(L("Restore All Displays"), symbol: "arrow.uturn.backward.circle",
-                                  control: ControlID("menu.display.b.restoreAllPending")) { [weak self] in
-            self?.panic(reason: L("Menu"))
+        if let combo = registeredHotkey { restore.toolTip = Self.describe(combo) }
+        var items: [(DisplayMenuItemID, NSMenuItem)] = [(.restoreAll, restore)]
+        if isLatched {
+            items.append((.resumeAutomation, MenuKit.action(L("Resume Display Automation"), symbol: "play.circle",
+                                                            control: ControlID("menu.display.b.resume")) { [weak self] in
+                self?.resume()
+            }))
         }
-        if let combo = registeredHotkey { item.toolTip = Self.describe(combo) }
-        return [item]
+        return items
     }
 
     func diagnostics() -> [(String, String)] {

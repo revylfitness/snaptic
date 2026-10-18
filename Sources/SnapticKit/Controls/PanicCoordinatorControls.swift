@@ -1,23 +1,20 @@
 import Foundation
 
-// Restore All Displays in the Displays menu (owner: B; PLAN 0.3 §4.8 "Registered items" b.*, §5.2). Display Tools
-// holds the item; while a change awaits confirmation a copy sits at the top level of the Displays section; while
-// automation is paused the section starts with a status row and Resume Display Automation.
+// Restore All Displays and Resume Display Automation in the Displays menu (owner: B; PLAN 0.3 §4.8 "Registered
+// items" b.*, §5.2). PanicCoordinator builds the items; the Displays menu builder places them by their 0.2 id:
+// Restore All Displays in Display Tools (and top-level while a change awaits confirmation), Resume under the
+// "Display automation is paused" status row, always while paused.
 
 package enum PanicCoordinatorControls: ControlTable {
     package static let surface = "menu.display.b"
 
-    private static let tools = MenuPlacementSpec("Display Tools", customize: .checkbox,
-                                                 legacy: DisplayMenuItemID(rawValue: "b.restoreAll"))
-    private static let section = MenuPlacementSpec("Displays section", customize: .none)
-
     package static let controls: [ControlSpec] = [
-        ControlSpec("menu.display.b.restoreAll", .menuItem, replaces: ["l.menu.b.restoreAll"], menu: tools),
-        ControlSpec("menu.display.b.restoreAllPending", .menuItem, when: [.state(.pendingConfirmation)], menu: section),
-        ControlSpec("menu.display.b.paused", .menuItem, when: [.state(.automationPaused)], menu: section),
+        ControlSpec("menu.display.b.restoreAll", .menuItem, replaces: ["l.menu.b.restoreAll"],
+                    menu: MenuPlacementSpec("Display Tools", customize: .checkbox,
+                                            legacy: DisplayMenuItemID(rawValue: "b.restoreAll"))),
         ControlSpec("menu.display.b.resume", .menuItem, when: [.state(.automationPaused)],
                     replaces: ["l.menu.b.resumeAutomation"],
-                    menu: MenuPlacementSpec("Displays section", customize: .none,
+                    menu: MenuPlacementSpec("Displays section", customize: .checkbox,
                                             legacy: DisplayMenuItemID(rawValue: "b.resumeAutomation"))),
     ]
 }
