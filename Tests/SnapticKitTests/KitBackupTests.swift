@@ -475,8 +475,10 @@ final class KitBackupTests: XCTestCase {
         case 4: return Double(Int(g.next() % 10_000)) / 7
         case 5: return (0..<Int(g.next() % 4)).map { _ in garbage(&g, depth: depth - 1) }
         case 6:
-            return [["id": pick(["R1", "B1C2D3E4-0000-4000-8000-000000000001", "7"], &g),
-                     pick(Self.fuzzKeys, &g): garbage(&g, depth: depth - 1)]]
+            // An id-carrying list element (merged by id), built key by key: a picked key may be "id" too.
+            var row: [String: Any] = [pick(Self.fuzzKeys, &g): garbage(&g, depth: depth - 1)]
+            row["id"] = pick(["R1", "B1C2D3E4-0000-4000-8000-000000000001", "7"], &g)
+            return [row]
         default:
             var out: [String: Any] = [:]
             for _ in 0..<Int(g.next() % 4) { out[pick(Self.fuzzKeys, &g)] = garbage(&g, depth: depth - 1) }
@@ -559,7 +561,7 @@ final class KitBackupTests: XCTestCase {
             }
             var wrapper = fuzzBase
             wrapper["sections"] = sections
-            let doc: Any = g.next() % 10 == 0 ? mutate(wrapper, &g) : wrapper
+            let doc: Any = g.next() % 10 == 0 ? mutate(wrapper, &g) : wrapper as Any
             guard JSONSerialization.isValidJSONObject(doc),
                   let data = try? JSONSerialization.data(withJSONObject: doc, options: [.sortedKeys]) else { continue }
             let deep = KitBackup.nestingDepth(data, limit: KitBackup.maxDepth) == nil
