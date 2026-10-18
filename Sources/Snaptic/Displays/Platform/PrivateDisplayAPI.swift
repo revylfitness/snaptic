@@ -64,8 +64,6 @@ extension PrivateSymbol {
                                                           framework: coreGraphicsPath, features: [.hiddenModes])
     static let cgsGetDisplayModeDescription = PrivateSymbol(function: "CGSGetDisplayModeDescriptionOfLength",
                                                             framework: coreGraphicsPath, features: [.hiddenModes])
-    static let cgsGetCurrentDisplayMode = PrivateSymbol(function: "CGSGetCurrentDisplayMode",
-                                                        framework: coreGraphicsPath, features: [.hiddenModes])
     static let cgsConfigureDisplayMode = PrivateSymbol(function: "CGSConfigureDisplayMode",
                                                        framework: coreGraphicsPath, features: [.hiddenModes])
     static let coreDisplayInfo = PrivateSymbol(function: "CoreDisplay_DisplayCreateInfoDictionary",

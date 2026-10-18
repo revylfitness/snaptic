@@ -128,10 +128,6 @@ package enum Invariants {
         Set(visibility(s).filter { $0.value == .strong }.map(\.key))
     }
 
-    package static func weaklyVisible(_ s: LayoutSnapshot) -> Set<UInt32> {
-        Set(visibility(s).filter { $0.value == .weak }.map(\.key))
-    }
-
     package static func visible(_ s: LayoutSnapshot) -> Set<UInt32> {
         Set(visibility(s).filter { $0.value != Visibility.none }.map(\.key))
     }

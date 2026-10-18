@@ -20,10 +20,6 @@ NS_ASSUME_NONNULL_BEGIN
                                  describeFunction:(const void *)describeFunction
     NS_SWIFT_NAME(records(display:countFunction:describeFunction:));
 
-/// The current CGS mode number, or -1. `currentFunction`: void CGSGetCurrentDisplayMode(uint32_t, int *).
-+ (int32_t)currentModeForDisplay:(uint32_t)display currentFunction:(const void *)currentFunction
-    NS_SWIFT_NAME(currentMode(display:currentFunction:));
-
 @end
 
 NS_ASSUME_NONNULL_END

@@ -97,6 +97,33 @@ final class ConfigSafetyTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(KeptModes.self, from: Data(json.utf8)).modes.count, 1)
     }
 
+    /// Review 4 code F3: both per-display lists decode through Kit `LossyArray` — element by element, and at most
+    /// `LossyArray.maxElements` elements are *attempted* (not decoded), so a huge array of garbage stays cheap.
+    func testPerDisplayListsDecodeElementwiseAndBounded() throws {
+        let good = #"{"ioModeID":1,"pixelWidth":10,"pixelHeight":10,"pointWidth":10,"pointHeight":10,"refreshMilliHz":0}"#
+        let cap = LossyArray<ModeRef>.maxElements
+        // Garbage first, then a good element past the attempt cap: never read.
+        let modes = "[" + Array(repeating: "1", count: cap).joined(separator: ",") + "," + good + "]"
+        XCTAssertTrue(try JSONDecoder().decode(KeptModes.self, from: Data(modes.utf8)).modes.isEmpty)
+        // The good element inside the cap is kept between bad ones.
+        let mixed = "[1," + good + ",\"x\",null]"
+        XCTAssertEqual(try JSONDecoder().decode(KeptModes.self, from: Data(mixed.utf8)).modes.count, 1)
+        // Not an array at all: empty, never a throw.
+        XCTAssertTrue(try JSONDecoder().decode(KeptModes.self, from: Data("{}".utf8)).modes.isEmpty)
+
+        // Allow list: one non-string entry no longer drops the valid ones.
+        let allow = #"["60:0011",7,{"a":1},"d6:0004","zz:1"]"#
+        XCTAssertEqual(try JSONDecoder().decode(PreConfirmAllowList.self, from: Data(allow.utf8)).entries,
+                       ["60:0011", "d6:0004"])
+        let longAllow = "[" + Array(repeating: "0", count: cap).joined(separator: ",") + ",\"60:0011\"]"
+        XCTAssertTrue(try JSONDecoder().decode(PreConfirmAllowList.self, from: Data(longAllow.utf8)).entries.isEmpty)
+        // Round trip unchanged.
+        let list = PreConfirmAllowList(entries: ["60:0011", "d6:0004"])
+        XCTAssertEqual(try JSONDecoder().decode(PreConfirmAllowList.self, from: JSONEncoder().encode(list)), list)
+        let kept = KeptModes(modes: [BLayout.mode(1920, 1080, hidpi: true)])
+        XCTAssertEqual(try JSONDecoder().decode(KeptModes.self, from: JSONEncoder().encode(kept)), kept)
+    }
+
     // MARK: M6 (0.3 §4.6): the shortcut row edits the 0.2 fields with their 0.2 meanings, no data migration
 
     private let custom = HotkeyCombo(keyCode: 15, carbonModifiers: HotkeyRules.control | HotkeyRules.command)   // ⌃⌘R

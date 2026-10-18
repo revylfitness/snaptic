@@ -12,7 +12,8 @@ package struct PreConfirmAllowList: Codable, Equatable, Sendable {
 
     package init(from decoder: Decoder) throws {
         let c = try decoder.singleValueContainer()
-        entries = ((try? c.decode([String].self)) ?? []).filter(Self.isValidEntry)
+        // Element by element and bounded (Kit LossyArray): one bad entry doesn't drop the list.
+        entries = ((try? c.decode(LossyArray<String>.self))?.items ?? []).filter(Self.isValidEntry)
     }
 
     package func encode(to encoder: Encoder) throws {
@@ -49,7 +50,7 @@ package struct KeptModes: Codable, Equatable, Sendable {
 
     package init(from decoder: Decoder) throws {
         let c = try decoder.singleValueContainer()
-        modes = (try? c.decode([LossyModeRef].self))?.compactMap(\.value) ?? []
+        modes = (try? c.decode(LossyArray<ModeRef>.self))?.items ?? []
     }
 
     package func encode(to encoder: Encoder) throws {
@@ -73,12 +74,6 @@ package struct KeptModes: Codable, Equatable, Sendable {
         }
         return KeptModes(modes: Array(valid.suffix(Self.maxModes)))
     }
-}
-
-/// Decodes one array element, or nil, without failing the array.
-private struct LossyModeRef: Decodable {
-    let value: ModeRef?
-    init(from decoder: Decoder) throws { value = try? ModeRef(from: decoder) }
 }
 
 package struct SafetyConfig: ConfigModel {

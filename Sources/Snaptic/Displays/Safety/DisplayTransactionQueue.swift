@@ -16,7 +16,7 @@ import SnapticShims
     static var serviceID: DisplayServiceID { .transactions }
     static var privateSymbols: [PrivateSymbol] {
         [.cgsConfigureDisplayEnabled, .mpDisplay, .cgsGetNumberOfDisplayModes, .cgsGetDisplayModeDescription,
-         .cgsGetCurrentDisplayMode, .cgsConfigureDisplayMode]
+         .cgsConfigureDisplayMode]
     }
     weak var context: DisplaysContext?
 
@@ -248,11 +248,6 @@ import SnapticShims
 
     /// Resolves a pending trial as Revert (sleep, lock, quit, new request, panic), in any
     /// phase before Keep; panic also overrides a Keep in progress. False when none counted.
-    @discardableResult
-    func revertPendingTrial(reason: String, cause: TrialRevertReason = .session) -> Bool {
-        requestTrialRevert(cause, log: reason)
-    }
-
     @discardableResult
     private func requestTrialRevert(_ cause: TrialRevertReason, log: String) -> Bool {
         guard var p = pending else { return false }
