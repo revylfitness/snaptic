@@ -105,6 +105,25 @@ jobs:
           perl -e '$SIG{PIPE} = "DEFAULT"; exec @ARGV or die "exec: $!"' \
             ./scripts/selftest-helpers.sh .build/debug/Snaptic 2>&1 | tee selftest.log
 
+      # 0.3 §4.8: every Switcher config key has a control or a removal reason (in process, token-gated).
+      - name: Controls self-test (debug)
+        timeout-minutes: 1
+        run: |
+          set -o pipefail
+          dir=$(mktemp -d)
+          token=$(od -An -N30 -tx1 /dev/urandom | tr -d ' \n')
+          printf '%s\n' "$token" > "$dir/token"
+          chmod 600 "$dir/token"
+          SNAPTIC_SELFTEST_TOKEN="$token" .build/debug/Snaptic --selftest-controls "$dir/token" 2>&1 | tee -a selftest.log
+
+      # 0.3 R5-5: connection holds, the held pool, pings and the edge rules, against a bare control server.
+      - name: Control-server self-test (debug)
+        timeout-minutes: 6
+        run: |
+          set -o pipefail
+          perl -e '$SIG{PIPE} = "DEFAULT"; exec @ARGV or die "exec: $!"' \
+            ./scripts/selftest-control-server.sh .build/debug/Snaptic 2>&1 | tee -a selftest.log
+
       - name: Warnings summary
         if: always()
         run: |

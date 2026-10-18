@@ -402,12 +402,16 @@ final class AppSettings: ObservableObject {
     @Published var config: Config {
         didSet {
             guard config != oldValue else { return }
-            save()
+            scheduleSave()
             onChange?(config)
         }
     }
 
     var onChange: (@MainActor (Config) -> Void)?
+    /// 0.3 §4.5: changes apply at once and reach UserDefaults through a 250 ms debounce, like ConfigStore, so a
+    /// dragged slider or a typed list writes once.
+    static let saveDelay: TimeInterval = 0.25
+    private var pendingSave: DispatchWorkItem?
 
     /// Reads only the persistent domain: launch arguments (`-SnapticConfig.v1 …`), the
     /// volatile domain and managed preferences are ignored (PLAN §3.4).
@@ -420,11 +424,28 @@ final class AppSettings: ObservableObject {
         }
     }
 
-    /// Saves are immediate; kept for the host's quit path.
-    func flush() { save() }
+    /// Writes a pending change now (the host's quit path and Reset).
+    func flush() {
+        guard let work = pendingSave else { return }
+        work.cancel()
+        pendingSave = nil
+        save()
+    }
 
     /// Back to defaults (General → Backup & Reset).
     func reset() { config = Config() }
+
+    private func scheduleSave() {
+        pendingSave?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                self?.pendingSave = nil
+                self?.save()
+            }
+        }
+        pendingSave = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.saveDelay, execute: work)
+    }
 
     private func save() {
         if let data = try? JSONEncoder().encode(config) {

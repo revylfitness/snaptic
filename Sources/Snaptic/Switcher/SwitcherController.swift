@@ -28,10 +28,15 @@ final class SwitcherController {
     private var preview: PreviewOverlay?
 
     private var active: Shortcut?
-    /// Sticky = stay open after the modifier is released (search mode or
-    /// "release to switch" turned off). Return switches, Esc cancels.
+    /// Sticky = stay open after the modifier is released (search mode, "release to switch"
+    /// turned off, or opened from the menu, 0.3 C8). Return switches, Esc cancels.
     private var sticky = false
-    private var visible = false
+    /// The panel is on screen (0.3 §2.13: Awake suppresses pointer nudges meanwhile).
+    private var visible = false {
+        didSet { if visible != oldValue { onVisibilityChange?(visible) } }
+    }
+    /// Told whenever the panel appears or goes away (the module forwards it to `HostSignals.switcherVisible`).
+    var onVisibilityChange: (@MainActor (Bool) -> Void)?
     private var delayElapsed = false
     /// The modifier was released before the window list finished loading.
     private var pendingCommit = false
@@ -184,6 +189,18 @@ final class SwitcherController {
     }
 
     // MARK: Open / close
+
+    /// 0.3 C8: opens the switcher in sticky mode for `shortcut` (from the menu's "Switch Windows" item): it stays open
+    /// without a held modifier until Return, Esc, a click or 30 s without input. False when it is already open.
+    @discardableResult
+    func openSticky(_ shortcut: Shortcut) -> Bool {
+        guard active == nil else { return false }
+        open(shortcut, reverse: false)
+        sticky = true
+        // The menu that was just closed can make macOS report focus changes; they mustn't close the switcher.
+        ignoreDismissSignalsUntil = Date().addingTimeInterval(0.5)
+        return true
+    }
 
     private func open(_ shortcut: Shortcut, reverse: Bool) {
         openToken += 1

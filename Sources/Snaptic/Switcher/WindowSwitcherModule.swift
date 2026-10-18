@@ -51,6 +51,8 @@ import SnapticKit
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), WindowManager.axTimeout)
         gatherer = WindowGatherer(permissions: context.permissions, toasts: context.toasts)
 
+        controller.onVisibilityChange = { [weak context] visible in context?.hostSignals.switcherVisible = visible }
+
         let tap = HotkeyTap()
         tap.handler = { [weak self] type, event in
             self?.controller.handle(type: type, event: event) ?? false
@@ -82,6 +84,8 @@ import SnapticKit
         tap?.stop()
         tap = nil
         controller.reset()
+        controller.onVisibilityChange = nil
+        context.hostSignals.switcherVisible = false
         SystemHotkeys.restore()
         WindowManager.shared.stop()
         ThumbnailStore.shared.purge()
@@ -110,17 +114,23 @@ import SnapticKit
                 context.permissions.presentGuide(.screenRecording, reason: L("Thumbnails and previews of your windows."))
             })
         }
-        let hint: String
         if let first = settings.config.activeShortcuts.first {
-            hint = tapIsRunning ? L("Press ") + first.displayName + L(" to switch windows") : L("Waiting for Accessibility access")
-        } else if settings.config.shortcuts.isEmpty {
-            hint = L("No shortcuts set")
+            // 0.3 C8: "Switch Windows ⌥⇥" opens the switcher in sticky mode.
+            let item = ClosureMenuItem(title: L("Switch Windows")) { [weak self] in _ = self?.showStickySwitcher() }
+            Self.showShortcut(first, on: item)
+            if !tapIsRunning {
+                item.isEnabled = false
+                item.toolTip = L("Waiting for Accessibility access")
+            }
+            items.append(item)
         } else {
-            hint = L("Only ⌘ shortcuts are set, and ⌘ shortcuts are turned off")
+            let hint = settings.config.shortcuts.isEmpty
+                ? L("No shortcuts set") : L("Only ⌘ shortcuts are set, and ⌘ shortcuts are turned off")
+            let hintItem = ClosureMenuItem(title: hint) {}
+            hintItem.action = nil
+            hintItem.isEnabled = false
+            items.append(hintItem)
         }
-        let hintItem = NSMenuItem(title: hint, action: nil, keyEquivalent: "")
-        hintItem.isEnabled = false
-        items.append(hintItem)
         items.append(ClosureMenuItem(title: L("Gather Windows on This Display")) { [weak self] in
             guard let self, let life = self.lifetime else { return }
             self.gatherer?.gather(onto: WindowGatherer.pointerScreen, confirm: false, lifetime: life)
@@ -130,6 +140,33 @@ import SnapticKit
 
     func settingsPages() -> [SettingsPage] {
         SwitcherPages.pages(module: self)
+    }
+
+    /// 0.3 C8: opens the switcher in sticky mode with the first shortcut that may act (it stays open until Return,
+    /// Esc or a click). False while it can't see keys (no Accessibility yet), without a usable shortcut, or when the
+    /// module isn't running.
+    @discardableResult
+    func showStickySwitcher() -> Bool {
+        guard context != nil, tapIsRunning, let shortcut = settings.config.activeShortcuts.first else { return false }
+        return controller.openSticky(shortcut)
+    }
+
+    /// Shows the shortcut beside the item, like a key equivalent (only for keys a menu can draw). The status menu is
+    /// closed by the time the switcher opens, so the equivalent never fires by itself.
+    private static func showShortcut(_ shortcut: Shortcut, on item: NSMenuItem) {
+        let key: String
+        switch shortcut.keyCode {
+        case KeyCode.tab: key = "\t"
+        case KeyCode.space: key = " "
+        case KeyCode.backtick: key = "`"
+        default: return
+        }
+        item.keyEquivalent = key
+        switch shortcut.modifier {
+        case .option: item.keyEquivalentModifierMask = [.option]
+        case .command: item.keyEquivalentModifierMask = [.command]
+        case .control: item.keyEquivalentModifierMask = [.control]
+        }
     }
 
     /// Opens the permission guide (Settings pages).

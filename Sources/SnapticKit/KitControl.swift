@@ -131,11 +131,12 @@ package enum KitControl {
     /// The ping line servers write on held connections (with its newline).
     package static var pingLine: Data { Data(#"{"ping":true}"#.utf8) + [0x0A] }
 
-    /// A ping line (without its newline): a JSON object whose only key is `"ping": true`. The client drops these.
+    /// A ping line (without its newline): `{"ping":true}`, whitespace between tokens ignored. The client drops these.
+    /// Compared as bytes: JSONSerialization would also read `1` as true.
     package static func isPing(_ line: Data) -> Bool {
-        guard line.count <= 64, let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
-              object.count == 1, let ping = object["ping"] as? Bool else { return false }
-        return ping
+        guard line.count <= 64 else { return false }
+        let compact = line.filter { $0 != 0x20 && $0 != 0x09 && $0 != 0x0D && $0 != 0x0A }
+        return compact.elementsEqual(#"{"ping":true}"#.utf8)
     }
 
     // MARK: Paths
