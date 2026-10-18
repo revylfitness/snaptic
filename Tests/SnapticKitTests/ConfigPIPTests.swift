@@ -562,4 +562,115 @@ final class ConfigPIPTests: XCTestCase {
             }
         }
     }
+
+    // MARK: Settings text and limits (0.3 §4.3)
+
+    func testDefaultNames() {
+        XCTAssertEqual(PIPSettingsText.defaultName(sourceName: nil, kind: .window, targetName: nil), "Window PIP")
+        XCTAssertEqual(PIPSettingsText.defaultName(sourceName: "Built-in Display", kind: .window, targetName: "DELL"),
+                       "Built-in Display PIP")
+        XCTAssertEqual(PIPSettingsText.defaultName(sourceName: "Built-in Display", kind: .fullScreen, targetName: "DELL"),
+                       "Built-in Display → DELL")
+        // A stream without a target yet is named like a window.
+        XCTAssertEqual(PIPSettingsText.defaultName(sourceName: "A", kind: .fullScreen, targetName: nil), "A PIP")
+        // Names stay within the configuration's limit.
+        let long = String(repeating: "x", count: 200)
+        let name = PIPSettingsText.defaultName(sourceName: long, kind: .fullScreen, targetName: long)
+        XCTAssertLessThanOrEqual(name.unicodeScalars.count, PIPConfiguration.maxNameScalars)
+        XCTAssertEqual(PIPConfiguration.cleanName(name), name)
+    }
+
+    func testSubtitleOrderAndParts() {
+        var c = PIPConfiguration(kind: .window)
+        XCTAssertEqual(PIPSettingsText.subtitle(c, sourceName: "Built-in Display", targetName: nil),
+                       "Built-in Display · 30 fps")
+        c.fps = 0
+        XCTAssertEqual(PIPSettingsText.subtitle(c, sourceName: nil, targetName: nil), "A window you choose")
+        c.kind = .fullScreen
+        c.crop = PIPRect(x: 0, y: 0, width: 0.5, height: 0.5)
+        c.rotation = 90
+        c.flipVertical = true
+        c.filters = [FilterInstance(kind: .sepia)]
+        c.autoStart = true
+        XCTAssertEqual(PIPSettingsText.subtitle(c, sourceName: "A", targetName: "B"),
+                       "A · Full screen on B · Cropped · Rotated 90° · Flipped · Filters · Offers to start")
+        XCTAssertEqual(PIPSettingsText.subtitle(c, sourceName: "A", targetName: nil),
+                       "A · Choose a display to stream onto · Cropped · Rotated 90° · Flipped · Filters · Offers to start")
+        // Only enabled filters count; a lookup table does.
+        c.filters = [FilterInstance(kind: .sepia, enabled: false)]
+        XCTAssertFalse(PIPSettingsText.subtitle(c, sourceName: "A", targetName: "B").contains("Filters"))
+        c.lutID = StableID()
+        XCTAssertTrue(PIPSettingsText.subtitle(c, sourceName: "A", targetName: "B").contains("Filters"))
+    }
+
+    func testCropText() {
+        XCTAssertEqual(PIPSettingsText.crop(nil), "None")
+        XCTAssertEqual(PIPSettingsText.crop(PIPRect(x: 0.1, y: 0.2, width: 0.5, height: 0.4)), "50% × 40% at 10%, 20%")
+        // Out-of-range crops are shown as they would apply (normalized), never as raw numbers.
+        let odd = PIPSettingsText.crop(PIPRect(x: -1, y: 0, width: 5, height: 0.5))
+        XCTAssertFalse(odd.contains("-"))
+        XCTAssertEqual(PIPSettingsText.crop(PIPRect(x: .nan, y: 0, width: 1, height: 1)),
+                       PIPSettingsText.crop(PIPRect(x: .nan, y: 0, width: 1, height: 1).normalizedCrop()))
+    }
+
+    func testCanAddAndRefusals() {
+        var config = DisplaysConfig()
+        XCTAssertTrue(PIPSettingsText.canAdd(source: .window, in: config))
+        XCTAssertTrue(PIPSettingsText.canAdd(source: .display(keyA), in: config))
+        for _ in 0..<PerDisplayPIP.maxConfigurations {
+            XCTAssertTrue(PIPConfig.add(PIPConfiguration(), source: .display(keyA), to: &config))
+        }
+        XCTAssertFalse(PIPSettingsText.canAdd(source: .display(keyA), in: config))
+        XCTAssertTrue(PIPSettingsText.canAdd(source: .display(keyB), in: config))
+        XCTAssertNotNil(PIPSettingsText.addRefusal(PIPConfiguration(), source: .display(keyA), in: config))
+        XCTAssertNil(PIPSettingsText.addRefusal(PIPConfiguration(), source: .display(keyB), in: config))
+        for _ in 0..<PIPConfig.maxWindowConfigurations {
+            XCTAssertTrue(PIPConfig.add(PIPConfiguration(), source: .window, to: &config))
+        }
+        XCTAssertFalse(PIPSettingsText.canAdd(source: .window, in: config))
+
+        var stream = PIPConfiguration(kind: .fullScreen)
+        XCTAssertEqual(PIPSettingsText.addRefusal(stream, source: .display(keyB), in: config),
+                       "Choose a display to stream onto.")
+        stream.target = keyB
+        XCTAssertNotNil(PIPSettingsText.addRefusal(stream, source: .display(keyB), in: config))
+        stream.target = keyA
+        XCTAssertNil(PIPSettingsText.addRefusal(stream, source: .display(keyB), in: config))
+    }
+
+    func testPrivacyListHelpers() {
+        XCTAssertTrue(PIPPrivacy.isDefaultList(PIPPrivacy.defaultProtectedPrefixes))
+        XCTAssertTrue(PIPPrivacy.isDefaultList(PIPPrivacy.defaultProtectedPrefixes.reversed()))
+        XCTAssertFalse(PIPPrivacy.isDefaultList(Array(PIPPrivacy.defaultProtectedPrefixes.dropLast())))
+        XCTAssertFalse(PIPPrivacy.isDefaultList(PIPPrivacy.defaultProtectedPrefixes + ["com.example.app"]))
+        XCTAssertFalse(PIPPrivacy.isDefaultList(PIPPrivacy.defaultProtectedPrefixes + [PIPPrivacy.defaultProtectedPrefixes[0]]))
+
+        XCTAssertEqual(PIPPrivacy.sanitizedPrefixes(["com.a.b", "bad", "com.a.b", "", "org.x", "a..b", "com.é.x"]),
+                       ["com.a.b", "org.x"])
+        let many = (0..<200).map { "com.example.app\($0)" }
+        let clean = PIPPrivacy.sanitizedPrefixes(many)
+        XCTAssertEqual(clean.count, PIPConfig.maxProtectedPrefixes)
+        XCTAssertEqual(clean, Array(many.prefix(PIPConfig.maxProtectedPrefixes)))
+        // The config's sanitizer uses the same rule.
+        var pip = PIPConfig()
+        pip.protectedBundlePrefixes = many + ["bad"]
+        XCTAssertEqual(pip.sanitized().protectedBundlePrefixes, clean)
+    }
+
+    func testFuzzedPrefixListsSanitizeIdempotently() {
+        var rng = SeededGenerator(seed: 0x9C1D)
+        let alphabet = Array("abcXYZ09.-_ é/".unicodeScalars)
+        for _ in 0..<500 {
+            let list = (0..<Int(rng.next() % 80)).map { _ -> String in
+                var s = String.UnicodeScalarView()
+                for _ in 0..<Int(rng.next() % 12) { s.append(alphabet[Int(rng.next() % UInt64(alphabet.count))]) }
+                return String(s)
+            }
+            let clean = PIPPrivacy.sanitizedPrefixes(list)
+            XCTAssertEqual(PIPPrivacy.sanitizedPrefixes(clean), clean)
+            XCTAssertLessThanOrEqual(clean.count, PIPConfig.maxProtectedPrefixes)
+            XCTAssertEqual(Set(clean).count, clean.count)
+            XCTAssertTrue(clean.allSatisfy(PIPPrivacy.isValidPrefix))
+        }
+    }
 }

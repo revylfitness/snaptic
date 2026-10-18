@@ -967,15 +967,10 @@ fileprivate extension DisplayActionID {
 
     private func defaultName(source: PIPSourceRef, kind: PIPKind, target: DisplayKey?) -> String {
         guard let ctx = context else { return L("Picture in Picture") }
-        let sourceName: String
-        switch source {
-        case .display(let key): sourceName = ctx.registry.info(for: key)?.name ?? L("Display")
-        case .window: sourceName = L("Window")
-        }
-        if kind == .fullScreen, let target, let t = ctx.registry.info(for: target) {
-            return PIPConfiguration.cleanName("\(sourceName) → \(t.name)")
-        }
-        return PIPConfiguration.cleanName(L("\(sourceName) PIP"))
+        var sourceName: String?
+        if case .display(let key) = source { sourceName = ctx.registry.info(for: key)?.name ?? L("Display") }
+        let targetName = target.flatMap { ctx.registry.info(for: $0)?.name }
+        return PIPSettingsText.defaultName(sourceName: sourceName, kind: kind, targetName: targetName)
     }
 
     // MARK: Hotkey
