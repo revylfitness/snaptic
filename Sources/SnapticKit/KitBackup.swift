@@ -221,7 +221,9 @@ package enum KitBackup {
             }
             return out
         }
-        guard var dict = merged as? [String: Any] else { return merged }
+        // An import that replaced the enclosing object with something else keeps the
+        // current object: the list can't be dropped that way either.
+        guard var dict = merged as? [String: Any] else { return current ?? merged }
         let currentChild = (current as? [String: Any])?[first]
         if let child = dict[first] {
             dict[first] = unite(Array(path.dropFirst()), current: currentChild, merged: child)
