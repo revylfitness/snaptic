@@ -404,9 +404,12 @@ package enum SliderLabels {
 /// The edit state of a typed value field (`NumberField`, the field of `SliderSetting` and `StepperSetting`).
 ///
 /// The field always follows the value it shows unless the user has typed something since it last synced: then the
-/// typed text stays until Return, Esc, an arrow key or focus loss. A commit writes only text the user typed (dirty)
-/// and never writes stale text back over a value that changed elsewhere (a slider drag, a stepper click, brightness
-/// keys, a hardware read-back, the menu's slider).
+/// typed text stays until Return, Esc, an arrow key, focus loss or the row's own control. A commit writes only text
+/// the user typed (dirty) and never writes stale text back over a value that changed elsewhere.
+///
+/// Two kinds of outside change: a change made elsewhere (brightness keys, a hardware read-back, the menu's slider)
+/// `sync`s and keeps text being typed; the row's own slider, stepper or Reset is the user's newer intent, so it
+/// `discardTyping`s (review round 2 ui F1): typed-but-not-Returned text is dropped and never written on blur.
 package struct TypedFieldState: Equatable, Sendable {
     /// What the field shows.
     package private(set) var text: String
@@ -437,6 +440,19 @@ package struct TypedFieldState: Equatable, Sendable {
     package mutating func revert(display: String) {
         text = display
         synced = display
+    }
+
+    /// The row's own slider drag or click, stepper arrow or Reset set the value: drop any typed-but-not-Returned text
+    /// and show the value, so focus leaving later writes nothing over it.
+    package mutating func discardTyping(display: String) {
+        revert(display: display)
+    }
+
+    /// The turn after a write: show what the binding really stored. A value clamped back to the old one (e.g. a
+    /// custom nits minimum already at its cap) doesn't change the display, so without this the field would keep the
+    /// typed number (review round 2 ui N2). Text typed in between is kept (`sync`).
+    package mutating func settle(display: String) {
+        sync(display: display)
     }
 
     /// What Return or focus loss does.
