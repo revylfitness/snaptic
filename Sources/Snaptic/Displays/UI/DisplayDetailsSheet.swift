@@ -317,6 +317,7 @@ private struct DisplayInformationDisclosure: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .modifier(SettingsRevealExpansion([ControlID("displays.details.information")], isExpanded: $expanded))
         .onChange(of: expanded) { _, isExpanded in if isExpanded && !loaded { load() } }
         .onChange(of: display.hardwareID) { _, _ in
             loaded = false

@@ -23,7 +23,7 @@ package enum DisplaysPageControls: ControlTable {
                     replaces: ["l.d.overview.banner.restartHelper"]),
         ControlSpec("displays.root.displayTools", .button, when: [.module(.displays)],
                     replaces: ["l.d.overview.identify", "l.d.overview.redetect", "l.d.overview.showPanel",
-                               "l.d.safety.restoreAllNow", "l.d.arrangement.connectAll", "l.action.f.identify",
+                               "l.d.safety.restoreAllNow", "l.action.f.identify",
                                "l.action.f.redetect", "l.action.f.showPanel"],
                     search: SearchSpec("Display Tools", keywords: ["identify", "redetect", "panel", "restore all",
                                                                    "connect all", "disconnect"], root: root)),

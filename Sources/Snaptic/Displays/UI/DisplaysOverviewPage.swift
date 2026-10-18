@@ -62,13 +62,13 @@ struct DisplaysStatusSection: View {
                 if !paused.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Label(L("Some features are paused"), systemImage: "pause.circle").font(.headline)
-                        ForEach(DisplaysMenuBuilder.pauseReasons(paused, monitor: ctx.otherApps), id: \.self) { Text($0) }
+                        ForEach(Array(Set(paused.compactMap { ctx.otherApps.pauseReason(for: $0) })).sorted(), id: \.self) { Text($0) }
                         Text(paused.map(DisplaysUIText.title).sorted().joined(separator: ", "))
                             .font(.callout).foregroundStyle(.secondary)
                     }
                     .accessibilityElement(children: .combine)
                 }
-                if let reason = DisplaysMenuBuilder.unprotectedReason(ctx) {
+                if let reason = DisplaysLive.unprotectedReason(ctx) {
                     VStack(alignment: .leading, spacing: 4) {
                         Label(L("Unprotected"), systemImage: "exclamationmark.shield").font(.headline)
                         Text(reason)
@@ -83,7 +83,7 @@ struct DisplaysStatusSection: View {
     private func hasBanner(_ ctx: DisplaysContext) -> Bool {
         if case .degraded = env.runtime.moduleState { return true }
         return ctx.safeMode.isActive || ctx.panic.isLatched || !ctx.otherApps.pausedDisplayFeatures.isEmpty
-            || DisplaysMenuBuilder.isUnprotected(ctx)
+            || DisplaysLive.unprotectedReason(ctx) != nil
     }
 }
 

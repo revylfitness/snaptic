@@ -120,7 +120,7 @@ struct DiagnosticsReport {
                                           value: ctx.safeMode.isActive ? "on (\(ctx.safeMode.reason ?? "no reason"))" : "off"))
         rows.append(DiagnosticsRow("Panic latch", ctx.panic.isLatched ? "latched" : "off"))
         if let summary = runtime.lastPanicSummary { rows.append(DiagnosticsText.scrub(label: "Last panic", value: summary)) }
-        rows.append(DiagnosticsRow("Unprotected", DisplaysMenuBuilder.isUnprotected(ctx) ? "yes" : "no"))
+        rows.append(DiagnosticsRow("Unprotected", DisplaysLive.unprotectedReason(ctx) != nil ? "yes" : "no"))
         rows.append(DiagnosticsRow("Guard helper", ctx.guardClient.isAlive ? "running" : "not running"))
         rows.append(DiagnosticsText.scrub(label: "Helpers", value: ctx.helpers.unavailable.map { "unavailable: \($0)" } ?? "available"))
         rows.append(DiagnosticsRow("Sleep prevention", runtime.sleepPreventionActive ? "active" : "off"))
