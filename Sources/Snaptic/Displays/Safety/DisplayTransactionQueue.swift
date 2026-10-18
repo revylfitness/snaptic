@@ -27,19 +27,35 @@ import SnapticShims
 
     init() {}
 
+    /// One armed trial, from the guard arm until Keep or Revert finished. Its lifecycle
+    /// (Kit `TrialLifecycle`) decides every step; outside events only request a revert.
     private struct PendingTrial {
+        /// Queue-local and unique across activations (a stale task never matches).
+        let token: UInt64
         let id: UInt64
         let undo: [UndoOp]
         let changes: [DisplayChange]
-        var revertedExternally = false
+        var life = TrialLifecycle()
+        /// Something may already have reached the displays.
+        var applied = false
     }
 
     private var active = false
+    /// Bumped by activate/deactivate: work started under an older epoch touches nothing.
+    private var epoch: UInt64 = 0
     private var running = false
     private var waiting: [CheckedContinuation<Void, Never>] = []
     private var pending: PendingTrial?
+    private var trialSerial: UInt64 = 0
+    private var supersession = TrialSupersession()
+    /// How `stop()` resolved the last trial it interrupted (for that trial's own task).
+    private var stopped: (token: UInt64, end: TrialEnd)?
     private let panel = ConfirmPanel()
     private var journal: RevertJournal?
+    /// The long-armed undo the session journal holds right now (nil = no long-arm journal).
+    private var journaledLong: [UndoOp]?
+    /// Set at activation: the first sync removes whatever an earlier run may have left.
+    private var journalMayBeStale = false
     private var limiter = RateLimiter()
     private var countedPlans: [UInt64] = []
     private(set) var suppressAutomaticUntil: Double = 0
@@ -63,17 +79,21 @@ import SnapticShims
     func activate(_ context: DisplaysContext, lifetime: Lifetime) {
         guard !active else { return }
         active = true
+        epoch &+= 1
         self.context = context
         self.lifetime = lifetime
         journal = RevertJournal()
+        journaledLong = nil
+        journalMayBeStale = true
         context.guardClient.onReverted = { [weak self] trial, _, _ in
-            guard let self, let p = self.pending, trial == p.id else { return }
-            self.pending?.revertedExternally = true
+            guard let self, var p = self.pending, trial == p.id else { return }
+            p.life.guardDidRevert()
+            self.pending = p
             self.panel.dismiss(.revert)
         }
         context.guardClient.onLost = { [weak self] in
             guard let self else { return }
-            if self.pending != nil { self.panel.dismiss(.revert) }
+            self.requestTrialRevert(.guardLost, log: "safety helper lost")
             if context.guardClient.isUnprotected {
                 context.toasts.show(L("Snaptic's safety helper stopped. Restart Snaptic to stay protected."))
             }
@@ -81,7 +101,7 @@ import SnapticShims
         context.sessionGate.observeEvents(lifetime: lifetime) { [weak self] event in
             switch event {
             case .willSleep, .resignedActive, .locked, .screensDidSleep:
-                self?.revertPendingTrial(reason: L("The Mac went to sleep or was locked."))
+                self?.requestTrialRevert(.session, log: "sleep or lock")
             default: break
             }
         }
@@ -89,18 +109,45 @@ import SnapticShims
         layoutFactsChanged()
     }
 
+    /// Synchronous (PLAN §3.3): a pending trial resolves now (undone, or committed when the
+    /// user's Keep was underway), displays Snaptic disabled are re-enabled (FIXES-R1 B5), and
+    /// the session journal is cleared. The trial's own task wakes up and touches nothing.
     func deactivate() {
         guard active else { return }
-        // A pending trial resolves as Revert, synchronously (stop() is sync, PLAN §3.3).
-        if let p = pending, let ctx = context {
-            pending?.revertedExternally = true
-            _ = applyUndoNow(p.undo, ctx: ctx)
-            ctx.guardClient.disarm(p.id)
-            journal?.clearSession()
+        if var p = pending, let ctx = context {
+            let action = p.life.stop()
+            if let end = p.life.end { stopped = (p.token, end) }
+            switch action {
+            case .undo:
+                _ = applyUndoNow(p.undo, ctx: ctx)
+                ctx.guardClient.disarm(p.id)
+                EventLog.shared.record(.transaction, "Pending trial reverted (Displays stopped)")
+            case .commit:
+                ctx.guardClient.commit(p.id)
+                EventLog.shared.record(.transaction, "Trial kept (Displays stopped during Keep)")
+            case .none:
+                break
+            }
             journal?.resolvePermanent(trial: p.id)
         }
-        panel.dismiss(.revert)
+        pending = nil
+        if panel.isShowing {
+            panel.dismiss(.revert)
+            panelObservers.forEach { $0.1(false) }
+        }
+        // FIXES-R1 B5: don't leave this to a controller's Task, which submit refuses from now on.
+        if let ctx = context {
+            let ops = reenableOps(ctx)
+            if !ops.isEmpty {
+                let n = applyUndoNow(ops, ctx: ctx)
+                EventLog.shared.record(.transaction, "Re-enabled \(n) displays Snaptic disconnected")
+            }
+        }
+        journal?.clearSession()
+        journaledLong = nil
         active = false
+        epoch &+= 1
+        running = false
         longArmWork?.cancel()
         longArmWork = nil
         let w = waiting
@@ -111,6 +158,8 @@ import SnapticShims
         context = nil
         lifetime = nil
     }
+
+    private func isCurrent(_ epoch: UInt64) -> Bool { active && epoch == self.epoch }
 
     // MARK: Observers
 
@@ -136,32 +185,52 @@ import SnapticShims
 
     func submit(_ request: TransactionRequest) async -> TransactionOutcome {
         guard active else { return .failed(L("Displays are turned off.")) }
-        // A user request while a trial waits resolves that trial as Revert first (PLAN §4.3).
-        if !request.automatic, pending != nil {
-            revertPendingTrial(reason: L("A new display change was requested."))
+        let epoch = self.epoch
+        let ticket = supersession.ticket(user: !request.automatic)
+        // A user request resolves an earlier trial as Revert first (PLAN §4.3), in whatever
+        // phase it is (FIXES-R1 B1): it never waits out that trial's countdown.
+        if !request.automatic, let p = pending, requestTrialRevert(.newRequest, log: "new request"), p.applied {
             context?.toasts.show(L("The previous display change was reverted."))
         }
         if running {
             await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in waiting.append(c) }
+            guard isCurrent(epoch) else { return .failed(L("Displays are turned off.")) }
         } else {
             running = true
         }
-        let outcome = await execute(request)
-        if waiting.isEmpty { running = false } else { waiting.removeFirst().resume() }
+        let outcome = await execute(request, ticket: ticket, epoch: epoch)
+        if isCurrent(epoch) {
+            if waiting.isEmpty {
+                running = false
+                layoutFactsChanged()
+            } else {
+                waiting.removeFirst().resume()
+            }
+        }
         return outcome
     }
 
-    /// Resolves a pending trial as Revert (sleep, lock, quit, new request, panic).
+    /// Resolves a pending trial as Revert (sleep, lock, quit, new request, panic), in any
+    /// phase before Keep; panic also overrides a Keep in progress. False when none counted.
     @discardableResult
-    func revertPendingTrial(reason: String) -> Bool {
-        guard pending != nil else { return false }
-        panel.dismiss(.revert)
-        EventLog.shared.record(.transaction, "Pending trial reverted (\(reason))")
+    func revertPendingTrial(reason: String, cause: TrialRevertReason = .session) -> Bool {
+        requestTrialRevert(cause, log: reason)
+    }
+
+    @discardableResult
+    private func requestTrialRevert(_ cause: TrialRevertReason, log: String) -> Bool {
+        guard var p = pending, p.life.requestRevert(cause) else { return false }
+        pending = p
+        // The panel may not be up yet (arming, applying, settling): the trial task checks
+        // the lifecycle at every step, so the request isn't lost (FIXES-R1 B1).
+        if panel.isShowing { panel.dismiss(.revert) }
+        EventLog.shared.record(.transaction, "Pending trial revert requested (\(cause.rawValue): \(log))")
         return true
     }
 
-    private func execute(_ req: TransactionRequest) async -> TransactionOutcome {
-        guard active, let ctx = context else { return .failed(L("Displays are turned off.")) }
+    private func execute(_ req: TransactionRequest, ticket: UInt64, epoch: UInt64) async -> TransactionOutcome {
+        guard isCurrent(epoch), let ctx = context else { return .failed(L("Displays are turned off.")) }
+        let off = TransactionOutcome.failed(L("Displays are turned off."))
         let visibilityOnly = !req.changes.isEmpty && req.changes.allSatisfy(\.isVisibilityRestoring)
 
         if !ctx.sessionGate.isOpen {
@@ -174,9 +243,9 @@ import SnapticShims
         }
         if let prepare = req.prepare {
             do { try await prepare() } catch { return .failed(L("Couldn't prepare the change.")) }
-            guard active else { return .failed(L("Displays are turned off.")) }
+            guard isCurrent(epoch) else { return off }
         }
-        guard let before = ctx.registry.snapshot() else { return .failed(L("Displays are turned off.")) }
+        guard let before = ctx.registry.snapshot() else { return off }
 
         // Captured displays (games, presentations) are never reconfigured (PLAN §4.4).
         for id in Set(req.changes.map(\.displayID)) where Self.isCaptured(id) {
@@ -202,16 +271,19 @@ import SnapticShims
         let risk: TransactionRisk = req.risk == .restore ? .restore : max(req.risk, TransactionRisk(classified))
 
         if risk == .trial, changes.contains(where: \.isMonitorPanel) {
-            guard await ctx.guardClient.ensureRunning(), ctx.guardClient.canMonitorPanel else {
-                return .failed(L("Safety helper can't revert this."))
-            }
+            let ok = await ctx.guardClient.ensureRunning()
+            guard isCurrent(epoch) else { return off }
+            guard ok, ctx.guardClient.canMonitorPanel else { return .failed(L("Safety helper can't revert this.")) }
         }
 
         // Invariants on the predicted layout.
         let predicted = Invariants.predict(before, applying: changes)
         let needsLong = !Invariants.requiredLongArm(predicted).reasons.subtracting(Invariants.requiredLongArm(before).reasons).isEmpty
         var guardOK = true
-        if needsLong || risk != .low { guardOK = await ctx.guardClient.ensureRunning() }
+        if needsLong || risk != .low {
+            guardOK = await ctx.guardClient.ensureRunning()
+            guard isCurrent(epoch) else { return off }
+        }
         let invariantContext = InvariantContext(guardAvailable: guardOK, dimToBlack: [],
                                                 unattended: risk == .restore || req.automatic)
         let violations = Invariants.violations(before: before, changes: changes, context: invariantContext)
@@ -222,138 +294,279 @@ import SnapticShims
         }
 
         let undo = UndoPlanner.undo(for: changes, before: before)
-        let trialID = ctx.guardClient.makeTrialID()
+        if risk == .trial {
+            let outcome = await runTrial(req, changes: changes, undo: undo, before: before, ticket: ticket, ctx: ctx)
+            if isCurrent(epoch) { report(req, before: before, risk: risk, outcome: outcome) }
+            return outcome
+        }
 
         // Protection before applying (fail closed).
-        switch risk {
-        case .trial:
-            guard journal?.writeSession(undo: undo, restoreColorSync: false, trialID: trialID, live: before) == true,
-                  journal?.addPermanent(trial: trialID, ops: undo) == true else {
-                return .failed(L("Couldn't save the undo information."))
-            }
-            let deadline = GuardProtocol.trialDeadline(panelSeconds: Double(ctx.config.value.safety.confirmSeconds))
-            guard await ctx.guardClient.armTrial(trialID, undo: undo, deadlineSeconds: deadline) else {
-                journal?.clearSession()
-                journal?.resolvePermanent(trial: trialID)
-                return .failed(L("Safety helper unavailable."))
-            }
-        case .restore:
-            let long = Invariants.requiredLongArm(predicted)
-            guard journal?.writeSession(undo: UndoPlanner.merge(long.undo, undo), restoreColorSync: long.restoreColorSync,
-                                        trialID: nil, live: before) == true else {
-                return .failed(L("Couldn't save the undo information."))
+        let long = Invariants.requiredLongArm(predicted)
+        if risk == .restore {
+            // FIXES-R1 B2: journal a restore only when it leaves something to undo after a crash.
+            if !long.undo.isEmpty {
+                let ops = UndoPlanner.merge(long.undo, undo)
+                guard journal?.writeSession(undo: ops, restoreColorSync: long.restoreColorSync, trialID: nil,
+                                            live: before) == true else {
+                    return .failed(L("Couldn't save the undo information."))
+                }
+                journaledLong = ops
             }
             if !long.isEmpty {
-                guard await ctx.guardClient.setLongAndWait(long.undo, restoreColorSync: long.restoreColorSync) else {
-                    journal?.clearSession()
+                let ok = await ctx.guardClient.setLongAndWait(long.undo, restoreColorSync: long.restoreColorSync)
+                guard isCurrent(epoch) else { return off }
+                guard ok else {
+                    clearJournal()
+                    layoutFactsChanged()
                     return .failed(L("Safety helper unavailable."))
                 }
             }
-        case .low:
-            if needsLong {
-                let long = Invariants.requiredLongArm(predicted)
-                guard await ctx.guardClient.setLongAndWait(long.undo, restoreColorSync: long.restoreColorSync) else {
-                    return .failed(L("Safety helper unavailable."))
-                }
-            }
+        } else if needsLong {
+            let ok = await ctx.guardClient.setLongAndWait(long.undo, restoreColorSync: long.restoreColorSync)
+            guard isCurrent(epoch) else { return off }
+            guard ok else { return .failed(L("Safety helper unavailable.")) }
         }
 
-        // Apply.
+        // Apply (CG only: MonitorPanel changes that aren't already applied are trials).
         let scopeFor: (DisplayChange) -> ConfigScope = { [weak self] c in
-            guard risk != .trial else { return Self.trialScope }
-            return self?.finalScope(for: c, request: req, ctx: ctx) ?? .forSession
+            self?.finalScope(for: c, request: req, ctx: ctx) ?? .forSession
         }
-        let applied = await applyStaged(changes, scope: scopeFor, ctx: ctx)
-        if let failure = applied.failure {
+        let applied = await applyStaged(changes, scope: scopeFor, ctx: ctx, shouldStop: { [weak self] in
+            self?.isCurrent(epoch) != true
+        })
+        guard isCurrent(epoch) else { return off }
+        if let failure = applied.failure ?? (applied.stopped ? L("Displays are turned off.") : nil) {
             _ = applyUndoNow(undo, ctx: ctx)
-            if risk == .trial { ctx.guardClient.disarm(trialID) }
-            journal?.clearSession()
-            journal?.resolvePermanent(trial: trialID)
+            clearJournal()
             layoutFactsChanged()
             EventLog.shared.record(.transaction, "Apply failed and was undone")
             report(req, before: before, risk: risk, outcome: .failed(failure))
             return .failed(failure)
         }
         noteApplied(changes, undo: undo, ctx: ctx)
-
-        switch risk {
-        case .low, .restore:
-            if risk == .low { journal?.clearSession() }
-            layoutFactsChanged()
-            report(req, before: before, risk: risk, outcome: .applied)
-            return .applied
-        case .trial:
-            let outcome = await runTrial(trialID, changes: changes, undo: undo, req: req, ctx: ctx)
-            report(req, before: before, risk: risk, outcome: outcome)
-            return outcome
-        }
+        // The session journal now follows the long-armed set (updateLongArm).
+        layoutFactsChanged()
+        report(req, before: before, risk: risk, outcome: .applied)
+        return .applied
     }
 
     // MARK: Trial
 
-    private func runTrial(_ id: UInt64, changes: [DisplayChange], undo: [UndoOp], req: TransactionRequest,
-                          ctx: DisplaysContext) async -> TransactionOutcome {
-        pending = PendingTrial(id: id, undo: undo, changes: changes)
-        await settle(changes.map(\.displayID), ctx: ctx)
-        let seconds = Double(ctx.config.value.safety.confirmSeconds)
-        panelObservers.forEach { $0.1(true) }
-        let result: ConfirmResult
-        if pending?.revertedExternally == true || !active {
-            result = .revert
-        } else {
-            result = await panel.present(label: req.label, seconds: seconds, interactive: req.interactive) { [weak self] in
-                guard let snap = self?.context?.registry.snapshot() else { return [] }
-                return Invariants.panelHosts(snap)
+    /// Arm → apply → settle → panel → Keep or Revert, each step gated by the lifecycle
+    /// (FIXES-R1 B1/B4). Exactly one of the Keep/Revert endings runs, once.
+    private func runTrial(_ req: TransactionRequest, changes: [DisplayChange], undo: [UndoOp], before: LayoutSnapshot,
+                          ticket: UInt64, ctx: DisplaysContext) async -> TransactionOutcome {
+        // A newer user request arrived before anything went out: skip this one entirely.
+        if supersession.isSuperseded(ticket) {
+            EventLog.shared.record(.transaction, "Trial skipped: a newer request replaced it")
+            return .reverted(Self.message(for: .newRequest))
+        }
+        trialSerial &+= 1
+        let token = trialSerial
+        let trialID = ctx.guardClient.makeTrialID()
+        pending = PendingTrial(token: token, id: trialID, undo: undo, changes: changes)
+
+        // Protection before applying (fail closed): journal, permanent ops, guard arm.
+        // The journal also carries what is long-armed right now, so a crash mid-trial still
+        // re-enables displays Snaptic disconnected earlier (merge keeps the oldest restore).
+        let journalOps = UndoPlanner.merge(Invariants.requiredLongArm(before).undo, undo)
+        guard journal?.writeSession(undo: journalOps, restoreColorSync: false, trialID: trialID, live: before) == true,
+              journal?.addPermanent(trial: trialID, ops: undo) == true else {
+            journal?.clearSession()
+            journal?.resolvePermanent(trial: trialID)
+            journaledLong = nil
+            pending = nil
+            layoutFactsChanged()
+            return .failed(L("Couldn't save the undo information."))
+        }
+        journaledLong = nil
+        let panelSeconds = Double(ctx.config.value.safety.confirmSeconds)
+        let armed = await ctx.guardClient.armTrial(trialID, undo: undo,
+                                                   deadlineSeconds: GuardProtocol.trialDeadline(panelSeconds: panelSeconds))
+        guard isTrialCurrent(token) else { return stoppedOutcome(token) }
+        guard armed else {
+            ctx.guardClient.disarm(trialID)
+            journal?.clearSession()
+            journal?.resolvePermanent(trial: trialID)
+            pending = nil
+            layoutFactsChanged()
+            return .failed(L("Safety helper unavailable."))
+        }
+
+        // Apply, with the trial scope; stops between stages when a revert is requested.
+        switch step(token, { $0.advance(to: .applying) }) {
+        case .abandon: return stoppedOutcome(token)
+        case .revert(let why): return await revertTrial(token, why, req: req, ctx: ctx)
+        case .proceed: break
+        }
+        pending?.applied = true
+        let applied = await applyStaged(changes, scope: { _ in Self.trialScope }, ctx: ctx, shouldStop: { [weak self] in
+            self?.trialShouldStop(token) ?? true
+        })
+        if let failure = applied.failure {
+            EventLog.shared.record(.transaction, "Trial apply failed; reverting")
+            switch step(token, { $0.applyFailed() }) {
+            case .abandon: return stoppedOutcome(token)
+            case .revert(let why):
+                let outcome = await revertTrial(token, why, req: req, ctx: ctx)
+                if why == .applyFailed, case .reverted = outcome { return .failed(failure) }
+                return outcome
+            case .proceed: return .failed(failure)
             }
         }
-        panelObservers.forEach { $0.1(false) }
-        let external = pending?.revertedExternally ?? true
-        pending = nil
+        if !applied.stopped { noteApplied(changes, undo: undo, ctx: ctx) }
 
-        if result == .keep, active, context != nil {
-            _ = await ctx.guardClient.commitIntentAndWait(id)
-            // Re-apply with the final scope and never skip (R5.2): that's what makes it stick.
-            let cg = changes.filter { !$0.isMonitorPanel }
-            let (permanent, session) = CGConfig.keepBatches(cg)
-            ctx.guardClient.busy(seconds: 5)
-            let virtualsOnline = ctx.registry.cachedSnapshot()?.entries.contains { $0.transport == .snapticVirtual } ?? false
-            let permScope: ConfigScope = virtualsOnline && !permanent.allSatisfy({ Self.isPhysicalMode($0, ctx: ctx) })
-                ? .forSession : .permanently
-            let functions = cgFunctions(ctx)
-            let hidden = hiddenModes(for: cg, ctx: ctx)
-            if !permanent.isEmpty { _ = CGConfig.apply(permanent, scope: permScope, functions: functions, hiddenModes: hidden) }
-            if !session.isEmpty { _ = CGConfig.apply(session, scope: .forSession, functions: functions, hiddenModes: hidden) }
-            rememberKept(changes, ctx: ctx)
-            if let afterKeep = req.afterKeep { await afterKeep() }
-            ctx.guardClient.commit(id)
-            journal?.clearSession()
-            journal?.resolvePermanent(trial: id)
-            suppressAutomaticUntil = SessionGate.uptime() + Self.keepSuppressSeconds
-            layoutFactsChanged()
-            EventLog.shared.record(.transaction, "Trial kept")
-            return .kept
+        // Settle (≤ 5 s) so the countdown starts on a visible screen; the guard deadline
+        // was set before the apply, so move it past the settle first.
+        switch step(token, { $0.advance(to: .settling) }) {
+        case .abandon: return stoppedOutcome(token)
+        case .revert(let why): return await revertTrial(token, why, req: req, ctx: ctx)
+        case .proceed: break
         }
+        ctx.guardClient.extend(trialID, seconds: Self.settleCapSeconds + 10)
+        await settle(changes.map(\.displayID), ctx: ctx, token: token)
 
-        // Revert, timeout, sleep, quit, resign, guard EOF.
-        if !external { _ = await revertStaged(undo, ctx: ctx) }
-        if let afterRevert = req.afterRevert { await afterRevert() }
-        ctx.guardClient.disarm(id)
+        // The panel. FIXES-R1 B4: the guard deadline becomes now + panel + 10 s right before it shows.
+        switch step(token, { $0.advance(to: .confirming) }) {
+        case .abandon: return stoppedOutcome(token)
+        case .revert(let why): return await revertTrial(token, why, req: req, ctx: ctx)
+        case .proceed: break
+        }
+        ctx.guardClient.extend(trialID, seconds: GuardProtocol.panelExtension(panelSeconds: panelSeconds))
+        panelObservers.forEach { $0.1(true) }
+        let result = await panel.present(label: req.label, seconds: panelSeconds, interactive: req.interactive) { [weak self] in
+            guard let snap = self?.context?.registry.snapshot() else { return [] }
+            return Invariants.panelHosts(snap)
+        }
+        if isTrialCurrent(token) { panelObservers.forEach { $0.1(false) } }
+        let choice: TrialPanelChoice
+        switch result {
+        case .keep: choice = .keep
+        case .revert: choice = .revert
+        case .timeout: choice = .timeout
+        }
+        switch step(token, { $0.panelClosed(choice) }) {
+        case .abandon: return stoppedOutcome(token)
+        case .revert(let why): return await revertTrial(token, why, req: req, ctx: ctx)
+        case .proceed: break
+        }
+        return await keepTrial(token, req: req, ctx: ctx)
+    }
+
+    /// Keep: commit intent, re-apply with the final scope (never skipping, R5.2), afterKeep.
+    /// Panic or a guard revert arriving meanwhile still turns it into a revert.
+    private func keepTrial(_ token: UInt64, req: TransactionRequest, ctx: DisplaysContext) async -> TransactionOutcome {
+        guard let p = pending, p.token == token else { return stoppedOutcome(token) }
+        _ = await ctx.guardClient.commitIntentAndWait(p.id)
+        switch step(token, { $0.checkpoint() }) {
+        case .abandon: return stoppedOutcome(token)
+        case .revert(let why): return await revertTrial(token, why, req: req, ctx: ctx)
+        case .proceed: break
+        }
+        let cg = p.changes.filter { !$0.isMonitorPanel }
+        let (permanent, session) = CGConfig.keepBatches(cg)
+        ctx.guardClient.busy(seconds: 5)
+        let virtualsOnline = ctx.registry.cachedSnapshot()?.entries.contains { $0.transport == .snapticVirtual } ?? false
+        let permScope: ConfigScope = virtualsOnline && !permanent.allSatisfy({ Self.isPhysicalMode($0, ctx: ctx) })
+            ? .forSession : .permanently
+        let functions = cgFunctions(ctx)
+        let hidden = hiddenModes(for: cg, ctx: ctx)
+        if !permanent.isEmpty { _ = CGConfig.apply(permanent, scope: permScope, functions: functions, hiddenModes: hidden) }
+        if !session.isEmpty { _ = CGConfig.apply(session, scope: .forSession, functions: functions, hiddenModes: hidden) }
+        rememberKept(p.changes, ctx: ctx)
+        if let afterKeep = req.afterKeep {
+            await afterKeep()
+        }
+        switch step(token, { $0.finishKeep() }) {
+        case .abandon:
+            return stoppedOutcome(token)
+        case .revert(let why):
+            forgetKept(p.changes, ctx: ctx)
+            return await revertTrial(token, why, req: req, ctx: ctx)
+        case .proceed:
+            break
+        }
+        ctx.guardClient.commit(p.id)
         journal?.clearSession()
-        journal?.resolvePermanent(trial: id)
+        journal?.resolvePermanent(trial: p.id)
+        pending = nil
         suppressAutomaticUntil = SessionGate.uptime() + Self.keepSuppressSeconds
         layoutFactsChanged()
-        let why = result == .timeout ? L("No confirmation, so the change was reverted.") : L("The change was reverted.")
-        EventLog.shared.record(.transaction, result == .timeout ? "Trial timed out" : "Trial reverted")
-        return .reverted(why)
+        EventLog.shared.record(.transaction, "Trial kept")
+        return .kept
+    }
+
+    /// The single revert ending: staged CAS undo (a no-op for whatever the guard or panic
+    /// already undid), afterRevert, disarm, journals.
+    private func revertTrial(_ token: UInt64, _ why: TrialRevertReason, req: TransactionRequest,
+                             ctx: DisplaysContext) async -> TransactionOutcome {
+        guard let p = pending, p.token == token else { return stoppedOutcome(token) }
+        _ = await revertStaged(p.undo, ctx: ctx, shouldStop: { [weak self] in self?.isTrialCurrent(token) != true })
+        guard isTrialCurrent(token) else { return stoppedOutcome(token) }
+        if let afterRevert = req.afterRevert {
+            await afterRevert()
+            guard isTrialCurrent(token) else { return stoppedOutcome(token) }
+        }
+        _ = step(token) { $0.finishRevert() ? .proceed : .abandon }
+        ctx.guardClient.disarm(p.id)
+        journal?.clearSession()
+        journal?.resolvePermanent(trial: p.id)
+        pending = nil
+        suppressAutomaticUntil = SessionGate.uptime() + Self.keepSuppressSeconds
+        layoutFactsChanged()
+        EventLog.shared.record(.transaction, "Trial reverted (\(why.rawValue))")
+        return .reverted(Self.message(for: why))
+    }
+
+    private func isTrialCurrent(_ token: UInt64) -> Bool { active && pending?.token == token }
+
+    /// The trial task should stop what it's doing and come back to a checkpoint.
+    private func trialShouldStop(_ token: UInt64) -> Bool {
+        guard isTrialCurrent(token), let p = pending else { return true }
+        return p.life.isRevertRequested
+    }
+
+    /// Runs one lifecycle transition on the pending trial `token` (`.abandon` if it's gone).
+    private func step(_ token: UInt64, _ body: (inout TrialLifecycle) -> TrialStep) -> TrialStep {
+        guard active, var p = pending, p.token == token else { return .abandon }
+        let result = body(&p.life)
+        pending = p
+        return result
+    }
+
+    /// What a trial's task returns after `deactivate()` resolved it.
+    private func stoppedOutcome(_ token: UInt64) -> TransactionOutcome {
+        if let s = stopped, s.token == token, s.end == .kept { return .kept }
+        return .reverted(L("Displays were turned off, so the change was reverted."))
+    }
+
+    static func message(for reason: TrialRevertReason) -> String {
+        switch reason {
+        case .timeout: return L("No confirmation, so the change was reverted.")
+        case .newRequest: return L("A newer display change replaced this one.")
+        case .session: return L("The Mac went to sleep or was locked, so the change was reverted.")
+        case .panic: return L("Restore All Displays reverted the change.")
+        case .guardReverted: return L("The safety helper reverted the change.")
+        case .guardLost: return L("The safety helper stopped, so the change was reverted.")
+        case .applyFailed: return L("The display refused the change.")
+        case .stopped: return L("Displays were turned off, so the change was reverted.")
+        case .user: return L("The change was reverted.")
+        }
+    }
+
+    private func clearJournal() {
+        journal?.clearSession()
+        journaledLong = nil
     }
 
     /// Waits until the changed displays are active again and the layout has been quiet for
     /// 2 s (capped at 5 s), so the countdown starts on a visible screen.
-    private func settle(_ ids: [UInt32], ctx: DisplaysContext) async {
+    /// Returns early when a revert is requested (FIXES-R1 B1: checked on every pass).
+    private func settle(_ ids: [UInt32], ctx: DisplaysContext, token: UInt64) async {
         let start = SessionGate.uptime()
         while SessionGate.uptime() - start < Self.settleCapSeconds {
             try? await Task.sleep(nanoseconds: 250_000_000)
-            guard active, pending?.revertedExternally != true else { return }
+            if trialShouldStop(token) { return }
             let snap = ctx.registry.snapshot()
             let allShown = ids.allSatisfy { id in snap?.entry(id).map { $0.isEnabled } ?? true }
             if allShown && ctx.registry.quietSeconds() >= Self.settleSeconds && !ctx.registry.isReconfiguring { return }
@@ -362,18 +575,27 @@ import SnapticShims
 
     // MARK: Apply
 
-    private struct ApplyResult { var failure: String? }
+    private struct ApplyResult {
+        var failure: String?
+        /// `shouldStop` said so between stages: the rest wasn't applied.
+        var stopped = false
+    }
 
     /// HDR → quiet → rotation (poll ≤ 10 s) → quiet → CG batches (modes re-resolved) by scope.
+    /// `shouldStop` is asked after every await, so a revert request (or Displays stopping)
+    /// keeps the remaining stages from going out.
     private func applyStaged(_ changes: [DisplayChange], scope: (DisplayChange) -> ConfigScope,
-                             ctx: DisplaysContext) async -> ApplyResult {
+                             ctx: DisplaysContext, shouldStop: () -> Bool) async -> ApplyResult {
         let hdr = changes.filter { if case .hdr = $0 { return true } else { return false } }
         let underscan = changes.filter { if case .underscan = $0 { return true } else { return false } }
         let rotation = changes.filter { if case .rotation = $0 { return true } else { return false } }
         for c in hdr + underscan {
             guard CGConfig.applyMonitorPanel(c) else { return ApplyResult(failure: L("The display refused the change.")) }
         }
-        if !hdr.isEmpty { await waitQuiet(ctx, quiet: 1.5, cap: 8) }
+        if !hdr.isEmpty {
+            await waitQuiet(ctx, quiet: 1.5, cap: 8)
+            if shouldStop() { return ApplyResult(stopped: true) }
+        }
         for c in rotation {
             guard case .rotation(let id, let degrees) = c, CGConfig.applyMonitorPanel(c) else {
                 return ApplyResult(failure: L("The display refused the change."))
@@ -383,9 +605,13 @@ import SnapticShims
             while Invariants.normalizedRotation(Int(CGDisplayRotation(id).rounded())) != target {
                 if SessionGate.uptime() - start > 10 { return ApplyResult(failure: L("The display didn't rotate.")) }
                 try? await Task.sleep(nanoseconds: 200_000_000)
+                if shouldStop() { return ApplyResult(stopped: true) }
             }
         }
-        if !rotation.isEmpty { await waitQuiet(ctx, quiet: 1, cap: 6) }
+        if !rotation.isEmpty {
+            await waitQuiet(ctx, quiet: 1, cap: 6)
+            if shouldStop() { return ApplyResult(stopped: true) }
+        }
 
         let cg = changes.filter { !$0.isMonitorPanel }
         guard !cg.isEmpty else { return ApplyResult() }
@@ -409,11 +635,14 @@ import SnapticShims
         return ApplyResult()
     }
 
-    /// Staged CAS revert with settling between stages.
-    private func revertStaged(_ undo: [UndoOp], ctx: DisplaysContext) async -> (applied: Int, skipped: Int) {
+    /// Staged CAS revert with settling between stages. Stops when `shouldStop` (Displays
+    /// stopped: `deactivate()` already undid everything synchronously).
+    private func revertStaged(_ undo: [UndoOp], ctx: DisplaysContext,
+                              shouldStop: () -> Bool) async -> (applied: Int, skipped: Int) {
         var applied = 0, skipped = 0
         let functions = cgFunctions(ctx)
         for (stage, ops) in UndoPlanner.stages(undo) {
+            if shouldStop() { break }
             guard let live = ctx.registry.snapshot() else { break }
             let pendingOps = stage == .monitorPanel ? JournalApplier.monitorPanelPending(ops, live: live)
                                                     : UndoPlanner.pending(ops, live: live)
@@ -514,6 +743,16 @@ import SnapticShims
             changed = true
         }
         if changed { ctx.config.value = value }
+    }
+
+    /// A Keep that panic (or the guard) overturned: its modes aren't known-good after all.
+    private func forgetKept(_ changes: [DisplayChange], ctx: DisplaysContext) {
+        var value = ctx.config.value
+        for c in changes {
+            guard case .mode(let id, let ref) = c, let key = ctx.registry.key(forDisplayID: id) else { continue }
+            value.safety.keptModes[key]?.forget(ref)
+        }
+        if value != ctx.config.value { ctx.config.value = value }
     }
 
     private func finalScope(for c: DisplayChange, request: TransactionRequest, ctx: DisplaysContext) -> ConfigScope {
@@ -620,6 +859,7 @@ import SnapticShims
             return GuardDisplayClass(id: e.id, transport: e.transport, strong: vis[e.id] == .strong,
                                      weak: vis[e.id] == .weak, hostPID: host?.pid, hostStartTime: host?.startTime)
         }
+        syncLongJournal(req, live: snap)
         if req.isEmpty {
             if ctx.guardClient.hasLongState { ctx.guardClient.setLong([], restoreColorSync: false) }
             ctx.guardClient.setImpairment(dimToBlack: false, overlayBelowFloor: false)
@@ -636,6 +876,34 @@ import SnapticShims
         }
     }
 
+    /// FIXES-R1 B2: with no trial pending or transaction running, the session journal holds
+    /// exactly the long-armed undo (written when it changes, removed when nothing is armed),
+    /// so a journal is never replayed at the next launch for a state that no longer exists.
+    private func syncLongJournal(_ req: LongArmRequirement, live: LayoutSnapshot) {
+        guard pending == nil, !running, waiting.isEmpty, let journal else { return }
+        if req.undo.isEmpty {
+            if journaledLong != nil || journalMayBeStale {
+                journal.clearSession()
+                journaledLong = nil
+                journalMayBeStale = false
+            }
+        } else if journaledLong != req.undo {
+            if journal.writeSession(undo: req.undo, restoreColorSync: req.restoreColorSync, trialID: nil, live: live) {
+                journaledLong = req.undo
+                journalMayBeStale = false
+            }
+        }
+    }
+
+    /// Re-enable ops for every display Snaptic disabled (foreign, AirPlay, DisplayLink and
+    /// Sidecar untouched).
+    private func reenableOps(_ ctx: DisplaysContext) -> [UndoOp] {
+        guard let snap = ctx.registry.snapshot() else { return [] }
+        return snap.entries.filter { $0.disabledBySnaptic && !$0.isEnabled && $0.isPhysical }.map { e in
+            UndoOp(displayID: e.id, fingerprint: e.fingerprint, property: .enabled, restore: .bool(true), expected: .bool(false))
+        }
+    }
+
     // MARK: Panic support
 
     /// Reverts modes Snaptic set in the last 60 s (CAS), clears their known-good entries,
@@ -643,18 +911,12 @@ import SnapticShims
     @discardableResult
     func panicRevert() -> Int {
         guard let ctx = context else { return 0 }
-        revertPendingTrial(reason: L("Restore All Displays"))
+        // Any phase, even a Keep being written: panic never ends with the trial kept (FIXES-R1 B1).
+        requestTrialRevert(.panic, log: "Restore All Displays")
         let now = SessionGate.uptime()
         let modes = recentModes.filter { now - $0.at <= Self.recentModeWindow }.map(\.op)
         recentModes = []
-        var ops = UndoPlanner.merge([], modes)
-        if let snap = ctx.registry.snapshot() {
-            // Re-enable every display Snaptic disabled (foreign, AirPlay, DisplayLink and Sidecar untouched).
-            for e in snap.entries where e.disabledBySnaptic && !e.isEnabled && e.isPhysical {
-                ops.append(UndoOp(displayID: e.id, fingerprint: e.fingerprint, property: .enabled,
-                                  restore: .bool(true), expected: .bool(false)))
-            }
-        }
+        let ops = UndoPlanner.merge([], modes) + reenableOps(ctx)
         var value = ctx.config.value
         for op in modes {
             guard case .mode(let m) = op.expected, let key = ctx.registry.key(forDisplayID: op.displayID) else { continue }
@@ -671,7 +933,7 @@ import SnapticShims
     func diagnostics() -> [(String, String)] {
         var rows: [(String, String)] = [
             ("Queue", isBusy ? "busy" : "idle"),
-            ("Pending trial", pending == nil ? "none" : "waiting for Keep"),
+            ("Pending trial", pending.map { "\($0.life.phase)" } ?? "none"),
             ("Session journal", hasSessionJournal ? "present" : "none"),
             ("Permanent-ops journal", "\(permanentJournalCount) ops"),
             ("Automatic suppressed", isSuppressingAutomatic ? "yes" : "no"),

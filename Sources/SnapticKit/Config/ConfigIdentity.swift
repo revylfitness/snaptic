@@ -53,6 +53,8 @@ package struct IdentityConfig: ConfigModel {
     }
 }
 
+/// Menu order and visibility live in MenuConfig (FIXES-R1 B7); old `menuOrder` /
+/// `hiddenInMenu` keys in saved settings are ignored on decode.
 package struct PerDisplayIdentity: ConfigModel {
     package static let maxNameScalars = 64
     package static let maxSymbolScalars = 64
@@ -61,9 +63,6 @@ package struct PerDisplayIdentity: ConfigModel {
     package var customName: String?
     /// SF Symbol for the menu header; nil = by transport.
     package var symbol: String?
-    /// Position in the menu (lower first); nil = automatic.
-    package var menuOrder: Int?
-    package var hiddenInMenu: Bool
     /// Salted tier hashes (never raw serials).
     package var fingerprint: FingerprintRecord
     /// Unix seconds, day granularity (so it isn't rewritten on every reconfigure).
@@ -74,15 +73,13 @@ package struct PerDisplayIdentity: ConfigModel {
     package init() {
         customName = nil
         symbol = nil
-        menuOrder = nil
-        hiddenInMenu = false
         fingerprint = FingerprintRecord()
         lastSeen = nil
         lastKnownName = nil
     }
 
     private enum CodingKeys: String, CodingKey {
-        case customName, symbol, menuOrder, hiddenInMenu, fingerprint, lastSeen, lastKnownName
+        case customName, symbol, fingerprint, lastSeen, lastKnownName
     }
 
     package init(from decoder: Decoder) throws {
@@ -90,8 +87,6 @@ package struct PerDisplayIdentity: ConfigModel {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         customName = (try? c.decodeIfPresent(String.self, forKey: .customName)) ?? nil
         symbol = (try? c.decodeIfPresent(String.self, forKey: .symbol)) ?? nil
-        menuOrder = (try? c.decodeIfPresent(Int.self, forKey: .menuOrder)) ?? nil
-        hiddenInMenu = c.lossy(.hiddenInMenu, d.hiddenInMenu)
         fingerprint = c.lossy(.fingerprint, d.fingerprint)
         lastSeen = (try? c.decodeIfPresent(Double.self, forKey: .lastSeen)) ?? nil
         lastKnownName = (try? c.decodeIfPresent(String.self, forKey: .lastKnownName)) ?? nil
@@ -106,7 +101,6 @@ package struct PerDisplayIdentity: ConfigModel {
                 && s.unicodeScalars.allSatisfy { $0.isASCII && (CharacterSet.alphanumerics.contains($0) || $0 == ".") }
             c.symbol = ok ? s : nil
         }
-        if let o = menuOrder { c.menuOrder = min(max(o, 0), 999) }
         if let t = lastSeen, !(t.isFinite && t >= 0) { c.lastSeen = nil }
         return c
     }

@@ -3,6 +3,7 @@ import Combine
 import CoreGraphics
 import Darwin
 import SnapticKit
+import SnapticShims
 
 // Session state (owner: B). PLAN §4.9: lock/unlock, sleep/wake, fast user switching.
 // Distributed lock notifications only ever *close* the gate; every reopen re-checks
@@ -191,7 +192,13 @@ enum SessionEvent: Equatable {
     private var activation: NSObjectProtocol?
     private var episode = AuthEpisode()
     private weak var gate: SessionGate?
-    private var pathCache: [pid_t: String] = [:]
+    /// Owner paths by pid, valid only for the process instance with that start time; pids
+    /// absent from the latest window list are dropped (FIXES-R1 B6: pids are reused).
+    private struct CachedPath {
+        let startTime: UInt64
+        let path: String
+    }
+    private var pathCache: [pid_t: CachedPath] = [:]
 
     var isRunning: Bool { timer != nil }
     var isSuppressing: Bool { episode.isSuppressing }
@@ -266,29 +273,45 @@ enum SessionEvent: Equatable {
         }
     }
 
-    private static func windows(cache: inout [pid_t: String]) -> [WindowSample] {
+    private static func windows(cache: inout [pid_t: CachedPath]) -> [WindowSample] {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
-                as? [[String: Any]] else { return [] }
+                as? [[String: Any]] else {
+            cache = [:]
+            return []
+        }
         var out: [WindowSample] = []
+        var seen: [pid_t: CachedPath] = [:]
         for w in list.prefix(1000) {
-            guard let pid = (w[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
+            guard let pid = (w[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value, pid > 0,
                   let bounds = w[kCGWindowBounds as String] as? [String: Any],
                   let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { continue }
             let alpha = (w[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1
             let layer = (w[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0
-            let path: String
-            if let cached = cache[pid] {
-                path = cached
+            let entry: CachedPath
+            if let known = seen[pid] {
+                entry = known
             } else {
-                path = processPath(pid) ?? ""
-                cache[pid] = path
+                entry = ownerPath(pid, cached: cache[pid])
+                seen[pid] = entry
             }
-            guard !path.isEmpty else { continue }
-            out.append(WindowSample(ownerPath: path, alpha: alpha, x: rect.origin.x, y: rect.origin.y,
+            guard !entry.path.isEmpty else { continue }
+            out.append(WindowSample(ownerPath: entry.path, alpha: alpha, x: rect.origin.x, y: rect.origin.y,
                                     width: rect.width, height: rect.height, layer: layer))
         }
-        if cache.count > 512 { cache = [:] }
+        cache = seen
         return out
+    }
+
+    /// The executable path of the process instance `pid` names right now. A cached path is
+    /// reused only when the start time still matches; a fresh read is bracketed by two
+    /// start-time reads so a pid reused in between yields no path (the window is skipped).
+    private static func ownerPath(_ pid: pid_t, cached: CachedPath?) -> CachedPath {
+        let start = SNProcess.startTime(for: pid)
+        guard start != 0 else { return CachedPath(startTime: 0, path: "") }
+        if let cached, cached.startTime == start { return cached }
+        let path = processPath(pid) ?? ""
+        guard SNProcess.startTime(for: pid) == start else { return CachedPath(startTime: 0, path: "") }
+        return CachedPath(startTime: start, path: path)
     }
 
     private static func processPath(_ pid: pid_t) -> String? {

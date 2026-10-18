@@ -57,14 +57,14 @@ fileprivate extension DisplayMenuItemID {
         context.commands.register("panic", policy: .low, offOnly: false, cliAllowed: true,
                                   summary: L("Restore all displays and pause display automation"),
                                   lifetime: lifetime) { [weak self] _ in
-            guard let self else { return .failure(1, L("Displays are off")) }
+            guard let self else { return .failure(ControlExit.unavailable, L("Displays are off")) }
             self.panic(reason: L("Command line"))
             return .ok(L("Displays restored. Display automation is paused until `snaptic resume`."))
         }
         context.commands.register("resume", policy: .low, offOnly: false, cliAllowed: true,
                                   summary: L("Resume display automation after Restore All Displays"),
                                   lifetime: lifetime) { [weak self] _ in
-            guard let self else { return .failure(1, L("Displays are off")) }
+            guard let self else { return .failure(ControlExit.unavailable, L("Displays are off")) }
             let was = self.isLatched
             self.resume()
             return .ok(was ? L("Display automation resumed.") : L("Display automation wasn't paused."))

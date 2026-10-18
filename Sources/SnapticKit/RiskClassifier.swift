@@ -2,6 +2,8 @@ import Foundation
 
 // Transaction risk from the changes themselves (owner: B). PLAN §4.3: the queue uses
 // max(caller risk, classifier). Known-good sets are per display, by full ModeRef.
+// Visibility-restoring changes (`.enabled(_, true)`, `.mirror(_, of: nil)`) are always low;
+// invariants still check them.
 
 /// Kit mirror of the app's TransactionRisk (same order).
 package enum RiskLevel: Int, Codable, Sendable, Comparable, CaseIterable {
@@ -68,8 +70,12 @@ package enum RiskClassifier {
             case .newModesOnly: return facts.isKnownGood(m) ? .low : .trial
             }
         case .mirror(let id, let source):
+            // Un-mirroring only makes more of the screen visible (FIXES-R1 B3): never a trial.
+            if source == nil { return .low }
             return current.entry(id)?.mirrorOf == source ? .low : .trial
         case .enabled(let id, let on):
+            // Reconnecting a display restores visibility (FIXES-R1 B3): never a trial.
+            if on { return .low }
             return current.entry(id)?.isEnabled == on ? .low : .trial
         case .rotation(let id, let degrees):
             return current.entry(id)?.rotation == Invariants.normalizedRotation(degrees) ? .low : .trial

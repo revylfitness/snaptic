@@ -37,21 +37,21 @@ final class ConfigIdentityTests: XCTestCase {
         var p = PerDisplayIdentity()
         p.customName = "  Office\u{0000}Left " + String(repeating: "x", count: 200)
         p.symbol = "display; rm -rf"
-        p.menuOrder = -5
         p.lastSeen = .nan
         let s = p.sanitized()
         XCTAssertLessThanOrEqual(s.customName?.unicodeScalars.count ?? 0, PerDisplayIdentity.maxNameScalars)
         XCTAssertFalse(s.customName?.contains("\u{0000}") ?? true)
         XCTAssertNil(s.symbol)
-        XCTAssertEqual(s.menuOrder, 0)
         XCTAssertNil(s.lastSeen)
         var q = PerDisplayIdentity()
         q.symbol = "display.2"
         q.customName = "   "
         XCTAssertEqual(q.sanitized().symbol, "display.2")
         XCTAssertNil(q.sanitized().customName)
-        let decoded = try JSONDecoder().decode(PerDisplayIdentity.self, from: Data(#"{"hiddenInMenu":true,"fingerprint":7}"#.utf8))
-        XCTAssertTrue(decoded.hiddenInMenu)
+        // Legacy menu keys (now MenuConfig's) are ignored; a bad fingerprint decodes lossily.
+        let decoded = try JSONDecoder().decode(PerDisplayIdentity.self,
+                                               from: Data(#"{"hiddenInMenu":true,"menuOrder":3,"customName":"Desk","fingerprint":7}"#.utf8))
+        XCTAssertEqual(decoded.customName, "Desk")
         XCTAssertTrue(decoded.fingerprint.isEmpty)
         XCTAssertEqual(PerDisplayIdentity.day(86_400 * 3 + 500), 86_400 * 3)
     }
