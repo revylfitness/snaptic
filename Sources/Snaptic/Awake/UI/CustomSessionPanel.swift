@@ -19,7 +19,7 @@ struct CustomSessionPanel: View, ControlDeclaring {
         let name: String
     }
     /// "At most" choices for the app kind (hours; 0 = no limit).
-    static let capHours = [0, 1, 2, 4, 8, 12]
+    static let capChoices = [0, 1, 2, 4, 8, 12]
 
     let mode: Mode
     let initialSeconds: Int
@@ -69,7 +69,7 @@ struct CustomSessionPanel: View, ControlDeclaring {
                         }
                         PickerSetting(L("At most"), help: L("Ends after this long even if the app is still running."),
                                       selection: $capHours,
-                                      options: Self.capHours.map {
+                                      options: Self.capChoices.map {
                                           PickerOption($0, $0 == 0 ? L("No Limit") : AwakePresetKind.spanTitle($0 * 3_600))
                                       },
                                       style: .popUp, defaultValue: 0)

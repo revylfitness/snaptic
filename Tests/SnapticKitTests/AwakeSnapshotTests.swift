@@ -162,8 +162,8 @@ final class AwakeSnapshotTests: XCTestCase {
 
     func testExpiredWhileAwayReportsEndsAtTheirInstant() {
         let raw = snapshot(manual: session(), holds: [hold("a", cap: 600), hold("b", pid: 401, cap: 7_200)])
-        // Still running at 5 000: nothing to report.
-        let early = raw.expiredWhileAway(now: now(5_000))
+        // Everything still running at 4 500: nothing to report.
+        let early = raw.expiredWhileAway(now: now(4_500))
         XCTAssertNil(early.manual)
         XCTAssertTrue(early.holds.isEmpty)
         // At 10 000 the 1-hour session (ended 7 600) and the 10-minute hold (ended 4 600) ran out.
