@@ -29,6 +29,8 @@ import SnapticKit
     let discrete: Bool
     /// The current value; nil = unknown (slider disabled, value "—").
     private(set) var value: Double?
+    /// Custom value text (`setValueText`), e.g. "1512 × 982" for a discrete resolution index.
+    private var customText: (@MainActor (Double) -> String)?
 
     /// Never decoded from a nib: a decoded row is disabled, with no view and no handler; it never traps.
     required init(coder: NSCoder) {
@@ -37,14 +39,19 @@ import SnapticKit
         range = 0...1
         format = .percent(of: 1)
         discrete = false
+        customText = nil
         super.init(coder: coder)
         isEnabled = false
     }
 
+    /// `valueText`: the value label's text instead of `format`'s (a discrete slider over an index list shows the
+    /// entry, "1512 × 982"); `widestValueText` sizes the label so the longest entry fits (40–120 pt).
     init(title: String, symbol: String, value: Double?, range: ClosedRange<Double>, format: ValueFormat,
-         discrete: Bool = false, control: ControlID? = nil,
+         discrete: Bool = false, valueText: (@MainActor (Double) -> String)? = nil, widestValueText: String? = nil,
+         control: ControlID? = nil,
          onChange: @escaping @MainActor (Double, DragPhase) -> Void) {
         self.onChange = onChange
+        customText = valueText
         let safeRange = Self.safeRange(range)
         self.range = safeRange
         self.format = format
@@ -55,6 +62,7 @@ import SnapticKit
         if let control { identifier = NSUserInterfaceItemIdentifier(control.rawValue) }
         self.view = view
         view.onPhase = { [weak self] v, phase in self?.sliderMoved(v, phase) }
+        if let widestValueText { view.fitValue(widestValueText) }
         setValue(value)
     }
 
@@ -81,18 +89,29 @@ import SnapticKit
         onChange(snapped, phase)
     }
 
+    /// Replaces the value label's text (backward-compatible with rows built without it) and, with `widest`,
+    /// widens the label to fit the longest text. Takes effect immediately, also while the menu is open.
+    func setValueText(_ text: @escaping @MainActor (Double) -> String, widest: String? = nil) {
+        customText = text
+        if let widest { rowView?.fitValue(widest) }
+        guard let rowView, !rowView.isTracking else { return }
+        rowView.show(value, text: valueText(value), spoken: spokenText(value), moveSlider: false)
+    }
+
     // MARK: Text
 
     private static var decimalSeparator: String { Locale.current.decimalSeparator ?? "." }
 
     func valueText(_ v: Double?) -> String {
         guard let v else { return "—" }
+        if let customText { return customText(v) }
         let text = SliderMath.format(v, format, decimalSeparator: Self.decimalSeparator)
         return text.isEmpty ? Self.fallbackText(v, format) : text
     }
 
     private func spokenText(_ v: Double?) -> String {
         guard let v else { return L("Unknown") }
+        if let customText { return customText(v) }
         let text = SliderMath.spoken(v, format, decimalSeparator: Self.decimalSeparator)
         return text.isEmpty ? valueText(v) : text
     }
@@ -137,6 +156,7 @@ import SnapticKit
     private let slider: RowSlider
     private let label: NSTextField
     private let title: String
+    private var valueWidth: NSLayoutConstraint?
 
     init(title: String, symbol: String, range: ClosedRange<Double>, discrete: Bool) {
         self.title = title
@@ -183,10 +203,19 @@ import SnapticKit
             slider.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 8),
             slider.centerYAnchor.constraint(equalTo: centerYAnchor),
             label.leadingAnchor.constraint(equalTo: slider.trailingAnchor, constant: 6),
-            label.widthAnchor.constraint(equalToConstant: MenuSliderRow.valueWidth),
             label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -MenuKit.rowInset),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
+        let width = label.widthAnchor.constraint(equalToConstant: MenuSliderRow.valueWidth)
+        width.isActive = true
+        valueWidth = width
+    }
+
+    /// Widens the value label so `text` fits (40–120 pt; the slider gives up the space).
+    func fitValue(_ text: String) {
+        let font = label.font ?? NSFont.menuFont(ofSize: 0)
+        let measured = ceil((text as NSString).size(withAttributes: [.font: font]).width) + 2
+        valueWidth?.constant = min(120, max(MenuSliderRow.valueWidth, measured))
     }
 
     required init?(coder: NSCoder) {
