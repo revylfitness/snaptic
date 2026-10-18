@@ -7,7 +7,6 @@ import SnapticKit
 /// 0.2 page ids still passed by callers (StatusMenu, AppDelegate, the `open-settings` verb); `SettingsLocation`
 /// maps them to the 0.3 roots (General, About).
 enum GeneralPages {
-    static let modulesID = "general.modules"
     static let aboutID = "general.about"
 }
 
@@ -27,7 +26,6 @@ private struct GeneralPageContent: View {
     @ObservedObject var host: ModuleHost
     @ObservedObject var modules: ConfigStore<ModulesConfig>
     @ObservedObject var shell: SettingsShell
-    @State private var confirmingLeave = false
 
     private var enabled: Set<ModuleID> { Set(modules.value.enabledModules) }
 
@@ -48,7 +46,7 @@ private struct GeneralPageContent: View {
                 Section {
                     StatusRow(L("Safe Mode is on."), style: .warning, actions: [
                         StatusAction(title: L("Leave Safe Mode…"), control: ControlID("general.page.leaveSafeMode")) {
-                            confirmingLeave = true
+                            SafeModeLeave.confirm(relauncher: host.relauncher)
                         },
                     ])
                 }
@@ -91,12 +89,6 @@ private struct GeneralPageContent: View {
         }
         .sheet(isPresented: shell.sheetBinding(GeneralAdvancedSheetControls.sheet)) {
             GeneralAdvancedSheet(host: host, modules: modules)
-        }
-        .alert(L("Leave Safe Mode?"), isPresented: $confirmingLeave) {
-            Button(L("Restart")) { host.relauncher.relaunch(reason: "leave safe mode") }
-            Button(L("Cancel"), role: .cancel) {}
-        } message: {
-            Text(L("Snaptic restarts with all of your settings."))
         }
     }
 
