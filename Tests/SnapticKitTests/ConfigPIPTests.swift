@@ -79,6 +79,34 @@ final class ConfigPIPTests: XCTestCase {
         XCTAssertEqual(empty, PerDisplayPIP())
     }
 
+    /// Every PIP list decodes through Kit `LossyArray`: attempts are bounded (a long run of bad elements stops the
+    /// read, so a valid element past the cap is never reached), not successes; the sanitizers then apply the caps.
+    func testListDecodingBoundsAttemptsNotSuccesses() throws {
+        let cap = LossyArray<PIPConfiguration>.maxElements
+        let garbage = Array(repeating: "1", count: cap).joined(separator: ",")
+        let late = #"{"name":"late"}"#
+        let g = try JSONDecoder().decode(PIPConfig.self, from: Data(
+            #"{"windowConfigurations":[\#(garbage),\#(late)],"luts":[\#(garbage),{"name":"L","size":33}]}"#.utf8))
+        XCTAssertEqual(g.windowConfigurations, [])
+        XCTAssertEqual(g.luts, [])
+        let per = try JSONDecoder().decode(PerDisplayPIP.self, from: Data(#"{"configurations":[\#(garbage),\#(late)]}"#.utf8))
+        XCTAssertEqual(per.configurations, [])
+
+        // Bad elements before the cap are skipped and the rest kept.
+        let mixed = try JSONDecoder().decode(PIPConfig.self, from: Data(#"{"windowConfigurations":[1,"x",\#(late),null]}"#.utf8))
+        XCTAssertEqual(mixed.windowConfigurations.map(\.name), ["late"])
+
+        // Valid elements past the old 256-success stop still decode; sanitizing applies the real caps.
+        let filters = Array(repeating: #"{"kind":"sepia"}"#, count: 300).joined(separator: ",")
+        let c = try JSONDecoder().decode(PIPConfiguration.self, from: Data(#"{"filters":[\#(filters)]}"#.utf8))
+        XCTAssertEqual(c.filters.count, 300)
+        XCTAssertEqual(c.sanitized().filters.count, PIPConfiguration.maxFilters)
+        let many = Array(repeating: late, count: 300).joined(separator: ",")
+        let big = try JSONDecoder().decode(PIPConfig.self, from: Data(#"{"windowConfigurations":[\#(many)]}"#.utf8))
+        XCTAssertEqual(big.windowConfigurations.count, 300)
+        XCTAssertEqual(big.sanitized().windowConfigurations.count, PIPConfig.maxWindowConfigurations)
+    }
+
     func testSanitizeClamps() {
         var c = PIPConfiguration(name: "  \u{202E}Evil\u{0007}  ")
         c.opacity = 0

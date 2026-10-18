@@ -112,7 +112,7 @@ package enum PIPEditorSheetControls: ControlTable {
                     search: search("Color lookup table", ["LUT", ".cube", "color grading"])),
         ControlSpec("displays.pip.editor.filters", .list, when: filters,
                     replaces: ["l.d.pip.editor.filters"], keys: field("filters"),
-                    search: search("Picture in picture filters", ["effects", "sepia", "blur", "sharpen", "invert"])),
+                    search: search("Picture in Picture filters", ["effects", "sepia", "blur", "sharpen", "invert"])),
         ControlSpec("displays.pip.editor.addFilter", .button, when: filters,
                     search: search("Add Filter", ["effect"])),
         // Footer

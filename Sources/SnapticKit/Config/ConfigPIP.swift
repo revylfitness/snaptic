@@ -185,7 +185,7 @@ package struct PIPConfiguration: Codable, Equatable, Sendable, Identifiable {
         scaling = c.lossy(.scaling, d.scaling)
         underscanPercent = c.lossy(.underscanPercent, d.underscanPercent)
         nativeModeWhileStreaming = c.lossy(.nativeModeWhileStreaming, d.nativeModeWhileStreaming)
-        filters = c.lossy(.filters, PIPLossyList<FilterInstance>([])).items
+        filters = c.lossyArray(.filters, [])
         lutID = c.lossy(.lutID, nil)
         autoStart = c.lossy(.autoStart, d.autoStart)
     }
@@ -274,8 +274,8 @@ package struct PIPConfig: ConfigModel {
     package init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = PIPConfig()
-        windowConfigurations = c.lossy(.windowConfigurations, PIPLossyList<PIPConfiguration>([])).items
-        luts = c.lossy(.luts, PIPLossyList<PIPLUTReference>([])).items
+        windowConfigurations = c.lossyArray(.windowConfigurations, [])
+        luts = c.lossyArray(.luts, [])
         protectedBundlePrefixes = c.lossy(.protectedBundlePrefixes, d.protectedBundlePrefixes)
         firstRunAcknowledged = c.lossy(.firstRunAcknowledged, d.firstRunAcknowledged)
         pauseWhenOccluded = c.lossy(.pauseWhenOccluded, d.pauseWhenOccluded)
@@ -417,41 +417,13 @@ package struct PerDisplayPIP: ConfigModel {
 
     package init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        configurations = c.lossy(.configurations, PIPLossyList<PIPConfiguration>([])).items
+        configurations = c.lossyArray(.configurations, [])
     }
 
     package func sanitized() -> PerDisplayPIP {
         var c = self
         c.configurations = PIPConfig.sanitizedList(configurations, max: Self.maxConfigurations)
         return c
-    }
-}
-
-/// An array that decodes element by element, dropping the ones that fail.
-package struct PIPLossyList<Element: Codable>: Codable {
-    package var items: [Element]
-
-    package init(_ items: [Element]) { self.items = items }
-
-    private struct Attempt: Decodable {
-        let value: Element?
-        init(from decoder: Decoder) throws { value = try? Element(from: decoder) }
-    }
-
-    package init(from decoder: Decoder) throws {
-        var container = try decoder.unkeyedContainer()
-        var out: [Element] = []
-        // Bounded: never more than 256 attempts, whatever the input claims.
-        while !container.isAtEnd, out.count < 256 {
-            guard let attempt = try? container.decode(Attempt.self) else { break }
-            if let v = attempt.value { out.append(v) }
-        }
-        items = out
-    }
-
-    package func encode(to encoder: Encoder) throws {
-        var container = encoder.unkeyedContainer()
-        for item in items { try container.encode(item) }
     }
 }
 

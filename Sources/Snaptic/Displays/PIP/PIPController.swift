@@ -872,7 +872,6 @@ fileprivate extension DisplayActionID {
         for id in order.reversed() { endSession(id, reason: nil) }
     }
 
-    var hasSessions: Bool { !sessions.isEmpty }
     var allHidden: Bool { !sessions.isEmpty && sessions.values.allSatisfy(\.hidden) }
     var allPaused: Bool { !sessions.isEmpty && sessions.values.allSatisfy(\.userPaused) }
 
@@ -1091,7 +1090,7 @@ fileprivate extension DisplayActionID {
             case .ambiguous(let n): return (nil, .failure(ControlExit.usage, L("\(n) configurations match “\(query)”; use the id.")))
             }
         }
-        let locked = L("PIP starts from the command line only while the Mac is unlocked and on the console.")
+        let locked = L("Picture in Picture starts from the command line only while the Mac is unlocked and on the console.")
         switch command {
         case .list:
             let numbers = Dictionary(DisplaySelectorResolver.ordered(ctx).enumerated().map { pair in (pair.element.key, pair.offset + 1) },

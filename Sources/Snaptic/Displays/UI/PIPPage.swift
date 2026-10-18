@@ -518,7 +518,7 @@ private struct PIPLUTSection: View, ControlDeclaring {
                 }
             }
             ButtonRow(L("Import Color Lookup Table…"),
-                      help: L("A 3D .cube file, for the filters of a picture in picture."),
+                      help: L("A 3D .cube file for Picture in Picture filters."),
                       control: ControlID("displays.pip.importLUT")) {
                 importLUT()
             }
@@ -591,7 +591,7 @@ private struct PIPLUTSection: View, ControlDeclaring {
                 if let ref = PIPLUTReference(id: id, name: name, size: lut.size).sanitized(),
                    config.value.pip.luts.count < PIPConfig.maxLUTs {
                     config.value.pip.luts.append(ref)
-                    message = L("Imported “\(ref.name)”. Choose it in a picture in picture’s filters.")
+                    message = L("Imported “\(ref.name)”. Choose it under Filters when you edit a Picture in Picture.")
                 } else {
                     Task.detached(priority: .utility) { PIPLUTStore.delete(id) }
                     message = L("Snaptic can keep up to \(PIPConfig.maxLUTs) lookup tables. Delete one first.")
@@ -630,14 +630,14 @@ private struct PIPAdvancedSheet: View, ControlDeclaring {
     }
 
     var body: some View {
-        AdvancedSheet(L("Picture in Picture"),
+        AdvancedSheet(L("Picture in Picture Advanced Settings"),
                       restoreDefaults: RestoreDefaults(scopeName: L("Picture in Picture"), destructive: false) {
                           restoreDefaults()
                       },
                       restoreControl: ControlID("displays.pip.advanced.restoreDefaults")) {
             Section {
                 ToggleSetting(L("Filters"),
-                              help: L("Color adjustments, effects, and lookup tables for each picture in picture."),
+                              help: L("Color adjustments, effects, and lookup tables for Picture in Picture."),
                               isOn: switcher.binding([.pipFilters], title: L("Filters")),
                               anchor: ControlID("displays.pip.advanced.filters"),
                               disabledReason: switcher.unavailableReason([.pipFilters]))
