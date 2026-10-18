@@ -70,7 +70,7 @@ struct PreConfirmToken: Sendable {
         return PreConfirmToken(key: key, vcp: vcp, value: value, ttlSeconds: Self.tokenTTL)
     }
 
-    /// Removes "Allow without asking" entries (Safety page).
+    /// Removes "Allow without asking" entries (Displays › Advanced › Confirm display changes).
     func revokeAll(for key: DisplayKey? = nil) {
         guard let ctx = context else { return }
         if let key { ctx.config.value.safety.preConfirmAllowed[key] = nil } else {

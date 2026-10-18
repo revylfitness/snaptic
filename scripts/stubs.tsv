@@ -271,6 +271,7 @@ Tests/SnapticKitTests/KitEncodingTests.swift	B	K3	KitEncodingTests	-
 Tests/SnapticKitTests/AuthProcessesTests.swift	B	K3	AuthProcessesTests	-
 Tests/SnapticKitTests/ConfigSafetyTests.swift	B	K3	ConfigSafetyTests	-
 Tests/SnapticKitTests/ConfigIdentityTests.swift	B	K3	ConfigIdentityTests	-
+Tests/SnapticKitTests/ConfirmChangesSectionControlsTests.swift	B	L	-	-
 Tests/SnapticKitTests/DDCPacketTests.swift	C	K3	DDCPacketTests	-
 Tests/SnapticKitTests/DDCReplyTests.swift	C	K3	DDCReplyTests	-
 Tests/SnapticKitTests/DDCCapabilitiesTests.swift	C	K3	DDCCapabilitiesTests	-
