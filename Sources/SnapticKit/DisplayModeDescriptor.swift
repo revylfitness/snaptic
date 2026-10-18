@@ -37,7 +37,6 @@ package struct DisplayModeDescriptor: Codable, Hashable, Sendable {
     /// IOKit display mode flags (IOGraphicsTypes.h).
     package static let nativeFlag: UInt32 = 0x0200_0000
     package static let defaultFlag: UInt32 = 0x0000_0004
-    package static let safeFlag: UInt32 = 0x0000_0001
 
     /// Resolves a ModeRef against a fresh list (R2C m10): exact match first; otherwise the
     /// unique mode with the same shape (ioModeIDs aren't unique across HiDPI duplicates and

@@ -82,7 +82,6 @@ import SnapticShims
 
     var isBusy: Bool { running || !waiting.isEmpty }
     var hasPendingTrial: Bool { pending != nil }
-    var isConfirmPanelVisible: Bool { panel.isShowing }
     var isSuppressingAutomatic: Bool { SessionGate.uptime() < suppressAutomaticUntil }
     var permanentJournalCount: Int { journal?.permanentCount ?? 0 }
     var hasSessionJournal: Bool { journal?.hasSessionJournal ?? false }

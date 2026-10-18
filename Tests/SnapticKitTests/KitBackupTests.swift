@@ -649,6 +649,35 @@ final class KitBackupTests: XCTestCase {
         XCTAssertEqual(KitBackup.parseDocument(Data(String(repeating: "[", count: depth).utf8)), .failure(.wrongFormat))
     }
 
+    /// UTF-16 and UTF-32 input is refused before the depth scan (security S2-2): in UTF-16LE a character whose high
+    /// byte is 0x5C right before a closing quote would make a byte scan think the quote is escaped and miss the
+    /// nesting that follows.
+    func testNonUTF8InputIsRefusedBeforeTheDepthScan() throws {
+        let deep = String(repeating: "[", count: KitBackup.maxDepth * 4) + String(repeating: "]", count: KitBackup.maxDepth * 4)
+        let text = "{\"format\":\"\(KitBackup.format)\",\"version\":1,\"x\":\"\u{5C41}\",\"sections\":{\"awake\":{\"guards\":"
+            + deep + "}}}"
+        let utf16 = try XCTUnwrap(text.data(using: .utf16LittleEndian))
+        // The bypass the check exists for: the byte scan alone misses the nesting.
+        XCTAssertNotNil(KitBackup.nestingDepth(utf16.filter { $0 != 0 }, limit: KitBackup.maxDepth))
+        XCTAssertEqual(KitBackup.parseDocument(utf16), .failure(.wrongFormat))
+        XCTAssertNil(KitBackup.nestingDepth(utf16, limit: KitBackup.maxDepth))
+        for encoding: String.Encoding in [.utf16, .utf16BigEndian, .utf32, .utf32LittleEndian, .utf32BigEndian] {
+            let data = try XCTUnwrap(text.data(using: encoding))
+            XCTAssertFalse(KitBackup.isUTF8Text(data))
+            XCTAssertEqual(KitBackup.parseDocument(data), .failure(.wrongFormat))
+        }
+        // A shallow, otherwise valid backup in UTF-16 is refused too; the same text in UTF-8 is accepted.
+        let small = json(["format": KitBackup.format, "version": 1, "sections": ["awake": ["guards": ["batteryFloor": 20]]]])
+        let smallText = try XCTUnwrap(String(data: small, encoding: .utf8))
+        XCTAssertEqual(KitBackup.parseDocument(try XCTUnwrap(smallText.data(using: .utf16))), .failure(.wrongFormat))
+        if case .failure(let error) = KitBackup.parseDocument(small) { XCTFail("UTF-8 refused: \(error)") }
+        // A NUL byte or invalid UTF-8 anywhere is refused.
+        XCTAssertFalse(KitBackup.isUTF8Text(Data([0x7B, 0x00, 0x7D])))
+        XCTAssertFalse(KitBackup.isUTF8Text(Data([0x7B, 0xFF, 0x7D])))
+        XCTAssertTrue(KitBackup.isUTF8Text(Data("{\"a\":\"\u{00E9}\\u0000\"}".utf8)))
+        XCTAssertEqual(KitBackup.parseDocument(small + Data([0])), .failure(.wrongFormat))
+    }
+
     func testNestingDepthCountsOnlyStructure() throws {
         XCTAssertEqual(KitBackup.nestingDepth(Data("1".utf8), limit: 4), 0)
         XCTAssertEqual(KitBackup.nestingDepth(Data("{\"a\":[1,{\"b\":[]}]}".utf8), limit: 4), 4)
