@@ -137,8 +137,12 @@ import SnapticKit
     // MARK: Menu
 
     var descriptors: [DisplayMenuItemDescriptor] {
-        [DisplayMenuItemDescriptor(id: .dSetMain, title: L("Set as Main Display"), slot: .display, defaultVisibility: .inSubmenu),
-         DisplayMenuItemDescriptor(id: .dMirrorMenu, title: L("Mirroring"), slot: .display, defaultVisibility: .inSubmenu)]
+        var list = [DisplayMenuItemDescriptor(id: .dSetMain, title: L("Set as Main Display"), slot: .display, defaultVisibility: .inSubmenu),
+                    DisplayMenuItemDescriptor(id: .dMirrorMenu, title: L("Mirroring"), slot: .display, defaultVisibility: .inSubmenu)]
+        if effective.contains(.arrangement) {
+            list.append(DisplayMenuItemDescriptor(id: .dArrange, title: L("Arrange…"), slot: .tools, defaultVisibility: .visible))
+        }
+        return list
     }
 
     func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] {
@@ -163,7 +167,12 @@ import SnapticKit
         return items
     }
 
-    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
+    /// Tools › "Arrange…" opens the Arrangement page (PLAN §3.7 Tools list).
+    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] {
+        guard slot == .tools, effective.contains(.arrangement), let ctx = context else { return [] }
+        weak var weakCtx = ctx
+        return [(.dArrange, ManagedMenuItem(L("Arrange…")) { weakCtx?.openSettings("displays.arrangement") })]
+    }
 
     // MARK: Actions / CLI
 
@@ -182,12 +191,13 @@ import SnapticKit
         ctx.commands.register("main", policy: .low, offOnly: false, cliAllowed: true, summary: L("main <display>: set the main display"),
                               lifetime: lifetime) { [weak self] req in
             guard let self, let ctx = self.context, self.effective.contains(.mainDisplay) else {
-                return .failure(ManagementExit.unavailable, L("Main display control is off"))
+                return .failure(ControlExit.unavailable, L("Main display control is off"))
             }
-            guard let sel = req.arguments.first, let d = ManagedDisplays.select(ctx, sel).first else {
-                return .failure(ManagementExit.notFound, L("Usage: main <display>"))
-            }
-            if let why = self.setMainRefusal(d.key) { return .failure(ManagementExit.refused, why) }
+            guard let sel = req.arguments.first else { return .failure(ControlExit.usage, L("Usage: main <display>")) }
+            let pick = ManagedDisplays.cliSelectOne(ctx, sel)
+            if let error = pick.error { return error }
+            guard let d = pick.display else { return .failure(ControlExit.notFound, "") }
+            if let why = self.setMainRefusal(d.key) { return .failure(ControlExit.refused, why) }
             return ManagedTransactions.response(await ManagedTransactions.run(
                 ctx, TransactionRequest(label: L("Set main display"), risk: .low, changes: [.main(d.desktopID)])))
         }
@@ -195,26 +205,34 @@ import SnapticKit
                               summary: L("arrange <display> <x> <y> | arrange <display> <placement> <reference>"),
                               lifetime: lifetime) { [weak self] req in
             guard let self, let ctx = self.context, self.effective.contains(.arrangement) else {
-                return .failure(ManagementExit.unavailable, L("Arrangement is off"))
+                return .failure(ControlExit.unavailable, L("Arrangement is off"))
             }
             let a = req.arguments
-            guard a.count == 3, let d = ManagedDisplays.select(ctx, a[0]).first else {
-                return .failure(ManagementExit.usage, L("Usage: arrange <display> <x> <y> | <placement> <reference>"))
+            guard a.count == 3 else {
+                return .failure(ControlExit.usage, L("Usage: arrange <display> <x> <y> | <placement> <reference>"))
             }
+            let pick = ManagedDisplays.cliSelectOne(ctx, a[0])
+            if let error = pick.error { return error }
+            guard let d = pick.display else { return .failure(ControlExit.notFound, "") }
             var rects = self.currentRects()
             if let x = Int32(a[1]), let y = Int32(a[2]) {
                 rects[d.key] = ManagedDisplays.rect(d).moved(x: x, y: y)
-            } else if let p = ArrangementPlacement(rawValue: a[1]), let r = ManagedDisplays.select(ctx, a[2]).first, r.key != d.key {
+            } else if let p = ArrangementPlacement.allCases.first(where: { $0.rawValue.lowercased() == a[1].lowercased() }) {
+                let ref = ManagedDisplays.cliSelectOne(ctx, a[2])
+                if let error = ref.error { return error }
+                guard let r = ref.display, r.key != d.key else {
+                    return .failure(ControlExit.usage, L("The reference must be another display"))
+                }
                 let o = ArrangementMath.origin(width: Int(d.bounds.width), height: Int(d.bounds.height),
                                                relativeTo: ManagedDisplays.rect(r), placement: p)
                 rects[d.key] = ManagedDisplays.rect(d).moved(x: o.x, y: o.y)
             } else {
-                return .failure(ManagementExit.usage, L("Placements: ") + ArrangementPlacement.allCases.map(\.rawValue).joined(separator: ", "))
+                return .failure(ControlExit.usage, L("Placements: ") + ArrangementPlacement.allCases.map(\.rawValue).joined(separator: ", "))
             }
-            guard let main = ctx.registry.displays.first(where: \.isMain)?.key else { return .failure(ManagementExit.notFound, "") }
+            guard let main = ctx.registry.displays.first(where: \.isMain)?.key else { return .failure(ControlExit.notFound, "") }
             let normalized = ArrangementMath.normalized(rects, main: main)
             guard ArrangementMath.isValid(Array(normalized.values)) else {
-                return .failure(ManagementExit.refused, L("Displays must touch and must not overlap"))
+                return .failure(ControlExit.refused, L("Displays must touch and must not overlap"))
             }
             let changes: [DisplayChange] = normalized.compactMap { k, r in
                 ManagedDisplays.info(ctx, key: k).flatMap { (info: DisplayInfo) -> DisplayChange? in
@@ -229,16 +247,19 @@ import SnapticKit
         ctx.commands.register("mirror", policy: .trial, offOnly: false, cliAllowed: true,
                               summary: L("mirror <display> <source>|off"), lifetime: lifetime) { [weak self] req in
             guard let self, let ctx = self.context, self.effective.contains(.mirroring) else {
-                return .failure(ManagementExit.unavailable, L("Mirroring is off"))
+                return .failure(ControlExit.unavailable, L("Mirroring is off"))
             }
             let a = req.arguments
-            guard a.count == 2, let d = ManagedDisplays.select(ctx, a[0]).first else {
-                return .failure(ManagementExit.usage, L("Usage: mirror <display> <source>|off"))
-            }
+            guard a.count == 2 else { return .failure(ControlExit.usage, L("Usage: mirror <display> <source>|off")) }
+            let pick = ManagedDisplays.cliSelectOne(ctx, a[0])
+            if let error = pick.error { return error }
+            guard let d = pick.display else { return .failure(ControlExit.notFound, "") }
             var source: UInt32?
             if a[1].lowercased() != "off" {
-                guard let s = ManagedDisplays.select(ctx, a[1]).first, s.key != d.key else {
-                    return .failure(ManagementExit.notFound, L("No source display matches \(a[1])"))
+                let src = ManagedDisplays.cliSelectOne(ctx, a[1])
+                if let error = src.error { return error }
+                guard let s = src.display, s.key != d.key else {
+                    return .failure(ControlExit.usage, L("A display can't mirror itself"))
                 }
                 source = s.desktopID
             }

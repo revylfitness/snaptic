@@ -109,7 +109,8 @@ import SnapticKit
 
     var descriptors: [DisplayMenuItemDescriptor] {
         [DisplayMenuItemDescriptor(id: .dRotationMenu, title: L("Rotation"), slot: .display, defaultVisibility: .inSubmenu),
-         DisplayMenuItemDescriptor(id: .dHDRToggle, title: L("HDR"), slot: .display, defaultVisibility: .inSubmenu)]
+         DisplayMenuItemDescriptor(id: .dHDRToggle, title: L("HDR"), slot: .display, defaultVisibility: .inSubmenu),
+         DisplayMenuItemDescriptor(id: .dUnderscanMenu, title: L("Underscan"), slot: .display, defaultVisibility: .inSubmenu)]
     }
 
     func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] {
@@ -130,6 +131,19 @@ import SnapticKit
             items.append((.dHDRToggle, ManagedMenuItem(L("High Dynamic Range"), on: on, enabled: refusal(.hdrToggle, for: display) == nil) {
                 [weak self] in self?.setHDR(key, !on)
             }))
+        }
+        // Same rule as the Arrangement page: shown where macOS reports underscan, or for externals.
+        if effective.contains(.underscan), display.isActive, underscan(display) != nil || !display.isBuiltin {
+            let current = UnderscanSteps.nearest(underscan(display))
+            let why = refusal(.underscan, for: display)
+            let sub = UnderscanSteps.values.map { step -> NSMenuItem in
+                let item = ManagedMenuItem(UnderscanSteps.title(step), on: step == current, enabled: why == nil) { [weak self] in
+                    self?.setUnderscan(key, step)
+                }
+                item.toolTip = why
+                return item
+            }
+            items.append((.dUnderscanMenu, ManagedMenuItem.submenu(L("Underscan"), items: sub)))
         }
         return items
     }
@@ -153,15 +167,22 @@ import SnapticKit
         ctx.commands.register("rotate", policy: .trial, offOnly: false, cliAllowed: true, summary: L("rotate <display> 0|90|180|270"),
                               lifetime: lifetime) { [weak self] req in
             guard let self, let ctx = self.context, self.effective.contains(.rotation) else {
-                return .failure(ManagementExit.unavailable, L("Rotation is off"))
+                return .failure(ControlExit.unavailable, L("Rotation is off"))
             }
             let a = req.arguments
-            guard a.count == 2, let deg = Int(a[1]), Self.rotations.contains(deg), let d = ManagedDisplays.select(ctx, a[0]).first else {
-                return .failure(ManagementExit.usage, L("Usage: rotate <display> 0|90|180|270"))
+            guard a.count == 2, let deg = Int(a[1]), Self.rotations.contains(deg) else {
+                return .failure(ControlExit.usage, L("Usage: rotate <display> 0|90|180|270"))
             }
-            if let why = self.refusal(.rotation, for: d) { return .failure(ManagementExit.refused, why) }
-            return ManagedTransactions.response(await ManagedTransactions.run(
-                ctx, TransactionRequest(label: L("Rotate display"), risk: .trial, changes: [.rotation(d.hardwareID, deg)])))
+            let pick = ManagedDisplays.cliSelectOne(ctx, a[0])
+            if let error = pick.error { return error }
+            guard let d = pick.display else { return .failure(ControlExit.notFound, "") }
+            if let why = self.refusal(.rotation, for: d) { return .failure(ControlExit.refused, why) }
+            ctx.connectPlanner.beginUserChange()
+            let outcome = await ManagedTransactions.run(
+                ctx, TransactionRequest(label: L("Rotate display"), risk: .trial, changes: [.rotation(d.hardwareID, deg)],
+                                        finalScope: .permanently))
+            ctx.connectPlanner.endUserChange(changed: outcome == .applied || outcome == .kept)
+            return ManagedTransactions.response(outcome)
         }
     }
 

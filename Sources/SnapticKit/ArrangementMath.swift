@@ -164,3 +164,20 @@ package enum ArrangementMath {
         return reached.count == rects.count
     }
 }
+
+/// The underscan presets of the per-display menu (the page keeps a free slider).
+package enum UnderscanSteps {
+    /// 0 = off … 1 = the most underscan macOS offers.
+    package static let values: [Double] = [0, 0.25, 0.5, 0.75, 1]
+
+    /// The preset closest to a live value (ties go to the smaller), or nil when unknown.
+    package static func nearest(_ value: Double?) -> Double? {
+        guard let value, value.isFinite else { return nil }
+        let v = min(1, max(0, value))
+        return values.min { abs($0 - v) < abs($1 - v) || (abs($0 - v) == abs($1 - v) && $0 < $1) }
+    }
+
+    package static func title(_ step: Double) -> String {
+        step <= 0 ? L("Off") : "\(Int((step * 100).rounded()))%"
+    }
+}

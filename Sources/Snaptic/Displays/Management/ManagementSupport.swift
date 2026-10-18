@@ -85,23 +85,40 @@ enum ManagedModes {
         }
     }
 
-    /// CLI selectors (§11): `main`, `mouse`, `all`, a display key, a numeric id, or a name prefix.
-    static func select(_ ctx: DisplaysContext, _ selector: String) -> [DisplayInfo] {
-        let s = selector.trimmingCharacters(in: .whitespaces)
-        switch s.lowercased() {
-        case "main": return resolve(ctx, .main)
-        case "mouse", "pointer": return resolve(ctx, .pointer)
-        case "all": return resolve(ctx, .all)
-        case "focus":
-            if let screen = NSScreen.main, let id = screen.displayID, let info = info(ctx, desktopID: id) { return [info] }
-            return resolve(ctx, .main)
-        default: break
+    /// CLI selectors through the lead's `DisplaySelectorResolver` (§11: Identify numbers,
+    /// `id:N`, keys, `main`/`mouse`/`focus`/`all`, names). Either the displays, or the
+    /// response to return (not found → `ControlExit.notFound`, ambiguous → `.usage`).
+    static func cliSelect(_ ctx: DisplaysContext, _ selector: String) -> (displays: [DisplayInfo], error: ControlResponse?) {
+        let r = DisplaySelectorResolver.resolveForCLI(selector, ctx)
+        if let error = r.error { return ([], error) }
+        guard let target = r.target else { return ([], notFound(selector)) }
+        let list = resolve(ctx, target)
+        return list.isEmpty ? ([], notFound(selector)) : (list, nil)
+    }
+
+    /// One display for verbs that take exactly one (`all` is refused as ambiguous).
+    static func cliSelectOne(_ ctx: DisplaysContext, _ selector: String) -> (display: DisplayInfo?, error: ControlResponse?) {
+        let r = cliSelect(ctx, selector)
+        if let error = r.error { return (nil, error) }
+        guard r.displays.count == 1 else {
+            return (nil, .failure(ControlExit.usage, L("“\(selector)” matches several displays. Use its number or id:N.")))
         }
-        if let key = DisplayKey(rawValue: s) { return ctx.registry.displays.filter { $0.key == key } }
-        if let id = UInt32(s), let info = info(ctx, desktopID: id) { return [info] }
-        let lower = s.lowercased()
-        guard !lower.isEmpty else { return [] }
-        return ctx.registry.displays.filter { $0.name.lowercased().hasPrefix(lower) }
+        return (r.displays[0], nil)
+    }
+
+    /// Keys for a selector, including displays that are online but not presented (for
+    /// `connect`): `.display(key)` targets aren't filtered by the registry.
+    static func cliKeys(_ ctx: DisplaysContext, _ selector: String) -> (keys: [DisplayKey], error: ControlResponse?) {
+        let r = DisplaySelectorResolver.resolveForCLI(selector, ctx)
+        if let error = r.error { return ([], error) }
+        guard let target = r.target else { return ([], notFound(selector)) }
+        if case .display(let key) = target { return ([key], nil) }
+        let list = resolve(ctx, target).map(\.key)
+        return list.isEmpty ? ([], notFound(selector)) : (list, nil)
+    }
+
+    private static func notFound(_ selector: String) -> ControlResponse {
+        .failure(ControlExit.notFound, L("No display matches “\(selector)”. Try `snaptic list`."))
     }
 
     static func rect(_ d: DisplayInfo) -> ArrangeRect {
@@ -192,8 +209,10 @@ enum ManagedModes {
     static func response(_ outcome: TransactionOutcome, ok: String = "") -> ControlResponse {
         switch outcome {
         case .applied, .kept: return .ok(ok)
-        case .refused, .reverted: return .failure(ManagementExit.refused, message(outcome) ?? "")
-        case .busy, .failed: return .failure(ManagementExit.unavailable, message(outcome) ?? "")
+        case .refused: return .failure(ControlExit.refused, message(outcome) ?? "")
+        // Declined in the confirmation panel or timed out: cancelled (§11).
+        case .reverted: return .failure(ControlExit.cancelled, message(outcome) ?? "")
+        case .busy, .failed: return .failure(ControlExit.unavailable, message(outcome) ?? "")
         }
     }
 }

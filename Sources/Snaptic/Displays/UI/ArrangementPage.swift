@@ -183,7 +183,7 @@ private struct PowerSection: View {
                         .labelsHidden()
                         .frame(maxWidth: 200)
                         if c.disabledKeys.contains(d.key) || !d.isActive {
-                            Button(L("Connect")) { c.connectAll() }
+                            Button(L("Connect")) { c.connect(d.key) }
                         } else {
                             Button(L("Disconnect")) { c.disconnect(d.key) }
                                 .disabled(c.disconnectRefusal(d) != nil)
@@ -192,10 +192,17 @@ private struct PowerSection: View {
                     }
                 }
                 Button(L("Connect All Displays")) { c.connectAll() }
+                    .disabled(c.disabledKeys.isEmpty)
                 ManagementNote(L("Disconnecting is a trial and lasts until you reconnect, quit Snaptic or restart."))
             }
+            if let note = PowerController.disconnectNote { ManagementNote(note) }
         } header: {
-            Text(L("Disconnect"))
+            HStack {
+                Text(L("Disconnect"))
+                if PowerController.disconnectIsExperimental {
+                    DisplaysBadge(text: L("Experimental"), tint: .purple)
+                }
+            }
         }
         Section {
             ManagementFeatureNotice(env: env, feature: .autoDisconnectBuiltin, title: L("Auto-disconnect built-in display"))

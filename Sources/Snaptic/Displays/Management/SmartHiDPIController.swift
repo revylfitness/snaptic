@@ -51,25 +51,42 @@ import SnapticShims
         // Off-only from the CLI (R5.4).
         context.commands.register("smart-hidpi", policy: .low, offOnly: true, cliAllowed: true, summary: L("smart-hidpi off <display>|all"),
                                   lifetime: lifetime) { [weak self] req in
-            guard let self, let ctx = self.context else { return .failure(ManagementExit.unavailable, "") }
+            guard let self else { return .failure(ControlExit.unavailable, "") }
             let a = req.arguments
-            guard a.first?.lowercased() == "off" else { return .failure(ManagementExit.refused, L("Only 'off' is allowed")) }
-            let sel = a.count > 1 ? a[1] : "all"
-            let keys = sel.lowercased() == "all" ? Array(self.pairs.keys) : ManagedDisplays.select(ctx, sel).map(\.key)
-            for k in keys where self.pairs[k] != nil { await self.disable(k) }
-            return .ok()
+            guard a.first?.lowercased() == "off" else { return .failure(ControlExit.refused, L("Only 'off' is allowed")) }
+            return await self.turnOffCommand(a.count > 1 ? a[1] : "all", requireOn: false)
         }
-        // R5.4 exposure name; off-only: turns Smart HiDPI off on the given (or every) display.
-        context.commands.register("toggle smarthidpi", policy: .low, offOnly: true, cliAllowed: true,
-                                  summary: L("toggle smarthidpi [<display>|all]: turn Smart HiDPI off"), lifetime: lifetime) { [weak self] req in
-            guard let self, let ctx = self.context else { return .failure(ManagementExit.unavailable, "") }
-            let sel = req.arguments.first ?? "all"
-            let keys = sel.lowercased() == "all" ? Array(self.pairs.keys) : ManagedDisplays.select(ctx, sel).map(\.key)
-            let on = keys.filter { self.pairs[$0] != nil }
-            guard !on.isEmpty else { return .failure(ManagementExit.refused, L("Smart HiDPI can only be turned off from the command line")) }
-            for k in on { await self.disable(k) }
-            return .ok()
+        // R5.4 exposure name `toggle smartHiDPI` (verbs match case-insensitively), plus the
+        // dashed spelling; off-only: turns Smart HiDPI off on the given (or every) display.
+        for verb in ["toggle smarthidpi", "toggle smart-hidpi"] {
+            context.commands.register(verb, policy: .low, offOnly: true, cliAllowed: true,
+                                      summary: L("toggle smartHiDPI [<display>|all]: turn Smart HiDPI off"),
+                                      lifetime: lifetime) { [weak self] req in
+                guard let self else { return .failure(ControlExit.unavailable, "") }
+                let sel = req.arguments.first.map { $0.lowercased() == "off" ? (req.arguments.dropFirst().first ?? "all") : $0 } ?? "all"
+                return await self.turnOffCommand(sel, requireOn: true)
+            }
         }
+    }
+
+    /// Turns Smart HiDPI off on the selected displays (CLI; never on).
+    private func turnOffCommand(_ selector: String, requireOn: Bool) async -> ControlResponse {
+        guard let ctx = context else { return .failure(ControlExit.unavailable, "") }
+        let keys: [DisplayKey]
+        if selector.lowercased() == "all" {
+            keys = Array(pairs.keys)
+        } else {
+            let r = ManagedDisplays.cliKeys(ctx, selector)
+            if let error = r.error { return error }
+            keys = r.keys
+        }
+        let on = keys.filter { pairs[$0] != nil }
+        if on.isEmpty {
+            return requireOn ? .failure(ControlExit.refused, L("Smart HiDPI can only be turned off from the command line"))
+                             : .ok(L("Smart HiDPI is already off"))
+        }
+        for k in on { await disable(k) }
+        return .ok()
     }
 
     func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) {

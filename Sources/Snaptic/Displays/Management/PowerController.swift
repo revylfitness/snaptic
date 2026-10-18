@@ -23,9 +23,19 @@ import SnapticKit
     private var assertion: IOPMAssertionID = 0
     private var sinks: [AnyCancellable] = []
     private var lastAutoDecision: String = ""
+    /// Panic released the sleep assertion; it isn't re-taken until the latch clears (R5.4).
+    private var heldByPanic = false
 
     var disabledKeys: Set<DisplayKey> { Set(disabled.keys) }
     var isPreventingSleep: Bool { assertion != 0 }
+
+    /// Soft disconnect uses CGS on Intel Macs, where it is less tested: labeled Experimental
+    /// there (menus, the Arrangement page; F's Features page can show `disconnectNote`).
+    static var disconnectIsExperimental: Bool { !ManagedHardware.isAppleSilicon }
+    static var disconnectNote: String? {
+        disconnectIsExperimental ? L("Experimental on Intel Macs: a disconnected display may need a replug if macOS doesn't bring it back.") : nil
+    }
+    static var disconnectTitle: String { disconnectIsExperimental ? L("Disconnect (Experimental)") : L("Disconnect") }
 
     init() {}
 
@@ -58,6 +68,18 @@ import SnapticKit
             .receive(on: DispatchQueue.main)
             .sink { [weak self] displays in MainActor.assumeIsolated { self?.displaysChanged(displays) } }
             .store(in: &sinks)
+        // Resume after a panic: sleep prevention may come back (only then).
+        context.runtime.$isPanicLatched
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] latched in
+                MainActor.assumeIsolated {
+                    guard let self, !latched, self.heldByPanic else { return }
+                    self.heldByPanic = false
+                    self.updateSleepAssertion()
+                }
+            }
+            .store(in: &sinks)
         updateSleepAssertion()
     }
 
@@ -78,13 +100,20 @@ import SnapticKit
     func stop() {
         reconnectAllBestEffort()
         releaseAssertion()
+        heldByPanic = false
         sinks.removeAll()
         lifetime = nil
         context = nil
         effective = []
     }
 
-    func panicRestore() { reconnectAllBestEffort() }
+    /// R5.4 row: reconnect what Snaptic disconnected and release sleep prevention, which
+    /// stays released while the panic latch is set.
+    func panicRestore() {
+        reconnectAllBestEffort()
+        heldByPanic = true
+        releaseAssertion()
+    }
 
     // MARK: Disconnect
 
@@ -148,6 +177,11 @@ import SnapticKit
         guard let lifetime else { return }
         let keys = Array(disabled.keys)
         lifetime.spawn { [weak self] in await self?.reenable(keys, automatic: false) }
+    }
+
+    /// Reconnects one display (menus, the Arrangement page).
+    func connect(_ key: DisplayKey) {
+        lifetime?.spawn { [weak self] in await self?.reenable([key], automatic: false) }
     }
 
     /// Best effort from synchronous paths (stop, panic, feature off).
@@ -255,7 +289,9 @@ import SnapticKit
     // MARK: Sleep prevention
 
     private func updateSleepAssertion() {
-        guard let ctx = context, effective.contains(.sleepPrevention) else { return releaseAssertion() }
+        guard let ctx = context, effective.contains(.sleepPrevention), !heldByPanic, !ctx.panic.isLatched else {
+            return releaseAssertion()
+        }
         let wanted = ctx.registry.displays.contains { d in
             d.isOnline && (ctx.config.value.perDisplay[d.key]?.management.preventSleep ?? false)
         }
@@ -265,6 +301,7 @@ import SnapticKit
                                                 IOPMAssertionLevel(kIOPMAssertionLevelOn),
                                                 "Snaptic: prevent display sleep while a display is connected" as CFString, &id)
             if r == kIOReturnSuccess { assertion = id }
+            ctx.runtime.sleepPreventionActive = assertion != 0
             ctx.requestMenuRebuild()
         } else if !wanted {
             releaseAssertion()
@@ -272,6 +309,7 @@ import SnapticKit
     }
 
     private func releaseAssertion() {
+        if context?.runtime.sleepPreventionActive == true { context?.runtime.sleepPreventionActive = false }
         guard assertion != 0 else { return }
         IOPMAssertionRelease(assertion)
         assertion = 0
@@ -293,8 +331,9 @@ import SnapticKit
         var list: [DisplayMenuItemDescriptor] = []
         if effective.contains(.disconnect) {
             list += [DisplayMenuItemDescriptor(id: .dPowerSwitch, title: L("Header connect switch"), slot: .header, defaultVisibility: .visible),
-                     DisplayMenuItemDescriptor(id: .dDisconnectItem, title: L("Disconnect"), slot: .display, defaultVisibility: .inSubmenu),
+                     DisplayMenuItemDescriptor(id: .dDisconnectItem, title: Self.disconnectTitle, slot: .display, defaultVisibility: .inSubmenu),
                      DisplayMenuItemDescriptor(id: .dConnectAll, title: L("Connect All Displays"), slot: .tools, defaultVisibility: .visible),
+                     DisplayMenuItemDescriptor(id: .dConnectAllQuick, title: L("Connect All Displays"), slot: .quick, defaultVisibility: .visible),
                      DisplayMenuItemDescriptor(id: .dDisconnectAllButMain, title: L("Disconnect All But Main"), slot: .tools,
                                                defaultVisibility: .inSubmenu)]
         }
@@ -315,18 +354,17 @@ import SnapticKit
             if pd.powerSwitch == .disconnect {
                 let item = ManagedMenuItem(isOff ? L("Connect") : L("Disconnect"), on: !isOff,
                                            enabled: isOff || disconnectRefusal(display) == nil) { [weak self] in
-                    if isOff { self?.lifetime?.spawn { [weak self] in await self?.reenable([key], automatic: false) } } else { self?.disconnect(key) }
+                    if isOff { self?.connect(key) } else { self?.disconnect(key) }
                 }
+                if !isOff, let note = Self.disconnectNote { item.toolTip = note }
                 items.append((.dPowerSwitch, item))
             }
             if isOff {
-                items.append((.dDisconnectItem, ManagedMenuItem(L("Connect")) { [weak self] in
-                    self?.lifetime?.spawn { [weak self] in await self?.reenable([key], automatic: false) }
-                }))
+                items.append((.dDisconnectItem, ManagedMenuItem(L("Connect")) { [weak self] in self?.connect(key) }))
             } else {
                 let refusal = disconnectRefusal(display)
-                let item = ManagedMenuItem(L("Disconnect"), enabled: refusal == nil) { [weak self] in self?.disconnect(key) }
-                item.toolTip = refusal
+                let item = ManagedMenuItem(Self.disconnectTitle, enabled: refusal == nil) { [weak self] in self?.disconnect(key) }
+                item.toolTip = refusal ?? Self.disconnectNote
                 items.append((.dDisconnectItem, item))
             }
         }
@@ -346,7 +384,9 @@ import SnapticKit
             return [(.dConnectAll, ManagedMenuItem(L("Connect All Displays"), enabled: !disabled.isEmpty) { [weak self] in self?.connectAll() }),
                     (.dDisconnectAllButMain, ManagedMenuItem(L("Disconnect All But Main")) { [weak self] in self?.disconnectAllButMain() })]
         case .quick:
-            return [(.dConnectAll, ManagedMenuItem(L("Connect All Displays")) { [weak self] in self?.connectAll() })]
+            return [(.dConnectAllQuick, ManagedMenuItem(L("Connect All Displays"), enabled: !disabled.isEmpty) { [weak self] in
+                self?.connectAll()
+            })]
         default:
             return []
         }
@@ -379,38 +419,62 @@ import SnapticKit
     private func registerCommands(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("connect", policy: .low, offOnly: false, cliAllowed: true, summary: L("connect all|<display>"),
                               lifetime: lifetime) { [weak self] req in
-            guard let self, let ctx = self.context, self.effective.contains(.disconnect) else {
-                return .failure(ManagementExit.unavailable, L("Disconnect is off"))
-            }
-            let sel = req.arguments.first ?? "all"
-            let keys = sel.lowercased() == "all" ? Array(self.disabled.keys) : ManagedDisplays.select(ctx, sel).map(\.key)
-            guard !keys.isEmpty else { return .ok(L("Nothing to reconnect")) }
-            await self.reenable(keys, automatic: false)
-            return .ok()
+            guard let self else { return .failure(ControlExit.unavailable, L("Disconnect is off")) }
+            return await self.connectCommand(req.arguments.first ?? "all")
+        }
+        // §11 verb list: the same as `connect all`.
+        ctx.commands.register("reconnect-all", policy: .low, offOnly: false, cliAllowed: true,
+                              summary: L("reconnect-all: reconnect every display Snaptic disconnected"), lifetime: lifetime) { [weak self] _ in
+            guard let self else { return .failure(ControlExit.unavailable, L("Disconnect is off")) }
+            return await self.connectCommand("all")
         }
         ctx.commands.register("disconnect", policy: .trial, offOnly: false, cliAllowed: true, summary: L("disconnect <display>"),
                               lifetime: lifetime) { [weak self] req in
             guard let self, let ctx = self.context, self.effective.contains(.disconnect) else {
-                return .failure(ManagementExit.unavailable, L("Disconnect is off"))
+                return .failure(ControlExit.unavailable, L("Disconnect is off"))
             }
-            guard let sel = req.arguments.first, let d = ManagedDisplays.select(ctx, sel).first else {
-                return .failure(ManagementExit.notFound, L("Usage: disconnect <display>"))
-            }
-            if let why = self.disconnectRefusal(d) { return .failure(ManagementExit.refused, why) }
+            guard let sel = req.arguments.first else { return .failure(ControlExit.usage, L("Usage: disconnect <display>")) }
+            let pick = ManagedDisplays.cliSelectOne(ctx, sel)
+            if let error = pick.error { return error }
+            guard let d = pick.display else { return .failure(ControlExit.notFound, "") }
+            if let why = self.disconnectRefusal(d) { return .failure(ControlExit.refused, why) }
             let id = d.hardwareID
+            ctx.connectPlanner.beginUserChange()
             let outcome = await ManagedTransactions.run(ctx, TransactionRequest(label: L("Disconnect display"), risk: .trial,
                                                                                changes: [.enabled(id, false)], finalScope: .forSession))
-            if outcome == .applied || outcome == .kept { self.disabled[d.key] = id }
+            let ok = outcome == .applied || outcome == .kept
+            if ok { self.disabled[d.key] = id }
+            ctx.connectPlanner.endUserChange(changed: ok)
+            ctx.requestMenuRebuild()
             return ManagedTransactions.response(outcome)
         }
         // Off-only from the CLI (R5.4): sleep prevention can be released, never started.
         ctx.commands.register("prevent-sleep", policy: .low, offOnly: true, cliAllowed: true, summary: L("prevent-sleep off"),
                               lifetime: lifetime) { [weak self] req in
-            guard let self, let ctx = self.context else { return .failure(ManagementExit.unavailable, "") }
-            guard req.arguments.first?.lowercased() == "off" else { return .failure(ManagementExit.refused, L("Only 'off' is allowed")) }
+            guard let self, let ctx = self.context else { return .failure(ControlExit.unavailable, "") }
+            guard req.arguments.first?.lowercased() == "off" else { return .failure(ControlExit.refused, L("Only 'off' is allowed")) }
             for d in ctx.registry.displays { self.setPreventSleep(false, for: d.key) }
             return .ok()
         }
+    }
+
+    /// `connect all` / `reconnect-all` / `connect <display>`.
+    private func connectCommand(_ selector: String) async -> ControlResponse {
+        guard let ctx = context, effective.contains(.disconnect) else {
+            return .failure(ControlExit.unavailable, L("Disconnect is off"))
+        }
+        let keys: [DisplayKey]
+        if selector.lowercased() == "all" {
+            keys = Array(disabled.keys)
+        } else {
+            let r = ManagedDisplays.cliKeys(ctx, selector)
+            if let error = r.error { return error }
+            keys = r.keys.filter { k in disabled[k] != nil || ManagedDisplays.info(ctx, key: k)?.isActive == false }
+        }
+        guard !keys.isEmpty else { return .ok(L("Nothing to reconnect")) }
+        await reenable(keys, automatic: false)
+        let still = keys.filter { disabled[$0] != nil }
+        return still.isEmpty ? .ok() : .failure(ControlExit.unavailable, L("Some displays couldn't be reconnected"))
     }
 
     func diagnostics() -> [(String, String)] {
@@ -419,6 +483,7 @@ import SnapticKit
          (L("Lid"), Self.lidOpen().map { $0 ? L("open") : L("closed") } ?? L("unknown")),
          (L("External power reading"), externalPower.rawValue),
          (L("Last auto-disconnect"), lastAutoDecision.isEmpty ? L("none") : lastAutoDecision),
-         (L("Preventing display sleep"), isPreventingSleep ? L("Yes") : L("No"))]
+         (L("Preventing display sleep"), isPreventingSleep ? L("Yes") : (heldByPanic ? L("No (released by Restore All Displays)") : L("No"))),
+         (L("Disconnect"), Self.disconnectIsExperimental ? L("Experimental (Intel)") : L("Standard"))]
     }
 }

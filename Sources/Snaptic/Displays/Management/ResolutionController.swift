@@ -21,8 +21,11 @@ import SnapticKit
     private(set) var effective: Set<DisplayFeature> = []
     private var menu: ResolutionMenuItems?
     private var history: [DisplayKey: History] = [:]
-    /// Modes Snaptic set, for panic ("revert the ones Snaptic set in the last 60 s").
-    private var recent: [DisplayKey: (at: Double, previous: ModeRef, applied: ModeRef)] = [:]
+    /// When Snaptic last set each display's mode. Panic forgets the persisted choice of the
+    /// ones set in the last 60 s; B's queue reverts the modes themselves (`panicRevert`).
+    private var recent: [DisplayKey: Double] = [:]
+    /// Mode changes seen before this uptime are panic's revert, not the user's: never learned.
+    private var ignoreChangesUntil: Double = 0
     /// Our own changes in flight, so learning ignores them.
     private var expected: [DisplayKey: (mode: ModeRef, at: Double)] = [:]
     private var lastSeen: [DisplayKey: ModeRef] = [:]
@@ -90,6 +93,7 @@ import SnapticKit
         learning = [:]
         expected = [:]
         modeCache = [:]
+        ignoreChangesUntil = 0
         menu = nil
         lifetime = nil
         context = nil
@@ -106,19 +110,19 @@ import SnapticKit
 
     func sessionDidResume() { paused = false }
 
-    /// Reverts modes Snaptic set in the last 60 s and forgets their persisted choice (R5.3, R5.4).
+    /// R5.3/R5.4 row: forget the persisted choice of modes Snaptic set in the last 60 s, so
+    /// the next connect doesn't re-apply what panic just undid. The revert itself is the
+    /// queue's (`DisplayTransactionQueue.panicRevert`), which runs before the participants.
     func panicRestore() {
-        guard let ctx = context, let lifetime else { return }
         let now = managementUptime()
-        for (key, change) in recent where now - change.at <= 60 {
+        for (key, at) in recent where now - at <= 60 {
             updatePerDisplay(key) { $0.persisted = nil }
-            guard let d = ManagedDisplays.info(ctx, key: key), currentMode(d) == change.applied else { continue }
-            let request = TransactionRequest(label: L("Restore resolution"), risk: .low,
-                                             changes: [.mode(d.desktopID, change.previous)], automatic: true)
-            expected[key] = (change.previous, now)
-            ManagedTransactions.submit(ctx, request, lifetime: lifetime, quiet: true)
         }
         recent = [:]
+        // Panic's revert is a Snaptic change too; learning must not record it.
+        learning.values.forEach { $0.cancel() }
+        learning = [:]
+        ignoreChangesUntil = now + 5
     }
 
     // MARK: Mode lists
@@ -274,7 +278,7 @@ import SnapticKit
             if h.undo.count > ResolutionConfig.maxUndo { h.undo.removeFirst(h.undo.count - ResolutionConfig.maxUndo) }
             if h.redo.count > ResolutionConfig.maxUndo { h.redo.removeFirst(h.redo.count - ResolutionConfig.maxUndo) }
             history[key] = h
-            recent[key] = (managementUptime(), before, applied)
+            recent[key] = managementUptime()
             if !ctx.safeMode.isActive && ctx.config.value.resolution.persistedChoice {
                 updatePerDisplay(key) {
                     $0.persisted = PersistedModeChoice(mode: applied, preKeepMode: before, recordedAt: managementWallClock())
@@ -473,7 +477,7 @@ import SnapticKit
             guard let m = currentMode(d) else { continue }
             let previous = lastSeen[d.key]
             lastSeen[d.key] = m
-            guard let previous, previous != m else { continue }
+            guard let previous, previous != m, now >= ignoreChangesUntil else { continue }
             if let e = expected[d.key], now - e.at < 30 {
                 if e.mode == m { expected[d.key] = nil }
                 continue
@@ -534,12 +538,12 @@ import SnapticKit
         ctx.commands.register("mode", policy: .trial, offOnly: false, cliAllowed: true,
                               summary: L("mode list|set|up|down|hidpi|native|default|halved|undo|redo|notch|favorite N <display> [WxH[@Hz] [hidpi]]"),
                               lifetime: lifetime) { [weak self] request in
-            guard let self else { return .failure(ManagementExit.unavailable, L("Resolution is off")) }
+            guard let self else { return .failure(ControlExit.unavailable, L("Resolution is off")) }
             return await self.handleMode(request)
         }
         ctx.commands.register("match-ui", policy: .trial, offOnly: false, cliAllowed: true, summary: L("Match UI size across displays"),
                               lifetime: lifetime) { [weak self] _ in
-            guard let self, self.effective.contains(.scaleMatch) else { return .failure(ManagementExit.unavailable, L("Match UI size is off")) }
+            guard let self, self.effective.contains(.scaleMatch) else { return .failure(ControlExit.unavailable, L("Match UI size is off")) }
             let proposals = self.scaleMatchProposals()
             guard !proposals.isEmpty else { return .ok(L("UI sizes already match")) }
             self.applyScaleMatch(proposals)
@@ -548,12 +552,13 @@ import SnapticKit
     }
 
     private func handleMode(_ request: ControlRequest) async -> ControlResponse {
-        guard let ctx = context else { return .failure(ManagementExit.unavailable, L("Resolution is off")) }
+        guard let ctx = context else { return .failure(ControlExit.unavailable, L("Resolution is off")) }
         let args = request.arguments
-        guard let sub = args.first?.lowercased() else { return .failure(ManagementExit.usage, L("Usage: mode <subcommand> <display>")) }
+        guard let sub = args.first?.lowercased() else { return .failure(ControlExit.usage, L("Usage: mode <subcommand> <display>")) }
         let selector = args.count > 1 ? args[1] : "main"
-        let targets = ManagedDisplays.select(ctx, selector)
-        guard !targets.isEmpty else { return .failure(ManagementExit.notFound, L("No display matches \(selector)")) }
+        let picked = ManagedDisplays.cliSelect(ctx, selector)
+        if let error = picked.error { return error }
+        let targets = picked.displays
         switch sub {
         case "list":
             return .ok(targets.map { d in
@@ -563,7 +568,7 @@ import SnapticKit
             }.joined(separator: "\n\n"))
         case "set":
             guard args.count > 2, let spec = Self.parseMode(Array(args.dropFirst(2))) else {
-                return .failure(ManagementExit.usage, L("Usage: mode set <display> WxH[@Hz] [hidpi|lodpi]"))
+                return .failure(ControlExit.usage, L("Usage: mode set <display> WxH[@Hz] [hidpi|lodpi]"))
             }
             var results: [String] = []
             for d in targets {
@@ -574,7 +579,7 @@ import SnapticKit
                 }
                 guard let current = currentMode(d),
                       let pick = matches.min(by: { abs($0.refreshMilliHz - current.refreshMilliHz) < abs($1.refreshMilliHz - current.refreshMilliHz) })
-                else { return .failure(ManagementExit.notFound, L("No such mode on \(d.name)")) }
+                else { return .failure(ControlExit.notFound, L("No such mode on \(d.name)")) }
                 let outcome = await applyAwaiting(pick, to: d.key)
                 if case .applied = outcome {} else if case .kept = outcome {} else { return ManagedTransactions.response(outcome) }
                 results.append("\(d.name): \(label(pick, markers: false))")
@@ -597,12 +602,12 @@ import SnapticKit
             return .ok()
         case "favorite":
             guard args.count > 2, let n = Int(args[2]), (1...PerDisplayResolution.maxFavorites).contains(n) else {
-                return .failure(ManagementExit.usage, L("Usage: mode favorite <display> 1-5"))
+                return .failure(ControlExit.usage, L("Usage: mode favorite <display> 1-5"))
             }
             targets.forEach { applyFavorite(n - 1, on: $0.key) }
             return .ok()
         default:
-            return .failure(ManagementExit.usage, L("Unknown mode subcommand"))
+            return .failure(ControlExit.usage, L("Unknown mode subcommand"))
         }
     }
 

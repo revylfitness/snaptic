@@ -33,17 +33,17 @@ import SnapticKit
                                         cliAllowed: false) { [weak self] _ in self?.toggleCurrent() }, lifetime: lifetime)
         context.commands.register("protect", policy: .low, offOnly: true, cliAllowed: true,
                                   summary: L("protect off: stop configuration protection"), lifetime: lifetime) { [weak self] req in
-            guard let self, let ctx = self.context else { return .failure(ManagementExit.unavailable, "") }
-            guard req.arguments.first?.lowercased() == "off" else { return .failure(ManagementExit.refused, L("Only 'off' is allowed")) }
+            guard let self, let ctx = self.context else { return .failure(ControlExit.unavailable, "") }
+            guard req.arguments.first?.lowercased() == "off" else { return .failure(ControlExit.refused, L("Only 'off' is allowed")) }
             ctx.config.value.features[.protection] = false
             return .ok()
         }
         // R5.4 exposure name; off-only: it can turn protection off, never on.
         context.commands.register("toggle protection", policy: .low, offOnly: true, cliAllowed: true,
                                   summary: L("toggle protection: turn configuration protection off"), lifetime: lifetime) { [weak self] _ in
-            guard let self, let ctx = self.context else { return .failure(ManagementExit.unavailable, "") }
+            guard let self, let ctx = self.context else { return .failure(ControlExit.unavailable, "") }
             guard self.effective.contains(.protection) else {
-                return .failure(ManagementExit.refused, L("Protection can only be turned off from the command line"))
+                return .failure(ControlExit.refused, L("Protection can only be turned off from the command line"))
             }
             ctx.config.value.features[.protection] = false
             return .ok(L("Protection is off"))
