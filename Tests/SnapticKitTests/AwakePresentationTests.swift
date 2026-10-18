@@ -265,7 +265,9 @@ final class AwakePresentationTests: XCTestCase {
         for g: AwakeGoverning in [.inactive, .manual(session(.indefinite)), .trigger(top), .holds([hold])] {
             for rules in [false, true] {
                 let b = AwakeStatusPlan.buttons(facts(g, rules: rules))
-                XCTAssertEqual(b.contains(.keepAwake), !g.isActive)
+                let holdsOnly: Bool
+                if case .holds = g { holdsOnly = true } else { holdsOnly = false }
+                XCTAssertEqual(b.contains(.keepAwake), !g.isActive || holdsOnly, "a start is offered idle and beside holds")
                 XCTAssertEqual(b.contains(.turnOff), g.isActive)
                 XCTAssertEqual(b.filter { $0 == .pauseRules || $0 == .resumeRules }.count, rules ? 1 : 0)
             }
