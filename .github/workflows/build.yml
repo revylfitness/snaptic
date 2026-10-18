@@ -95,13 +95,15 @@ jobs:
           swift test --skip-build 2>&1 | tee test.log
 
       # Helpers must not inherit pipe ends (PLAN §14.1): both children exit once we die.
-      # Disabled until the step-1 hang is diagnosed (FIXES-R1 A0); re-enable by removing `if: false`.
+      # The runner starts steps with SIGPIPE ignored, and macOS `tr` then never stops
+      # writing into the closed pipe of the script's `tr </dev/urandom | head` token
+      # line (that was the FIXES-R1 A0 hang). perl restores the default before exec.
       - name: Helper self-test (debug)
-        if: false
         timeout-minutes: 2
         run: |
           set -o pipefail
-          ./scripts/selftest-helpers.sh .build/debug/Snaptic 2>&1 | tee selftest.log
+          perl -e '$SIG{PIPE} = "DEFAULT"; exec @ARGV or die "exec: $!"' \
+            ./scripts/selftest-helpers.sh .build/debug/Snaptic 2>&1 | tee selftest.log
 
       - name: Warnings summary
         if: always()
@@ -129,13 +131,14 @@ jobs:
           fi
 
       - name: Helper self-test (universal, and under Rosetta when available)
-        if: false && github.event_name == 'push'
+        if: github.event_name == 'push'
         timeout-minutes: 3
         run: |
           set -o pipefail
-          ./scripts/selftest-helpers.sh build/Snaptic.app/Contents/MacOS/Snaptic 2>&1 | tee -a selftest.log
+          sigdefault() { perl -e '$SIG{PIPE} = "DEFAULT"; exec @ARGV or die "exec: $!"' "$@"; }
+          sigdefault ./scripts/selftest-helpers.sh build/Snaptic.app/Contents/MacOS/Snaptic 2>&1 | tee -a selftest.log
           if /usr/bin/arch -x86_64 /usr/bin/true 2>/dev/null; then
-            SELFTEST_ARCH=x86_64 ./scripts/selftest-helpers.sh build/Snaptic.app/Contents/MacOS/Snaptic 2>&1 | tee -a selftest.log
+            SELFTEST_ARCH=x86_64 sigdefault ./scripts/selftest-helpers.sh build/Snaptic.app/Contents/MacOS/Snaptic 2>&1 | tee -a selftest.log
           fi
 
       - name: Report errors as annotations

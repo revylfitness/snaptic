@@ -23,11 +23,18 @@ import SnapticKit
     private var applyingExternal = false
     private var observer: DefaultsKeyObserver?
 
+    /// Larger stored values are ignored, at launch and when changed outside Snaptic.
+    static var maxStoredBytes: Int { 4 * 1024 * 1024 }
+
     init(key: String) {
         precondition(!key.contains("."), "KVO treats '.' as a key path separator")
         self.key = key
         if let data = Self.persistentData(forKey: key) {
-            if let decoded = try? JSONDecoder().decode(T.self, from: data) {
+            if data.count > Self.maxStoredBytes {
+                // Not decoded at all (same cap as outside changes); no copy of something this big.
+                EventLog.shared.record(.modules, "Settings \(key) were too large to read; started from defaults")
+                value = T()
+            } else if let decoded = try? JSONDecoder().decode(T.self, from: data) {
                 value = decoded.sanitized()
                 lastWritten = data
             } else {
@@ -48,7 +55,7 @@ import SnapticKit
     /// Re-reads after an outside change. Our own writes match `lastWritten` and are ignored.
     private func storedValueChanged() {
         guard let data = Self.persistentData(forKey: key), data != lastWritten,
-              data.count <= 4 * 1024 * 1024,
+              data.count <= Self.maxStoredBytes,
               let decoded = try? JSONDecoder().decode(T.self, from: data) else { return }
         lastWritten = data
         let new = decoded.sanitized()

@@ -79,5 +79,118 @@ final class KitBackupTests: XCTestCase {
             XCTAssertTrue(KitBackup.isSensitive(name), name)
         }
         for name in ["brightness", "step", "features", "names"] { XCTAssertFalse(KitBackup.isSensitive(name), name) }
+        for name in ["allowGammaWithCustomProfile", "allowBelow720p", "cliAllowed"] {
+            XCTAssertTrue(KitBackup.isSensitive(name), name)
+        }
+    }
+
+    // MARK: Safety switches (FIXES-R1 A2)
+
+    private let keyA = String(repeating: "a", count: 32)
+    private let keyB = String(repeating: "b", count: 32)
+
+    private func safetyDisplays(preventSleep: Bool, ignore: Bool, withoutDDC: Bool, gamma: Bool,
+                                prefixes: [String]) -> [String: Any] {
+        ["management": ["autoDisconnectWithoutDDC": withoutDDC, "snapArrangement": true],
+         "perDisplay": [keyA: ["management": ["preventSleep": preventSleep, "ignoreForAutoDisconnect": ignore,
+                                              "powerSwitch": "none"]],
+                        keyB: ["management": ["preventSleep": preventSleep], "brightness": ["minHardware": 0.1]]],
+         "color": ["allowGammaWithCustomProfile": gamma, "shortcutStep": 0.1],
+         "resolution": ["allowBelow720p": true, "sliderSnapping": true],
+         "pip": ["protectedBundlePrefixes": prefixes, "pauseWhenOccluded": true]]
+    }
+
+    func testSafetySwitchesNeverLeaveOrEnter() throws {
+        let unsafe = safetyDisplays(preventSleep: true, ignore: true, withoutDDC: true, gamma: true, prefixes: ["com.x"])
+        let doc = try XCTUnwrap(KitBackup.makeDocument(sections: ["displays": json(unsafe)], created: "t", appVersion: "1"))
+        let text = String(decoding: doc, as: UTF8.self)
+        for banned in ["preventSleep", "ignoreForAutoDisconnect", "autoDisconnectWithoutDDC", "allowGammaWithCustomProfile",
+                       "allowBelow720p"] {
+            XCTAssertFalse(text.contains(banned), banned)
+        }
+        for kept in ["powerSwitch", "snapArrangement", "shortcutStep", "sliderSnapping", "minHardware", "com.x"] {
+            XCTAssertTrue(text.contains(kept), kept)
+        }
+
+        // A hand-made file that carries them anyway: stripped, and the current values stay.
+        let file: [String: Any] = ["format": KitBackup.format, "version": 1, "sections": ["displays": unsafe]]
+        let parsed = try KitBackup.parseDocument(json(file)).get()
+        let current = json(safetyDisplays(preventSleep: false, ignore: false, withoutDDC: false, gamma: false,
+                                          prefixes: ["com.x"]))
+        let merged = object(try XCTUnwrap(KitBackup.merge(current: current, imported: parsed["displays"]!,
+                                                          section: "displays")))
+        let management = merged["management"] as? [String: Any]
+        XCTAssertEqual(management?["autoDisconnectWithoutDDC"] as? Bool, false)
+        let perDisplay = merged["perDisplay"] as? [String: [String: Any]]
+        for key in [keyA, keyB] {
+            let m = perDisplay?[key]?["management"] as? [String: Any]
+            XCTAssertEqual(m?["preventSleep"] as? Bool, false, key)
+        }
+        XCTAssertEqual((perDisplay?[keyA]?["management"] as? [String: Any])?["ignoreForAutoDisconnect"] as? Bool, false)
+        XCTAssertEqual((merged["color"] as? [String: Any])?["allowGammaWithCustomProfile"] as? Bool, false)
+    }
+
+    func testWildcardRemovalReachesEveryDisplayOnly() {
+        let input: [String: Any] = ["perDisplay": [keyA: ["management": ["preventSleep": true, "powerSwitch": "x"]],
+                                                   keyB: "not an object"],
+                                    "management": ["preventSleep": true]]
+        let out = KitBackup.strip(input, section: "displays") as? [String: Any]
+        let a = ((out?["perDisplay"] as? [String: Any])?[keyA] as? [String: Any])?["management"] as? [String: Any]
+        XCTAssertNil(a?["preventSleep"])
+        XCTAssertEqual(a?["powerSwitch"] as? String, "x")
+        XCTAssertEqual((out?["perDisplay"] as? [String: Any])?[keyB] as? String, "not an object")
+        // Only the listed path: a same-named key elsewhere stays.
+        XCTAssertEqual((out?["management"] as? [String: Any])?["preventSleep"] as? Bool, true)
+    }
+
+    func testProtectedPrefixesOnlyGrow() throws {
+        let current = json(["pip": ["protectedBundlePrefixes": ["com.bank", "com.mail"], "pauseWhenOccluded": true]])
+        func prefixes(_ imported: [String: Any]) throws -> [String]? {
+            let merged = object(try XCTUnwrap(KitBackup.merge(current: current, imported: json(imported), section: "displays")))
+            return (merged["pip"] as? [String: Any])?["protectedBundlePrefixes"] as? [String]
+        }
+        XCTAssertEqual(try prefixes(["pip": ["protectedBundlePrefixes": [String]()]]), ["com.bank", "com.mail"])
+        XCTAssertEqual(try prefixes(["pip": ["protectedBundlePrefixes": ["com.notes", "com.bank"]]]),
+                       ["com.bank", "com.mail", "com.notes"])
+        XCTAssertEqual(try prefixes(["pip": ["pauseWhenOccluded": false]]), ["com.bank", "com.mail"])
+        XCTAssertEqual(try prefixes(["pip": "garbage"]), ["com.bank", "com.mail"])
+        // Other sections and the section-less merge replace lists as before.
+        let plain = object(try XCTUnwrap(KitBackup.merge(current: current,
+                                                         imported: json(["pip": ["protectedBundlePrefixes": ["x"]]]))))
+        XCTAssertEqual((plain["pip"] as? [String: Any])?["protectedBundlePrefixes"] as? [String], ["x"])
+    }
+
+    func testPreviewListsSafetyChangesFirstAndInFull() {
+        var oldFeatures: [String: Bool] = [:]
+        var newFeatures: [String: Bool] = [:]
+        for i in 0..<70 { oldFeatures["f\(i)"] = false; newFeatures["f\(i)"] = true }
+        var oldNames: [String: String] = [:]
+        var newNames: [String: String] = [:]
+        for i in 0..<70 { oldNames["n\(i)"] = "a"; newNames["n\(i)"] = "b" }
+        let old = json(["features": oldFeatures, "identity": ["names": oldNames],
+                        "pip": ["protectedBundlePrefixes": ["a"], "luts": [1]]])
+        let new = json(["features": newFeatures, "identity": ["names": newNames],
+                        "pip": ["protectedBundlePrefixes": ["a", "b"], "luts": [2]]])
+        let preview = KitBackup.previewChanges(section: "displays", from: old, to: new, limit: 10)
+        XCTAssertEqual(preview.safety.count, 71)
+        XCTAssertTrue(preview.safety.contains("pip.protectedBundlePrefixes"))
+        XCTAssertTrue(preview.safety.allSatisfy { $0.hasPrefix("features.") || $0 == "pip.protectedBundlePrefixes" })
+        XCTAssertEqual(preview.other.count, 10)
+        XCTAssertFalse(preview.safety.contains("pip.luts"))
+        XCTAssertEqual(preview.other, Array(preview.other.sorted()))
+    }
+
+    func testSafetyClassification() {
+        XCTAssertTrue(KitBackup.isSafetyRelated(section: "displays", path: "features.xdr"))
+        XCTAssertTrue(KitBackup.isSafetyRelated(section: "displays", path: "perDisplay.\(keyA).management.powerSwitch"))
+        XCTAssertTrue(KitBackup.isSafetyRelated(section: "displays", path: "perDisplay.\(keyA).ddc.enabled"))
+        XCTAssertTrue(KitBackup.isSafetyRelated(section: "displays", path: "safety.confirmSeconds"))
+        XCTAssertTrue(KitBackup.isSafetyRelated(section: "displays", path: "(all)"))
+        XCTAssertTrue(KitBackup.isSafetyRelated(section: "modules", path: "enabled.displays"))
+        XCTAssertFalse(KitBackup.isSafetyRelated(section: "displays", path: "perDisplay.\(keyA).identity.customName"))
+        XCTAssertFalse(KitBackup.isSafetyRelated(section: "displays", path: "menu.compact"))
+        XCTAssertFalse(KitBackup.isSafetyRelated(section: "displays", path: "pip.luts"))
+        XCTAssertFalse(KitBackup.isSafetyRelated(section: "displays", path: "perDisplay"))
+        XCTAssertFalse(KitBackup.isSafetyRelated(section: "switcher", path: "(all)"))
     }
 }

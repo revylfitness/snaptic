@@ -16,6 +16,7 @@ Sources/SnapticKit/KitLaunchStability.swift	A	K1	KitLaunchStability	-
 Sources/SnapticKit/KitArgs.swift	A	K1	KitArgs	-
 Sources/SnapticKit/KitHotkeys.swift	A	L	-	-
 Sources/SnapticKit/KitBackup.swift	A	L	-	-
+Sources/SnapticKit/KitPipeQueue.swift	A	L	-	-
 Sources/SnapticKit/Config/ConfigModules.swift	A	K2	ConfigModules	ModulesConfig
 Sources/SnapticKit/Config/ConfigAutomation.swift	A	K2	ConfigAutomation	AutomationConfig
 Sources/SnapticKit/Config/ConfigSwitcherFeatures.swift	A	K2	ConfigSwitcherFeatures	SwitcherFeaturesConfig
@@ -239,6 +240,7 @@ Tests/SnapticKitTests/KitLaunchStabilityTests.swift	A	K3	KitLaunchStabilityTests
 Tests/SnapticKitTests/KitArgsTests.swift	A	K3	KitArgsTests	-
 Tests/SnapticKitTests/KitHotkeysTests.swift	A	L	-	-
 Tests/SnapticKitTests/KitBackupTests.swift	A	L	-	-
+Tests/SnapticKitTests/KitPipeQueueTests.swift	A	L	-	-
 Tests/SnapticKitTests/ConfigModulesTests.swift	A	K3	ConfigModulesTests	-
 Tests/SnapticKitTests/ConfigAutomationTests.swift	A	K3	ConfigAutomationTests	-
 Tests/SnapticKitTests/ConfigSwitcherFeaturesTests.swift	A	K3	ConfigSwitcherFeaturesTests	-

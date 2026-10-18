@@ -100,49 +100,57 @@ import UniformTypeIdentifiers
         }
         let encoder = JSONEncoder()
         let decoder = JSONDecoder()
-        var changes: [String] = []
+        var safety: [String] = []
+        var other: [String] = []
         var newSwitcher: Config?
         var newModules: ModulesConfig?
         var newDisplays: DisplaysConfig?
 
-        if let imported = sections[KitBackup.switcherSection], let current = try? encoder.encode(host.switcherSettings.config),
-           let merged = KitBackup.merge(current: current, imported: imported),
-           let value = try? decoder.decode(Config.self, from: merged) {
-            let clean = value.sanitized()
-            if let after = try? encoder.encode(clean) {
-                changes += KitBackup.changedPaths(from: current, to: after).map { L("Window Switcher: ") + $0 }
-            }
-            newSwitcher = clean
+        /// Merge, decode, sanitize; collect the preview lines. Nil when nothing usable.
+        func prepare<T: Codable>(_ section: String, label: String, current: T, decode: (Data) -> T?) -> T? {
+            guard let imported = sections[section], let before = try? encoder.encode(current),
+                  let merged = KitBackup.merge(current: before, imported: imported, section: section),
+                  let value = decode(merged), let after = try? encoder.encode(value) else { return nil }
+            let lines = KitBackup.previewChanges(section: section, from: before, to: after, limit: 50)
+            safety += lines.safety.map { label + $0 }
+            other += lines.other.map { label + $0 }
+            return value
         }
-        if let imported = sections[KitBackup.modulesSection], let current = try? encoder.encode(host.modulesStore.value),
-           let merged = KitBackup.merge(current: current, imported: imported),
-           let value = try? decoder.decode(ModulesConfig.self, from: merged) {
-            let clean = value.sanitized()
-            if let after = try? encoder.encode(clean) {
-                changes += KitBackup.changedPaths(from: current, to: after).map { L("Modules: ") + $0 }
-            }
-            newModules = clean
+        newSwitcher = prepare(KitBackup.switcherSection, label: L("Window Switcher: "), current: host.switcherSettings.config) {
+            (try? decoder.decode(Config.self, from: $0))?.sanitized()
         }
-        if let imported = sections[KitBackup.displaysSection], let current = try? encoder.encode(host.displaysStore.value),
-           let merged = KitBackup.merge(current: current, imported: imported),
-           let value = try? decoder.decode(DisplaysConfig.self, from: merged) {
-            let clean = value.sanitized()
-            if let after = try? encoder.encode(clean) {
-                changes += KitBackup.changedPaths(from: current, to: after).map { L("Displays: ") + $0 }
-            }
-            newDisplays = clean
+        newModules = prepare(KitBackup.modulesSection, label: L("Modules: "), current: host.modulesStore.value) {
+            (try? decoder.decode(ModulesConfig.self, from: $0))?.sanitized()
         }
-        guard !changes.isEmpty else {
+        newDisplays = prepare(KitBackup.displaysSection, label: L("Displays: "), current: host.displaysStore.value) {
+            (try? decoder.decode(DisplaysConfig.self, from: $0))?.sanitized()
+        }
+        let total = safety.count + other.count
+        guard total > 0 else {
             host.toasts.show(L("The backup matches your current settings."))
             return
         }
 
+        // Safety-related changes come first and are never shortened; the rest is.
+        var text = ""
+        if !safety.isEmpty {
+            text += L("Safety-related changes:") + "\n" + safety.joined(separator: "\n") + "\n\n"
+        }
+        if !other.isEmpty {
+            let shown = other.prefix(15).joined(separator: "\n")
+            let more = other.count > 15 ? "\n" + L("…and ") + String(other.count - 15) + L(" more") : ""
+            text += (safety.isEmpty ? L("These settings change:") : L("Other changes:")) + "\n" + shown + more + "\n\n"
+        }
+        text += L("Hooks, actions, command-line settings, sleep prevention, auto-disconnect exceptions and \"allow\" switches are never imported. Protected apps are only ever added.")
+
         let alert = NSAlert()
         alert.messageText = L("Import these settings?")
-        let shown = changes.prefix(15).joined(separator: "\n")
-        let more = changes.count > 15 ? "\n" + L("…and ") + String(changes.count - 15) + L(" more") : ""
-        alert.informativeText = L("These settings change:") + "\n\n" + shown + more + "\n\n"
-            + L("Hooks, actions, command-line settings and protected display settings are never imported.")
+        if text.split(separator: "\n", omittingEmptySubsequences: false).count > 24 {
+            alert.informativeText = L("Review every change before importing.")
+            alert.accessoryView = scrollingText(text)
+        } else {
+            alert.informativeText = text
+        }
         alert.addButton(withTitle: L("Import"))
         alert.addButton(withTitle: L("Cancel"))
         NSApp.activate()
@@ -150,8 +158,27 @@ import UniformTypeIdentifiers
         if let newSwitcher { host.switcherSettings.config = newSwitcher }
         if let newModules { host.modulesStore.value = newModules }
         if let newDisplays { host.displaysStore.value = newDisplays }
-        EventLog.shared.record(.modules, "Settings imported: \(changes.count) changes")
+        EventLog.shared.record(.modules, "Settings imported: \(total) changes, \(safety.count) safety-related")
         host.toasts.show(L("Settings imported."))
+    }
+}
+
+extension Backup {
+    /// A read-only, selectable, scrolling list for long previews (nothing is cut off).
+    fileprivate static func scrollingText(_ text: String) -> NSView {
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 440, height: 300))
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .bezelBorder
+        let view = NSTextView(frame: scroll.bounds)
+        view.isEditable = false
+        view.isSelectable = true
+        view.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        view.string = text
+        view.isVerticallyResizable = true
+        view.autoresizingMask = [.width]
+        view.textContainer?.widthTracksTextView = true
+        scroll.documentView = view
+        return scroll
     }
 }
 

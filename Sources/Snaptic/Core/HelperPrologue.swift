@@ -32,7 +32,7 @@ enum HelperPrologue {
 
         guard let parsed = parse(Array(arguments.dropFirst(2))) else { exit(exitBadParent) }
         closeInheritedDescriptors(keeping: parsed.keep)
-        guard checkParent(parsed.args.parent, requirement: parsed.requirement) else { exit(exitBadParent) }
+        guard checkParent(parsed.args.parent) else { exit(exitBadParent) }
         startReading(onLine: onLine, onEOF: onEOF)
         return parsed.args
     }
@@ -46,15 +46,15 @@ enum HelperPrologue {
 
     private struct Parsed {
         let args: HelperArgs
-        let requirement: Data
         let keep: Set<Int32>
     }
 
     /// Standard options in any order; unknown `--x` options and values go to `extra`.
+    /// `--requirement` is refused: the parent is checked against the helper's own
+    /// designated requirement, never against one the caller supplies.
     private static func parse(_ argv: [String]) -> Parsed? {
         var parent: pid_t?
         var build: String?
-        var requirement: Data?
         var protocolVersion: Int?
         var journalDir: String?
         var keep = Set<Int32>()
@@ -74,10 +74,7 @@ enum HelperPrologue {
                 guard let v = value(), !v.isEmpty, v.utf8.count <= 64 else { return nil }
                 build = v
             case "--requirement":
-                guard let v = value(), v.utf8.count <= 16_384, let data = Data(base64Encoded: v), !data.isEmpty else {
-                    return nil
-                }
-                requirement = data
+                return nil
             case "--protocol":
                 guard let v = value(), let n = Int(v), n >= 0, n < 1_000_000 else { return nil }
                 protocolVersion = n
@@ -92,10 +89,10 @@ enum HelperPrologue {
             }
             i += 1
         }
-        guard let parent, let build, let requirement else { return nil }
+        guard let parent, let build else { return nil }
         return Parsed(args: HelperArgs(parent: parent, build: build, protocolVersion: protocolVersion,
                                        journalDir: journalDir, extra: extra),
-                      requirement: requirement, keep: keep)
+                      keep: keep)
     }
 
     /// Nothing a parent leaked (another helper's pipe end, a socket) may stay open, or
@@ -119,11 +116,13 @@ enum HelperPrologue {
         _ = closed
     }
 
-    /// The parent must be our real parent and satisfy our own designated requirement as
-    /// passed by it. Re-checked after the identity check: reparenting to launchd (the
-    /// parent died and its pid got reused) closes the race.
-    private static func checkParent(_ parent: pid_t, requirement: Data) -> Bool {
+    /// The parent must be our real parent and satisfy the helper's **own** designated
+    /// requirement (R5.5), so a caller can't vouch for itself. An updated bundle fails this
+    /// (acceptable, documented). Re-checked after the identity check: reparenting to
+    /// launchd (the parent died and its pid got reused) closes the race.
+    private static func checkParent(_ parent: pid_t) -> Bool {
         guard getppid() == parent else { return false }
+        guard let requirement = try? SNProcess.designatedRequirementOfSelf(), !requirement.isEmpty else { return false }
         guard SNProcess.process(parent, satisfies: requirement) else { return false }
         return getppid() == parent
     }

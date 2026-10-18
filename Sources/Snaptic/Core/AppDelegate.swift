@@ -68,7 +68,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HostHeartbeat.shared.start {
             if HotkeyGuard.shared.beat() { SystemHotkeys.reassert() }
         }
-        spawner.prepare()
+        // Helpers' code identity and canary run off main; modules start once that finished
+        // (a few milliseconds), so their first helper spawn doesn't fail as "still
+        // starting". Bounded: after 2 s modules start anyway and early spawns fail fast.
+        spawner.whenPrepared { [weak self] _ in self?.startModules() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            MainActor.assumeIsolated { self?.startModules() }
+        }
+    }
+
+    /// Steps 10–12, once helper preparation finished (or took too long).
+    private func startModules() {
+        guard host == nil else { return }
         // 10. The control server arrives with step 2 (ModulesConfig.commandLine).
         // 11. Modules; 12. status items.
         let host = ModuleHost(safeMode: safeMode, toasts: toasts, permissions: permissions, spawner: spawner,

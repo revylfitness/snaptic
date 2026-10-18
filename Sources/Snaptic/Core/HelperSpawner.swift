@@ -132,6 +132,7 @@ final class HelperHandle: @unchecked Sendable {
     private var identity: Identity?
     private var unavailableReason: String?
     private var preparing = false
+    private var preparedWaiters: [@MainActor (Bool) -> Void] = []
 
     init() {}
 
@@ -140,8 +141,12 @@ final class HelperHandle: @unchecked Sendable {
 
     var isReady: Bool { identity != nil }
 
-    /// Captures our code identity and runs the `/usr/bin/true` canary off the main thread.
-    /// Called once at startup, before any helper or hook.
+    /// Why a spawn requested before `prepare()` finished is refused (transient).
+    static var notReadyMessage: String { L("Snaptic's helpers are still starting. Try again in a moment.") }
+
+    /// Captures our code identity and runs the `/usr/bin/true` canary off the main thread
+    /// (SecCode and the canary never run on main). Called once at startup, before any
+    /// helper or hook; spawns before it finishes fail fast (`notReadyMessage`).
     func prepare() {
         guard identity == nil, unavailableReason == nil, !preparing else { return }
         preparing = true
@@ -153,19 +158,28 @@ final class HelperHandle: @unchecked Sendable {
         }
     }
 
+    /// Runs `body` on main once preparation has finished: true when helpers can run.
+    /// Runs it right away when that is already known. Starts preparing if nobody did.
+    func whenPrepared(_ body: @escaping @MainActor (Bool) -> Void) {
+        if identity != nil { body(true); return }
+        if unavailableReason != nil { body(false); return }
+        preparedWaiters.append(body)
+        prepare()
+    }
+
     /// Sinks are attached before the suspended child is resumed.
     func spawn(_ kind: HelperKind, arguments: [String], onLine: @escaping @MainActor (Data) -> Void,
                onExit: @escaping @MainActor (Int32) -> Void) throws -> HelperHandle {
         guard let flag = kind.modeFlag else { throw HelperSpawnError.unsupportedKind }
         if let reason = unavailableReason { throw HelperSpawnError.unavailable(reason) }
-        if identity == nil {
-            // Not prepared yet (a helper requested very early): do it now, synchronously.
-            finishPreparing(Self.computeIdentity())
+        guard let identity else {
+            // Never compute the identity on main: ask again once `whenPrepared` says so.
+            prepare()
+            throw HelperSpawnError.unavailable(Self.notReadyMessage)
         }
-        guard let identity else { throw HelperSpawnError.unavailable(unavailableReason ?? L("Helpers are unavailable")) }
 
-        let argv = [flag, "--parent", String(getpid()), "--build", identity.build,
-                    "--requirement", identity.requirement.base64EncodedString()] + arguments
+        // No requirement on the command line: the helper checks us against its own (R5.5).
+        let argv = [flag, "--parent", String(getpid()), "--build", identity.build] + arguments
 
         // Request pipe (we write, child reads) and reply pipe (child writes, we read).
         // Darwin has no pipe2: raise every end to >= 3 with CLOEXEC.
@@ -277,8 +291,10 @@ final class HelperHandle: @unchecked Sendable {
     func spawnHook(executable: String, arguments: [String], environment: [String: String],
                    onExit: @escaping @MainActor (Int32) -> Void) throws -> HelperHandle {
         if let reason = unavailableReason { throw HelperSpawnError.unavailable(reason) }
-        if identity == nil { finishPreparing(Self.computeIdentity()) }
-        guard identity != nil else { throw HelperSpawnError.unavailable(unavailableReason ?? L("Helpers are unavailable")) }
+        guard let identity else {
+            prepare()
+            throw HelperSpawnError.unavailable(Self.notReadyMessage)
+        }
         if let refusal = Self.checkExecutable(executable) { throw HelperSpawnError.refused(refusal) }
         if let refusal = KitHookPolicy.checkArguments(arguments) { throw HelperSpawnError.refused(refusal) }
 
@@ -293,6 +309,12 @@ final class HelperHandle: @unchecked Sendable {
         guard SNSpawn.isStopped(pid), SNSpawn.responsiblePID(for: pid) == pid else {
             Self.killAndReap(pid)
             throw HelperSpawnError.verificationFailed("responsibility")
+        }
+        // What actually runs (a script runs its interpreter), checked while it is suspended.
+        if let refusal = Self.checkRunningHook(pid: pid, ownRequirement: identity.requirement) {
+            Self.killAndReap(pid)
+            EventLog.shared.record(.automation, "Hook refused after spawn")
+            throw HelperSpawnError.refused(refusal)
         }
         let handle = HelperHandle(kind: .hook, pid: pid, startTime: SNProcess.startTime(for: pid), writer: nil)
         let exitSource = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
@@ -334,26 +356,60 @@ final class HelperHandle: @unchecked Sendable {
         }
         if let refusal = KitHookPolicy.check(infos, userID: getuid()) { return refusal }
         if KitHookPolicy.isInside(path, bundle: Bundle.main.bundlePath) { return .insideSnaptic }
-        if let own = SNProcess.signingIdentifierOfSelf(), SNProcess.signingIdentifier(path: path) == own {
-            return .snapticIdentity
-        }
+        if let refusal = insideOwnCode(path) { return refusal }
+        // Fail closed: without our own identifier nothing can be compared.
+        guard let own = SNProcess.signingIdentifierOfSelf(), !own.isEmpty else { return .identityUnreadable }
+        if SNProcess.signingIdentifier(path: path) == own { return .snapticIdentity }
         return nil
+    }
+
+    /// The suspended hook child must not be Snaptic's code: not satisfying our designated
+    /// requirement, not carrying our signing identifier, not running from inside our
+    /// bundle (realpath, case-folded). Anything unreadable refuses.
+    nonisolated private static func checkRunningHook(pid: pid_t, ownRequirement: Data) -> HookRefusal? {
+        if SNProcess.process(pid, satisfies: ownRequirement) { return .snapticIdentity }
+        guard let own = SNProcess.signingIdentifierOfSelf(), !own.isEmpty else { return .identityUnreadable }
+        guard let identifier = try? SNProcess.signingIdentifier(pid: pid) else { return .identityUnreadable }
+        if identifier == own { return .snapticIdentity }
+        guard let running = SNProcess.path(for: pid) else { return .identityUnreadable }
+        return insideOwnCode(running)
+    }
+
+    /// `path` (resolved) inside our bundle or equal to our executable, compared the way a
+    /// case-insensitive volume does. Nil when it isn't; unresolvable paths refuse.
+    nonisolated private static func insideOwnCode(_ path: String) -> HookRefusal? {
+        guard let resolved = realPath(path) else { return .identityUnreadable }
+        let bundle = Bundle.main.bundlePath
+        let roots = [realPath(bundle) ?? bundle, SNProcess.path(for: getpid()).flatMap(realPath)].compactMap { $0 }
+        for root in roots where KitHookPolicy.isInsideFolded(resolved, bundle: root) { return .insideSnaptic }
+        return nil
+    }
+
+    nonisolated private static func realPath(_ path: String) -> String? {
+        guard let resolved = realpath(path, nil) else { return nil }
+        defer { free(resolved) }
+        return String(cString: resolved)
     }
 
     // MARK: Preparation
 
     private func finishPreparing(_ result: Result<Identity, HelperSpawnError>) {
         preparing = false
-        guard identity == nil, unavailableReason == nil else { return }
-        switch result {
-        case .success(let id):
-            identity = id
-        case .failure(let error):
-            if case .unavailable(let reason) = error { unavailableReason = reason } else {
-                unavailableReason = L("Helpers are unavailable")
+        if identity == nil, unavailableReason == nil {
+            switch result {
+            case .success(let id):
+                identity = id
+            case .failure(let error):
+                if case .unavailable(let reason) = error { unavailableReason = reason } else {
+                    unavailableReason = L("Helpers are unavailable")
+                }
+                EventLog.shared.record(.modules, "Helpers unavailable")
             }
-            EventLog.shared.record(.modules, "Helpers unavailable")
         }
+        let waiters = preparedWaiters
+        preparedWaiters = []
+        let ok = identity != nil
+        waiters.forEach { $0(ok) }
     }
 
     /// Off main where possible; bounded either way.

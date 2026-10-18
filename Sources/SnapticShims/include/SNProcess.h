@@ -36,6 +36,12 @@ NS_ASSUME_NONNULL_BEGIN
 /// The code-signing identifier of the file at `path` (nil when unsigned or unreadable).
 + (nullable NSString *)signingIdentifierForPath:(NSString *)path NS_SWIFT_NAME(signingIdentifier(path:));
 
+/// The code-signing identifier of the running process `pid` (dynamic code, so a script
+/// reports its interpreter). An empty string when the code is unsigned; nil with an error
+/// when the signature couldn't be read (callers fail closed).
++ (nullable NSString *)signingIdentifierForPID:(pid_t)pid error:(NSError **)error
+    NS_SWIFT_NAME(signingIdentifier(pid:));
+
 /// This process's code-signing identifier, or nil.
 + (nullable NSString *)signingIdentifierOfSelf;
 

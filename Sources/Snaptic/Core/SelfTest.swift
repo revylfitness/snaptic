@@ -42,6 +42,16 @@ enum SelfTest {
         guard arguments.count == 3, tokenMatches(file: arguments[2]) else { exit(KitArgs.exitUsage) }
         MainActor.assumeIsolated {
             let spawner = HelperSpawner()
+            // Identity and canary run off main, as in the app; the run loop delivers the result.
+            spawner.prepare()
+            let prepared = Date().addingTimeInterval(readySeconds)
+            while !spawner.isReady && spawner.unavailable == nil && Date() < prepared {
+                _ = CFRunLoopRunInMode(.defaultMode, 0.05, false)
+            }
+            guard spawner.isReady else {
+                say("helpers unavailable: \(spawner.unavailable ?? "preparation timed out")\n")
+                exit(1)
+            }
             let ready = ReadyCounter()
             var lines: [String] = []
             for _ in 0..<2 {

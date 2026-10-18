@@ -226,6 +226,7 @@ package enum KitControl {
     package static let protectedSettings: Set<String> = [
         "hooks", "customactions", "actions", "cli", "commandline", "disconnect", "autodisconnectbuiltin",
         "dimtoblack", "unlocks", "unlock", "allowwithoutasking", "allow", "trust",
+        "sleepprevention", "preventsleep",
     ]
 
     private static let onWords: Set<String> = ["on", "true", "yes", "1", "enable", "enabled", "start"]
