@@ -139,26 +139,12 @@ extension SnapticModule {
     /// Wraps the module's 0.2 `settingsPages()` content until each module provides its own root.
     func settingsRoot() -> SettingsRoot {
         let pages = settingsPages()
+        let moduleID = id
         return SettingsRoot(id: id.rawValue, title: title, symbol: symbolName, tint: tint) {
-            AnyView(LegacyPagesRoot(pages: pages))
+            AnyView(LegacyModuleHub(moduleID: moduleID, pages: pages))
         }
     }
 
     func settingsDestination(_ route: SettingsRoute) -> AnyView? { nil }
     func settingsIndex() -> [SettingsSearchEntry] { [] }
-}
-
-/// The default root: the 0.2 pages one after another (step 0 only; nothing shows it before H's shell).
-private struct LegacyPagesRoot: View {
-    let pages: [SettingsPage]
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                ForEach(pages) { page in
-                    page.makeView()
-                }
-            }
-        }
-    }
 }

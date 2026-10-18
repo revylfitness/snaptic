@@ -367,7 +367,7 @@ import SnapticKit
         commands.register("open-settings", policy: .low, offOnly: false, cliAllowed: true,
                           summary: L("Open Snaptic's Settings, optionally at a page"), lifetime: lifetime) { [weak self] request in
             let page = request.arguments.first.flatMap(SettingsWindowHost.validPageID)
-            self?.openSettings(page: page)
+            self?.settingsWindow.show(page: page, external: true)
             return .ok()
         }
         commands.register("safe-mode", policy: .read, offOnly: false, cliAllowed: true,
