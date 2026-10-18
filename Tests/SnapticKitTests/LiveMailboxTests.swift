@@ -63,6 +63,18 @@ final class LiveMailboxTests: XCTestCase {
         XCTAssertFalse(box.isWaiting(k))
     }
 
+    /// A flush at exactly the reported deadline always finds the slot open (no rounding gap).
+    func testDueAtTheReportedDeadline() {
+        var box = LiveMailbox<String>()
+        for start in [0.123, 0.1 + 0.2, 1e6 + 0.7, 3.3] {
+            box.removeAll()
+            _ = box.submit(0.1, for: k, final: false, interval: 0.05, now: start)
+            _ = box.submit(0.2, for: k, final: false, interval: 0.05, now: start + 0.01)
+            guard let deadline = box.nextDeadline else { return XCTFail("nothing waits") }
+            XCTAssertEqual(box.due(now: deadline).map { $0.value }, [0.2], "\(start)")
+        }
+    }
+
     func testClockGoingBackwardsOpensTheSlot() {
         var box = LiveMailbox<String>()
         _ = box.submit(0.1, for: k, final: false, interval: 1, now: 100)
@@ -116,10 +128,15 @@ final class LiveMailboxTests: XCTestCase {
                 if final { XCTAssertFalse(box.isWaiting(key), "seed \(seed)") }
                 if let deadline = box.nextDeadline { XCTAssertGreaterThan(deadline + 1e-9, now, "seed \(seed)") }
             }
-            while let deadline = box.nextDeadline {
+            var rounds = 0
+            while let deadline = box.nextDeadline, rounds < 10 {
+                rounds += 1
                 now = max(now, deadline)
-                for item in box.due(now: now) { record(item.key, item.value, final: false) }
+                let due = box.due(now: now)
+                XCTAssertFalse(due.isEmpty, "seed \(seed): nothing due at the reported deadline")
+                for item in due { record(item.key, item.value, final: false) }
             }
+            XCTAssertNil(box.nextDeadline, "seed \(seed)")
             XCTAssertEqual(hardware, newest, "seed \(seed)")
         }
     }

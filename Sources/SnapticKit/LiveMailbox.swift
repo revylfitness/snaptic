@@ -74,7 +74,8 @@ package struct LiveMailbox<Key: Hashable> {
     /// Open when nothing was sent yet, the interval passed, or the clock went backwards.
     private static func isOpen(_ slot: Slot, now: Double) -> Bool {
         guard let last = slot.lastSentAt else { return true }
-        return now < last || now - last >= slot.interval
+        // The same sum `nextDeadline` reports, so a flush at that deadline always finds the slot open.
+        return now < last || now >= last + slot.interval
     }
 }
 
