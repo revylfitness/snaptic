@@ -117,14 +117,14 @@ struct DisplaysFeatureOffAlert: ViewModifier {
     @ObservedObject var switcher: DisplaysFeatureSwitcher
 
     func body(content: Content) -> some View {
-        content.alert(L("Turn off \(SentenceText.inSentence(switcher.pendingOff?.title ?? ""))?"),
+        content.alert(DisplaysUIText.turnOffQuestion(switcher.pendingOff?.features ?? [],
+                                                     label: switcher.pendingOff?.title ?? ""),
                       isPresented: Binding(get: { switcher.pendingOff != nil },
                                            set: { if !$0 { switcher.pendingOff = nil } })) {
             Button(L("Turn Off"), role: .destructive) { switcher.confirmOff() }
             Button(L("Cancel"), role: .cancel) { switcher.pendingOff = nil }
         } message: {
-            let names = DisplaysUIText.list(switcher.pendingOff?.dependents ?? [])
-            Text(L("This also turns off \(names)."))
+            Text(DisplaysUIText.alsoTurnsOff(switcher.pendingOff?.dependents ?? []))
         }
     }
 }

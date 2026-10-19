@@ -611,7 +611,10 @@ final class HostingMenuItem<Content: View>: NSMenuItem {
      letter is lowercased: "Turn off virtual displays?", "Needs saved layouts." Proper names and acronyms keep their
      case ("Picture in Picture", "Night Shift controls", "HDR virtual modes"). Use Kit `SentenceText.inSentence`
      and `DisplaysUIText.inSentence`; for a sentence whose verb depends on the name use `DisplaysUIText.isOff` /
-     `notAvailableNow` ("Keyboard shortcuts are off."), never `"\(title) is off."`.
+     `notAvailableNow` ("Keyboard shortcuts are off."), never `"\(title) is off."`. A label that is a verb phrase
+     ("Turn displays off and on", "Sync brightness") is never lowercased into a sentence ("Needs turn displays off
+     and on."): such a feature has a noun phrase in `DisplaysUIText.sentenceName` ("Needs display power control.",
+     "This also turns off brightness sync."), and a Kit test checks every feature.
    - **Switch actions** (Keyboard Shortcuts, command list): a shortcut that turns something on or off is titled
      "<menu item> On or Off" ("Sync Brightness On or Off", "Show in Picture in Picture On or Off"), so the name in
      the menu finds its shortcut. An action that does two named things says both ("Pause or Resume Rules", "Hide or

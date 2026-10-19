@@ -61,14 +61,73 @@ final class DisplaysUIModelTests: XCTestCase {
         for feature in DisplayFeature.allCases {
             let inside = DisplaysUIText.inSentence(feature)
             let title = DisplaysUIText.title(feature)
-            // Only the first letter may change, and only to lowercase.
-            XCTAssertEqual(inside.lowercased(), title.lowercased(), title)
-            XCTAssertEqual(inside.dropFirst(), title.dropFirst(), title)
-            // A plural name ends in "s" or joins two things; a singular one has no "and".
+            XCTAssertEqual(inside, DisplaysUIText.sentenceName(feature), title)
+            // A plural name ends in "s" or joins two things.
             if DisplaysUIText.isPlural(feature) {
-                XCTAssertTrue(title.hasSuffix("s") || title.contains(" and "), title)
+                XCTAssertTrue(inside.hasSuffix("s") || inside.contains(" and "), title)
             }
             XCTAssertFalse(DisplaysUIText.isOff(feature).contains("  "), title)
+        }
+    }
+
+    /// Review7 ui-ux F1: a switch label that is a verb phrase ("Turn displays off and on") is never spliced into a
+    /// sentence ("Needs turn displays off and on.", "This also turns off turn off the built-in display
+    /// automatically."). Every feature's sentence name is a noun phrase, so no sentence any helper builds has a verb
+    /// where the name goes, and a name that is the label lowercased changes only its first letter.
+    func testEveryFeatureSentenceNameIsANounPhrase() {
+        let verbs: Set<String> = ["turn", "turns", "protect", "disconnect", "match", "sync", "restore", "show", "dim",
+                                  "automatically", "use", "choose", "keep", "allow", "open", "switch", "make", "set"]
+        XCTAssertEqual(DisplaysUIText.needs(.ddcPower), "Needs display power control.")
+        XCTAssertEqual(DisplaysUIText.needs(.protection), "Needs arrangement protection.")
+        XCTAssertEqual(DisplaysUIText.needs(.disconnect), "Needs display disconnection.")
+        XCTAssertEqual(DisplaysUIText.needs(.scaleMatch), "Needs text size matching.")
+        XCTAssertEqual(DisplaysUIText.needs(.mainDisplay), "Needs the main display setting.")
+        XCTAssertEqual(DisplaysUIText.turnOffQuestion([.disconnect], label: "Disconnect displays"),
+                       "Turn off display disconnection?")
+        XCTAssertEqual(DisplaysUIText.turnOffQuestion([.virtualScreens], label: "Virtual displays"),
+                       "Turn off virtual displays?")
+        XCTAssertEqual(DisplaysUIText.turnOffQuestion([.arrangement, .mainDisplay, .mirroring],
+                                                      label: "Arrangement and mirroring"),
+                       "Turn off arrangement and mirroring?")
+        XCTAssertEqual(DisplaysUIText.alsoTurnsOff([.autoDisconnectBuiltin]),
+                       "This also turns off automatic turn-off for the built-in display.")
+        XCTAssertEqual(DisplaysUIText.alsoTurnsOff([.brightnessRestore, .dimToBlack, .nits, .sync, .brightnessKeys]),
+                       "This also turns off brightness restore, dimming to black, brightness in nits, brightness sync, "
+                       + "and brightness keys.")
+        XCTAssertEqual(DisplaysUIText.skippedWhileOff(.mainDisplay), "Skipped while the main display setting is off.")
+        XCTAssertEqual(DisplaysUIText.isOff(.ddcPower), "Display power control is off.")
+        for feature in DisplayFeature.allCases {
+            let name = DisplaysUIText.sentenceName(feature)
+            let first = name.split(separator: " ").first.map { String($0).lowercased() } ?? ""
+            XCTAssertFalse(verbs.contains(first), "\(feature): “\(name)” starts with a verb")
+            XCTAssertFalse(name.isEmpty, "\(feature)")
+            // Mid-sentence: lowercase first letter unless it is a proper name or acronym kept by SentenceText.
+            if name == SentenceText.inSentence(DisplaysUIText.title(feature)) {
+                XCTAssertEqual(name.dropFirst(), DisplaysUIText.title(feature).dropFirst(), "\(feature)")
+            } else {
+                XCTAssertTrue(name.first?.isLowercase == true, "\(feature): “\(name)”")
+            }
+            let sentences = [DisplaysUIText.needs(feature), DisplaysUIText.isOff(feature),
+                             DisplaysUIText.notAvailableNow(feature), DisplaysUIText.skippedWhileOff(feature),
+                             DisplaysUIText.turnOffQuestion([feature], label: DisplaysUIText.title(feature)),
+                             DisplaysUIText.alsoTurnsOff([feature]), DisplaysUIText.alsoTurnsOff([.rotation, feature])]
+            for sentence in sentences {
+                let words = sentence.lowercased().split(separator: " ").map(String.init)
+                // The frame's own verb is the first word ("Needs", "Turn off", "This also turns off"); the name
+                // after it never starts with another.
+                for (index, word) in words.enumerated() where index > 0 && verbs.contains(word) {
+                    let frame = (index == 1 && words[0] == "turn") || (index == 2 && words[1] == "also")
+                        || (index == 3 && words[2] == "turns")
+                    XCTAssertTrue(frame || !name.lowercased().split(separator: " ").map(String.init).contains(word),
+                                  "“\(sentence)” has “\(word)” mid-sentence")
+                }
+                XCTAssertFalse(sentence.contains("turn off turn"), sentence)
+                XCTAssertFalse(sentence.hasPrefix("Needs turn") || sentence.hasPrefix("Needs show")
+                               || sentence.hasPrefix("Needs dim") || sentence.hasPrefix("Needs protect")
+                               || sentence.hasPrefix("Needs sync") || sentence.hasPrefix("Needs match"), sentence)
+                // Starts with a capital letter.
+                XCTAssertTrue(sentence.first?.isUppercase == true, sentence)
+            }
         }
     }
 

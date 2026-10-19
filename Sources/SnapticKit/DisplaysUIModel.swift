@@ -63,11 +63,47 @@ package enum DisplaysUIText {
         }
     }
 
-    /// The feature's name inside running text ("Needs saved layouts.", "Turn off virtual displays?").
-    package static func inSentence(_ feature: DisplayFeature) -> String { SentenceText.inSentence(title(feature)) }
+    /// The feature's name inside running text, as a noun phrase: "Needs saved layouts.", "This also turns off
+    /// brightness sync." A switch label that is a verb phrase ("Turn displays off and on", "Sync brightness") can't
+    /// be lowercased into a sentence ("Needs turn displays off and on."), so those features have their own noun
+    /// phrase here (review7 ui-ux F1; design-spec §4.1). Same number as `isPlural`.
+    package static func sentenceName(_ feature: DisplayFeature) -> String {
+        switch feature {
+        case .hiddenModes: return L("the full resolution list")
+        case .scaleMatch: return L("text size matching")
+        case .brightnessRestore: return L("brightness restore")
+        case .dimToBlack: return L("dimming to black")
+        case .dimOnLock: return L("dimming when the screen locks")
+        case .nits: return L("brightness in nits")
+        case .sync: return L("brightness sync")
+        case .autoBrightness: return L("automatic brightness")
+        case .ddcPower: return L("display power control")
+        case .mainDisplay: return L("the main display setting")
+        case .hdrToggle: return L("the High Dynamic Range switch")
+        case .disconnect: return L("display disconnection")
+        case .autoDisconnectBuiltin: return L("automatic turn-off for the built-in display")
+        case .protection: return L("arrangement protection")
+        case .overview, .diagnostics, .resolution, .brightness, .brightnessApple, .brightnessDDC, .brightnessGamma,
+             .brightnessOverlay, .xdr, .color, .colorProfiles, .nightShift, .applePresets, .ddcControls, .ddcInput,
+             .ddcCustom, .brightnessKeys, .volumeKeys, .shortcuts, .osd, .osdBroadcast, .arrangement, .mirroring,
+             .rotation, .underscan, .layouts, .virtualScreens, .smartHiDPI, .hdrVirtual, .pip, .pipFilters,
+             .menuBarOverlays, .hooks, .customActions:
+            return SentenceText.inSentence(title(feature))
+        }
+    }
 
-    /// Names joined for a sentence, each lowercased as `inSentence` does: "sharper text and HDR virtual modes".
-    package static func list(_ features: [DisplayFeature]) -> String { SentenceText.list(features.map(inSentence)) }
+    /// `sentenceName` at the start of a sentence: "Display power control is off."
+    package static func sentenceStart(_ feature: DisplayFeature) -> String {
+        let name = sentenceName(feature)
+        guard let first = name.first else { return name }
+        return first.uppercased() + name.dropFirst()
+    }
+
+    /// The feature's name inside running text ("Needs saved layouts.", "Turn off virtual displays?").
+    package static func inSentence(_ feature: DisplayFeature) -> String { sentenceName(feature) }
+
+    /// Names joined for a sentence, each as `sentenceName` gives it: "sharper text and HDR virtual modes".
+    package static func list(_ features: [DisplayFeature]) -> String { SentenceText.list(features.map(sentenceName)) }
 
     /// Whether the feature's name takes a plural verb ("Keyboard shortcuts are off.").
     package static func isPlural(_ feature: DisplayFeature) -> Bool {
@@ -86,23 +122,33 @@ package enum DisplaysUIText {
 
     /// "Keyboard shortcuts are off." / "Brightness control is off."
     package static func isOff(_ feature: DisplayFeature) -> String {
-        isPlural(feature) ? L("\(title(feature)) are off.") : L("\(title(feature)) is off.")
+        isPlural(feature) ? L("\(sentenceStart(feature)) are off.") : L("\(sentenceStart(feature)) is off.")
     }
 
     /// "Hardware controls aren’t available right now." / "Brightness control isn’t available right now."
     package static func notAvailableNow(_ feature: DisplayFeature) -> String {
-        isPlural(feature) ? L("\(title(feature)) aren’t available right now.")
-            : L("\(title(feature)) isn’t available right now.")
+        isPlural(feature) ? L("\(sentenceStart(feature)) aren’t available right now.")
+            : L("\(sentenceStart(feature)) isn’t available right now.")
     }
 
     /// "Skipped while saved layouts are off."
     package static func skippedWhileOff(_ feature: DisplayFeature) -> String {
-        isPlural(feature) ? L("Skipped while \(inSentence(feature)) are off.")
-            : L("Skipped while \(inSentence(feature)) is off.")
+        isPlural(feature) ? L("Skipped while \(sentenceName(feature)) are off.")
+            : L("Skipped while \(sentenceName(feature)) is off.")
     }
 
     /// "Needs hardware controls."
-    package static func needs(_ feature: DisplayFeature) -> String { L("Needs \(inSentence(feature)).") }
+    package static func needs(_ feature: DisplayFeature) -> String { L("Needs \(sentenceName(feature)).") }
+
+    /// The turn-off alert's title for a switch: one feature by its sentence name ("Turn off display
+    /// disconnection?"); a switch over several features by its label ("Turn off arrangement and mirroring?").
+    package static func turnOffQuestion(_ features: [DisplayFeature], label: String) -> String {
+        if features.count == 1 { return L("Turn off \(sentenceName(features[0]))?") }
+        return L("Turn off \(SentenceText.inSentence(label))?")
+    }
+
+    /// "This also turns off brightness restore and dimming to black."
+    package static func alsoTurnsOff(_ features: [DisplayFeature]) -> String { L("This also turns off \(list(features)).") }
 
     /// The permission's name as System Settings shows it on this macOS version
     /// (macOS 27 renamed the Accessibility pane, macos27.md §1a).
