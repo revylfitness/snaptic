@@ -21,7 +21,7 @@ final class LidWatchdogTests: XCTestCase {
     /// The exact B3.2 text (a second copy, so any edit to the source shows up here).
     static let golden = #"""
 unset IFS; PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH
-umask 077; trap '' HUP
+umask 077; trap '' HUP TSTP TTIN TTOU
 MODE=$1; U=$2; P=$3; T=$4; C=$5; F=$6; D=$7
 case "$MODE" in check|run) ;; *) exit 64;; esac
 num() { case "$1" in ''|*[!0-9]*) return 1;; esac; }
@@ -41,13 +41,18 @@ rd() { /usr/sbin/ioreg -r -n IOPMrootDomain -d 1 2>/dev/null; }
 ksd() { rd | /usr/bin/awk '/IOPMrootDomain/{r=1} /"SleepDisabled" = /{f=1; v=($NF=="Yes")?1:0}
                           END{if(f)print v; else if(r)print 0; else print "?"}'; }
 key() { rd | /usr/bin/awk -v k="\"$1\" = " 'index($0,k){print $NF; exit}'; }
-owned() { [ -f "$1" ] && [ ! -L "$1" ] && [ "$(/usr/bin/stat -f %u "$1" 2>/dev/null)" = "$U" ]; }
+# A regular file owned by U; stat without -L reads the name itself (lstat), so no link is followed
+owned() { [ "$(/usr/bin/stat -f '%HT %u' "$1" 2>/dev/null)" = "Regular File $U" ]; }
 [ "$(sd)" = 0 ] && [ "$(ksd)" = 0 ] || exit 3      # someone else holds it, or unreadable: never take it
 [ "$MODE" = check ] && exit 0
-owned "$D/stop-$T" && exit 0                         # stopped before we started (late password)
+# D, entered once: U's own 0700 directory on the volume of /var/folders (no network or user mount). Every later
+# lookup is one name inside it, so replacing D or a parent of it can't redirect one
+V=$(/usr/bin/stat -f %d /var/folders) && cd -P "$D" &&
+  [ "$(/usr/bin/stat -f '%HT %u %Lp %d' .)" = "Directory $U 700 $V" ] || exit 0
+owned "stop-$T" && exit 0                            # stopped before we started (late password)
 WESET=0; HALT=0
 cleanup() {
-  trap '' TERM INT
+  trap '' TERM INT QUIT
   [ "$WESET" = 1 ] || return
   i=0; while [ $i -lt 3 ]; do [ "$(sd)" = 0 ] && break
     /usr/bin/pmset -a disablesleep 0; /bin/sleep 1; i=$((i+1)); done
@@ -58,20 +63,22 @@ cleanup() {
     [ "$(key AppleClamshellCausesSleep)" = Yes ] && { /usr/bin/pmset sleepnow; return; }
     /bin/sleep 1; j=$((j+1)); done
 }
-trap 'cleanup' EXIT; trap 'HALT=1; exit 0' TERM; trap 'exit 0' INT
+trap 'cleanup' EXIT; trap 'HALT=1; exit 0' TERM; trap 'exit 0' INT QUIT
 /usr/bin/pmset -a disablesleep 1; WESET=1
 i=0; until [ "$(sd)" = 1 ] && [ "$(ksd)" = 1 ]; do       # post-set check, up to 3 s
   i=$((i+1)); [ $i -ge 6 ] && exit 0; /bin/sleep 0.5; done
-START=$(/bin/date +%s); Z=0; Q=0; LB=0
+# The beacon, read in a child each lap: a lookup that stalls holds the child, never the cap, battery or heat checks
+beacon() { owned "stop-$T" && return 1                  # asked to stop
+  owned "beat-$T" || return 1                           # beacon gone
+  M=$(/usr/bin/stat -f %m "beat-$T" 2>/dev/null); num "$M" || return 1
+  [ $((N-M)) -le 20 ]; }                                # Snaptic hung: the beacon is the real bound
+START=$(/bin/date +%s); Z=0; Q=0; LB=0; H=0
 while :; do
   /bin/sleep 5 & wait $!                               # traps run without waiting out the sleep
   N=$(/bin/date +%s); num "$N" || exit 0
   [ $((N-START)) -ge "$C" ] && exit 0                  # hard cap
   /bin/kill -0 "$P" 2>/dev/null || exit 0              # liveness hint only (any pid answers root)
-  owned "$D/stop-$T" && exit 0                         # asked to stop
-  owned "$D/beat-$T" || exit 0                         # beacon gone
-  M=$(/usr/bin/stat -f %m "$D/beat-$T" 2>/dev/null); num "$M" || exit 0
-  [ $((N-M)) -le 20 ] || exit 0                        # Snaptic hung: the beacon is the real bound
+  beacon & W=$!
   S=$(sd); K=$(ksd)
   if [ "$S" = 1 ] && [ "$K" = 1 ]; then Z=0; Q=0
   elif [ "$S" = 0 ] && [ "$K" = 0 ]; then Z=$((Z+1)); [ $Z -ge 2 ] && { WESET=0; exit 0; }   # reset by someone else, both sources, twice: not ours
@@ -82,7 +89,12 @@ while :; do
     if num "$PC"; then LB=0; [ "$PC" -le "$F" ] && exit 0
     else LB=$((LB+1)); [ $LB -ge 2 ] && exit 0; fi;; esac
   TP=$(/usr/bin/notifyutil -g com.apple.system.thermalpressurelevel 2>/dev/null | /usr/bin/awk '{print $2}')
-  num "$TP" && [ "$TP" -ge 2 ] && exit 0               # heavy or worse (= ProcessInfo .serious)
+  if num "$TP"; then H=0; [ "$TP" -ge 2 ] && exit 0    # heavy or worse (= ProcessInfo .serious)
+  else H=$((H+1)); [ $H -ge 2 ] && exit 0; fi          # unreadable twice: restore
+  # Still reading 5 s later (a stalled lookup): as if gone. The shell's own kill, for its own child; foreground
+  # sleeps keep it $!, so the shell keeps its status, and wait runs only once it has exited, so it returns at once
+  i=0; while kill -0 "$W" 2>/dev/null; do i=$((i+1)); [ $i -ge 10 ] && exit 0; /bin/sleep 0.5; done
+  wait "$W" || exit 0                                  # asked to stop, beacon gone or stale
 done
 """#
 
