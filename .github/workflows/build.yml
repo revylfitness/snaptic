@@ -164,9 +164,13 @@ jobs:
         if: failure()
         run: ./scripts/ci-annotate.sh macos lint.log build.log test.log universal.log selftest.log
 
+      # The zip is what the website links to; the disk image is the usual
+      # open-and-drag-to-Applications download.
       - name: Package
         if: github.event_name == 'push'
-        run: ditto -c -k --keepParent build/Snaptic.app build/Snaptic.zip
+        run: |
+          ditto -c -k --keepParent build/Snaptic.app build/Snaptic.zip
+          ./scripts/make-dmg.sh build/Snaptic.app build/Snaptic.dmg
 
       # Only pushes to main and tags publish a downloadable app.
       - name: Upload app
@@ -174,7 +178,10 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Snaptic
-          path: build/Snaptic.zip
+          path: |
+            build/Snaptic.zip
+            build/Snaptic.dmg
+          if-no-files-found: error
 
   # Signs provenance for builds of main and release tags only. It never runs
   # repository code, so only this job holds the signing permissions.
@@ -197,10 +204,13 @@ jobs:
 
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: Snaptic.zip
+          subject-path: |
+            Snaptic.zip
+            Snaptic.dmg
 
-  # Publishes the built app as a GitHub Release for version tags, so the
-  # website's download link (releases/latest/download/Snaptic.zip) works.
+  # Publishes the built app (zip and disk image) as a GitHub Release for
+  # version tags, so the website's download link
+  # (releases/latest/download/Snaptic.zip) works.
   # Like attest, it never runs repository code.
   release:
     needs: build
@@ -221,9 +231,9 @@ jobs:
         # release was published on GitHub first (attach the app to it).
         run: |
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" Snaptic.zip --repo "$GITHUB_REPOSITORY" --clobber
+            gh release upload "$TAG" Snaptic.zip Snaptic.dmg --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$TAG" Snaptic.zip \
+            gh release create "$TAG" Snaptic.zip Snaptic.dmg \
               --repo "$GITHUB_REPOSITORY" \
               --title "Snaptic ${TAG#v}" \
               --generate-notes

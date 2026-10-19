@@ -525,7 +525,7 @@ Replace the identifiers and the two UUIDs with your own (`uuidgen`), and list th
 
 ### Download
 
-Grab `Snaptic.zip` from the [latest release](https://github.com/revylfitness/snaptic/releases/latest), unzip it, and drag Snaptic to Applications. Releases are built by GitHub Actions from the tagged commit.
+Grab `Snaptic.dmg` from the [latest release](https://github.com/revylfitness/snaptic/releases/latest), open it, and drag Snaptic onto the Applications folder next to it. `Snaptic.zip` holds the same app if you’d rather unzip it. Releases are built by GitHub Actions from the tagged commit.
 
 Snaptic isn’t notarized by Apple yet, so the first time you open it macOS will block it. Go to System Settings › Privacy & Security and click **Open Anyway**. Run it from Applications: if macOS starts it from a temporary “translocated” location, Snaptic tells you to move it first.
 
@@ -542,7 +542,7 @@ Leave out `INSTALL=1` to build only (`build/Snaptic.app`). For a universal Apple
 
 `INSTALL=1` installs the app owned by root (it runs `sudo ditto` and `chown -R root:wheel`, so it asks for your password). That way your account, and any program running as you, can’t replace the binary that holds Snaptic’s permissions. Snaptic warns before you grant a permission if its bundle is writable by you. Awake needs no root at any time; the password is only for installing.
 
-GitHub Actions compiles every push and pull request. Pushes to `main` and version tags also upload a universal `Snaptic.zip` as a workflow artifact. On public repositories a separate job, which never runs repository code, adds a build-provenance attestation. Verify that it came from this workflow on `main`:
+GitHub Actions compiles every push and pull request. Pushes to `main` and version tags also upload a universal `Snaptic.zip` and `Snaptic.dmg` as a workflow artifact. To make the disk image from a local build, run `./scripts/make-dmg.sh` after `build-app.sh`. On public repositories a separate job, which never runs repository code, adds a build-provenance attestation. Verify that a download (zip or disk image) came from this workflow on `main`:
 
 ```bash
 gh attestation verify Snaptic.zip --repo revylfitness/snaptic \
