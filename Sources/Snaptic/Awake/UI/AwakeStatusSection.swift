@@ -7,15 +7,11 @@ import SnapticKit
 /// [Keep Awake ▾] (a click starts the default session; ▾ lists the presets, While an App Is Running ▸ and Custom…).
 /// Active: [Pause Rules ▾] [Options ▾] [Turn Off]; holds only: [Keep Awake ▾] [Turn Off] (a start joins the holds). Buttons only, no switch (N5), none a
 /// default button (r3 security L8). Every start is a `.settings` UI start and first asks `SettingsShell.mayStart()`
-/// (R5-8): right after an external open of the window it does nothing.
+/// (R5-8): right after an external open of the window it does nothing. 0.3.1 B1: both pull-downs gain the lid-closed
+/// items of the Awake menu, with its titles (the idle one lists the presets); a lid request is a `.settings` UI start
+/// and LidClosedController checks the focus guard.
 struct AwakeStatusSection: View, ControlDeclaring {
     typealias Controls = AwakePageControls
-    /// 0.3.1 B7: the lid pull-down items and the leftover rows. Step 0 stub: T-lid-app uses these ids in step 1 (and deletes this list).
-    private static let step0Controls = [ControlID("awake.page.status.lidClosed"),
-                                        ControlID("awake.page.status.lidPreset"),
-                                        ControlID("awake.page.status.lidRestore"),
-                                        ControlID("awake.page.status.lidKeepOff"),
-                                        ControlID("awake.page.status.lidDismiss")]
 
     let env: AwakePageEnvironment
     let context: AwakeContext
@@ -164,6 +160,10 @@ struct AwakeStatusSection: View, ControlDeclaring {
         if appItems.isEmpty {
             appItems = [ActionMenuItem(id: "app.none", title: L("No Apps Are Running"), enabled: false) {}]
         }
+        if !replacing {
+            let lid = lidItems()
+            if !lid.isEmpty { items += [.separator("lid.separator")] + lid }
+        }
         items.append(ActionMenuItem(id: "apps", title: L("While an App Is Running"), children: appItems))
         items.append(ActionMenuItem(id: "custom", title: L("Custom…")) { [weak env = self.env] in
             guard SettingsShell.shared.mayStart() else { return }
@@ -199,6 +199,8 @@ struct AwakeStatusSection: View, ControlDeclaring {
                     guard let sessions else { return }
                     sessions.setKeepDisplayOn(!sessions.keepsDisplayOn)
                 })
+                // B1: directly after Keep Display On, as in the menu.
+                items += lidItems()
             case .endHolds:
                 items.append(ActionMenuItem(id: "endHolds", title: L("End Command-Line Holds")) {
                     [weak sessions = context.sessions] in
@@ -210,5 +212,49 @@ struct AwakeStatusSection: View, ControlDeclaring {
             }
         }
         return items
+    }
+
+    /// The lid-closed items for the current state (AwakeMenuRows decides which, for the menus too).
+    private func lidItems() -> [ActionMenuItem] {
+        guard let row = AwakeMenuRows.lidRow(context) else { return [] }
+        let control = ControlID("awake.page.status.lidClosed")
+        let lid = context.lid
+        switch row {
+        case .lidSubmenu(let ids):
+            let presets = sessions.value.presets
+            let children = ids.compactMap { id in presets.first { $0.id == id } }.map { (preset: AwakePreset) -> ActionMenuItem in
+                let id = preset.id
+                return ActionMenuItem(id: "lid." + id.rawValue, title: preset.title(AwakeFormat.text) + "…",
+                                      control: ControlID("awake.page.status.lidPreset")) { [weak lid] in
+                    lid?.request(.preset(id), source: .settings)
+                }
+            }
+            return [ActionMenuItem(id: "lid", title: L("Keep Awake with the Lid Closed"), children: children,
+                                   control: control)]
+        case .lidClosed(.off):
+            return [ActionMenuItem(id: "lid", title: L("Keep Awake with the Lid Closed…"), control: control) { [weak lid] in
+                lid?.request(.add, source: .settings)
+            }]
+        case .lidClosed(.on):
+            return [ActionMenuItem(id: "lid", title: L("Keep Awake with the Lid Closed"), checked: true,
+                                   control: control) { [weak lid] in
+                lid?.turnOff()
+            }]
+        case .lidClosed(let state):
+            return [ActionMenuItem(id: "lid", title: Self.pendingTitle(state), enabled: false, control: control) {}]
+        default:
+            return []
+        }
+    }
+
+    /// B0's pending rows.
+    private static func pendingTitle(_ state: LidRowState) -> String {
+        switch state {
+        case .authorizing: return L("Waiting for Password…")
+        case .verifying: return L("Turning On…")
+        case .stopping: return L("Turning Off…")
+        case .finishingEarlier: return L("Finishing Earlier Session…")
+        case .off, .on: return L("Keep Awake with the Lid Closed")
+        }
     }
 }

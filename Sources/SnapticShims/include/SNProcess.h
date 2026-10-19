@@ -21,6 +21,10 @@ NS_ASSUME_NONNULL_BEGIN
 /// users' processes. 0 if the process is gone or can't be read.
 + (uint64_t)instanceIDForPID:(pid_t)pid NS_SWIFT_NAME(instanceID(for:));
 
+/// The real uid of `pid` (kp_eproc.e_pcred.p_ruid from the same sysctl(KERN_PROC_PID) read, which answers for root
+/// processes too), or -1 if the process is gone or can't be read (0.3.1 B3.1: the watchdog must report uid 0).
++ (int64_t)realUIDForPID:(pid_t)pid NS_SWIFT_NAME(realUID(for:));
+
 /// Open file descriptors of this process (PROC_PIDLISTFDS), or nil if unavailable.
 + (nullable NSArray<NSNumber *> *)openFileDescriptors;
 

@@ -47,6 +47,17 @@
     return (uint64_t)start.tv_sec * 1000000ULL + (uint64_t)start.tv_usec;
 }
 
++ (int64_t)realUIDForPID:(pid_t)pid {
+    if (pid <= 0) { return -1; }
+    int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, pid};
+    struct kinfo_proc info;
+    memset(&info, 0, sizeof(info));
+    size_t size = sizeof(info);
+    if (sysctl(mib, 4, &info, &size, NULL, 0) != 0 || size != sizeof(info)) { return -1; }
+    if (info.kp_proc.p_pid != pid) { return -1; }
+    return (int64_t)info.kp_eproc.e_pcred.p_ruid;
+}
+
 + (nullable NSArray<NSNumber *> *)openFileDescriptors {
     pid_t pid = getpid();
     int size = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, NULL, 0);
