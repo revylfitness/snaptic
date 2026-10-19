@@ -497,12 +497,33 @@ private final class StubEnv {
         return p
     }
 
-    /// The generated three-line command, run the way `do shell script` runs it.
+    /// The generated three-line command, run the way `do shell script` runs it (`/bin/sh -c`), in a subshell whose
+    /// status the outer shell writes to a file: on Linux, Foundation learns that a child exited through a socket the
+    /// child inherits, so a backgrounded grandchild (the watchdog) would keep the outer shell "running".
     func runCommand(argv: [String]? = nil) throws -> (status: Int32, stdout: String, seconds: Double) {
         let command = LidWatchdog.command(argv: argv ?? self.argv, script: script, tools: commandTools)
+        let id = UUID().uuidString
+        let out = dir + "/stdout-" + id, status = dir + "/status-" + id
+        let line = "(\n" + command + "\n) >" + LidWatchdog.quoted(out) + " 2>/dev/null </dev/null; echo $? >"
+            + LidWatchdog.quoted(status + ".tmp") + " && mv " + LidWatchdog.quoted(status + ".tmp") + " "
+            + LidWatchdog.quoted(status)
         let start = Date()
-        let r = try runOuter(command)
-        return (r.status, String(decoding: r.stdoutData, as: UTF8.self), Date().timeIntervalSince(start))
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: outer.path)
+        p.arguments = outer.args + ["-c", line]
+        p.environment = environment
+        p.standardInput = FileHandle.nullDevice
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        try p.run()
+        watched.append(p.processIdentifier)
+        let end = Date().addingTimeInterval(30)
+        while !FileManager.default.fileExists(atPath: status) && Date() < end { Thread.sleep(forTimeInterval: 0.02) }
+        let seconds = Date().timeIntervalSince(start)
+        let code = (try? String(contentsOfFile: status, encoding: .utf8))
+            .flatMap { Int32($0.trimmingCharacters(in: .whitespacesAndNewlines)) } ?? -1
+        let stdout = (try? String(contentsOfFile: out, encoding: .utf8)) ?? ""
+        return (code, stdout, seconds)
     }
 
     /// stdout goes to a file, not a pipe: where spawned children inherit every open descriptor (Linux), the
