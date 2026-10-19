@@ -1866,7 +1866,7 @@ Any check failure → that volume is skipped and the Drives row shows "Can't kee
 
 ### 2.10 Automation (G, `AwakeAutomation`)
 
-Hotkeys (`AwakeActionID`, owner "Awake", via `GlobalHotkeys`, all unbound by default): `awake.toggle` (Keep Awake on/off with the default preset; off = `turnOff`), `awake.keepDisplayOn`, `awake.preset1…4`, `awake.pauseAutomatic` (title "Pause Rules"; raw value kept). A hotkey start is `.hotkeyStart` for the activity gate (§2.3, §2.5).
+Hotkeys (`AwakeActionID`, owner "Awake", via `GlobalHotkeys`, all unbound by default): `awake.toggle` (Keep Awake on/off with the default preset; off = `turnOff`), `awake.keepDisplayOn`, `awake.preset1…4`, `awake.pauseAutomatic` (shortcut title "Pause or Resume Rules", since it does both; raw value kept). A hotkey start is `.hotkeyStart` for the activity gate (§2.3, §2.5).
 
 CLI verbs (registered only while `commandLine` is effective and the host CLI is on). `start`, `hold`, `stop` and `extend` share a 1 request/s limit (security L3), on top of the global 20/s. Arguments go through `AwakeCommandGrammar` (G, Kit, consistency M7):
 
