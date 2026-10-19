@@ -53,7 +53,7 @@ VESA, DDC/CI, MCCS, and E-EDID are trademarks or standards of the Video Electron
 Snaptic links or loads only frameworks that ship with macOS; none are redistributed.
 
 - **Public:** Foundation, AppKit, SwiftUI, Combine, CoreGraphics, QuartzCore, CoreImage, CoreVideo, CoreMedia, IOSurface, Metal, ScreenCaptureKit, ColorSync, IOKit (including its power-management API), ApplicationServices (Accessibility), Carbon (HIToolbox, for hotkeys and keyboard type), CoreAudio, SystemConfiguration, DiskArbitration, Security, CryptoKit, ServiceManagement, UniformTypeIdentifiers, and libSystem’s `notify` API.
-- **Undocumented, loaded at runtime and never linked:** SkyLight, CoreDisplay, DisplayServices, CoreBrightness, MonitorPanel, OSD, plus private symbols in CoreGraphics, IOKit, and libsystem. Awake uses none of these; it reads one undocumented key (`CGSSessionScreenIsLocked`) from the public `CGSessionCopyCurrentDictionary`. See “Undocumented APIs” in the [README](README.md).
+- **Undocumented, loaded at runtime and never linked:** SkyLight, CoreDisplay, DisplayServices, CoreBrightness, MonitorPanel, OSD, plus private symbols in CoreGraphics, IOKit, and libsystem. Awake uses none of these; it only reads two undocumented keys through public calls: `CGSSessionScreenIsLocked` from `CGSessionCopyCurrentDictionary`, and the `SleepDisabled` power setting from the `com.apple.PowerManagement` preferences with `CFPreferencesCopyValue`. See “Undocumented APIs” in the [README](README.md).
 
 SF Symbols are used through the system APIs and are not bundled. Apple, Mac, macOS, Sidecar, AirPlay, XDR, Night Shift, True Tone, and SF Symbols are trademarks of Apple Inc. Snaptic is not affiliated with or endorsed by Apple.
 

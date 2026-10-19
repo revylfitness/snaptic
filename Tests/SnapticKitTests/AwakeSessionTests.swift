@@ -378,7 +378,7 @@ final class AwakeSessionTests: XCTestCase {
         let all: [AwakeRefusal] = [.guardActive(.batteryLow), .guardActive(.lowPowerMode), .guardActive(.thermal),
                                    .guardActive(.adapterDisconnected), .guardActive(.user), .unavailable(.featureOff),
                                    .unavailable(.safeMode), .unavailable(.turnedOffByDefaults), .invalid,
-                                   .notAllowedFromCLI, .uiSessionRunning, .holdLimit, .rateLimited,
+                                   .notAllowedFromCLI, .uiSessionRunning, .holdLimit,
                                    .endedAtStart(.userSwitch), .endedAtStart(.lockedTooLong),
                                    .endedAtStart(.assertionFailed), .endedAtStart(.systemSleep)]
         for r in all {

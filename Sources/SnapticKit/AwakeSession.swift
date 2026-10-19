@@ -629,12 +629,12 @@ package enum AwakeRefusal: Error, Equatable, Sendable {
     case notAllowedFromCLI
     case uiSessionRunning
     case holdLimit
-    case rateLimited
     /// The session started but its own first arbitration ended it (off console longer than allowed, locked too
     /// long, the assertion couldn't be created): the reply names that end (awake-correctness N2).
     case endedAtStart(AwakeEndReason)
 
-    /// 4 for every refusal (0.2 CLI table).
+    /// 4 for every refusal (0.2 CLI table). The Awake rate limit isn't a refusal: ControlCommandRegistry answers it
+    /// with exit 5 before any handler runs.
     package var exitCode: Int32 { 4 }
 
     package var text: String {
@@ -661,8 +661,6 @@ package enum AwakeRefusal: Error, Equatable, Sendable {
             return L("A session started in Snaptic is running. Stop it first with “snaptic awake stop”, or use “snaptic awake hold”.")
         case .holdLimit:
             return L("Snaptic is already holding for 8 commands.")
-        case .rateLimited:
-            return L("Too many requests. Try again in a second.")
         case .endedAtStart(let reason):
             switch reason {
             case .userSwitch: return L("Awake ended at once: another user is using this Mac.")

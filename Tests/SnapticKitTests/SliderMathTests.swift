@@ -416,6 +416,40 @@ final class SliderMathTests: XCTestCase {
         XCTAssertNil(slot.take())
     }
 
+    /// Review7 ui-ux F2: a row's reset beside a bare typed field. Reset alone leaves the dirty text, which a later
+    /// Done or blur writes back over the reset; committing the focused field first and resetting last ends at the
+    /// reset value, and nothing is left for the blur to write.
+    func testRowResetAfterCommitWins() {
+        let parse: (String) -> Double? = { Double($0) }
+        let format: (Double) -> String = { String(Int($0)) }
+        // Reset without the commit first: the typing survives the reset and Done writes it.
+        var stale = TypedFieldState(display: "250")
+        stale.edit("300")
+        var value: Double? = 250
+        value = nil  // reset: the reported value again
+        stale.sync(display: "200")
+        XCTAssertEqual(stale.text, "300")
+        if case .write(let v) = stale.commit(display: "200", parse: parse, format: format) { value = v }
+        XCTAssertEqual(value, 300, "the bug: the typed value comes back")
+        // The fix's order: commit the focused field, then reset.
+        var field = TypedFieldState(display: "250")
+        field.edit("300")
+        var slot = FocusedCommitSlot<Int, Int>()
+        slot.register(1, 1)
+        value = 250
+        if slot.take() != nil, case .write(let v) = field.commit(display: "250", parse: parse, format: format) {
+            value = v
+        }
+        XCTAssertEqual(value, 300)
+        value = nil
+        field.sync(display: "200")
+        XCTAssertEqual(field.text, "200")
+        XCTAssertNil(slot.take(), "nothing left for Done")
+        XCTAssertEqual(field.commit(display: "200", parse: parse, format: format), TypedFieldState.Commit.none,
+                       "the blur writes nothing")
+        XCTAssertNil(value)
+    }
+
     /// Any order of registrations, resigns and takes: `take` returns the commit of the last field registered that
     /// hasn't resigned or been taken since.
     func testSeededFocusedCommitSlot() {

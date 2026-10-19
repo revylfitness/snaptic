@@ -6,7 +6,8 @@
 # Starts `Snaptic --selftest-control-server <token-file>` (no modules, only a ControlServer with a test registry:
 # `selftest hold` (holds), `selftest slow` (3 s), `selftest echo`; pings every second) on a socket in a fresh 0700
 # directory, then drives real `Snaptic cli …` clients (token mode: SNAPTIC_SELFTEST_TOKEN, …_TOKEN_FILE, …_SOCKET)
-# and python3 raw-socket clients through the nine cases of R5-5, plus the retired `prevent-sleep` verb (R5-12, case 10).
+# and python3 raw-socket clients through the nine cases of R5-5, plus the retired `prevent-sleep` verb (R5-12, case 10)
+# and Control-C on a background hold that inherited SIGINT ignored (case 12).
 # The server prints `held=<n> active=<n>` on every pool change and `closed <eof|extra|ping|limit|server|pid>` per
 # hold; the checks read that log.
 set -uo pipefail
@@ -343,6 +344,25 @@ cli help >"$dir/help.out" 2>&1 || fail "case 10: help failed ($(cat "$dir/help.o
 grep -q 'selftest echo' "$dir/help.out" || fail "case 10: help doesn't list the test verbs"
 grep -q 'prevent-sleep' "$dir/help.out" && fail "case 10: help lists prevent-sleep"
 say "case 10 done"
+
+# 12. Control-C reaches a hold started as a background job without job control (`snaptic awake hold &` in a script
+#     or make recipe): such a job inherits SIGINT and SIGQUIT ignored, so the client resets them to default once it
+#     holds. The `trap ''` makes the inherited ignore explicit; SIGINT must still end the client and its hold.
+sh -c 'trap "" INT QUIT; exec "$0" cli selftest hold' "$BIN" >"$dir/hold-12.out" 2>"$dir/hold-12.err" </dev/null &
+c=$!
+pids+=("$c")
+wait_pool "held=1 active=0" 30 || fail "case 12: the hold wasn't held ($(pool))"
+# The client prints the holding line after it resets the signals, so wait for the line, not just the pool.
+for _ in $(seq 1 30); do grep -q '^Holding until this command ends' "$dir/hold-12.out" && break; sleep 0.1; done
+grep -q '^Holding until this command ends' "$dir/hold-12.out" || fail "case 12: the client didn't print the holding line"
+before=$(count "closed eof")
+kill -INT "$c"
+for _ in $(seq 1 30); do kill -0 "$c" 2>/dev/null || break; sleep 0.1; done
+kill -0 "$c" 2>/dev/null && { fail "case 12: SIGINT didn't end a client that inherited it ignored"; kill -9 "$c"; }
+wait "$c" 2>/dev/null
+wait_count "closed eof" $((before + 1)) 20 || fail "case 12: no 'closed eof' after SIGINT"
+wait_pool "held=0 active=0" 20 || fail "case 12: the hold wasn't released ($(pool))"
+say "case 12 done"
 
 # 11. Server stop while two clients hold (command-line control turned off, R5-14a; SIGUSR1 stops the server but
 #     keeps the process). The first hold's handler writes its own final line; the second gets the server's line

@@ -10,7 +10,7 @@ import SnapticKit
 /// 0.3 §2.10 holding mode (`snaptic awake hold`): a reply with `holding` is printed and flushed, then the client keeps
 /// reading with no timeout, drops ping lines, and exits with the final line's code (5 on EOF without one). It never
 /// writes after the request and never half-closes, so its own exit (or Control-C, or a closed terminal) is the EOF
-/// that ends the hold. `--pid N` gets an ordinary reply and exits at once.
+/// that ends the hold; it resets SIGINT and SIGQUIT to default first, since a background job may inherit them ignored. `--pid N` gets an ordinary reply and exits at once.
 enum CLIClient {
     static func run(_ arguments: [String]) -> Never {
         let rest = arguments.count > 1 && arguments[1] == "cli" ? Array(arguments.dropFirst(2)) : Array(arguments.dropFirst())
@@ -43,7 +43,7 @@ enum CLIClient {
         let fd = connectSocket(path)
         guard fd >= 0 else {
             fail(ControlExit.unavailable,
-                 L("Snaptic isn’t running, or command-line control is off (Settings → General → Command-Line Control)."))
+                 L("Snaptic isn’t running, or command-line control is off (Settings › General › Command-line control)."))
         }
         guard sendAll(fd, line) else { fail(ControlExit.unavailable, L("Snaptic closed the connection.")) }
         var reader = ControlLineReader()
@@ -61,6 +61,12 @@ enum CLIClient {
         }
 
         // Holding: the connection is the hold. Print, flush, and wait for the final line however long it takes.
+        // A background job in a shell without job control (`snaptic awake hold &` in a script or make recipe) starts
+        // with SIGINT and SIGQUIT ignored, and that survives exec. Put them back to default so Control-C, which
+        // reaches the whole foreground process group, ends the hold with the work instead of leaving it for 12 h.
+        // With job control the job has its own process group, so this changes nothing there.
+        signal(SIGINT, SIG_DFL)
+        signal(SIGQUIT, SIG_DFL)
         show(response)
         fflush(stdout)
         while true {

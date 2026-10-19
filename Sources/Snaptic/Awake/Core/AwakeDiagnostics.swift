@@ -3,7 +3,8 @@ import SnapticKit
 
 // The Awake section of the shared diagnostics report (owner: G; PLAN 0.3 §3.6): effective features, what governs,
 // the assertion and its errors, the guard state, the services the current state needs, counts of holds, rules and
-// conditions by kind, Drive Alive's volume count and the Awake event counts from EventLog. Never names, bundle ids,
+// conditions by kind, Drive Alive's volume count, the `Awake.disable.*` keys that are set and the Awake event counts
+// from EventLog. Never names, bundle ids,
 // pids, volume names, addresses or times (Kit's AwakeDiagnosticsReport formats it).
 
 @MainActor final class AwakeDiagnostics {
@@ -17,7 +18,8 @@ import SnapticKit
         guard let ctx = context else {
             return AwakeDiagnosticsFacts(effective: [], governing: nil, kind: nil, assertion: .off, assertionErrors: 0,
                                          guardHolding: nil, activeServices: [], holds: 0, rules: 0, conditionsByKind: [:],
-                                         eventCounts: EventLog.shared.awakeCounts, drives: 0)
+                                         eventCounts: EventLog.shared.awakeCounts, drives: 0,
+                                         killSwitches: AwakeModule.readKillSwitches())
         }
         let rt = ctx.runtime
         let status = AwakeStatusFacts(governing: rt.governing, holds: rt.holds, now: AwakeModule.clockNow())
@@ -33,6 +35,7 @@ import SnapticKit
                                      guardHolding: ctx.sessions.guardMemory.holding, activeServices: services,
                                      holds: rt.holds.count, rules: triggers.count, conditionsByKind: kinds,
                                      eventCounts: EventLog.shared.awakeCounts,
-                                     drives: ctx.config.value.drives.enabledVolumes.count)
+                                     drives: ctx.config.value.drives.enabledVolumes.count,
+                                     killSwitches: AwakeModule.readKillSwitches())
     }
 }

@@ -448,7 +448,9 @@ struct PIPEditorSheet: View, ControlDeclaring {
                     .disabled(refusal != nil)
             } else {
                 if entry != nil {
-                    Button(L("Delete Picture in Picture…"), role: .destructive) { confirmingDelete = true }
+                    Button(configuration.kind == .fullScreen ? L("Delete Stream…") : L("Delete Picture in Picture…"), role: .destructive) {
+                        confirmingDelete = true
+                    }
                         .modifier(SettingsAnchor(ControlID("displays.pip.editor.delete")))
                 }
                 Spacer(minLength: 8)

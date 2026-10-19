@@ -9,7 +9,7 @@ enum PermissionStatus: Equatable { case granted, denied, unknown }
 /// 1. the system prompt once per flow; 2. the Privacy pane always opened too; 3. the exact
 /// app path with "Show Snaptic in Finder" and "Click +"; 4. polling at 1.5 s while needed,
 /// resumed on app activation, stopped on grant, when every requester's lifetime ends, or
-/// after 10 minutes ("Check again"); 5. "Relaunch Snaptic" as soon as the pane was opened.
+/// after 10 minutes ("Check Again"); 5. "Relaunch Snaptic" as soon as the pane was opened.
 /// Callers coalesce; the guide window opens by itself at most once per launch.
 @MainActor final class PermissionFlow: ObservableObject {
     static let pollInterval: TimeInterval = 1.5
@@ -433,11 +433,11 @@ private struct PermissionGuideView: View {
 
                 HStack {
                     if model.paneOpenedAt != nil || model.granted {
-                        Button(L("I turned it on — Relaunch Snaptic")) { model.onRelaunch?() }
+                        Button(L("Relaunch Snaptic")) { model.onRelaunch?() }
                             .keyboardShortcut(.defaultAction)
                     }
                     if model.timedOut {
-                        Button(L("Check again")) { model.onCheckAgain?() }
+                        Button(L("Check Again")) { model.onCheckAgain?() }
                     }
                     Spacer()
                 }

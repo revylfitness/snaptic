@@ -88,7 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         host.bootstrap()
 
         if safeMode.isActive {
-            toasts.show(L("Snaptic started in Safe Mode. Display automation is paused."),
+            toasts.show(L("Snaptic started in Safe Mode. Automation is paused."),
                         action: ToastAction(title: L("Leave…")) { [weak self] in
                             // The same question as every other "Leave Safe Mode…" (review round 3 ui N3).
                             guard let self else { return }

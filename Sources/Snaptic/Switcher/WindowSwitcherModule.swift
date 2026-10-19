@@ -107,7 +107,7 @@ import SnapticKit
         guard let context else { return [] }
         var items: [NSMenuItem] = []
         if !tapIsRunning {
-            items.append(MenuKit.action(L("Allow \(PermissionFlow.paneName(.accessibility))…"),
+            items.append(MenuKit.action(L("Open \(PermissionFlow.paneName(.accessibility)) Settings…"),
                                         control: ControlID("menu.switcher.grantAccessibility")) {
                 context.permissions.presentGuide(.accessibility, reason: L("The window switcher needs it to see its shortcuts."))
             })

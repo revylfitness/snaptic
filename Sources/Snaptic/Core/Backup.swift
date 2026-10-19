@@ -161,7 +161,7 @@ import UniformTypeIdentifiers
         }
         text += L("Hooks, actions, command-line settings, auto-disconnect exceptions, and “allow” switches are never imported. Protected apps are only ever added.")
         if newAwake != nil {
-            text += "\n\n" + L("Awake’s Drive Alive disks, pointer movement, recent apps and launch session are never imported, and its battery and power limits only get stricter.")
+            text += "\n\n" + L("Awake’s Drive Alive disks, pointer movement, recent apps, and launch session are never imported, and its battery and power limits only get stricter.")
         }
 
         let alert = NSAlert()

@@ -569,7 +569,7 @@ private struct HardwareAdvancedSheet: View {
                     }
                     Divider()
                     ForEach([UInt16](DisplaysUIText.commonInputs), id: \.self) { value in
-                        Button(L("LG alternate: \(VCPPolicy.inputName(value))")) {
+                        Button(L("LG Alternate: \(VCPPolicy.inputName(value))")) {
                             add(list, DDCInputEntry(value: value, name: "", lgAlt: true))
                         }
                     }

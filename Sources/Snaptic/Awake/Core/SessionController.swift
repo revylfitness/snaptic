@@ -612,7 +612,7 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         case .allow:
             break
         }
-        let unreadable = AwakeGuards.batteryUnreadable(facts, memory: memory)
+        let unreadable = AwakeGuards.batteryUnreadable(facts)
         if unreadable && !wasUnreadable { guardNotices.fire(.batteryUnreadable) }
         wasUnreadable = unreadable
         if holdChanged { ctx.triggers.requestStep() }

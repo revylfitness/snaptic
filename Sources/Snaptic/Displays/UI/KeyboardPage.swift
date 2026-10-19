@@ -436,7 +436,7 @@ private struct InputSlotsSection: View {
             Text(L("Slot \(index + 1)"))
                 .frame(width: 56, alignment: .leading)
             Picker(L("Display"), selection: Binding(get: { slot.display }, set: { value in update(index) { $0.display = value } })) {
-                Text(L("The display the keys change")).tag(DisplayKey?.none)
+                Text(L("Same Display as the Keys")).tag(DisplayKey?.none)
                 ForEach(displays) { d in
                     Text(CDisplays.name(d)).tag(Optional(d.key))
                 }

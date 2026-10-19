@@ -322,16 +322,16 @@ package enum AwakeGuards {
         return nil
     }
 
-    /// Drive Alive and activity may run only if this is true: `backgroundBlock` is nil. (`memory` is kept for the
-    /// callers; the decision needs only the live facts, which carry the read streak.)
-    package static func allowsBackgroundWork(_ now: PowerFacts, config: AwakeGuardsConfig, memory: GuardMemory) -> Bool {
+    /// Drive Alive and activity may run only if this is true: `backgroundBlock` is nil. The live facts carry the read
+    /// streak, so no guard memory is needed.
+    package static func allowsBackgroundWork(_ now: PowerFacts, config: AwakeGuardsConfig) -> Bool {
         backgroundBlock(now, config: config) == nil
     }
 
     /// The battery is latched and has been unreadable for two reads in a row: the same read that stops activity and
     /// Drive Alive, so the one toast (SessionController shows it on the false → true edge: once per streak) explains
     /// the stop (§2.6, review6 awake F2).
-    package static func batteryUnreadable(_ now: PowerFacts, memory: GuardMemory) -> Bool {
+    package static func batteryUnreadable(_ now: PowerFacts) -> Bool {
         backgroundBlock(now, config: AwakeGuardsConfig()) == .batteryUnreadable
     }
 

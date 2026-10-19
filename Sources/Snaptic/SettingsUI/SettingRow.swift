@@ -3,7 +3,7 @@ import SnapticKit
 
 /// Title + optional one-line help (the grouped form renders the second `Text` as the subtitle) + trailing control.
 /// Reset: a glyph only for continuous values (`resetGlyph: true`); every row with `reset` also gets the context
-/// menu "Reset to Default" (design M6).
+/// menu "Reset to Default" (design M6). Either commits the focused typed field before resetting, so the reset wins.
 struct SettingRow<Control: View>: View {
     let title: String
     let help: String?
@@ -33,6 +33,10 @@ struct SettingRow<Control: View>: View {
                 control
                 if resetGlyph {
                     ResetButton(visible: reset != nil && !isDefault, label: resetLabel ?? L("Reset \(title) to Default")) {
+                        // A typed-but-not-Returned value in the row's field is written first, so the reset comes
+                        // last and wins; otherwise Done or the blur would write the typing back over it (review7
+                        // ui-ux F2).
+                        FocusedField.commit()
                         reset?()
                     }
                 }
@@ -95,7 +99,10 @@ struct ResetContextMenu: ViewModifier {
     func body(content: Content) -> some View {
         if let reset {
             content.contextMenu {
-                Button(L("Reset to Default")) { reset() }
+                Button(L("Reset to Default")) {
+                    FocusedField.commit()
+                    reset()
+                }
                     .disabled(isDefault)
             }
         } else {

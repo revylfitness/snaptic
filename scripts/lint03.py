@@ -181,6 +181,9 @@ def self_check():
         (f"L({q}Don’t Show{q})", False),
         (f"Text({q}it's{q})", False),
         (f"L({q}{bs}(name.replacingOccurrences(of: {q}a{q}, with: {q}b{q})) is on{q})", False),
+        (f"L({q}{bs}(name.replacingOccurrences(of: {q}'{q}, with: {q}’{q})) is on{q})", False),
+        (f"L({q}{bs}(names[{q}it's{q}] ?? {q}x{q}){q})", False),
+        (f"L({q}{bs}(f(x) ? {q}it's{q} : {q}x{q}){q})", True),
     ]
     for source, flagged in apostrophe_cases:
         if bool(straight_apostrophes_file("Sources/Snaptic/SelfCheck.swift", source)) != flagged:
@@ -195,6 +198,17 @@ def self_check():
         (popup.format(q=q, title=f"While “{bs}(name)” Isn’t Connected", help="", style="style: .popUp, "), False),
         (popup.format(q=q, title="Automatic (recommended)", help="", style="style: .segmented, "), False),
         (popup.format(q=q, title="Only for Displays macOS Can’t Control", help="", style="style: .popUp, "), False),
+        # .automatic with help: a radio group for 2–5 options, a pop-up for more.
+        ("PickerSetting(L(\"S\"), selection: s, options: [" + ", ".join(
+            f"PickerOption({i}, L({q}Option number {i}{q}), help: L({q}H.{q}))" for i in range(6))
+         + "], defaultValue: 0)", True),
+        ("PickerSetting(L(\"S\"), selection: s, options: [" + ", ".join(
+            f"PickerOption({i}, L({q}Option number {i}{q}), help: L({q}H.{q}))" for i in range(5))
+         + "], defaultValue: 0)", False),
+        # Native SwiftUI pickers: pop-up options checked, radio groups not.
+        (f"Picker(L({q}Display{q}), selection: $d) {{\n    Text(L({q}The display the keys change{q})).tag(0)\n}}\n.labelsHidden()", True),
+        (f"Picker(L({q}Display{q}), selection: $d) {{\n    Text(L({q}Same Display as the Keys{q})).tag(0)\n}}", False),
+        (f"Picker(L({q}Mode{q}), selection: $d) {{\n    Text(L({q}Run both apps{q})).tag(0)\n}}\n.pickerStyle(.radioGroup)", False),
     ]
     for source, flagged in popup_cases:
         if bool(popup_case_file("Sources/Snaptic/SelfCheck.swift", source)) != flagged:
@@ -382,9 +396,11 @@ def literal_text(lit):
 
 
 def literals_in(code):
-    """[(top-level text, [nested texts])] for each string literal in `code`: the text with interpolations as `\x00`,
-    and the texts of literals inside its interpolations (recursively)."""
-    found, i = [], 0
+    """[(top-level text, [(nested text, in a call)], in a call)] for each string literal in `code`: the text with
+    interpolations as `\x00`, and the texts of literals inside its interpolations (recursively). "In a call" means the
+    literal sits inside parentheses or brackets of the code around it: an argument (`replacingOccurrences(of: "'",
+    …)`) or a subscript key, not text shown as is (`\\(on ? "it's" : "x")`)."""
+    found, i, depth = [], 0, 0
     while i < len(code):
         if starts_string(code, i):
             k = string_end(code, i)
@@ -392,11 +408,15 @@ def literals_in(code):
             nested = []
             for m in re.finditer(r"\\#*\(", lit):
                 inner = lit[m.end():code_end(lit, m.end()) - 1]
-                for text, deeper in literals_in(inner):
-                    nested += [text] + deeper
-            found.append((literal_text(lit), nested))
+                for text, deeper, call in literals_in(inner):
+                    nested += [(text, call)] + [(t, call or c) for t, c in deeper]
+            found.append((literal_text(lit), nested, depth > 0))
             i = k
             continue
+        if code[i] in "([":
+            depth += 1
+        elif code[i] in ")]":
+            depth = max(0, depth - 1)
         i += 1
     return found
 
@@ -407,13 +427,15 @@ def l_calls(t):
         yield m.start(), t[m.end():code_end(t, m.end()) - 1]
 
 
-def l_texts(args):
+def l_texts(args, arguments=True):
     """The user-visible texts of one `L(…)` call's arguments: each literal's text, the literals inside its
-    interpolations, and the top-level literals joined (`L("Smart " + "HiDPI")`)."""
+    interpolations, and the top-level literals joined (`L("Smart " + "HiDPI")`). `arguments=False` leaves out
+    literals passed to a call inside an interpolation (a nested `L(…)` is checked as its own call anyway)."""
     found = literals_in(args)
-    texts = [text for text, _ in found] + [n for _, nested in found for n in nested]
+    texts = [text for text, _, _ in found]
+    texts += [n for _, nested, _ in found for n, call in nested if arguments or not call]
     if len(found) > 1:
-        texts.append("".join(text for text, _ in found))
+        texts.append("".join(text for text, _, _ in found))
     return texts
 
 
@@ -447,7 +469,7 @@ def straight_apostrophes():
 def straight_apostrophes_file(p, t):
     problems = []
     for at, args in l_calls(t):
-        for text in l_texts(args):
+        for text in l_texts(args, arguments=False):
             if "'" in text:
                 problems.append(f"{p}:{t.count(chr(10), 0, at) + 1}: UI text “{text.replace(chr(0), '…')}” has a "
                                 "straight apostrophe; use ’ (or “ ” for quotes)")
@@ -463,8 +485,16 @@ TITLE_CASE_EXEMPT = {
     ("Sources/Snaptic/Displays/UI/ArrangeSheet.swift", "Main display"),
     ("Sources/Snaptic/Displays/UI/ArrangeSheet.swift", "Extended display"),
 }
-# Known limits: an option whose title isn't a literal (an enum's `title`, a display name) and options built outside
-# the `PickerSetting(…)` call for a radio group are checked by review, not here.
+# Native SwiftUI `Picker`s whose options are rule-condition fragments ("Safari" "is not" "open"): they complete a
+# sentence, like the hook "When" clauses, and stay sentence case (design-spec §4.1).
+PICKER_FRAGMENT_FILES = {"Sources/Snaptic/Awake/UI/CriterionEditors.swift"}
+# What is checked: every `PickerOption(…, L("…"))` of a `PickerSetting` that isn't a radio group (`.radio`, or
+# `.automatic` with option help and 2–5 literal options; with more it resolves to a pop-up and is checked), and every
+# `Text(L("…"))` option inside a native `Picker(…) { … }` unless the picker is `.pickerStyle(.radioGroup)` or
+# `.inline`. Known limits, checked by review instead: an option whose title isn't a literal (an enum's `title`, a
+# display name, a `ForEach` over names); options built outside the `PickerSetting(…)` call or the `Picker`'s own
+# closure; an `.automatic` `PickerSetting` with help whose option count isn't literal (`+ rates.map …`), treated as a
+# radio group; `Menu` items, which are checked as menu titles by review.
 
 
 def title_case_problem(title):
@@ -488,10 +518,13 @@ def popup_case_file(p, t):
         call = t[m.start():end]
         style = re.search(r"\bstyle:\s*\.(\w+)", call)
         name = style.group(1) if style else "automatic"
-        # .automatic is a radio group when an option has help (PickerSettingStyle.resolved).
-        option_help = any(re.search(r"\bhelp:", call[o.end():code_end(call, o.end())])
-                          for o in re.finditer(r"\bPickerOption(?:<[^>]*>)?\(", call))
-        if name == "radio" or (name == "automatic" and option_help):
+        # .automatic is a radio group when an option has help and there are 2–5 options, else a pop-up
+        # (PickerSettingStyle.resolved). Options that aren't all literal (`+ rates.map …`) can't be counted here.
+        options = list(re.finditer(r"\bPickerOption(?:<[^>]*>)?\(", call))
+        option_help = any(re.search(r"\bhelp:", call[o.end():code_end(call, o.end())]) for o in options)
+        listed = re.search(r"\boptions:\s*\[", call)
+        countable = listed is not None and not re.match(r"\s*[+.]", call[code_end(call, listed.end()):])
+        if name == "radio" or (name == "automatic" and option_help and (not countable or len(options) <= 5)):
             radios.append((m.start(), end))
     for m in re.finditer(r"\bPickerOption(?:<[^>]*>)?\(", t):
         if any(a < m.start() < b for a, b in radios):
@@ -503,6 +536,34 @@ def popup_case_file(p, t):
             problems.append(f"{p}:{t.count(chr(10), 0, m.start()) + 1}: pop-up option “{title.replace(chr(0), '…')}” "
                             f"isn't title case (“{word}”); pop-up, segmented and pull-down options use title case "
                             "(design-spec §4.1)")
+    if p not in PICKER_FRAGMENT_FILES:
+        problems += native_picker_case(p, t)
+    return problems
+
+
+def native_picker_case(p, t):
+    """`Text(L("…"))` options of a native SwiftUI `Picker(…) { … }` (pop-up by default on macOS) use title case."""
+    problems = []
+    for m in re.finditer(r"(?<![\w.])Picker\(", t):
+        args_end = code_end(t, m.end())
+        brace = re.match(r"\s*\{", t[args_end:])
+        if not brace:
+            continue
+        body_start = args_end + brace.end()
+        body_end = code_end(t, body_start)
+        modifiers = re.match(r"(?:\s*\.\w+(?:\([^()]*(?:\([^()]*\)[^()]*)*\))?)*", t[body_end:]).group(0)
+        if re.search(r"\.pickerStyle\(\s*\.(?:radioGroup|inline)\b", modifiers):
+            continue
+        body = t[body_start:body_end - 1]
+        for o in re.finditer(r"(?<![\w.])Text\(\s*L\(", body):
+            args = body[o.end():code_end(body, o.end()) - 1]
+            texts = l_texts(args)
+            title = texts[0] if texts else None
+            word = title_case_problem(title) if title is not None else None
+            if word and (p, title) not in TITLE_CASE_EXEMPT:
+                line = t.count(chr(10), 0, body_start + o.start()) + 1
+                problems.append(f"{p}:{line}: pop-up option “{title.replace(chr(0), '…')}” isn't title case (“{word}”); "
+                                "pop-up, segmented and pull-down options use title case (design-spec §4.1)")
     return problems
 
 

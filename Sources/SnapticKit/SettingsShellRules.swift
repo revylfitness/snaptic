@@ -125,7 +125,8 @@ package enum SettingsHelpAnchors {
     package static let readme = "https://github.com/revylfitness/snaptic/blob/main/README.md"
 
     /// Route id (a root id or a page surface such as "displays.color") → the README heading's exact text. Display
-    /// pages use their page titles, as "###" headings under "## Displays".
+    /// pages use their page titles, as "###" headings under "## Displays"; Resolution, Connection and Match Text Size
+    /// are described under "The Displays page", and Awake's Drives page under "Drive Alive".
     package static let headings: [String: String] = [
         SettingsRootID.general: "General",
         SettingsRootID.menuBar: "Menu Bar",
@@ -136,6 +137,14 @@ package enum SettingsHelpAnchors {
         "displays.color": "Color",
         "displays.keyboard": "Keyboard",
         "displays.info": "Display Information",
+        "displays.resolution": "The Displays page",
+        "displays.connection": "The Displays page",
+        "displays.matchTextSize": "The Displays page",
+        "displays.layouts": "Saved Layouts",
+        "displays.virtual": "Virtual Displays",
+        "displays.pip": "Picture in Picture",
+        "displays.automations": "Automations",
+        "awake.drives": "Drive Alive",
         SettingsRootID.awake: "Awake",
         SettingsRootID.permissions: "Permissions",
         SettingsRootID.about: "Snaptic",

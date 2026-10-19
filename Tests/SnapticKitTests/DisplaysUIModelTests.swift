@@ -61,14 +61,71 @@ final class DisplaysUIModelTests: XCTestCase {
         for feature in DisplayFeature.allCases {
             let inside = DisplaysUIText.inSentence(feature)
             let title = DisplaysUIText.title(feature)
-            // Only the first letter may change, and only to lowercase.
-            XCTAssertEqual(inside.lowercased(), title.lowercased(), title)
-            XCTAssertEqual(inside.dropFirst(), title.dropFirst(), title)
-            // A plural name ends in "s" or joins two things; a singular one has no "and".
+            XCTAssertEqual(inside, DisplaysUIText.sentenceName(feature), title)
+            // A plural name ends in "s" or joins two things.
             if DisplaysUIText.isPlural(feature) {
-                XCTAssertTrue(title.hasSuffix("s") || title.contains(" and "), title)
+                XCTAssertTrue(inside.hasSuffix("s") || inside.contains(" and "), title)
             }
             XCTAssertFalse(DisplaysUIText.isOff(feature).contains("  "), title)
+        }
+    }
+
+    /// Review7 ui-ux F1: a switch label that is a verb phrase ("Turn displays off and on") is never spliced into a
+    /// sentence ("Needs turn displays off and on.", "This also turns off turn off the built-in display
+    /// automatically."). Every feature's sentence name is a noun phrase, so no sentence any helper builds has a verb
+    /// where the name goes, and a name that is the label lowercased changes only its first letter.
+    func testEveryFeatureSentenceNameIsANounPhrase() {
+        let verbs: Set<String> = ["turn", "turns", "protect", "disconnect", "match", "sync", "restore", "show", "dim",
+                                  "automatically", "use", "choose", "keep", "allow", "open", "make"]
+        XCTAssertEqual(DisplaysUIText.needs(.ddcPower), "Needs display power control.")
+        XCTAssertEqual(DisplaysUIText.needs(.protection), "Needs arrangement protection.")
+        XCTAssertEqual(DisplaysUIText.needs(.disconnect), "Needs display disconnection.")
+        XCTAssertEqual(DisplaysUIText.needs(.scaleMatch), "Needs text size matching.")
+        XCTAssertEqual(DisplaysUIText.needs(.mainDisplay), "Needs the main display setting.")
+        XCTAssertEqual(DisplaysUIText.turnOffQuestion([.disconnect], label: "Disconnect displays"),
+                       "Turn off display disconnection?")
+        XCTAssertEqual(DisplaysUIText.turnOffQuestion([.virtualScreens], label: "Virtual displays"),
+                       "Turn off virtual displays?")
+        XCTAssertEqual(DisplaysUIText.turnOffQuestion([.arrangement, .mainDisplay, .mirroring],
+                                                      label: "Arrangement and mirroring"),
+                       "Turn off arrangement and mirroring?")
+        XCTAssertEqual(DisplaysUIText.alsoTurnsOff([.autoDisconnectBuiltin]),
+                       "This also turns off automatic turn-off for the built-in display.")
+        XCTAssertEqual(DisplaysUIText.alsoTurnsOff([.brightnessRestore, .dimToBlack, .nits, .sync, .brightnessKeys]),
+                       "This also turns off brightness restore, dimming to black, brightness in nits, brightness sync, "
+                       + "and brightness keys.")
+        XCTAssertEqual(DisplaysUIText.skippedWhileOff(.mainDisplay), "Skipped while the main display setting is off.")
+        XCTAssertEqual(DisplaysUIText.isOff(.ddcPower), "Display power control is off.")
+        for feature in DisplayFeature.allCases {
+            let name = DisplaysUIText.sentenceName(feature)
+            let first = name.split(separator: " ").first.map { String($0).lowercased() } ?? ""
+            XCTAssertFalse(verbs.contains(first), "\(feature): “\(name)” starts with a verb")
+            XCTAssertFalse(name.isEmpty, "\(feature)")
+            // Mid-sentence: lowercase first letter unless it is a proper name or acronym kept by SentenceText.
+            if name == SentenceText.inSentence(DisplaysUIText.title(feature)) {
+                XCTAssertEqual(name.dropFirst(), DisplaysUIText.title(feature).dropFirst(), "\(feature)")
+            } else {
+                XCTAssertTrue(name.first?.isLowercase == true, "\(feature): “\(name)”")
+            }
+            let sentences = [DisplaysUIText.needs(feature), DisplaysUIText.isOff(feature),
+                             DisplaysUIText.notAvailableNow(feature), DisplaysUIText.skippedWhileOff(feature),
+                             DisplaysUIText.turnOffQuestion([feature], label: DisplaysUIText.title(feature)),
+                             DisplaysUIText.alsoTurnsOff([feature]), DisplaysUIText.alsoTurnsOff([.rotation, feature])]
+            for sentence in sentences {
+                // The word after the sentence's own verb (or the first word) is never another verb: "Needs turn …",
+                // "This also turns off turn off …" and "Turn displays off and on is off." can't happen.
+                var rest = sentence.lowercased()
+                for frame in ["needs ", "turn off ", "this also turns off rotation and ", "this also turns off ",
+                              "skipped while "] where rest.hasPrefix(frame) {
+                    rest = String(rest.dropFirst(frame.count))
+                    break
+                }
+                let next = rest.split(separator: " ").first.map { String($0).trimmingCharacters(in: .punctuationCharacters) }
+                XCTAssertFalse(verbs.contains(next ?? ""), "“\(sentence)” has a verb where the name goes")
+                XCTAssertFalse(sentence.lowercased().contains("turn off turn"), sentence)
+                // Starts with a capital letter.
+                XCTAssertTrue(sentence.first?.isUppercase == true, sentence)
+            }
         }
     }
 
@@ -727,6 +784,33 @@ final class DisplaysRootModelTests: XCTestCase {
         XCTAssertEqual(DisplaySettingsCopy.question(source: "LG HDR 4K"), "Copy the settings of “LG HDR 4K” to this display?")
         XCTAssertTrue(DisplaySettingsCopy.message(source: "LG HDR 4K").contains("keeps remembering “LG HDR 4K”"))
         XCTAssertEqual(DisplaySettingsCopy.movePIPTitle, "Also move its Picture in Picture setups")
+        // Review7 ui-ux N1: a partial move says so; the message has the serial comma and no mechanism names.
+        XCTAssertEqual(DisplaySettingsCopy.movePIPTitle(movable: 3, total: 3), "Also move its Picture in Picture setups")
+        XCTAssertEqual(DisplaySettingsCopy.movePIPTitle(movable: 1, total: 1), "Also move its Picture in Picture setup")
+        XCTAssertEqual(DisplaySettingsCopy.movePIPTitle(movable: 2, total: 3),
+                       "Also move 2 of its 3 Picture in Picture setups")
+        let message = DisplaySettingsCopy.message(source: "LG")
+        XCTAssertTrue(message.contains("keys (with their audio device), and connection settings"), message)
+        XCTAssertFalse(message.contains("DDC"), message)
+        XCTAssertTrue(message.contains("Unlocked manufacturer codes aren’t copied."), message)
+    }
+
+    /// Review7 security N5: codes unlocked on the remembered display's model never reach this display; this
+    /// display's own unlocks stay.
+    func testCopySettingsKeepsEachDisplaysUnlockedCodes() throws {
+        let source = key("a"), target = key("b")
+        var lg = tuned(name: "LG", brightness: 0.3, contrast: 1.4, measured: true)
+        lg.ddc.unlockedCodes = [VCPKey(0xE0), VCPKey(0xF4)]
+        var dell = tuned(name: "DELL", brightness: 0.8, contrast: 1, measured: false)
+        dell.ddc.unlockedCodes = [VCPKey(0xE2)]
+        let result = try XCTUnwrap(DisplaySettingsCopy.copying(from: source, to: target,
+                                                                in: LossyMap([source: lg, target: dell])))
+        XCTAssertEqual(result[target]?.ddc.unlockedCodes, [VCPKey(0xE2)])
+        XCTAssertEqual(result[source]?.ddc.unlockedCodes, lg.ddc.unlockedCodes)
+        let fresh = try XCTUnwrap(DisplaySettingsCopy.copying(from: source, to: target, in: LossyMap([source: lg])))
+        XCTAssertEqual(fresh[target]?.ddc.unlockedCodes, [])
+        XCTAssertEqual(DisplaySettingsCopy.pipCount(of: source, in: LossyMap([source: lg])), 1)
+        XCTAssertEqual(DisplaySettingsCopy.pipCount(of: target, in: LossyMap([source: lg])), 0)
     }
 
     /// Round 3 ui N2: the help and the alert name everything a copy replaces (DDC tuning, keys with their audio
