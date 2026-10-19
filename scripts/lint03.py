@@ -12,9 +12,11 @@
   `SU…` key strings only in SnapticKit/UpdatePolicy.swift (UpdateDefaultsKeys), and, once anything imports Sparkle,
   exactly one Package.swift dependency (sparkle-project/Sparkle, `exact:`, under `#if os(macOS)`) with
   Package.resolved committed;
-- workflow rules (E3, E6): no `pull_request_target`, `workflow_run` or `set -x`, no `actions/cache` in the `sign` or
-  `publish` jobs, and `gh release` only in the `publish` job (checked once a `publish` job exists: until T-update's
-  pipeline lands, the 0.3 `release` job still publishes).
+- workflow rules (E3, E6): no `pull_request_target`, `workflow_run` or `set -x`; no `actions/cache` in `build`,
+  `sign`, `publish` or any job they need (the signed bundle is built in `build`; r1 S6); no `${{` inside a `run:`
+  script (values reach scripts through `env:`, so a tag name or release field is never spliced into shell; r1 S6);
+  and `gh release` only in the `publish` job (checked once a `publish` job exists: until T-update's pipeline lands,
+  the 0.3 `release` job still publishes).
 
 Run by scripts/lint.sh (which passes LINT_MODE=check|write and LINT_STRICT=0|1). Comments are stripped before
 matching (string literals are kept); counts are occurrences, not lines.
@@ -306,6 +308,21 @@ def self_check_031():
         (wf.replace("run: echo", "run: set -euxo pipefail"), True),
         (wf.replace("run: echo", "run: echo set -e # not set -x"), False),
         (wf + "  sign:\n    steps:\n      - uses: actions/cache@abc\n", True),
+        # r1 S6: the job that builds the signed bundle, and anything the release chain needs, can't use a cache.
+        (wf.replace("      - run: echo\n", "      - uses: actions/cache/restore@abc\n"), True),
+        (wf + "  compile:\n    steps:\n      - uses: actions/cache@abc\n"
+              "  sign:\n    needs: [build, compile]\n    steps:\n      - run: echo\n", True),
+        (wf + "  compile:\n    steps:\n      - uses: actions/cache@abc\n"
+              "  publish:\n    needs:\n      - compile\n    steps:\n      - run: echo\n", True),
+        (wf + "  lint:\n    steps:\n      - uses: actions/cache@abc\n", False),
+        # r1 S6: no `${{` inside a run: script, inline or block, wherever it sits in the script.
+        (wf.replace("run: echo", "run: echo ${{ github.ref_name }}"), True),
+        (wf.replace("run: echo", "run: |\n          set -e\n          echo \"${{ github.event.release.name }}\""), True),
+        (wf.replace("run: echo", "run: >-\n          echo ok # ${{ github.head_ref }}"), True),
+        (wf.replace("      - run: echo\n", "      - env:\n          TAG: ${{ github.ref_name }}\n"
+                    "        run: |\n          echo \"$TAG\"\n      - uses: actions/upload-artifact@abc\n"
+                    "        with:\n          path: ${{ runner.temp }}/out\n"), False),
+        (wf.replace("jobs:\n", "defaults:\n  run:\n    shell: bash\njobs:\n"), False),
     ]
     for text, flagged in workflow_cases:
         if bool(workflow_file("selfcheck.yml", text)) != flagged:
@@ -610,6 +627,63 @@ def workflow_jobs(text):
     return jobs
 
 
+def job_needs(lines):
+    """The jobs a job's `needs:` names: `needs: a`, `needs: [a, b]` or a block list."""
+    needs, in_block = [], False
+    for line in lines:
+        m = re.match(r"^    needs:\s*(.*?)\s*(?:#.*)?$", line)
+        if m:
+            value = m.group(1)
+            if value.startswith("["):
+                needs += [x.strip().strip("'\"") for x in value.strip("[]").split(",") if x.strip()]
+            elif value:
+                needs.append(value.strip("'\""))
+            in_block = not value
+            continue
+        if in_block:
+            item = re.match(r"^      -\s*([A-Za-z0-9_-]+)", line)
+            if item:
+                needs.append(item.group(1))
+            elif line.strip() and not line.strip().startswith("#"):
+                in_block = False
+    return needs
+
+
+def signed_chain(jobs):
+    """`build` (it makes the bundle sign signs), `sign`, `publish`, and every job those need, transitively."""
+    chain, todo = set(), ["build", "sign", "publish"]
+    while todo:
+        name = todo.pop()
+        if name in chain:
+            continue
+        chain.add(name)
+        todo += job_needs(jobs.get(name, []))
+    return chain
+
+
+def run_expression_lines(text):
+    """Line numbers of `${{` inside `run:` scripts (inline, or a `|`/`>` block scalar, comments included: Actions
+    expands them there too)."""
+    found, block_indent = [], None
+    for n, line in enumerate(text.split("\n"), 1):
+        if block_indent is not None:
+            if not line.strip() or len(line) - len(line.lstrip(" ")) > block_indent:
+                if "${{" in line:
+                    found.append(n)
+                continue
+            block_indent = None
+        m = re.match(r"^(\s*)(-\s+)?run:(?:\s+(.*))?$", line)
+        if not m:
+            continue
+        key_indent = len(m.group(1)) + (len(m.group(2)) if m.group(2) else 0)
+        value = (m.group(3) or "").strip()
+        if re.match(r"^[|>][+-]?[0-9]?\s*(?:#.*)?$", value):
+            block_indent = key_indent
+        elif value and "${{" in value:
+            found.append(n)
+    return found
+
+
 def without_yaml_comment(line):
     """The line without a trailing `# …` comment (a `#` at the start or after whitespace)."""
     return re.sub(r"(?:^|\s)#.*$", "", line)
@@ -635,10 +709,12 @@ def workflow_file(path, text):
         if re.search(r"\bset\s+(?:-[A-Za-z]*x[A-Za-z]*|-o\s+xtrace)\b", line) or re.search(r"\b(?:ba)?sh\s+-[A-Za-z]*x", line):
             problems.append(f"{path}:{n}: set -x (xtrace) is forbidden in workflows (E3: it prints secrets' derivations)")
     jobs = workflow_jobs(text)
-    for name in ("sign", "publish"):
+    for name in sorted(signed_chain(jobs)):
         for line in jobs.get(name, []):
             if re.search(r"\bactions/cache\b", without_yaml_comment(line)):
                 problems.append(f"{path}: job {name} must not use actions/cache (its output is signed or published)")
+    for n in run_expression_lines(text):
+        problems.append(f"{path}:{n}: ${{{{ }}}} inside a run: script; pass the value through env: (E3)")
     # "Only publish runs gh release": active once T-update's pipeline has a publish job (until then the 0.3 release
     # job still publishes).
     if "publish" in jobs:

@@ -18,9 +18,25 @@ concurrency:
 
 # Release pipeline (PLAN 0.3.1 E3): build → sign (environment `release`) → verify and attest → publish (environment
 # `appcast`). Only tag pushes reach sign, verify, attest and publish; both environments also accept only `v*` tags and
-# need the owner's approval for every run. Hygiene: no `set -x`; every `${{ }}` value reaches scripts through `env:`;
-# secrets are decoded under `umask 077` into $RUNNER_TEMP and removed in an always() step; no actions/cache in the
-# jobs whose output is signed; no repository script runs while a signing keychain exists.
+# need the owner's approval for every run. Hygiene (lint): no `set -x`; no `${{ }}` inside `run:`, every value reaches
+# scripts through `env:`; secrets are decoded under `umask 077` into $RUNNER_TEMP and removed in an always() step; no
+# actions/cache in build or any job of the release chain; no repository script runs while a signing keychain exists.
+
+# The update key (PLAN 0.3.1 E2; README › "If a release key leaks"). Public values, kept here so a tag's diff shows
+# every change to them.
+# - SU_PUBLIC_ED_KEY: the key installed copies trust. The `appcast` secret must be its seed: publish signs the feed
+#   and the archive with the secret and verifies both against this key.
+# - SU_NEXT_PUBLIC_ED_KEY and SU_NEXT_KEY_TAG: both empty, except for the one release that rotates the key. That tag's
+#   Info.plist carries the next key, while its feed and archive are still signed with the current one (Sparkle 2.10.0
+#   accepts such an update: SUUpdateValidator checks the archive against the old app's key only). Any other tag fails
+#   until the rotation is finished (this key promoted, the next one cleared, the secret replaced).
+# - SPARKLE_ARCHIVE: the feed's download, Snaptic.zip or Snaptic.dmg. The Developer ID-signed disk image is the only
+#   archive Sparkle's code-signing fallback can verify, which copies still trusting a lost or retired key need.
+env:
+  SU_PUBLIC_ED_KEY: P/QyXVQX6nBYXfuNXlR8trb8+r8A5zyYAQEVyYucW4k=
+  SU_NEXT_PUBLIC_ED_KEY: ""
+  SU_NEXT_KEY_TAG: ""
+  SPARKLE_ARCHIVE: Snaptic.zip
 
 jobs:
   # Fast feedback (about a minute): lints plus the Foundation-only SnapticKit
@@ -300,7 +316,6 @@ jobs:
     env:
       TEAM_ID: 7TFS5G4532
       IDENTITY: "Developer ID Application: Sean Frasure (7TFS5G4532)"
-      SU_PUBLIC_ED_KEY: P/QyXVQX6nBYXfuNXlR8trb8+r8A5zyYAQEVyYucW4k=
       FEED_URL: https://github.com/revylfitness/snaptic/releases/latest/download/appcast.xml
       # Sparkle 2.10.0 as the SwiftPM artifact ships it (Sparkle-for-Swift-Package-Manager.zip, checksum
       # 17e28312b8e18ab7cdbbe09a6fb28cc55a5479ec6c371dbc07cdecd2a14fd959), before Snaptic signs it.
@@ -332,9 +347,11 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
           SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Tag $TAG isn't vX.Y.Z." >&2; exit 1; }
+          [[ "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || { echo "Tag $TAG isn't vX.Y.Z." >&2; exit 1; }
+          MAJOR=$((10#${BASH_REMATCH[1]})) MINOR=$((10#${BASH_REMATCH[2]})) PATCH=$((10#${BASH_REMATCH[3]}))
           git rev-parse --verify --quiet origin/main >/dev/null || { echo "origin/main is missing." >&2; exit 1; }
           git merge-base --is-ancestor "$SHA" origin/main || { echo "$TAG isn't on main." >&2; exit 1; }
           ditto -x -k "$RUNNER_TEMP/unsigned/Snaptic-unsigned.zip" "$RUNNER_TEMP/release"
@@ -343,36 +360,68 @@ jobs:
           [ "v$(plist CFBundleShortVersionString)" = "$TAG" ] || { echo "CFBundleShortVersionString doesn't match $TAG." >&2; exit 1; }
           BUILD=$(plist CFBundleVersion)
           [[ "$BUILD" =~ ^[1-9][0-9]{0,8}$ ]] || { echo "CFBundleVersion $BUILD isn't a positive integer." >&2; exit 1; }
-          [ "$(plist SUPublicEDKey)" = "$SU_PUBLIC_ED_KEY" ] || { echo "SUPublicEDKey isn't the pinned key." >&2; exit 1; }
+          # E4: CFBundleVersion = major·10000 + minor·100 + patch (0.3.1 = 301), so it grows with every version.
+          if [ "$MINOR" -gt 99 ] || [ "$PATCH" -gt 99 ]; then echo "Minor and patch must be at most 99." >&2; exit 1; fi
+          SCHEME=$((MAJOR * 10000 + MINOR * 100 + PATCH))
+          [ "$BUILD" = "$SCHEME" ] || { echo "CFBundleVersion $BUILD must be $SCHEME for $TAG." >&2; exit 1; }
+          # The update key (E2): the pinned key, or the next one in the single release that rotates it.
+          key_ok() { [ "$(printf '%s' "$1" | base64 --decode 2>/dev/null | wc -c | tr -d ' ')" = "32" ]; }
+          key_ok "$SU_PUBLIC_ED_KEY" || { echo "SU_PUBLIC_ED_KEY isn't a 32-byte key." >&2; exit 1; }
+          EXPECTED_KEY="$SU_PUBLIC_ED_KEY"
+          if [ -n "$SU_NEXT_PUBLIC_ED_KEY" ] || [ -n "$SU_NEXT_KEY_TAG" ]; then
+            key_ok "$SU_NEXT_PUBLIC_ED_KEY" || { echo "SU_NEXT_PUBLIC_ED_KEY isn't a 32-byte key." >&2; exit 1; }
+            [ "$SU_NEXT_PUBLIC_ED_KEY" != "$SU_PUBLIC_ED_KEY" ] || { echo "SU_NEXT_PUBLIC_ED_KEY is the current key." >&2; exit 1; }
+            [ "$SU_NEXT_KEY_TAG" = "$TAG" ] || { echo "A key rotation is set up for ${SU_NEXT_KEY_TAG:-no tag}: finish it before releasing $TAG." >&2; exit 1; }
+            EXPECTED_KEY="$SU_NEXT_PUBLIC_ED_KEY"
+            echo "$TAG rotates the update key: it carries the next key and is signed with the current one."
+          fi
+          [ "$(plist SUPublicEDKey)" = "$EXPECTED_KEY" ] || { echo "SUPublicEDKey isn't the expected key." >&2; exit 1; }
+          case "$SPARKLE_ARCHIVE" in Snaptic.zip|Snaptic.dmg) ;; *) echo "SPARKLE_ARCHIVE must be Snaptic.zip or Snaptic.dmg." >&2; exit 1 ;; esac
           [ "$(plist SUFeedURL)" = "$FEED_URL" ] || { echo "SUFeedURL isn't the pinned feed." >&2; exit 1; }
           [ "$(plist SURequireSignedFeed)" = "true" ] || { echo "SURequireSignedFeed must be YES." >&2; exit 1; }
           [ "$(plist SUVerifyUpdateBeforeExtraction)" = "true" ] || { echo "SUVerifyUpdateBeforeExtraction must be YES." >&2; exit 1; }
-          # CFBundleVersion must grow past the current feed (404: no feed yet, the first signed release).
-          code=$(curl -sSL --proto '=https' --max-time 120 -o "$RUNNER_TEMP/previous-appcast.xml" -w '%{http_code}' "$FEED_URL") || code=000
-          case "$code" in
-            404) PREVIOUS=0 ;;
-            200)
-              PREVIOUS=$(python3 -I - "$RUNNER_TEMP/previous-appcast.xml" <<'PY'
+          # CFBundleVersion must grow past every published feed, not only the one "latest" points at: a release
+          # published by hand is "latest" without an appcast until publish runs (r1 S8). No published release with
+          # an appcast.xml means this is the first signed release; any read that fails stops the release.
+          FEEDS="$RUNNER_TEMP/previous-feeds"
+          mkdir -p "$FEEDS"
+          URLS=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select(.draft == false) | .assets[] | select(.name == "appcast.xml") | .browser_download_url')
+          N=0
+          while IFS= read -r url; do
+            [ -n "$url" ] || continue
+            case "$url" in
+              "https://github.com/$GITHUB_REPOSITORY/releases/download/"*/appcast.xml) ;;
+              *) echo "Unexpected appcast URL: $url" >&2; exit 1 ;;
+            esac
+            N=$((N + 1))
+            curl -fsSL --proto '=https' --max-time 120 -o "$FEEDS/$N.xml" "$url"
+          done <<< "$URLS"
+          if [ "$N" = "0" ]; then
+            PREVIOUS=0
+            echo "No published release has an appcast.xml yet: $TAG is the first signed release."
+          else
+            PREVIOUS=$(python3 -I - "$FEEDS"/*.xml <<'PY'
           import sys
           import xml.etree.ElementTree as ET
           SPARKLE = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
           versions = []
-          for item in ET.parse(sys.argv[1]).getroot().iter("item"):
-              for value in [e.text for e in item.iter(SPARKLE + "version")] + \
-                           [e.get(SPARKLE + "version") for e in item.iter("enclosure")]:
-                  if value is not None:
-                      if not value.strip().isdigit():
-                          sys.exit("non-integer sparkle:version in the current feed")
-                      versions.append(int(value.strip()))
+          for path in sys.argv[1:]:
+              for item in ET.parse(path).getroot().iter("item"):
+                  for value in [e.text for e in item.iter(SPARKLE + "version")] + \
+                               [e.get(SPARKLE + "version") for e in item.iter("enclosure")]:
+                      if value is not None:
+                          if not value.strip().isdigit():
+                              sys.exit("non-integer sparkle:version in " + path)
+                          versions.append(int(value.strip()))
           if not versions:
-              sys.exit("the current feed lists no version")
+              sys.exit("a published feed lists no version")
           print(max(versions))
           PY
-              ) ;;
-            *) echo "Couldn't read the current feed (HTTP $code)." >&2; exit 1 ;;
-          esac
-          [ "$BUILD" -gt "$PREVIOUS" ] || { echo "CFBundleVersion $BUILD must be greater than the feed's $PREVIOUS." >&2; exit 1; }
-          echo "Release $TAG, build $BUILD (feed had $PREVIOUS)."
+            )
+          fi
+          [ "$BUILD" -gt "$PREVIOUS" ] || { echo "CFBundleVersion $BUILD must be greater than the published feeds' $PREVIOUS." >&2; exit 1; }
+          echo "Release $TAG, build $BUILD (published feeds had $PREVIOUS, $N feeds read)."
 
       - name: Check the bundle and Sparkle
         run: |
@@ -410,8 +459,8 @@ jobs:
           security find-certificate -c "Developer ID Certification Authority" /Library/Keychains/System.keychain >/dev/null \
             || { echo "The Developer ID intermediate certificate isn't on this runner." >&2; exit 1; }
 
-      # The keychain lives only for this step and the next; no repository script runs while it exists.
-      - name: Sign the app and the disk image
+      # The keychain lives only for this step; no repository script runs while it exists.
+      - name: Sign the app
         env:
           P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
           P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
@@ -457,19 +506,6 @@ jobs:
             exit 1
           fi
 
-          # The disk image (make-dmg.sh's steps, inline): the signed app and an Applications shortcut.
-          OUT="$RUNNER_TEMP/out"
-          STAGE="$RUNNER_TEMP/dmg-stage"
-          rm -rf "$OUT" "$STAGE"
-          mkdir -p "$OUT" "$STAGE"
-          ditto "$APP" "$STAGE/Snaptic.app"
-          ln -s /Applications "$STAGE/Applications"
-          hdiutil create -volname "Snaptic" -srcfolder "$STAGE" -fs HFS+ -format UDZO -imagekey zlib-level=9 -ov "$OUT/Snaptic.dmg" >/dev/null
-          hdiutil verify "$OUT/Snaptic.dmg" >/dev/null
-          codesign --force --timestamp --keychain "$KEYCHAIN" --sign "$IDENTITY" "$OUT/Snaptic.dmg"
-          codesign --verify --strict --verbose=2 "$OUT/Snaptic.dmg"
-          rm -rf "$STAGE"
-
       # E3 step 5: the keychain is gone before anything talks to the network again.
       - name: Delete the signing keychain
         if: always()
@@ -484,7 +520,9 @@ jobs:
             exit 1
           fi
 
-      - name: Notarize and staple
+      # E2 (r1 S7): the app is notarized and stapled before it goes into the disk image, so a copy dragged out of the
+      # image carries its ticket and opens offline.
+      - name: Notarize and staple the app
         env:
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
@@ -497,7 +535,7 @@ jobs:
             exit 1
           fi
           SECRETS="$RUNNER_TEMP/secrets"
-          mkdir -p "$SECRETS"
+          mkdir -p "$SECRETS" "$RUNNER_TEMP/notarize"
           printf '%s\n' "$NOTARY_KEY_P8" > "$SECRETS/notary.p8"
           notarize() {
             local result="$RUNNER_TEMP/notarize/result.json" id status
@@ -515,7 +553,8 @@ jobs:
           }
           APP="$RUNNER_TEMP/release/Snaptic.app"
           OUT="$RUNNER_TEMP/out"
-          mkdir -p "$RUNNER_TEMP/notarize"
+          rm -rf "$OUT"
+          mkdir -p "$OUT"
           ditto -c -k --sequesterRsrc --keepParent "$APP" "$RUNNER_TEMP/notarize/Snaptic.zip"
           notarize "$RUNNER_TEMP/notarize/Snaptic.zip"
           xcrun stapler staple "$APP"
@@ -524,7 +563,94 @@ jobs:
           echo "$ASSESSMENT"
           grep -q 'source=Notarized Developer ID' <<< "$ASSESSMENT" || { echo "Gatekeeper doesn't accept the app." >&2; exit 1; }
           ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT/Snaptic.zip"
+          rm -f "$SECRETS/notary.p8"
 
+      # A second keychain, for this step only: the disk image is built from the stapled app (make-dmg.sh's steps,
+      # inline: no repository script runs while it exists) and signed.
+      - name: Build and sign the disk image
+        env:
+          P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          if [ -z "$P12_BASE64" ] || [ -z "$P12_PASSWORD" ]; then echo "The release secrets are missing." >&2; exit 1; fi
+          SECRETS="$RUNNER_TEMP/secrets"
+          mkdir -p "$SECRETS"
+          KEYCHAIN="$RUNNER_TEMP/snaptic-signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
+          echo "::add-mask::$KEYCHAIN_PASSWORD"
+          printf '%s' "$P12_BASE64" | base64 --decode > "$SECRETS/developer-id.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 1800 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$SECRETS/developer-id.p12" -k "$KEYCHAIN" -f pkcs12 -P "$P12_PASSWORD" -T /usr/bin/codesign >/dev/null
+          rm -f "$SECRETS/developer-id.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          # Searched first, so codesign builds the chain with the system's intermediates.
+          ORIGINAL=$(security list-keychains -d user | tr -d '"' | xargs)
+          read -r -a ORIGINAL_LIST <<< "$ORIGINAL"
+          security list-keychains -d user -s "$KEYCHAIN" "${ORIGINAL_LIST[@]}"
+          IDENTITIES=$(security find-identity -v -p codesigning "$KEYCHAIN")
+          grep -qF "\"$IDENTITY\"" <<< "$IDENTITIES" || { echo "The p12 doesn't hold $IDENTITY." >&2; exit 1; }
+
+          APP="$RUNNER_TEMP/release/Snaptic.app"
+          OUT="$RUNNER_TEMP/out"
+          STAGE="$RUNNER_TEMP/dmg-stage"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          ditto "$APP" "$STAGE/Snaptic.app"
+          xcrun stapler validate "$STAGE/Snaptic.app"
+          ln -s /Applications "$STAGE/Applications"
+          hdiutil create -volname "Snaptic" -srcfolder "$STAGE" -fs HFS+ -format UDZO -imagekey zlib-level=9 -ov "$OUT/Snaptic.dmg" >/dev/null
+          hdiutil verify "$OUT/Snaptic.dmg" >/dev/null
+          codesign --force --timestamp --keychain "$KEYCHAIN" --sign "$IDENTITY" "$OUT/Snaptic.dmg"
+          codesign --verify --strict --verbose=2 "$OUT/Snaptic.dmg"
+          rm -rf "$STAGE"
+
+      - name: Delete the signing keychain again
+        if: always()
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/snaptic-signing.keychain-db"
+          if [ -e "$KEYCHAIN" ]; then
+            security delete-keychain "$KEYCHAIN" || rm -f "$KEYCHAIN"
+          fi
+          rm -rf "$RUNNER_TEMP/secrets"
+          if [ -e "$KEYCHAIN" ]; then
+            echo "The signing keychain is still there." >&2
+            exit 1
+          fi
+
+      - name: Notarize and staple the disk image
+        env:
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          if [ -z "$NOTARY_KEY_ID" ] || [ -z "$NOTARY_ISSUER_ID" ] || [ -z "$NOTARY_KEY_P8" ]; then
+            echo "The notarization secrets are missing." >&2
+            exit 1
+          fi
+          SECRETS="$RUNNER_TEMP/secrets"
+          mkdir -p "$SECRETS" "$RUNNER_TEMP/notarize"
+          printf '%s\n' "$NOTARY_KEY_P8" > "$SECRETS/notary.p8"
+          notarize() {
+            local result="$RUNNER_TEMP/notarize/result.json" id status
+            xcrun notarytool submit "$1" --key "$SECRETS/notary.p8" --key-id "$NOTARY_KEY_ID" \
+              --issuer "$NOTARY_ISSUER_ID" --wait --timeout 1h --output-format json > "$result" || true
+            id=$(plutil -extract id raw -o - "$result" 2>/dev/null || true)
+            status=$(plutil -extract status raw -o - "$result" 2>/dev/null || true)
+            echo "Notarization of $(basename "$1"): ${status:-no result} (${id:-no id})"
+            if [ "$status" != "Accepted" ]; then
+              if [ -n "$id" ]; then
+                xcrun notarytool log "$id" --key "$SECRETS/notary.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" || true
+              fi
+              exit 1
+            fi
+          }
+          OUT="$RUNNER_TEMP/out"
           notarize "$OUT/Snaptic.dmg"
           xcrun stapler staple "$OUT/Snaptic.dmg"
           xcrun stapler validate "$OUT/Snaptic.dmg"
@@ -586,6 +712,17 @@ jobs:
           codesign --verify --strict --deep "$APP"
           xcrun stapler validate "$APP"
           spctl -a -t exec -vv "$APP"
+          # E2 (r1 S7): the disk image is signed and stapled, and the app inside it carries its own ticket.
+          codesign --verify --strict "$RUNNER_TEMP/signed/Snaptic.dmg"
+          xcrun stapler validate "$RUNNER_TEMP/signed/Snaptic.dmg"
+          MOUNT="$RUNNER_TEMP/dmg-mount"
+          mkdir -p "$MOUNT"
+          hdiutil attach -readonly -nobrowse -noautoopen -mountpoint "$MOUNT" "$RUNNER_TEMP/signed/Snaptic.dmg" >/dev/null
+          STATUS=0
+          codesign --verify --strict --deep "$MOUNT/Snaptic.app" || STATUS=1
+          xcrun stapler validate "$MOUNT/Snaptic.app" || STATUS=1
+          hdiutil detach "$MOUNT" >/dev/null || hdiutil detach -force "$MOUNT" >/dev/null
+          [ "$STATUS" = "0" ] || { echo "The app inside Snaptic.dmg isn't signed and stapled." >&2; exit 1; }
 
       - name: Helper self-test (signed)
         timeout-minutes: 3
@@ -651,7 +788,6 @@ jobs:
       contents: write
       attestations: read
     env:
-      SU_PUBLIC_ED_KEY: P/QyXVQX6nBYXfuNXlR8trb8+r8A5zyYAQEVyYucW4k=
       SPARKLE_TOOLS_URL: https://github.com/sparkle-project/Sparkle/releases/download/2.10.0/Sparkle-2.10.0.tar.xz
       SPARKLE_TOOLS_SHA256: c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c
     steps:
@@ -715,8 +851,9 @@ jobs:
           echo "$SPARKLE_TOOLS_SHA256  $RUNNER_TEMP/Sparkle-2.10.0.tar.xz" | shasum -a 256 -c -
           tar -xJf "$RUNNER_TEMP/Sparkle-2.10.0.tar.xz" -C "$TOOLS" ./bin/generate_appcast ./bin/sign_update
 
-      # The feed is built from scratch for every release, from only this release's zip and notes: an earlier feed or
-      # asset is never re-signed. It lists only this version; no delta updates.
+      # The feed is built from scratch for every release, from only this release's archive (SPARKLE_ARCHIVE) and
+      # notes: an earlier feed or asset is never re-signed. It lists only this version; no delta updates. The secret
+      # must be the seed of SU_PUBLIC_ED_KEY, also in the release that rotates the key (the next step checks).
       - name: Generate the appcast
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
@@ -725,10 +862,11 @@ jobs:
           set -euo pipefail
           umask 077
           [ -n "$SPARKLE_ED_PRIVATE_KEY" ] || { echo "The appcast secret is missing." >&2; exit 1; }
+          case "$SPARKLE_ARCHIVE" in Snaptic.zip|Snaptic.dmg) ;; *) echo "SPARKLE_ARCHIVE must be Snaptic.zip or Snaptic.dmg." >&2; exit 1 ;; esac
           FEED="$RUNNER_TEMP/feed"
           rm -rf "$FEED"
           mkdir -p "$FEED"
-          cp "$RUNNER_TEMP/signed/Snaptic.zip" "$FEED/Snaptic.zip"
+          cp "$RUNNER_TEMP/signed/$SPARKLE_ARCHIVE" "$FEED/$SPARKLE_ARCHIVE"
           if [ -z "${NOTES:-}" ] || [ ! -f "$NOTES" ]; then echo "The release notes weren't found." >&2; exit 1; fi
           cp "$NOTES" "$FEED/Snaptic.md"
           TOOLS="$RUNNER_TEMP/sparkle-tools/bin"
@@ -742,8 +880,9 @@ jobs:
           # Sparkle's own check of the feed signature (with the key derived from the secret)…
           printf '%s\n' "$SPARKLE_ED_PRIVATE_KEY" | "$TOOLS/sign_update" --verify --ed-key-file - "$FEED/appcast.xml"
 
-      # …and the client's view: the feed and the archive verify against the pinned SUPublicEDKey, and the one item
-      # names this version, this tag's download URL and this exact zip.
+      # …and the client's view: the feed and the archive verify against SU_PUBLIC_ED_KEY (the key installed copies
+      # trust), the one item names this version, this tag's download URL and this exact archive, and the app carries
+      # the key the next release will be checked with (the next key in a rotation release).
       - name: Verify the appcast against the pinned key
         env:
           TAG: ${{ github.ref_name }}
@@ -751,7 +890,18 @@ jobs:
           set -euo pipefail
           VERSION="${TAG#v}"
           ditto -x -k "$RUNNER_TEMP/signed/Snaptic.zip" "$RUNNER_TEMP/app"
-          BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$RUNNER_TEMP/app/Snaptic.app/Contents/Info.plist")
+          PLIST="$RUNNER_TEMP/app/Snaptic.app/Contents/Info.plist"
+          BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST")
+          EXPECTED_KEY="$SU_PUBLIC_ED_KEY"
+          if [ -n "$SU_NEXT_PUBLIC_ED_KEY" ] || [ -n "$SU_NEXT_KEY_TAG" ]; then
+            if [ -z "$SU_NEXT_PUBLIC_ED_KEY" ] || [ "$SU_NEXT_KEY_TAG" != "$TAG" ]; then
+              echo "The key rotation isn't set up for $TAG." >&2
+              exit 1
+            fi
+            EXPECTED_KEY="$SU_NEXT_PUBLIC_ED_KEY"
+          fi
+          [ "$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" "$PLIST")" = "$EXPECTED_KEY" ] \
+            || { echo "The app's SUPublicEDKey isn't the expected key." >&2; exit 1; }
           cat > "$RUNNER_TEMP/verify-appcast.swift" <<'SWIFT'
           import CryptoKit
           import Foundation
@@ -762,11 +912,11 @@ jobs:
           }
 
           let args = CommandLine.arguments
-          guard args.count == 7 else { fail("usage: <public key> <appcast> <zip> <url> <version> <build>") }
+          guard args.count == 7 else { fail("usage: <public key> <appcast> <archive> <url> <version> <build>") }
           guard let keyData = Data(base64Encoded: args[1]),
                 let key = try? Curve25519.Signing.PublicKey(rawRepresentation: keyData) else { fail("bad public key") }
           guard let feed = FileManager.default.contents(atPath: args[2]),
-                let zip = FileManager.default.contents(atPath: args[3]) else { fail("can't read the files") }
+                let archive = FileManager.default.contents(atPath: args[3]) else { fail("can't read the files") }
 
           // The signing block Sparkle appends (SPUExtractAppcastContent): the signed content is everything before it.
           guard let start = feed.range(of: Data("<!-- sparkle-signatures:\n".utf8), options: .backwards),
@@ -796,16 +946,16 @@ jobs:
           guard value("version") == args[6] else { fail("sparkle:version isn't \(args[6])") }
           guard value("shortVersionString") == args[5] else { fail("sparkle:shortVersionString isn't \(args[5])") }
           guard enclosure.attribute(forName: "url")?.stringValue == args[4] else { fail("the enclosure URL isn't \(args[4])") }
-          guard enclosure.attribute(forName: "length")?.stringValue == String(zip.count) else { fail("the enclosure length is wrong") }
+          guard enclosure.attribute(forName: "length")?.stringValue == String(archive.count) else { fail("the enclosure length is wrong") }
           guard let archiveSignature = enclosure.attribute(forLocalName: "edSignature", uri: sparkle)?.stringValue,
                 let archiveData = Data(base64Encoded: archiveSignature),
-                key.isValidSignature(archiveData, for: zip) else {
-              fail("Snaptic.zip's signature doesn't verify against the pinned SUPublicEDKey")
+                key.isValidSignature(archiveData, for: archive) else {
+              fail("the archive's signature doesn't verify against the pinned SUPublicEDKey")
           }
           print("verify-appcast: ok (\(args[5]), build \(args[6]))")
           SWIFT
           xcrun swift "$RUNNER_TEMP/verify-appcast.swift" "$SU_PUBLIC_ED_KEY" "$RUNNER_TEMP/feed/appcast.xml" \
-            "$RUNNER_TEMP/signed/Snaptic.zip" "https://github.com/revylfitness/snaptic/releases/download/$TAG/Snaptic.zip" \
+            "$RUNNER_TEMP/signed/$SPARKLE_ARCHIVE" "https://github.com/revylfitness/snaptic/releases/download/$TAG/$SPARKLE_ARCHIVE" \
             "$VERSION" "$BUILD"
 
       # The release goes public last, as latest, so a hand-made release can't take over "latest".
