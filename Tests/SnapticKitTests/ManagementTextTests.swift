@@ -5,8 +5,8 @@ import XCTest
 /// labels, toasts, Display Information sections, new virtual display names) use the 0.3 words, not 0.2's.
 final class ManagementTextTests: XCTestCase {
     private var userTexts: [String] {
-        ManagementText.all
-            + DisplaysToggleText.withMenuItems.map { $0.title }
+        let toggles: [String] = DisplaysToggleText.withMenuItems.map { $0.title }
+        return toggles + ManagementText.all
             + RecipeKind.allCases.flatMap { [$0.title, $0.summary] }
             + VirtualHostFailure.allCases.map(\.message)
             + [VirtualHostSpawnFailure.helpersStarting, .helpersUnavailable(""), .appChanged, .checkFailed,
