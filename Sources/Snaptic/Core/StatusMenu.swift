@@ -579,8 +579,7 @@ import SnapticKit
         if offer.readyToRestart, let wait = updater.waitText {
             return [MenuKit.status(wait, control: ControlID("menu.snaptic.updateAvailable"))]
         }
-        let title = offer.readyToRestart ? L("Restart to Update Snaptic…")
-            : L("Update Available: Snaptic \(offer.version)…")
+        let title = UpdatePolicy.menuTitle(offer)
         return [MenuKit.action(title, control: ControlID("menu.snaptic.updateAvailable")) { [weak updater] in
             updater?.installUpdate()
         }]

@@ -252,7 +252,7 @@ import SnapticKit
             relauncher.updater = controller
             revision &+= 1
         } else {
-            EventLog.shared.record(.modules, "Updater unavailable: this build doesn’t carry Sparkle")
+            EventLog.shared.record(.modules, "Updater unavailable: \(UpdaterController.gate)")
         }
         showUpdatedNotice()
         if isFirstV031Launch && showsV031Welcome && !modulesStore.value.needsOnboarding && !safeMode.isActive {
@@ -260,15 +260,16 @@ import SnapticKit
         }
     }
 
-    /// What can hold an update back (E4): lid-closed mode, a display change waiting for Keep or Undo (or still being
-    /// applied), Safe Mode.
+    /// What can hold an update back (E4): lid-closed mode (also while it turns on or off), a display change waiting for
+    /// Keep or Undo (or still being applied), Safe Mode.
     var updateFacts: UpdatePolicy.Facts {
         var displayBusy = false
         if isRunning(.displays), let ctx = displays.pageEnvironment.context {
             displayBusy = ctx.transactions.hasPendingTrial || ctx.transactions.isBusy
         }
-        return UpdatePolicy.Facts(lidModeOn: isRunning(.awake) && awake.lidModeOn, displayTrialPending: displayBusy,
-                                  safeMode: safeMode.isActive)
+        // Lid-closed mode holds updates from the password prompt until it has stopped (r1 C7).
+        return UpdatePolicy.Facts(lidModeOn: UpdatePolicy.holdsUpdates(awake.runtime.lidMode),
+                                  displayTrialPending: displayBusy, safeMode: safeMode.isActive)
     }
 
     /// E1: "Snaptic was updated to 0.3.2." once, on the first launch of the version Sparkle installed.
