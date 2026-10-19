@@ -579,6 +579,8 @@ Tests/SnapticKitTests/AwakeLidGateTests.swift	T-lid-kit	L	-	-
 Tests/SnapticKitTests/AwakeLidPolicyTests.swift	T-lid-kit	L	-	-
 Sources/Snaptic/Awake/Core/LidClosedController.swift	T-lid-app	L	-	-
 Sources/Snaptic/Core/LidRecovery.swift	T-lid-app	L	-	-
+Sources/SnapticKit/BundleCopyText.swift	T-lid-app	L	-	-
+Tests/SnapticKitTests/BundleCopyTextTests.swift	T-lid-app	L	-	-
 Sources/Snaptic/Core/UpdaterController.swift	T-update	L	-	-
 Sources/SnapticKit/UpdatePolicy.swift	T-update	L	-	-
 Tests/SnapticKitTests/UpdatePolicyTests.swift	T-update	L	-	-

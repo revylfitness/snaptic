@@ -1,11 +1,14 @@
 import Darwin
 import Foundation
+import Security
 import SnapticKit
 import SnapticShims
 
 /// Snaptic's own helper processes (the same executable in a helper mode).
 enum HelperKind: String, Sendable {
     case displayGuard, virtualHost, hook, selftestChild
+    /// 0.3.1 B3.1, B3.4: osascript running a fixed `LidWatchdog` admin script; B3.3: the fixed user-level tool.
+    case adminScript, tool
 
     /// argv[1] of the helper; nil for kinds that aren't our own executable.
     var modeFlag: String? {
@@ -13,7 +16,7 @@ enum HelperKind: String, Sendable {
         case .displayGuard: return "--display-guard"
         case .virtualHost: return "--virtual-host"
         case .selftestChild: return "--selftest-child"
-        case .hook: return nil
+        case .hook, .adminScript, .tool: return nil
         }
     }
 }
@@ -41,6 +44,7 @@ final class HelperHandle: @unchecked Sendable {
 
     private let lock = NSLock()
     private var reaped = false
+    private var didTimeOut = false
     private var exitStatus: Int32?
     private var exitSource: DispatchSourceProcess?
     private var readSource: DispatchSourceRead?
@@ -62,6 +66,28 @@ final class HelperHandle: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         return exitStatus
     }
+
+    /// 0.3.1 B3.1: the spawner ended the child because it ran past its time limit.
+    var timedOut: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return didTimeOut
+    }
+
+    fileprivate func markTimedOut() {
+        lock.lock(); didTimeOut = true; lock.unlock()
+    }
+
+    /// `sig` to the child's pid only (never its group), only while unreaped and its start time still matches.
+    fileprivate func signalProcess(_ sig: Int32) {
+        lock.lock()
+        let alive = !reaped
+        lock.unlock()
+        guard alive, pid > 0, startTime == 0 || SNProcess.startTime(for: pid) == startTime else { return }
+        _ = kill(pid, sig)
+    }
+
+    /// SIGTERM to the child's pid only (a superseded password dialog closes; 0.3.1 B3.0).
+    func interrupt() { signalProcess(SIGTERM) }
 
     /// SIGKILL, only while the child is unreaped and its start time still matches (so a
     /// reused pid is never signalled). Idempotent; also closes the writer.
@@ -304,21 +330,174 @@ final class HelperHandle: @unchecked Sendable {
         return handle
     }
 
-    // MARK: Lid-closed mode (0.3.1 B3.1, B3.3; T-lid-app)
+    // MARK: Lid-closed mode (0.3.1 B3.1, B3.3, B3.4; T-lid-app)
 
-    /// Runs `LidWatchdog.osascriptPath -e <script.source>`: a suspended spawn with a minimal environment, checked
-    /// against `LidWatchdog.osascriptRequirement` before SIGCONT, stdout through the reply pipe (64 KB line cap), exit
-    /// observed on main, SIGTERM to osascript's pid only after 120 s. Callers: LidClosedController and LidRecovery
-    /// (lint L18). Step 0 stub: always throws.
+    /// osascript gets SIGTERM (its pid only) after this long: nobody answered the password dialog (B3.1 step 4).
+    static let adminTimeoutSeconds: TimeInterval = 120
+    /// `pmset displaysleepnow` returns at once; one that hangs is ended, so its single flight can't stick.
+    static let toolTimeoutSeconds: TimeInterval = 30
+    /// The whole environment of osascript (and so of the root shell it starts) and of the tool (B6).
+    nonisolated static let lidEnvironment = ["PATH=/usr/bin:/bin", "LANG=en_US.UTF-8"]
+    /// Compiled once each (SecRequirementCreateWithString, SecRequirementCopyData). nil only if Security rejects the
+    /// fixed text; every lid spawn is then refused (fail closed).
+    nonisolated private static let osascriptRequirementData = compileRequirement(LidWatchdog.osascriptRequirement)
+    nonisolated private static let toolRequirementData = compileRequirement(LidWatchdog.toolRequirement)
+    /// Single flight: a kind is busy from the call until its child is reaped (or the spawn failed).
+    private var lidBusy: Set<HelperKind> = []
+
+    /// Runs `LidWatchdog.osascriptPath -e <script.source>`: a suspended, disclaimed spawn with the minimal environment,
+    /// checked to be stopped and to satisfy `LidWatchdog.osascriptRequirement` before SIGCONT; stdout through a reply
+    /// pipe (LineSplitter's 64 KB line cap); exit observed on main; SIGTERM to osascript's pid only after 120 s
+    /// (`HelperHandle.timedOut`). It needs neither Snaptic's helper identity nor `unavailable == nil`, and skips the
+    /// responsibility check (the child is disclaimed). Callers: LidClosedController and LidRecovery (lint L18).
     func spawnAdminScript(_ script: AdminScript, onLine: @escaping @MainActor (Data) -> Void,
                           onExit: @escaping @MainActor (Int32) -> Void) async throws -> HelperHandle {
-        throw HelperSpawnError.unavailable(L("Not built yet"))
+        guard let requirement = Self.osascriptRequirementData else {
+            throw HelperSpawnError.unavailable(L("Snaptic couldn’t check the password prompt’s signature."))
+        }
+        let handle = try await spawnLid(.adminScript, path: LidWatchdog.osascriptPath, arguments: ["-e", script.source],
+                                        requirement: requirement, onLine: onLine, onExit: onExit)
+        // Only osascript is signalled: the watchdog it may have started is detached, and Snaptic never signals it.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.adminTimeoutSeconds) { [weak handle] in
+            MainActor.assumeIsolated {
+                guard let handle, !handle.isReaped else { return }
+                handle.markTimedOut()
+                handle.signalProcess(SIGTERM)
+            }
+        }
+        return handle
     }
 
-    /// Runs a fixed user-level command (`LidWatchdog.displaySleepArgv`) with the same checks (`anchor apple` before
-    /// SIGCONT, minimal environment, disclaimed); single flight. Step 0 stub: always throws.
+    /// Runs a fixed user-level command (`LidWatchdog.displaySleepArgv`; only LidWatchdog.swift can make one) with the
+    /// same checks: suspended, disclaimed, minimal environment, `anchor apple` before SIGCONT. Single flight: no new
+    /// spawn while the previous one runs. Callers: LidClosedController and LidRecovery (lint L18).
     func spawnTool(_ command: ToolCommand, onExit: @escaping @MainActor (Int32) -> Void) async throws -> HelperHandle {
-        throw HelperSpawnError.unavailable(L("Not built yet"))
+        guard let path = command.argv.first, path.hasPrefix("/"), let requirement = Self.toolRequirementData else {
+            throw HelperSpawnError.unavailable(L("Snaptic couldn’t check the tool’s signature."))
+        }
+        let handle = try await spawnLid(.tool, path: path, arguments: Array(command.argv.dropFirst()),
+                                        requirement: requirement, onLine: nil, onExit: onExit)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.toolTimeoutSeconds) { [weak handle] in
+            MainActor.assumeIsolated {
+                guard let handle, !handle.isReaped else { return }
+                handle.markTimedOut()
+                handle.signalProcess(SIGKILL)
+            }
+        }
+        return handle
+    }
+
+    /// The shared path of `spawnAdminScript` and `spawnTool`.
+    private func spawnLid(_ kind: HelperKind, path: String, arguments: [String], requirement: Data,
+                          onLine: (@MainActor (Data) -> Void)?,
+                          onExit: @escaping @MainActor (Int32) -> Void) async throws -> HelperHandle {
+        guard !lidBusy.contains(kind) else {
+            throw HelperSpawnError.unavailable(L("Snaptic is still finishing the previous request."))
+        }
+        // Checked and claimed with no suspension in between, so two calls can't both pass.
+        lidBusy.insert(kind)
+        var running = false
+        defer { if !running { lidBusy.remove(kind) } }
+
+        var pipe: (read: Int32, write: Int32)?
+        if onLine != nil { pipe = try Self.makePipe() }
+        let reply = pipe
+        var pid: pid_t = 0
+        do {
+            try SNSpawn.spawnSuspended(path: path, arguments: arguments, environment: Self.lidEnvironment,
+                                       stdinFD: -1, stdoutFD: reply?.write ?? -1, options: [.disclaim], pid: &pid)
+        } catch {
+            if let reply { close(reply.read); close(reply.write) }
+            EventLog.shared.record(.modules, "Helper \(kind.rawValue) failed to spawn")
+            throw HelperSpawnError.spawnFailed((error as NSError).localizedDescription)
+        }
+        // Before any await: the child has its own copy, and ours left open would keep EOF from reaching us.
+        if let reply { close(reply.write) }
+
+        // Off main, while suspended (the pid can't be reused until we reap it): stopped, then the code requirement;
+        // killed and reaped there on any failure. SecCode never runs on main.
+        let child = pid
+        let verified: Bool = await Self.offMain {
+            let ok = SNSpawn.isStopped(child) && SNProcess.process(child, satisfies: requirement)
+            if !ok { HelperSpawner.killAndReap(child) }
+            return ok
+        }
+        guard verified else {
+            if let reply { close(reply.read) }
+            EventLog.shared.record(.modules, "Helper \(kind.rawValue) failed verification (identity)")
+            throw HelperSpawnError.verificationFailed("identity")
+        }
+
+        let handle = HelperHandle(kind: kind, pid: pid, startTime: SNProcess.startTime(for: pid), writer: nil)
+        let readerQueue = DispatchQueue(label: "app.snaptic.lid-reader")
+        var reader: ReaderState?
+        var readSource: DispatchSourceRead?
+        if let reply, let onLine {
+            let flags = fcntl(reply.read, F_GETFL)
+            if flags >= 0 { _ = fcntl(reply.read, F_SETFL, flags | O_NONBLOCK) }
+            let state = ReaderState(fd: reply.read)
+            let source = DispatchSource.makeReadSource(fileDescriptor: reply.read, queue: readerQueue)
+            source.setEventHandler { [state] in
+                switch state.drain() {
+                case .lines(let lines):
+                    for line in lines {
+                        DispatchQueue.main.async { MainActor.assumeIsolated { onLine(line) } }
+                    }
+                case .wouldBlock:
+                    break
+                case .finished:
+                    source.cancel()
+                }
+            }
+            // EOF, a read error or a line over 64 KB: stop reading. Unlike `spawn`, the child isn't killed here:
+            // osascript closes stdout only as it exits, and that exit is what the caller waits for.
+            source.setCancelHandler { [state] in state.closeDescriptor() }
+            reader = state
+            readSource = source
+        }
+        let lastLines = reader
+        // Exit: one process source on main, the child reaped exactly once; the pipe's last lines arrive before onExit.
+        let finish: @MainActor (Int32) -> Void = { [weak self] status in
+            self?.lidBusy.remove(kind)
+            guard let lastLines else {
+                onExit(status)
+                return
+            }
+            readerQueue.async {
+                let last = lastLines.drainToEnd()
+                handle.cancelReader()
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        if let onLine { for line in last { onLine(line) } }
+                        onExit(status)
+                    }
+                }
+            }
+        }
+        let exitSource = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
+        exitSource.setEventHandler {
+            MainActor.assumeIsolated {
+                if let status = handle.reapIfExited() { finish(status) }
+            }
+        }
+        handle.attach(read: readSource, exit: exitSource)
+        readSource?.resume()
+        exitSource.resume()
+        running = true
+        _ = kill(pid, SIGCONT)
+        // Catch an exit that raced the source registration.
+        if let status = handle.reapIfExited() { finish(status) }
+        return handle
+    }
+
+    /// The fixed requirement text as SecRequirement data (for `SNProcess.process(_:satisfies:)`).
+    nonisolated private static func compileRequirement(_ text: String) -> Data? {
+        var requirement: SecRequirement?
+        guard SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess,
+              let requirement else { return nil }
+        var data: CFData?
+        guard SecRequirementCopyData(requirement, [], &data) == errSecSuccess, let data else { return nil }
+        return data as Data
     }
 
     // MARK: Hooks and actions

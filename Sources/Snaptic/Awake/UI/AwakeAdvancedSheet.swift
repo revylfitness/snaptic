@@ -5,17 +5,17 @@ import SnapticKit
 /// Awake › Advanced (owner: G; PLAN 0.3 §4.3 "Advanced (11)", §2.14, consistency M2): Activity (Appear active, Move
 /// the pointer slightly, Stop appearing active after), End sessions automatically, Display, Restart, and the live
 /// "Other apps keeping your Mac awake" section. Footer: Restore Awake Defaults… (keeps history, rules, the Menu Bar
-/// icon and shortcuts; turns pointer movement and Drive Alive off).
+/// icon and shortcuts; turns pointer movement and Drive Alive off). 0.3.1 B1: Lid closed (laptops), after the end
+/// rules: the opt-in switch, the writable-bundle note and the limits in the footer; B3.4's leftover rows sit under
+/// Other Apps.
 struct AwakeAdvancedSheet: View, ControlDeclaring {
     typealias Controls = AwakeAdvancedSheetControls
-    /// 0.3.1 B7: Lid closed and the leftover rows under Other Apps. Step 0 stub: T-lid-app uses these ids in step 1 (and deletes this list).
-    private static let step0Controls = [ControlID("awake.advanced.lidClosed"),
-                                        ControlID("awake.advanced.lidBundleLearnMore"),
-                                        ControlID("awake.advanced.lidRestore"),
-                                        ControlID("awake.advanced.lidKeepOff"), ControlID("awake.advanced.lidDismiss")]
 
     let env: AwakePageEnvironment
     @ObservedObject private var config: ConfigStore<AwakeConfig>
+    /// Read once per sheet: file-system checks of this copy of Snaptic (B1).
+    private let translocated = PermissionFlow.isTranslocated
+    private let bundleWritable = PermissionFlow.bundleIsUserWritable
 
     init(env: AwakePageEnvironment) {
         self.env = env
@@ -27,6 +27,7 @@ struct AwakeAdvancedSheet: View, ControlDeclaring {
                       restoreControl: ControlID("awake.advanced.restore")) {
             activitySection
             endSection
+            lidSection
             Section {
                 ToggleSetting(L("Keep the display on while locked"),
                               help: L("Sessions that keep the display on also do so on the lock screen."),
@@ -36,7 +37,7 @@ struct AwakeAdvancedSheet: View, ControlDeclaring {
                 Text(L("Display"))
             }
             restartSection
-            OtherAssertionsSection()
+            OtherAssertionsSection(runtime: env.runtime, recovery: SettingsShell.shared.host?.lidRecovery)
         }
     }
 
@@ -110,7 +111,7 @@ struct AwakeAdvancedSheet: View, ControlDeclaring {
 
     private var endSection: some View {
         Section {
-            ToggleSetting(L("When your Mac sleeps"), help: L("When you choose Sleep or close the lid."),
+            ToggleSetting(L("When your Mac sleeps"), help: L("When you choose Sleep or close the lid (not in lid-closed mode)."),
                           isOn: SettingsBinding.store(env.config, \.sessions.behavior.endOnSystemSleep),
                           anchor: ControlID("awake.advanced.endOnSleep"))
             PickerSetting(L("When you switch users"),
@@ -144,6 +145,58 @@ struct AwakeAdvancedSheet: View, ControlDeclaring {
             out.append(PickerOption(hours, AwakeCountdown.unit(hours, L("Hour"), L("Hours"))))
         }
         return out
+    }
+
+    // MARK: Lid closed (0.3.1 B1)
+
+    /// Laptops only (`.hardware(.battery)`); opt-in, off by default. A translocated copy gets the reason instead.
+    @ViewBuilder private var lidSection: some View {
+        if env.runtime.power?.batteryPresent ?? AwakeHardware.hasBattery {
+            let on = config.value.features[.lidClosed] ?? false
+            let lock = AwakeFormat.lock([.lidClosed])
+            Section {
+                if translocated {
+                    StatusRow(BundleCopyText.lidTranslocated, style: .warning)
+                } else {
+                    ToggleSetting(L("Keep awake with the lid closed"),
+                                  help: L("Choose Keep Awake with the Lid Closed in the Awake menu. Asks for an administrator password each time."),
+                                  isOn: Binding(get: { on }, set: { value in setLidClosed(value) }),
+                                  anchor: ControlID("awake.advanced.lidClosed"),
+                                  disabledReason: lock?.lock == .safeMode ? lock?.lock.text : nil)
+                        .disabled(lock != nil)
+                    if let lock, lock.lock == .killSwitch {
+                        DefaultsLockRow(key: KillSwitches.key(prefix: "Awake", id: lock.feature.rawValue))
+                    }
+                    if on && lock == nil && bundleWritable {
+                        SettingsRowNote(BundleCopyText.lidWritable,
+                                        fix: StatusAction(title: L("Learn More…"),
+                                                          control: ControlID("awake.advanced.lidBundleLearnMore")) {
+                                            Self.open(BundleCopyText.passwordHelpURL)
+                                        })
+                    }
+                }
+            } header: {
+                Text(L("Lid closed"))
+            } footer: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(BundleCopyText.lidFooter)
+                    Button(L("Learn More…")) { Self.open(BundleCopyText.lidHelpURL) }
+                        .buttonStyle(.link)
+                }
+            }
+        }
+    }
+
+    private func setLidClosed(_ on: Bool) {
+        var next = env.config.value
+        next.features[.lidClosed] = on
+        if next != env.config.value { env.config.value = next }
+    }
+
+    /// A README section (BundleCopyText's lid-closed links).
+    private static func open(_ link: String) {
+        guard let url = URL(string: link) else { return }
+        NSWorkspace.shared.open(url)
     }
 
     // MARK: Restart

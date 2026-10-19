@@ -18,8 +18,15 @@ import SnapticKit
     let openSettings: @MainActor (SettingsRoute?) -> Void
     /// The module's lifetime (one start…stop).
     let lifetime: Lifetime
+    /// 0.3.1 B3.1, B3.3: lid-closed mode's osascript and `pmset displaysleepnow` go through the host's spawner.
+    let spawner: HelperSpawner
+    /// 0.3.1 B3.4: the host-level leftovers (nil only before AppDelegate wired the host).
+    private(set) weak var lidRecovery: LidRecoveryState?
+    /// 0.3.1 B3.4, E1: the host, for the rows Awake's own menu shares with the Snaptic menu
+    /// (`StatusMenu.leftoverItems(host:)`, `StatusMenu.updateItems(host:)`).
+    private(set) weak var moduleHost: ModuleHost?
 
-    init(_ module: ModuleContext) {
+    init(_ module: ModuleContext, moduleHost: ModuleHost? = nil) {
         safeMode = module.safeMode
         signals = module.hostSignals
         hotkeys = module.hotkeys
@@ -33,6 +40,9 @@ import SnapticKit
         let open = module.openSettings
         openSettings = { route in open(route?.id) }
         lifetime = module.lifetime
+        spawner = module.spawner
+        self.moduleHost = moduleHost
+        lidRecovery = moduleHost?.lidRecovery
     }
 }
 
@@ -48,6 +58,8 @@ import SnapticKit
     let host: AwakeHost
     /// Controllers other controllers call.
     let sessions: SessionController, triggers: TriggerController
+    /// 0.3.1 B3: lid-closed mode (SessionController starts and stops it with the sessions feature).
+    let lid: LidClosedController
 
     init(host: AwakeHost, config: ConfigStore<AwakeConfig>, state: ConfigStore<AwakeRuntimeSnapshot>,
          history: ConfigStore<AwakeHistory>, runtime: AwakeRuntimeState) {
@@ -74,6 +86,7 @@ import SnapticKit
         process = ProcessWatch()
         sessions = SessionController()
         triggers = TriggerController()
+        lid = LidClosedController()
     }
 
     func service(_ id: AwakeServiceID) -> any AwakeServiceLifecycle {
