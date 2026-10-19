@@ -1,4 +1,4 @@
-# Snaptic 0.3.1 plan (r4)
+# Snaptic 0.3.1 plan (r5, final)
 
 ## What 0.3.1 adds
 
@@ -23,7 +23,8 @@ The owner made the following decisions on 2026-10-19, and they are not reopened 
   - the plan misstated Sparkle's trust model.
 
   The owner's account setup (E0) was also done during this revision.
-- Every finding is handled in the revision that follows it. Dispositions are in §R (r1), §R2 (r2) and §R3 (r3) at the end.
+- **r4 → r5 (final):** round 4 found no Blockers and 4 Majors, all fixed by text changes. Design and product said "ready"; code and security said "not ready" pending those Majors.
+- Every finding is handled in the revision that follows it. Dispositions are in §R (r1), §R2 (r2), §R3 (r3) and §R4 (r4) at the end.
 
 ## Inputs and conventions
 
@@ -367,7 +368,7 @@ LidClosedController asks SessionController to set or clear `lidRequested` throug
 | A Start Anyway session (`overrideGuards`) | "Lid-closed mode isn’t available in a Start Anyway session." |
 | Translocated bundle | The B1 translocated row's text |
 | Journal pending (B3.4) | "Snaptic is finishing an earlier lid-closed session. Try again in a minute." |
-| Leftover (B3.4) | "Turn sleep back on first. It may have been left off by an earlier lid-closed session." with **Turn Sleep Back On…** and **Open Settings** |
+| Leftover (B3.4) | "Turn sleep back on first. It may have been left off by an earlier lid-closed session." with **Turn Sleep Back On…** and **Open Awake Settings…** |
 
 Low Power Mode does **not** block the mode. It follows the session's `endOnLowPowerMode` like everything else, and the README recommends Low Power Mode with the lid closed.
 
@@ -568,7 +569,7 @@ done
 
 **Cost.** About 9 forks every 5 s. HW-35 measures wakeups. If they're significant, the period becomes 10 s and staleness 30 s.
 
-**Shell test (CI).** `LidWatchdog.script(tools:period:stale:)` takes a table of **every** absolute tool path the script uses, plus the loop period and the staleness limit. It defaults to the macOS paths, 5 s and 20 s (golden-tested). The test stubs every tool, including `kill`, `sleep`, `date`, `stat`, `awk`, `sed` and `nohup`, uses a 0.2 s period, kills its own leftover processes, and also runs in the macOS `build` job, the only place with bash 3.2. Lint rules 7 and 12 scan only `Sources/`, so the test needs no exemption. A Kit test on the `kit-linux` job runs the generated **command** under `/bin/sh` (dash) and, where present, `bash --posix`. It uses stub `pmset`, `ioreg`, `notifyutil` and `stat` tools that record calls, and asserts:
+**Shell test (CI).** `LidWatchdog.script(tools:period:stale:)` takes a table of **every** absolute tool path the script uses, plus the loop period and the staleness limit. It defaults to the macOS paths, 5 s and 20 s (golden-tested). The test stubs every tool, including `kill`, `sleep`, `date`, `stat`, `awk`, `sed` and `nohup`, uses a 0.2 s period, kills its own leftover processes, and also runs in the macOS `build` job, the only place with bash 3.2. Lint rules 7 and 12 scan only `Sources/`, so the test needs no exemption. On `kit-linux` it runs the generated **command** under `/bin/sh` (dash) and `bash --posix`; on macOS it runs under bash 3.2. The stub tools record their calls. The test asserts:
 - a `check` exit of 3 or 64 becomes the command's exit status;
 - `$!` is the `run` process's pid;
 - the command returns at once;
@@ -660,7 +661,7 @@ The watchdog's `sleepnow` covers a hung app.
 |---|---|
 | **Every Snaptic menu** (shared, own and Awake's custom one) | First group, above the tab bar: a status row "Sleep Is Turned Off", then "Turn Sleep Back On…". `CustomItemRow` gains `leftover: Bool`, and `IndicatorController` calls a static `StatusMenu.leftoverItems(host:)` on each build, because a menu item can belong to only one menu. **Keep Sleep Off** has no undo except Terminal, so it never appears in a menu. |
 | **Awake page and Advanced › Other Apps** | "Your Mac can’t sleep. This may be from an earlier lid-closed session that didn’t finish." with **Turn Sleep Back On…**, **Keep Sleep Off** and **Not Now** |
-| **When Awake isn't running** | A toast with the same text. Toasts allow at most two buttons, so it has **Turn Sleep Back On…** and **Open Settings** (Awake › Advanced). |
+| **When Awake isn't running** | A toast with the same text. Toasts allow at most two buttons, so it has **Turn Sleep Back On…** and **Open Awake Settings…**. The leftover rows show on the Awake page **even while Awake is turned off**, because they come from the host's `LidRecovery`, not from the module. |
 
 What the buttons do:
 - **Turn Sleep Back On…** runs `LidWatchdog.restoreScript`. It is fixed, takes no arguments, and only runs `/usr/bin/pmset -a disablesleep 0`.
@@ -684,7 +685,7 @@ While a Snaptic journal exists, Advanced › Other Apps never says "Snaptic can�
 ### B5. Kit additions (all Linux-tested)
 
 **`LidWatchdog`.** `AdminScript` and `ToolCommand` have `fileprivate` inits, so only this file can make them.
-- Script and command: `script(tools:)` (default `script`), `command(args)`, `appleScript(command:prompt:)`, `startScript(args, prompt:)`.
+- Script and command: `script(tools:period:stale:)` (default `script`), `command(args)`, `appleScript(command:prompt:)`, `startScript(args, prompt:)`.
 - Fixed values: `restoreScript(prompt:)`, `displaySleepArgv`, `osascriptPath`, `osascriptRequirement`, `capSeconds = 86_400`.
 - Parsing and validation: `Arguments.validated(...)`, `parseResult`.
 - Prompts: `promptText(floor:)`, `restorePromptText`.
@@ -744,7 +745,7 @@ While a Snaptic journal exists, Advanced › Other Apps never says "Snaptic can�
   - While Snaptic is hung, keep the beacon fresh. That's bounded by the cap, the root-side battery floor and heat cutoff, and by Snaptic's process being alive.
   - It can't start the mode without you typing a password into a dialog.
 - **The dialog names osascript, not Snaptic.** Any app can show this dialog with any text. If Snaptic is installed owned by root (`INSTALL=1`, or `sudo chown -R root:wheel /Applications/Snaptic.app` for the release zip), only enter your password right after you choose Keep Awake with the Lid Closed or Turn Sleep Back On… in Snaptic.
-- **The password advice applies to three choices.** Only enter your password right after you choose Keep Awake with the Lid Closed, Turn Sleep Back On…, or Install and Relaunch in Snaptic.
+- **The password advice applies to three choices.** Only enter your password right after you choose Keep Awake with the Lid Closed, Turn Sleep Back On…, or Install and Relaunch (in Snaptic's About page or in Sparkle's update window).
 - **If your account can change Snaptic** (the default after you drag it to Applications), that advice isn't enough: a program running as you can change Snaptic so that its own prompt runs something else as root. Snaptic shows this under the setting (B1).
   - **Why warn rather than refuse.** The same program could show the identical dialog without touching Snaptic, and refusing would remove the feature from the default install. The weaker protection is stated plainly here instead.
   - A translocated copy is refused.
@@ -826,7 +827,7 @@ These are numbered after 0.3's HW-23. The list lives here and in README's testin
 | HW-35 | Watchdog cost: `powermetrics` wakeups at a 5 s period. |
 | HW-36 | Updates (Part E):<br>• Sparkle loads in a Developer ID build;<br>• update 0.3.1 → 0.3.2 from a user-owned and from a root-owned copy;<br>• Accessibility and Screen Recording survive;<br>• no Gatekeeper prompt after relaunch;<br>• an update is refused with a wrong EdDSA signature and with a non-Developer-ID build;<br>• deferral works while lid-closed mode is on and while a display trial is pending. |
 | HW-37 | An ad-hoc local build (`build-app.sh` without an identity) launches without Sparkle, and Check for Updates… opens the Releases page. CI covers part of this with `--selftest-launch`. |
-| HW-38 | Updates, continued:<br>• a root-owned copy stays `root:wheel` after an update;<br>• record the authorization right Sparkle registers for root-owned installs;<br>• gentle reminders: the menu row appears and brings Sparkle's window forward;<br>• no Sparkle window during onboarding or Safe Mode;<br>• a manual check works in Safe Mode;<br>• Relauncher with a pending install-on-quit installs and relaunches once;<br>• the 0.3.0 → 0.3.1 re-grant for Accessibility and Screen Recording. |
+| HW-38 | Updates, continued:<br>• Open at Login across the ad-hoc → Developer ID switch (no stale or duplicate Login Items entry);<br>• a tampered `appcast.xml` (edited release asset) is rejected by the client;<br>• a root-owned copy stays `root:wheel` after an update;<br>• record the authorization right Sparkle registers for root-owned installs;<br>• gentle reminders: the menu row appears and brings Sparkle's window forward;<br>• no Sparkle window during onboarding or Safe Mode;<br>• a manual check works in Safe Mode;<br>• Relauncher with a pending install-on-quit installs and relaunches once;<br>• the 0.3.0 → 0.3.1 re-grant for Accessibility and Screen Recording. |
 
 ## Part D: Teams, file ownership and order
 
@@ -850,8 +851,14 @@ These are numbered after 0.3's HW-23. The list lives here and in README's testin
      - `ModuleHost.lidRecovery: LidRecoveryState` (the leftover rows);
      - `AwakeHost.lidModeOn` (the N11 suffix);
      - `ModuleHost.updater: UpdaterControlling?` (Part E).
+   - **Cross-team menu hooks** (code r4 M2):
+     - `CustomItemRow.leftover: Bool` and `CustomItemRow.updateAvailable: Bool`;
+     - `static StatusMenu.leftoverItems(host:) -> [NSMenuItem]` and `static StatusMenu.updateItems(host:) -> [NSMenuItem]`, which T-lid-app's `IndicatorController` calls;
+     - `ModuleHost.lidRecovery` and `ModuleHost.updater` are declared by the lead in Step 0. After that, T-lid-app fills in the recovery and T-update fills in the updater.
+   - **Self-test:** the `--selftest-launch` flag (`KitArgs`, `SnapticEntry`, `SelfTest`) and its token gate.
 4. **Every A6, B7 and E7 control**, each with a stub use. The `ControlRegistry` changes (`ControlKind.menuTabBar` and the new `ControlState`s), `SettingsIndex`, every `Controls/*` table and `ControlRegistryTests` are the lead's in Step 0, then frozen.
-5. **Lint changes:** rule 12, L16 and L18, plus the E6 rules.
+5. **Lint changes,** all of them owned by the lead: rule 12, L16, L18, L19, and the workflow rules (E6, plus "only `publish` runs `gh release`"). After Step 0, `scripts/lint*` is frozen; teams request changes from the lead.
+6. **`CODEOWNERS`** (`* @frasurebuilds`).
 
 ### Step 1 (in parallel; one owner per file)
 
@@ -860,7 +867,7 @@ These are numbered after 0.3's HW-23. The list lives here and in README's testin
 | **T-menu** | `StatusMenu.swift`, `MenuKit.swift`, `MenuTabBar.swift`, `MenuLayout.swift` and its tests, `ModuleContracts.swift`, Window Switcher's and Displays' `menuAttention` and `menuSection(tabbed:)` (in their module files), `MenuBarPage.swift` |
 | **T-lid-kit** | `LidWatchdog.swift`, `AwakeLidGate.swift`, `AwakeLidPolicy.swift` and their tests; `AwakePresentation.swift` and its tests (including the `tab` style: T-menu sends requests); `AwakeSession.swift`, `AwakeSessionPolicy.swift`, `AwakeCommandGrammar.swift`, `AwakeHistory.swift`, `AwakeLogEvent.swift`, `AwakeArbiter.swift` and its tests, `ConfigAwake*.swift`, `KitBackup.swift`, `AwakeFeatureGraph.swift`, `OtherAssertions.swift`, `ConfigFixtures.swift`, and the Kit tests for all of these |
 | **T-lid-app** | `LidClosedController.swift`, `LidRecovery.swift`, `HelperSpawner.swift`, `SNProcess.*` / `SNSpawn.*` (if needed), `SessionController.swift`, `AwakeAutomation.swift`, `AwakeMenuRows.swift`, `IndicatorController.swift`, `AwakeModule.swift` (including `menuSection(tabbed:)`), `AwakeRuntimeState.swift`, `AwakeContext.swift` / `AwakeContracts.swift`, `AwakeAdvancedSheet.swift`, `AwakeStatusSection.swift`, `AwakePage.swift`, `CustomSessionPanel.swift`, `OtherAssertionsReader.swift`, `OtherAssertionsSection.swift`, `SystemEventsMonitor.swift`, `ActivitySimulator.swift` (only if HW-30 needs it), `HistoryController.swift`, `AwakeHistoryPage.swift`, `AwakeDiagnostics.swift`, `AppDelegate.swift` (except the Part E hunk), `EmergencyActions.swift`, and the Kit Permissions copy file (the bundle strings) |
-| **T-update** | Part E:<br>• new files: `UpdaterController.swift`, `UpdatePolicy.swift` with `UpdateStatusText` and `UpdateDefaultsKeys`, and their tests;<br>• build and release: `Package.swift` with `Package.resolved`, `scripts/build-app.sh`, `scripts/make-dmg.sh`, `.github/workflows/build.yml`, `Resources/Info.plist`, `scripts/lint*` (L19 and the workflow rules);<br>• app: `AboutPage.swift` and `AboutPageControls.swift`, `Relauncher.swift`, `ModuleHost.swift` (`updater`, and Reset of the `SU*` keys), the Part E hunk of `AppDelegate.swift` (landed as a stub call in Step 0), the onboarding updates step, and the 0.3.1 card |
+| **T-update** | Part E:<br>• new files: `UpdaterController.swift`, `UpdatePolicy.swift` with `UpdateStatusText` and `UpdateDefaultsKeys`, and their tests;<br>• build and release: `Package.swift` with `Package.resolved`, `scripts/build-app.sh`, `scripts/make-dmg.sh` (an optional app-path argument already exists), `.github/workflows/build.yml`, `Resources/Info.plist`, and the self-test implementations behind `--selftest-launch` (`SelfTest*.swift`);<br>• app: `AboutPage.swift` and `AboutPageControls.swift`, `Relauncher.swift`, `ModuleHost.swift` (all of it after Step 0: `updater`, Reset of the `SU*` keys, `SnapticLastRunVersion`), the Part E hunk of `AppDelegate.swift` (landed as a stub call in Step 0), the onboarding updates step, the 0.3.1 welcome card (`GeneralPages.swift`, `ConfigMigrations.swift`), and the Screen Recording re-grant (`KitHostUI.swift`, `PermissionFlow.swift`, `PermissionsPage.swift`) |
 | **T-docs** | `README.md`, `site/index.html`, `THIRD_PARTY_NOTICES.md`, the design-spec amendments, and the release notes |
 
 ### Step 2
@@ -905,26 +912,31 @@ These are numbered after 0.3's HW-23. The list lives here and in README's testin
 - `ToggleSetting(L("Check for updates automatically"), help: L("Once a day, Snaptic checks GitHub for a newer version. GitHub sees your IP address and macOS version, nothing more."))`
 - `ToggleSetting(L("Download and install updates automatically"), help: L("Updates download in the background and install the next time Snaptic quits."))`
   - It's a dependent row, shown while checks are on.
-  - It's hidden for root-owned copies. Those copies always ask for an administrator password through Sparkle's installer, so installing only follows an explicit **Install and Relaunch**. The row explains this instead: "Snaptic is installed by an administrator, so each update asks for an administrator password."
+  - It's hidden for root-owned copies. Those copies always ask for an administrator password through Sparkle's installer, so installing only follows an explicit **Install and Relaunch**. The row explains this instead: "Only an administrator can change this copy of Snaptic, so each update asks for an administrator password."
 - **Status row** (Kit `UpdateStatusText`), one of:
   - "Last checked today at 9:12 AM", "…yesterday at 9:12 AM" or "…on Oct 12" (hand-formatted, N12);
   - "Not checked yet";
   - "Checking…";
   - "Snaptic couldn’t check for updates. Check your connection and try again.";
+  - "Version 0.3.2 is available." (found, not downloaded) with **Install and Relaunch…**;
   - "Version 0.3.2 is ready to install." with **Install and Relaunch…**;
+  - "Automatic checks are off." (after Not Now);
   - a deferral line (E4).
 - **Builds from source** (no Sparkle): both toggles are hidden, and the row says "This copy was built from source, so it can’t update itself. Download Snaptic from GitHub Releases to get updates."
 
 **Consent, in Snaptic's own UI.** Snaptic never shows Sparkle's own permission prompt: Snaptic sets `updater.automaticallyChecksForUpdates` before Sparkle would ask.
 - **New users** see an onboarding step, "Keep Snaptic up to date", with **Check Automatically** and **Not Now**.
-- **People upgrading from 0.3.0** see a one-time 0.3.1 card, the one that already explains the one-time permission re-grant. It offers the same choice, plus "Updates install automatically" turned on by default (except for root-owned copies).
+- **People upgrading from 0.3.0** see the 0.3.1 welcome card (E1a).
 
 **Update alerts.** A menu-bar app's alerts can appear behind other windows, so Snaptic uses Sparkle's **gentle reminders**: `SPUStandardUserDriverDelegate.supportsGentleScheduledUpdateReminders = true`.
-- When an update is found or ready, the Snaptic menu footer and the Awake/own-icon footers show **"Update Available: Snaptic 0.3.2…"**.
+- When an update is found, a footer row shows **"Update Available: Snaptic 0.3.2…"**. Once it has downloaded and automatic install is on, the row becomes **"Restart to Update Snaptic…"**.
+  - **Where:** the shared footer, directly above Snaptic Settings…. In own-icon and Awake menus it shows only where they already carry the shared footer.
+  - **Order in the first group:** Safe Mode rows, then the leftover rows. The update row is footer-only.
+  - **Gate:** `.state(.updateAvailable)`.
 - That row and the About status row bring Sparkle's window forward with `NSApp.activate`.
 - The window never appears while onboarding is showing or while in Safe Mode.
 
-**After an update installs silently,** a one-time toast appears on the next launch: "Snaptic was updated to 0.3.2." with **What’s New**, which opens the release notes in the browser.
+**After any Sparkle install,** a toast appears once per version on the next launch: "Snaptic was updated to 0.3.2." with **What’s New**, which opens the release notes in the browser. Sparkle's `updater(_:didFinishInstallingUpdate:)` path records the version. A manual install shows nothing.
 
 **Deferral texts** (Kit `UpdatePolicy.waitText`, tested):
 - "Version 0.3.2 will install when lid-closed mode ends."
@@ -934,6 +946,30 @@ These are numbered after 0.3's HW-23. The list lives here and in README's testin
 If the user clicks Install and Relaunch while something defers it, a toast gives the same reason.
 
 **Release notes** are embedded in the appcast as Markdown (`sparkle:format="markdown"`) from `docs/design/<version>/RELEASE-NOTES-<version>.md`. Sparkle shows them in its window, and nothing is fetched from github.com to render them. A **Full Release Notes** link (`sparkle:fullReleaseNotesLink`) opens the browser.
+
+### E1a. The 0.3.1 welcome card and onboarding step (round-4 parity M1, design R4-m2)
+
+**Detecting an upgrader.** 0.3.0 stores no last-run version.
+- A new migration marker, `MigrationID.v031Welcome`, is recorded the first time 0.3.1 runs.
+- The user counts as an **upgrader** when the `SnapticModulesV1` defaults key already existed before that marker. Otherwise they are a **new user**.
+- From 0.3.1 on, a `SnapticLastRunVersion` key (`CFBundleVersion`) is written at every launch, so later versions can tell upgrades apart directly. It is navigation state: not backed up and not cleared by Reset.
+
+**Upgraders, first launch of 0.3.1**
+- Settings opens on General with a card at the top. This is the existing card component used for "New: Awake", and the card's controls use ids `general.page.card.v031.*`.
+- **Title:** "Welcome to Snaptic 0.3.1"
+- **Body:** "Snaptic is now signed by its developer, so macOS asks you to allow it again once. After this, updates keep your permissions."
+- **Rows:**
+  - A row for each permission the user had granted before: Accessibility and Screen Recording (KitHostUI's launched-before heuristic). Each row says "Remove the old Snaptic with −, then turn on the new one." and has **Open System Settings…** (`general.page.card.v031.openAccessibility`, `general.page.card.v031.openScreenRecording`).
+  - "Keep Snaptic up to date" with **Check Automatically** (`general.page.card.v031.autoCheck`) and **Not Now** (`…notNow`). Check Automatically also turns on automatic install, except for root-owned copies.
+  - One line of what's new: "New in 0.3.1: tabs in the Snaptic menu, keeping awake with the lid closed, and automatic updates."
+- **Dismissing:** **Done** (`…done`) hides the card. It also hides itself once the update choice is made and the permissions are working again.
+
+**New users.** Onboarding gains a step, **"Keep Snaptic Up to Date"**:
+- **Body:** "Snaptic can check GitHub once a day and install updates when you quit it. GitHub sees your IP address and macOS version, nothing more."
+- **Buttons:** **Check Automatically** turns on checks and automatic install (not for root-owned copies). **Not Now** turns both off. Either button advances to the next step, like the existing permission steps' buttons. There is no separate Continue.
+- **Controls:** `onboarding.updates.check` and `onboarding.updates.notNow` in `OnboardingControls`.
+
+**After Not Now,** About's status row says "Automatic checks are off.", not "Not checked yet".
 
 ### E2. Signing, notarization and the trust model
 
@@ -959,7 +995,11 @@ If the user clicks Install and Relaunch while something defers it, a toast gives
   - Anyone holding the EdDSA release key can publish an update that Snaptic accepts.
   - So can anyone holding the Developer ID certificate.
   - Sparkle doesn't check notarization, and it removes the quarantine flag.
-- **The defense is custody.** The two secrets live in **separate** environments (E0), so one compromised environment never holds both. Both environments are tag-only and need the owner's approval for every run.
+- **The defense is custody and review.** The two secrets live in **separate** environments (E0), so one compromised environment never holds both. Both environments are tag-only and need the owner's approval for every run.
+  - Splitting the secrets doesn't stop a malicious workflow at a tag the owner approves. Also required:
+    - a `main` ruleset that blocks force pushes and deletion and requires pull requests, with admins allowed to bypass so a solo owner can merge;
+    - a `CODEOWNERS` file (`* @frasurebuilds`) in this PR;
+    - before approving a deployment, the owner looks at the tag's diff to the previous release, including `.github/`.
 - **`SUVerifyUpdateBeforeExtraction = YES`.** The EdDSA signature is checked before extraction.
 - **`SURequireSignedFeed = YES`.** The appcast itself carries an EdDSA signature (E3, `publish`), so a tampered feed is rejected. A tampered feed means:
   - notes or links that someone changed;
@@ -969,10 +1009,10 @@ If the user clicks Install and Relaunch while something defers it, a toast gives
 - **Compromise runbook** (README › "If a release key leaks"):
   - **EdDSA key leaks:**
     1. Generate a new key.
-    2. Ship a Developer ID-signed update carrying the new `SUPublicEDKey` (Sparkle's rotation path).
+    2. Ship a Developer ID-signed update carrying the new `SUPublicEDKey` (Sparkle's rotation path). Because `SUVerifyUpdateBeforeExtraction` is on, the code-signing fallback accepts only a **code-signed archive**, so that one release's enclosure must be the signed `Snaptic.dmg`, not the zip.
     3. Replace the `appcast` secret.
   - **Certificate leaks:**
-    1. Revoke it in the developer account.
+    1. Revoke it in the developer account. Revoking can make Gatekeeper reject earlier downloads signed with it. Apple's revocation date rules apply, so contact Apple DTS if older builds must stay valid.
     2. Create a new one.
     3. Ship an EdDSA-signed update signed with the new certificate.
   - In both cases, publish a note in the README and on the Releases page.
@@ -990,43 +1030,66 @@ If the user clicks Install and Relaunch while something defers it, a toast gives
 - `actionlint` runs in `kit-linux`.
 - The tag is validated with `^v[0-9]+\.[0-9]+\.[0-9]+$` before any use.
 
-**Jobs**
+**Jobs.** These replace PR #2's `release` job and the old `attest` dependency. Only `publish` may create, upload to, or edit a GitHub release; a workflow lint rejects `gh release` anywhere else.
 
-1. **`build`** (every push and PR, no secrets). It compiles once and produces **two bundles**:
-   - **`build/Snaptic.app`**: ad hoc, **without** Sparkle. All tests, self-tests, the lint and the existing artifact for `main` use this bundle, exactly as today.
-   - **`build/release/Snaptic.app`** (tags only): the same binary, never run or signed in `build`.
-     - Sparkle is copied in with `ditto` from the SwiftPM binary target, pinned with `exact: "2.10.0"`, into `Contents/Frameworks/`.
-     - `Versions/B/XPCServices` and the top-level `XPCServices` symlink are removed.
-     - `install_name_tool -add_rpath @executable_path/../Frameworks Contents/MacOS/Snaptic` adds the rpath.
-     - Checks: `otool -l` shows the rpath, and `LC_LOAD_WEAK_DYLIB @rpath/Sparkle.framework/…` is present.
-     - It is uploaded as artifact `Snaptic-unsigned`.
-   - **CI launch check:** a token-gated `--selftest-launch` starts the ad-hoc app (no Sparkle) far enough to build `ModuleHost`, including the updater gate, then exits.
-   - The B3.2 shell test also runs here, under bash 3.2.
-2. **`sign`** (macos-15, environment `release`, tags only, `needs: build`):
-   1. **Tag checks.** Fail unless the tag's commit is an ancestor of `origin/main` (`git merge-base --is-ancestor`), the tag equals `CFBundleShortVersionString`, and `CFBundleVersion` is an integer greater than the last published one.
-   2. **Pinned hashes.** Fail if the SHA-256 of `Sparkle.framework/Versions/B/{Sparkle, Autoupdate, Updater.app/Contents/MacOS/Updater}` differs from the hashes pinned in the workflow for the official 2.10.0 build.
-   3. **Keychain.** Import the p12 into a temporary keychain.
-   4. **Sign inside out** with `codesign -f -o runtime --timestamp -s "$IDENTITY"`, in this order:
-      - `…/Versions/B/Autoupdate`
-      - `…/Versions/B/Updater.app`
-      - `Sparkle.framework`
-      - the app
+1. **`build`** runs on every push and PR, with no secrets. It compiles once and produces **two bundles**.
+   - **`build/Snaptic.app`** is ad hoc, **without** Sparkle.
+     - All tests, self-tests and lints run on this bundle.
+     - On pushes to `main` **only**, it is uploaded as artifact `Snaptic-adhoc`, as today.
+   - **Checks on every push.**
+     - `otool -l` must show `LC_LOAD_WEAK_DYLIB @rpath/Sparkle.framework/…`.
+     - A token-gated `--selftest-launch` starts the ad-hoc app without Sparkle far enough to build `ModuleHost` and the updater gate.
+     - The B3.2 shell test runs under bash 3.2.
+   - **`build/release/Snaptic.app`** is built on tags only. It is the same binary, and is never run or signed in `build`.
+     - `ditto` copies in Sparkle from the SwiftPM binary target (`exact: "2.10.0"`).
+     - Both `Versions/B/XPCServices` and the top-level `XPCServices` symlink are removed.
+     - `install_name_tool -add_rpath @executable_path/../Frameworks` is applied, then `otool` asserts the result.
+     - It is uploaded as `Snaptic-unsigned`.
+2. **`sign`** runs on macos-15 in environment `release`, on tags only, with `needs: build`. The checkout uses `fetch-depth: 0`.
+   1. **Guards.**
+      - The tag must match `^v[0-9]+\.[0-9]+\.[0-9]+$`, and its commit must be an ancestor of `origin/main`.
+      - The tag must equal `CFBundleShortVersionString`.
+      - `CFBundleVersion` must be an integer greater than the version in the current latest appcast.
+   2. **Sparkle check.** The SHA-256 hashes of `Sparkle.framework/Versions/B/{Sparkle, Autoupdate, Updater.app/Contents/MacOS/Updater}` must equal the hashes pinned in the workflow. The pins are taken from the **SwiftPM artifact zip** for 2.10.0 (checksum `17e28312…`), not the tarball.
+   3. **Code signing.**
+      - Create a temporary keychain and import the p12.
+      - Sign inside out with `codesign -f -o runtime --timestamp -s "$IDENTITY"`: Autoupdate, then `Updater.app`, then the framework, then the app.
+      - Run `codesign --verify --strict --deep` and check that the app has no entitlements.
+   4. **Disk image.** Build the DMG with **inline fixed `hdiutil` commands**, from the signed app with an Applications symlink (the same steps as `make-dmg.sh`). No repository script runs while the keychain is unlocked. Then `codesign --timestamp -s` the DMG.
+   5. **Keychain teardown.** Delete the keychain before any network step.
+   6. **Notarize and staple.**
+      - App: `notarytool submit --wait` on a zip of the app, then `stapler staple` the app, then `spctl -a -t exec -vv`, then re-zip as `Snaptic.zip`.
+      - DMG: notarize, staple, then `spctl -a -t open --context context:primary-signature -vv`.
+   7. **Outputs.** `zip_sha256` and `dmg_sha256` become job outputs. Upload the artifact **`Snaptic-signed`**.
+3. **`verify`** runs on macos-15 with no secrets, `needs: sign`.
+   - Download `Snaptic-signed` and check its hashes against the outputs.
+   - Run `selftest-helpers.sh` and `--selftest-controls` on the signed app with Sparkle loaded.
+4. **`attest`** runs on tags only, with `needs: sign`. It checks the hashes against the outputs, then attests the signed zip and dmg.
+5. **`publish`** runs on macos-15 in environment **`appcast`**, with `needs: [sign, verify, attest]`.
+   1. **Re-check the files.** Download `Snaptic-signed`, recompute the hashes against `sign`'s outputs, and run `gh attestation verify` on both files.
+   2. **Release state.** If no release exists for the tag, create a **draft**. If one exists, draft or published, reuse it.
+   3. **Sparkle tools.** Download the official `Sparkle-2.10.0.tar.xz` and check its pinned SHA-256. This provides Sparkle's own `generate_appcast`.
+   4. **Fresh appcast.** Build the feed **from scratch for each release**, from a folder that holds only `Snaptic.zip` and `Snaptic.md` (copied from the release notes). The previous appcast is **never** reused, so a tampered asset from an earlier release can't be re-signed into a new one. The feed lists only the current version: Sparkle needs only the newest item, and no delta updates are produced.
+   5. **Generate and verify.**
+      - Run `generate_appcast --ed-key-file - --download-url-prefix "https://github.com/revylfitness/snaptic/releases/download/$TAG/" --embed-release-notes --full-release-notes-url "https://github.com/revylfitness/snaptic/releases/tag/$TAG" --link https://github.com/revylfitness/snaptic <dir>`, with the seed on stdin (no key file).
+      - Because the app's Info.plist sets `SURequireSignedFeed`, `generate_appcast` signs the feed.
+      - Verify the feed signature against the pinned `SUPublicEDKey` with Sparkle's verifier before uploading.
+   6. **Upload and publish.**
+      - Upload `Snaptic.zip`, `Snaptic.dmg` and `appcast.xml` to the draft.
+      - Run `gh release edit --draft=false --latest` **last**. An explicit `--latest` means a hand-made release can't take over "latest".
 
-      Then run `codesign --verify --strict --deep` and assert that there are no entitlements.
-   5. **Notarize and staple the app.** Zip with `ditto -c -k --keepParent`, run `notarytool submit --wait`, run `stapler staple` on the app, **then** `spctl -a -t exec -vv`, then zip again.
-   6. **The DMG.** Run `./scripts/make-dmg.sh` (merged with PR #2; a fixed script, no inputs). Then `codesign --timestamp -s` the DMG, notarize it, staple it, and run `spctl -a -t open --context context:primary-signature -vv`.
-   7. **Outputs.** Export `zip_sha256` and `dmg_sha256` as **job outputs**, and upload artifact `Snaptic` (zip + dmg). Delete the keychain in an `always()` step.
-3. **`verify`** (macos-15, **no secrets**, `needs: sign`). It downloads `Snaptic`, checks the hashes against the outputs, and runs `selftest-helpers.sh` and `--selftest-controls` on the **signed** app with Sparkle loaded. This is the first time that combination runs.
-4. **`attest`** (`needs: sign`, tags only). It attests the signed zip and dmg.
-5. **`publish`** (macos-15, environment **`appcast`**, `needs: [sign, verify, attest]`):
-   1. **Check before signing anything.** Download `Snaptic`, recompute the hashes and compare them with `sign`'s outputs, and run `gh attestation verify` on both files.
-   2. **Get Sparkle's tools.** Download the official `Sparkle-2.10.0.tar.xz` and check its pinned SHA-256. This gives Sparkle's own `generate_appcast` and `sign_update`, so there is no hand-rolled signing.
-   3. **Build the appcast folder** in `$RUNNER_TEMP`:
-      - `Snaptic.zip`;
-      - `Snaptic.md`, copied from the release notes file;
-      - the previous `appcast.xml`, if any, from the latest release.
-   4. **Generate the appcast** with `generate_appcast --ed-key-file "$KEYFILE" --download-url-prefix "https://github.com/revylfitness/snaptic/releases/download/$TAG/" --embed-release-notes --maximum-versions 10 --link https://github.com/revylfitness/snaptic`. Sparkle 2.10 signs the feed itself when an EdDSA key is given; the resulting `<!-- sparkle-signatures: … -->` comment is checked.
-   5. **Publish.** `gh release create "$TAG" --draft` (or reuse the existing draft), then upload `Snaptic.zip`, `Snaptic.dmg` and `appcast.xml`. Run `gh release edit --draft=false` **last**, so "latest" never points at a release without an appcast.
+**Owner's release steps**
+1. Merge the PR that sets the version, then run one command:
+
+   ```
+   git fetch origin && git tag vX.Y.Z origin/main && git push origin vX.Y.Z
+   ```
+
+   (A draft release on GitHub doesn't create its tag, so a draft alone triggers nothing.)
+2. Approve the `release` deployment, then the `appcast` deployment, when GitHub asks.
+3. CI creates the draft, attaches everything, and publishes it as latest.
+
+Publishing a release in GitHub's UI, as for 0.3.0, also works. CI attaches the files and sets it as latest afterwards, but the website's Download link returns 404 until both approvals are done. That's why the tag push is the documented path.
 
 **Feed.** `SUFeedURL = https://github.com/revylfitness/snaptic/releases/latest/download/appcast.xml`. "latest" is the newest non-prerelease.
 
@@ -1050,10 +1113,12 @@ If the user clicks Install and Relaunch while something defers it, a toast gives
 
   When the condition clears, it invokes the block.
 - **`updaterShouldRelaunchApplication`** always returns true.
-- **`updater(_:willInstallUpdateOnQuit:immediateInstallationBlock:)`** stores the block as `pendingQuitInstall`.
+- **`updater(_:willInstallUpdateOnQuit:immediateInstallationBlock:)`** returns **YES** and stores the block as `pendingQuitInstall`. Returning YES means Snaptic owns the prompt and Sparkle stops checking until quit; that is expected. The "Restart to Update Snaptic…" row calls the block, but only after `UpdatePolicy` allows it (no lid-closed mode, no display trial). If it isn't allowed, the row shows the wait text instead.
   - **`Relauncher`** (which opens the new copy before the old one quits) checks `updater?.hasPendingQuitInstall`. If one is pending and this isn't a Safe Mode relaunch, it calls the stored block, and Sparkle installs and relaunches. Otherwise it relaunches as today.
   - Installing at quit can't be postponed. That's acceptable, because quitting ends lid-closed mode and display trials anyway.
+- **Gentle reminders and consent.** Implement `standardUserDriverShouldHandleShowingScheduledUpdate(_:andInImmediateFocus:)` (return false; Snaptic shows its rows), `standardUserDriverWillHandleShowingUpdate(_:forUpdate:state:)` (set `updateAvailable`), and `standardUserDriverDidReceiveUserAttention(forUpdate:)` / `standardUserDriverWillFinishUpdateSession`, which clear it. `updaterShouldPromptForPermissionToCheck(forUpdates:)` returns **false**, so Sparkle's consent prompt never appears.
 - **Matrix test.** `UpdatePolicyTests` covers the whole matrix as `UpdatePolicy.Event`s.
+- **B4's wording** becomes: "An update never *relaunches* while lid-closed mode is on. Quitting Snaptic, which also ends the mode, may install a downloaded update." 
 
 **Shutdown before an update.** Snaptic's normal `applicationWillTerminate` runs:
 - Awake sessions end (the snapshot is kept for resume);
@@ -1087,7 +1152,7 @@ The README body says:
   - l.155 gains "except Sparkle’s update cache";
   - the process list names Sparkle's `Autoupdate`, `Updater.app` and its installer password prompt.
 - **THIRD_PARTY_NOTICES** (T-docs) adds Sparkle (MIT) with its copyright.
-- **B6's password advice** becomes: "only enter your password right after you choose Keep Awake with the Lid Closed, Turn Sleep Back On…, or Install and Relaunch in Snaptic."
+- **B6's password advice** names all three choices, as B6 now does.
 
 ### E6. Lint
 
@@ -1107,12 +1172,13 @@ The README body says:
 |---|---|---|---|
 | `AboutPageControls` | `about.page.checkUpdates` | (exists) | Its help text changes. Its action is `updater?.checkForUpdates() ?? openReleasesPage()`. |
 | | `about.page.autoCheck` | `.setting` | `when: [.state(.updaterAvailable)]`. No `keys`: stored outside Snaptic's config, like `general.page.openAtLogin`. `SearchSpec("Check for updates automatically", keywords: ["updates", "sparkle", "update"])` |
-| | `about.page.autoInstall` | `.setting` | `when: [.state(.updaterAvailable), .parentOn(ControlID("about.page.autoCheck")), .state(.userWritableBundle)]`. Search: "Install updates automatically". |
-| | `about.page.installUpdate` | `.statusAction` | `when: [.state(.updateReady)]` |
-| `StatusMenuControls` | `menu.snaptic.updateAvailable` | `.menuItem` | `when: [.state(.updateReady)]`. Placements: Snaptic menu, own menus and the Awake menu, through the same host factory as the leftover rows. |
+| | `about.page.autoInstall` | `.setting` | `when: [.state(.updaterAvailable), .parentOn(ControlID("about.page.autoCheck")), .state(.bundleWritable)]`. Search: "Download and install updates automatically". |
+| | `about.page.installUpdate` | `.statusAction` | `when: [.state(.updateAvailable)]` |
+| `StatusMenuControls` | `menu.snaptic.updateAvailable` | `.menuItem` | `when: [.state(.updateAvailable)]`. Placements: the Snaptic menu's footer, and own and Awake menus when they carry the shared footer (`CustomItemRow.updateAvailable` + `StatusMenu.updateItems(host:)`). |
+| `GeneralPageControls` | `general.page.card.v031.openAccessibility`, `.openScreenRecording`, `.autoCheck`, `.notNow`, `.done` | `.button` | `when: [.state(.v031Welcome)]` |
 | `OnboardingControls` | `onboarding.updates.check`, `onboarding.updates.notNow` | `.button` | |
 
-New `ControlState` cases: `updaterAvailable`, `updateReady`, `userWritableBundle`.
+New `ControlState` cases: `updaterAvailable`, `updateAvailable` and `v031Welcome`. B7's `bundleWritable` is shared with E7; there is no separate `userWritableBundle`.
 
 ### E8. Risks the owner accepts
 
@@ -1324,4 +1390,46 @@ New `ControlState` cases: `updaterAvailable`, `updateReady`, `userWritableBundle
 | code m8 (ownership) | Part D updated |
 | code m9 (appcast gap, heredoc) | Draft release published last; `generate_appcast` replaces the heredoc and python |
 | code m10 (reviewers on `main`) | Tags only |
+
+---
+
+## §R4. r4 findings and their disposition
+
+| Finding | Disposition |
+|---|---|
+| sec M (reused appcast re-signed) | The appcast is generated fresh each release from only the new archive; the old feed is never reused |
+| code M1 (old jobs collide) | E3 job list rewritten: `Snaptic-adhoc` on main only, `Snaptic-unsigned`/`Snaptic-signed` on tags; PR #2's `release` job removed; `attest` needs `sign`; only `publish` runs `gh release` |
+| code M2 (Step 0 gaps, owners) | Cross-team menu hooks, host properties and `--selftest-launch` in Step 0; lint scripts owned by the lead; permission and self-test files assigned to T-update |
+| parity M1 (0.3.1 card) | E1a written: detection, trigger, text, controls, last-run version key |
+| sec m1 (runbook archive) | The rotation release ships the signed DMG as its enclosure |
+| sec m2 (revocation) | Noted in the runbook |
+| sec m3 (repo script while the keychain is unlocked) | DMG built with inline commands; keychain deleted before notarization |
+| sec m4 (feed signing wording) | Corrected; the feed signature is verified against the pinned key; `--full-release-notes-url` added |
+| sec m5 (malicious workflow at an approved tag) | `main` ruleset and CODEOWNERS required; owner reviews the tag diff before approving |
+| sec m6 (attest hashes) | `attest` checks hashes first |
+| sec m7 (seed on disk) | `--ed-key-file -` (stdin) |
+| sec m8 ("latest") | `--latest` set explicitly |
+| code m1 (weak-load check on tags only) | Runs on every push |
+| code m2 (DMG path, fetch depth) | Inline `hdiutil` on the signed app; `fetch-depth: 0` |
+| code m3 (`willInstallUpdateOnQuit` semantics) | Returns YES; gated by `UpdatePolicy`; B4 wording fixed |
+| code m4 (full release notes link) | Flag added |
+| code m5 (gentle-reminder delegates, consent prompt) | Named in E4; Sparkle's consent prompt suppressed |
+| code m6 (shell-test text, B5 signature) | Fixed |
+| code m7 (hash source) | Hashes from the SwiftPM artifact |
+| design R4-m1 (duplicate state) | One `bundleWritable` |
+| design R4-m2 (onboarding and card copy) | E1a |
+| design R4-m3 (available vs ready) | `updateAvailable` state and text |
+| design R4-m4 (footer placement) | E1 |
+| design R4-m5 (button title) | "Open Awake Settings…" |
+| design R4-m6 (search title) | Matches the label |
+| design R4-m7 (Install and Relaunch naming) | The advice names both places |
+| design R4-m8 (when the updated toast shows) | Defined |
+| design R4-m9 (root-owned wording) | Rewritten |
+| parity m1 (Open at Login across the signing switch) | HW-38 |
+| parity m2 (onboarding auto-install) | E1a |
+| parity m3 (chown trade-off) | README: root-owned copies need a password per update (E1 and E8) |
+| parity m4 ("Restart to Update") | E1 |
+| parity m5 (Settings reachable while Awake is off) | Leftover rows show regardless of module state |
+| parity m6 ("checks are off" text) | E1 and E1a |
+| parity m7 (row order) | E1 |
 
