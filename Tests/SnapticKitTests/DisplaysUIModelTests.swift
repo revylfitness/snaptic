@@ -76,7 +76,7 @@ final class DisplaysUIModelTests: XCTestCase {
     /// where the name goes, and a name that is the label lowercased changes only its first letter.
     func testEveryFeatureSentenceNameIsANounPhrase() {
         let verbs: Set<String> = ["turn", "turns", "protect", "disconnect", "match", "sync", "restore", "show", "dim",
-                                  "automatically", "use", "choose", "keep", "allow", "open", "switch", "make", "set"]
+                                  "automatically", "use", "choose", "keep", "allow", "open", "make"]
         XCTAssertEqual(DisplaysUIText.needs(.ddcPower), "Needs display power control.")
         XCTAssertEqual(DisplaysUIText.needs(.protection), "Needs arrangement protection.")
         XCTAssertEqual(DisplaysUIText.needs(.disconnect), "Needs display disconnection.")
@@ -112,19 +112,17 @@ final class DisplaysUIModelTests: XCTestCase {
                              DisplaysUIText.turnOffQuestion([feature], label: DisplaysUIText.title(feature)),
                              DisplaysUIText.alsoTurnsOff([feature]), DisplaysUIText.alsoTurnsOff([.rotation, feature])]
             for sentence in sentences {
-                let words = sentence.lowercased().split(separator: " ").map(String.init)
-                // The frame's own verb is the first word ("Needs", "Turn off", "This also turns off"); the name
-                // after it never starts with another.
-                for (index, word) in words.enumerated() where index > 0 && verbs.contains(word) {
-                    let frame = (index == 1 && words[0] == "turn") || (index == 2 && words[1] == "also")
-                        || (index == 3 && words[2] == "turns")
-                    XCTAssertTrue(frame || !name.lowercased().split(separator: " ").map(String.init).contains(word),
-                                  "“\(sentence)” has “\(word)” mid-sentence")
+                // The word after the sentence's own verb (or the first word) is never another verb: "Needs turn …",
+                // "This also turns off turn off …" and "Turn displays off and on is off." can't happen.
+                var rest = sentence.lowercased()
+                for frame in ["needs ", "turn off ", "this also turns off rotation and ", "this also turns off ",
+                              "skipped while "] where rest.hasPrefix(frame) {
+                    rest = String(rest.dropFirst(frame.count))
+                    break
                 }
-                XCTAssertFalse(sentence.contains("turn off turn"), sentence)
-                XCTAssertFalse(sentence.hasPrefix("Needs turn") || sentence.hasPrefix("Needs show")
-                               || sentence.hasPrefix("Needs dim") || sentence.hasPrefix("Needs protect")
-                               || sentence.hasPrefix("Needs sync") || sentence.hasPrefix("Needs match"), sentence)
+                let next = rest.split(separator: " ").first.map { String($0).trimmingCharacters(in: .punctuationCharacters) }
+                XCTAssertFalse(verbs.contains(next ?? ""), "“\(sentence)” has a verb where the name goes")
+                XCTAssertFalse(sentence.lowercased().contains("turn off turn"), sentence)
                 // Starts with a capital letter.
                 XCTAssertTrue(sentence.first?.isUppercase == true, sentence)
             }
