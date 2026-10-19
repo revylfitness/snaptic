@@ -21,6 +21,8 @@ struct MenuTabSegment: Equatable {
     let label: MenuTabLabel
     /// "Displays (⌘2)", "Awake, on (⌘3)".
     let toolTip: String
+    /// VoiceOver's help: only the key, "Command-2" (the label already says the rest; r1 U3).
+    let accessibilityHelp: String?
     /// The full title, plus ", on" or ", needs attention".
     let accessibilityLabel: String
     /// Shows the 10 pt attention image beside the label.
@@ -37,6 +39,8 @@ struct MenuTabSegment: Equatable {
     private let segments: [MenuTabSegment]
     private let onSelect: @MainActor (Int) -> Void
     private let control = MenuTabSegmentedControl()
+    /// The bar's accessibility help ("Press Command-1 to Command-3 to switch tabs.").
+    private let help: String
     /// The style chosen when the bar was built (A1: full, then short at equal widths, then short to fit).
     let labelStyle: MenuTabs.LabelStyle
 
@@ -45,6 +49,7 @@ struct MenuTabSegment: Equatable {
          onSelect: @escaping @MainActor (Int) -> Void) {
         self.segments = segments
         self.onSelect = onSelect
+        self.help = help
         let font = Self.font
         let image = Self.attentionImage()
         let imageWidth = image.map { Double($0.size.width + Self.imageGap) } ?? 0
@@ -55,13 +60,14 @@ struct MenuTabSegment: Equatable {
             available: Double(width - 2 * MenuKit.rowInset))
         super.init(frame: NSRect(x: 0, y: 0, width: width, height: Self.height))
         autoresizingMask = [.width]
-        build(selected: selected, font: font, image: image, imageWidth: CGFloat(imageWidth), help: help)
+        build(selected: selected, font: font, image: image, imageWidth: CGFloat(imageWidth))
     }
 
     /// Never decoded from a nib; a decoded view is an empty, inert bar.
     required init?(coder: NSCoder) {
         segments = []
         onSelect = { _ in }
+        help = ""
         labelStyle = .fullEqual
         super.init(coder: coder)
     }
@@ -98,7 +104,7 @@ struct MenuTabSegment: Equatable {
         return Double(probe.intrinsicContentSize.width)
     }
 
-    private func build(selected: Int, font: NSFont, image: NSImage?, imageWidth: CGFloat, help: String) {
+    private func build(selected: Int, font: NSFont, image: NSImage?, imageWidth: CGFloat) {
         control.segmentCount = segments.count
         control.trackingMode = .selectOne
         control.controlSize = .small
@@ -123,8 +129,9 @@ struct MenuTabSegment: Equatable {
         if segments.indices.contains(selected) { control.selectedSegment = selected }
         control.target = self
         control.action = #selector(changed(_:))
-        control.setAccessibilityLabel(MenuTabs.barLabel)
-        control.setAccessibilityHelp(help)
+        control.container = self
+        // The bar, not the control, is the tab group (r1 U8): the control and its cell stay out of the tree.
+        control.setAccessibilityElement(false)
         control.translatesAutoresizingMaskIntoConstraints = false
         addSubview(control)
 
@@ -152,19 +159,55 @@ struct MenuTabSegment: Equatable {
         guard segments.indices.contains(index) else { return }
         onSelect(index)
     }
+
+    // MARK: Accessibility (r1 U8)
+
+    // The bar is the tab group: "Menu tabs", with one tab button per segment ("tab 2 of 3"). A plain NSView's
+    // NSAccessibility overrides are always what AppKit asks, whereas NSSegmentedControl may answer through its cell,
+    // whose own segment elements speak the drawn (short) label with no ", on" or ", needs attention" (A1). HW-25.
+
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .tabGroup }
+    override func accessibilityLabel() -> String? { MenuTabs.barLabel }
+    override func accessibilityHelp() -> String? { help }
+    override func accessibilityChildren() -> [Any]? { control.tabElements }
+    override func accessibilityTabs() -> [Any]? { control.tabElements }
+    override func accessibilitySelectedChildren() -> [Any]? { control.selectedTabElements }
+
+    override func accessibilityHitTest(_ point: NSPoint) -> Any? {
+        if let element = control.tabElement(at: point) { return element }
+        return self
+    }
 }
 
-/// The segmented control with one accessibility element per segment. AppKit's own segment elements speak the visible
-/// label (a short title when the full ones don't fit), while A1 wants the full title, plus ", on" or
-/// ", needs attention". Each element is a tab button (VoiceOver: "Displays, selected, tab 2 of 3") that VO-Space
-/// selects through the control's own action.
+/// The segmented control and its segment elements. AppKit's own segment elements speak the visible label (a short
+/// title when the full ones don't fit), while A1 wants the full title, plus ", on" or ", needs attention". Each element
+/// is a tab button (VoiceOver: "Displays, selected, tab 2 of 3") that VO-Space selects through the control's own
+/// action. The bar (`container`) serves them; the control and its cell are ignored, and whichever of them AppKit asks
+/// still answers with these elements, never AppKit's own (r1 U8, HW-25).
 @MainActor private final class MenuTabSegmentedControl: NSSegmentedControl {
+    override class var cellClass: AnyClass? {
+        get { MenuTabSegmentedCell.self }
+        set {}
+    }
+
     var tabSegments: [MenuTabSegment] = [] {
         didSet { elements = tabSegments.indices.map { MenuTabSegmentElement(owner: self, index: $0) } }
     }
     /// Relative segment widths, for the elements' frames.
     var segmentWeights: [CGFloat] = []
+    /// The tab bar: the elements' accessibility parent.
+    weak var container: NSView?
     private var elements: [MenuTabSegmentElement] = []
+
+    var tabElements: [Any] { elements }
+
+    var selectedTabElements: [Any] { elements.indices.contains(selectedSegment) ? [elements[selectedSegment]] : [] }
+
+    /// The element under a screen point, if any.
+    func tabElement(at point: NSPoint) -> Any? {
+        elements.first { $0.accessibilityFrame().contains(point) }
+    }
 
     /// The segment's rectangle in this view's coordinates, from the relative widths.
     func segmentRect(_ index: Int) -> NSRect {
@@ -188,18 +231,33 @@ struct MenuTabSegment: Equatable {
 
     /// Tells VoiceOver which tab is now selected.
     func selectionDidChange() {
-        NSAccessibility.post(element: self, notification: .selectedChildrenChanged)
+        NSAccessibility.post(element: container ?? self, notification: .selectedChildrenChanged)
         for element in elements { NSAccessibility.post(element: element, notification: .valueChanged) }
     }
 
+    override func isAccessibilityElement() -> Bool { false }
     override func accessibilityChildren() -> [Any]? { elements }
-
-    override func accessibilitySelectedChildren() -> [Any]? {
-        elements.indices.contains(selectedSegment) ? [elements[selectedSegment]] : []
-    }
+    override func accessibilitySelectedChildren() -> [Any]? { selectedTabElements }
 
     override func accessibilityHitTest(_ point: NSPoint) -> Any? {
-        elements.first { $0.accessibilityFrame().contains(point) } ?? self
+        if let element = tabElement(at: point) { return element }
+        return container ?? self
+    }
+}
+
+/// The control's cell, for the path where AppKit serves the control's accessibility through it: ignored, with the
+/// control's elements as its children. It changes nothing else (no drawing or tracking overrides).
+@MainActor private final class MenuTabSegmentedCell: NSSegmentedCell {
+    private var owner: MenuTabSegmentedControl? { controlView as? MenuTabSegmentedControl }
+
+    override func isAccessibilityElement() -> Bool { false }
+    override func accessibilityChildren() -> [Any]? { owner?.tabElements }
+    override func accessibilitySelectedChildren() -> [Any]? { owner?.selectedTabElements }
+
+    override func accessibilityHitTest(_ point: NSPoint) -> Any? {
+        guard let owner else { return nil }
+        if let element = owner.tabElement(at: point) { return element }
+        return owner.container ?? owner
     }
 }
 
@@ -228,11 +286,11 @@ struct MenuTabSegment: Equatable {
     override func accessibilityRole() -> NSAccessibility.Role? { .radioButton }
     override func accessibilitySubrole() -> NSAccessibility.Subrole? { Self.tabButton }
     override func accessibilityLabel() -> String? { segment?.accessibilityLabel }
-    override func accessibilityHelp() -> String? { segment?.toolTip }
+    override func accessibilityHelp() -> String? { segment?.accessibilityHelp }
     override func accessibilityValue() -> Any? { NSNumber(value: isSelected ? 1 : 0) }
     override func isAccessibilitySelected() -> Bool { isSelected }
     override func isAccessibilityEnabled() -> Bool { owner?.isEnabled ?? false }
-    override func accessibilityParent() -> Any? { owner }
+    override func accessibilityParent() -> Any? { owner?.container ?? owner }
 
     override func accessibilityFrame() -> NSRect {
         guard let owner else { return .zero }

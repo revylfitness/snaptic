@@ -154,14 +154,15 @@ import SnapticKit
     static func tabBar(labels: [MenuTabLabel], selected: Int, attention: Set<Int>, active: Int?,
                        width: CGFloat = MenuKit.width, control: ControlID? = nil,
                        onSelect: @escaping @MainActor (Int) -> Void) -> NSMenuItem {
-        let segments = labels.enumerated().map { index, label in
-            MenuTabSegment(label: label,
-                           toolTip: MenuTabs.segmentToolTip(title: label.title,
-                                                            keyIndex: index < MenuTabs.maxKeyIndex ? index + 1 : nil,
-                                                            active: index == active),
-                           accessibilityLabel: MenuTabs.segmentLabel(title: label.title, active: index == active,
-                                                                     attention: attention.contains(index)),
-                           attention: attention.contains(index))
+        let segments = labels.enumerated().map { index, label -> MenuTabSegment in
+            let keyIndex: Int? = index < MenuTabs.maxKeyIndex ? index + 1 : nil
+            return MenuTabSegment(label: label,
+                                  toolTip: MenuTabs.segmentToolTip(title: label.title, keyIndex: keyIndex,
+                                                                   active: index == active),
+                                  accessibilityHelp: MenuTabs.segmentHelp(keyIndex: keyIndex),
+                                  accessibilityLabel: MenuTabs.segmentLabel(title: label.title, active: index == active,
+                                                                            attention: attention.contains(index)),
+                                  attention: attention.contains(index))
         }
         let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         item.view = MenuTabBarView(segments: segments, selected: selected, width: width,

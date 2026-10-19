@@ -439,7 +439,8 @@ import SnapticKit
             let selected = MenuTabs.selected(stored: stored, tabs: tabs) ?? tabs[0]
             // A2 width: the widest tab sets the minimum, so a switch never widens the open menu and the segment
             // never moves under the pointer.
-            let width = max(MenuKit.width, widestSection(tabs, host: host))
+            let width = max(MenuKit.width, widestSection(tabs, selected: selected, host: host, config: config,
+                                                         plan: plan))
             minimumWidth = width
             let bar = tabBar(tabs, selected: selected, host: host, width: width)
             let items = tabSection(selected, host: host)
@@ -603,15 +604,26 @@ import SnapticKit
         return items.isEmpty ? [MenuKit.status(MenuTabs.emptySection, control: ControlID("menu.snaptic.emptyTab"))] : items
     }
 
-    /// A2: the widest tab section, measured in a scratch menu. Its items are removed right after, so nothing keeps
-    /// refreshing them (Awake prunes its live headers by `menu == nil`; sliders' sinks die with their rows). Every tab's
-    /// `menuSection(tabbed:)` is cheap and free of side effects (A2), so the selected one is built again to show it.
-    private func widestSection(_ tabs: [ModuleID], host: ModuleHost) -> CGFloat {
+    /// A2: the width of the widest tab, measured in a scratch menu. NSMenu lays items out in shared columns (image,
+    /// title, key equivalent, submenu arrow), so each section is measured beside fresh copies of the host rows and the
+    /// footer (⌘, and ⌘Q, Recent Notices ›, the Show … Tab items as they'll show): measured alone, a wide section
+    /// misses the key column and a switch still resizes the open menu (r1 U1). The items are removed right after, so
+    /// nothing keeps refreshing them (Awake prunes its live headers by `menu == nil`; sliders' sinks die with their
+    /// rows). Every tab's `menuSection(tabbed:)` is cheap and free of side effects (A2), so the selected one is built
+    /// again to show it.
+    private func widestSection(_ tabs: [ModuleID], selected: ModuleID, host: ModuleHost, config: ModulesConfig,
+                               plan: StatusItemPlan) -> CGFloat {
         let scratch = NSMenu()
         scratch.autoenablesItems = false
+        let showTabs = makeShowTabItems(tabs, selected: selected, host: host)
+        let assistive = Self.assistiveInputInUse()
+        for item in showTabs { item.isHidden = !assistive }
+        let head = hostSafetyRows(host)
+        let footer = sharedFooter(host: host, config: config, plan: plan, showTabItems: showTabs)
         var widest: CGFloat = 0
         for id in tabs {
-            for item in tabSection(id, host: host) { scratch.addItem(item) }
+            // An item belongs to one menu at a time; `removeAllItems()` frees the shared ones for the next tab.
+            for item in head + tabSection(id, host: host) + footer { scratch.addItem(item) }
             widest = max(widest, scratch.size.width)
             scratch.removeAllItems()
         }
@@ -647,13 +659,25 @@ import SnapticKit
         }
     }
 
-    /// A3: the Show … Tab items show only while VoiceOver, Switch Control or Full Keyboard Access is in use; hidden,
-    /// their ⌘n still works.
+    /// A3: the Show … Tab items show only while an assistive input is in use; hidden, their ⌘n still works.
     private func updateShowTabItems() {
-        let workspace = NSWorkspace.shared
-        let assistive = workspace.isVoiceOverEnabled || workspace.isSwitchControlEnabled
-            || NSApp.isFullKeyboardAccessEnabled
+        let assistive = Self.assistiveInputInUse()
         for item in showTabItems { item.isHidden = !assistive }
+    }
+
+    /// VoiceOver, Switch Control, Keyboard navigation (`isFullKeyboardAccessEnabled`, `AppleKeyboardUIMode`) or
+    /// Accessibility › Full Keyboard Access, which has no public API and no change notification: its preference is
+    /// read on every open (r1 U2; HW-25 confirms the key). Unreadable counts as off.
+    private static func assistiveInputInUse() -> Bool {
+        let workspace = NSWorkspace.shared
+        let domain = MenuTabs.fullKeyboardAccessDomain as CFString
+        // Another process writes this domain; drop any cached copy first.
+        _ = CFPreferencesAppSynchronize(domain)
+        let fullKeyboardAccess = CFPreferencesGetAppBooleanValue(MenuTabs.fullKeyboardAccessKey as CFString, domain, nil)
+        return MenuTabs.showsTabItems(voiceOver: workspace.isVoiceOverEnabled,
+                                      switchControl: workspace.isSwitchControlEnabled,
+                                      keyboardNavigation: NSApp.isFullKeyboardAccessEnabled,
+                                      fullKeyboardAccess: fullKeyboardAccess)
     }
 
     /// A5: the choice is remembered across opens and relaunches.
