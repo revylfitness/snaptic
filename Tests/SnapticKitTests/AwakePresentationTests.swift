@@ -486,6 +486,14 @@ extension AwakePresentationTests {
                 XCTAssertEqual(rows.first, .header)
                 XCTAssertFalse(zip(rows, rows.dropFirst()).contains { $0 == .separator && $1 == .separator })
                 XCTAssertLessThanOrEqual(rows.filter { $0 != .separator }.count, 11)
+                // B1: every style shows the lid row exactly once while the mode is available.
+                let lidRows = rows.filter { row in
+                    switch row {
+                    case .lidClosed, .lidSubmenu: return true
+                    default: return false
+                    }
+                }
+                XCTAssertEqual(lidRows.count, l == nil ? 0 : 1)
             }
         }
         var f = AwakeMenuFacts(governing: .inactive, holdsExist: false, rulesShown: false, style: .tab)
