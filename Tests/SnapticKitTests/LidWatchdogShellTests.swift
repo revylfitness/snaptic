@@ -184,7 +184,9 @@ final class LidWatchdogShellTests: XCTestCase {
             for r in running { r.scenario.act(r.env, r.process) }
             for r in running {
                 let label = "\(shell) – \(r.scenario.name)"
-                XCTAssertNotNil(r.env.waitExit(r.process, seconds: 20), "\(label): exits")
+                // By pid, not `Process.isRunning`: on Linux Foundation sees an exit through a descriptor the children
+                // inherit, and a hanging stub (the "beacon check hangs" scenario) keeps it open after the watchdog exits.
+                XCTAssertTrue(r.env.waitGone(r.process.processIdentifier, seconds: 20), "\(label): exits")
                 let sets = r.env.sets.map(\.value)
                 if r.scenario.sets {
                     XCTAssertEqual(sets.first, "1", "\(label): \(sets)")
