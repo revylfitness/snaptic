@@ -275,7 +275,7 @@ A MacBook goes to sleep when you close its lid, whatever power assertion an app 
 
 1. Turn on **Awake › Advanced… › Lid closed › Keep awake with the lid closed**.
 2. In the Awake menu (or Awake’s tab in the Snaptic menu), choose **Keep Awake with the Lid Closed ›** and a session. Each one ends in “…” because it asks for your password; **Custom…** opens the session panel with “Keep awake with the lid closed” turned on, and its button reads **Start…**. The session starts only once lid-closed mode is on, so Cancel starts nothing.
-3. Enter an administrator password in macOS’s dialog. It reads: “Snaptic wants to keep your Mac awake with the lid closed for up to 24 hours. Sleep turns back on when the session ends, when Snaptic quits, at 20% battery, or if your Mac gets hot. Enter an administrator password to allow this.” (with your battery limit). Touch ID may work there.
+3. Enter an administrator password in macOS’s dialog. It reads: “Snaptic wants to keep your Mac awake with the lid closed for up to 24 hours. Sleep turns back on when the session ends, when Snaptic quits, at 20% battery, or if your Mac gets hot. Enter an administrator password to allow this.” It names your battery limit. Touch ID may work there.
 
 While a session you started from the menu or Settings is running, the menu shows **Keep Awake with the Lid Closed…** under Keep Display On instead, which adds lid-closed mode to that session. The Awake page’s **Keep Awake ▾** and **Options ▾** menus have the same items. While a request is under way the items read “Waiting for Password…”, “Turning On…”, or “Turning Off…”, and if turning on takes more than 2 seconds a notice says “Turning on lid-closed mode…”.
 
@@ -290,7 +290,7 @@ While a session you started from the menu or Settings is running, the menu shows
 
 If sleep is already turned off for this Mac by another app or command, Snaptic doesn’t touch it: your Mac already stays awake with the lid closed, and the session starts without lid-closed mode. Low Power Mode doesn’t block lid-closed mode and is a good idea with the lid closed; the session’s own “When Low Power Mode turns on” setting still applies.
 
-**Turning it off:** choose **✓ Keep Awake with the Lid Closed** (no password needed), turn Keep Awake off, let the session end, or quit Snaptic. Turning lid-closed mode off never asks for a password.
+**Turning it off:** choose **✓ Keep Awake with the Lid Closed**, turn Keep Awake off, let the session end, or quit Snaptic. Turning lid-closed mode off never asks for a password.
 
 #### Limits
 
