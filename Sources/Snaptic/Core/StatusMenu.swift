@@ -269,11 +269,11 @@ import SnapticKit
         providerFacts = facts
         for module in host.modules {
             guard let provider = module as? StatusItemProvider else { continue }
-            var row = CustomItemRow(exists: plan.custom.contains(module.id), presence: config.presence(module.id),
-                                    footer: plan.sharedFooterInOwnMenus, recentNotices: facts.notices)
-            row.leftover = facts.leftover
-            row.updateAvailable = facts.update
-            provider.applyStatusItem(row)
+            // The leftover and update rows come from StatusMenu's builders each time the provider's menu opens;
+            // re-sending the row on a change to `facts` marks that menu for a rebuild.
+            provider.applyStatusItem(CustomItemRow(exists: plan.custom.contains(module.id),
+                                                   presence: config.presence(module.id),
+                                                   footer: plan.sharedFooterInOwnMenus, recentNotices: facts.notices))
         }
     }
 
