@@ -153,3 +153,46 @@ final class AwakeHistoryTests: XCTestCase {
         XCTAssertEqual(AwakeHistoryText.total(7_800), "2h 10m")
     }
 }
+
+// MARK: - 0.3.1 B1, B5: History's `lidClosed` (owner: T-lid-kit)
+
+extension AwakeHistoryTests {
+    func testLidClosedEncodesOnlyWhenTrue() throws {
+        let plain = entry(10, 20)
+        XCTAssertFalse(plain.lidClosed)
+        let plainText = String(decoding: try JSONEncoder().encode(plain), as: UTF8.self)
+        XCTAssertFalse(plainText.contains("lidClosed"), "0.3 layout for entries without the mode")
+        var lid = plain
+        lid.lidClosed = true
+        let data = try JSONEncoder().encode(lid)
+        XCTAssertTrue(String(decoding: data, as: UTF8.self).contains(#""lidClosed":true"#))
+        XCTAssertEqual(try JSONDecoder().decode(AwakeHistoryEntry.self, from: data), lid)
+        XCTAssertEqual(try JSONDecoder().decode(AwakeHistoryEntry.self, from: try JSONEncoder().encode(plain)), plain)
+        // 0.3 entries and odd values read as false.
+        let old = #"{"start":1,"end":2,"kind":"duration","source":"menu","endReason":"timeUp"}"#
+        XCTAssertFalse(try JSONDecoder().decode(AwakeHistoryEntry.self, from: Data(old.utf8)).lidClosed)
+        let odd = #"{"start":1,"end":2,"kind":"duration","source":"menu","endReason":"timeUp","lidClosed":"yes"}"#
+        XCTAssertFalse(try JSONDecoder().decode(AwakeHistoryEntry.self, from: Data(odd.utf8)).lidClosed)
+        let ended = #"{"start":1,"end":2,"kind":"duration","source":"menu","endReason":"lidEnded","lidClosed":true}"#
+        let e = try JSONDecoder().decode(AwakeHistoryEntry.self, from: Data(ended.utf8))
+        XCTAssertEqual(e.endReason, .lidEnded)
+        XCTAssertTrue(e.lidClosed)
+        // The init keeps its 0.3 shape (lidClosed defaults to false), and the flag survives sanitizing and merging.
+        XCTAssertEqual(lid.sanitized()?.lidClosed, true)
+        let h = AwakeHistory().appending(lid, cap: 500)
+        XCTAssertEqual(h.entries.last?.lidClosed, true)
+    }
+
+    func testLidClosedSubtitle() {
+        var e = entry(0, 3_780, reason: .user)
+        XCTAssertEqual(AwakeHistoryText.subtitle(e, startClock: "3:12 PM", endClock: "4:15 PM", floor: 20),
+                       "3:12 PM – 4:15 PM · 1h 3m")
+        e.lidClosed = true
+        XCTAssertEqual(AwakeHistoryText.subtitle(e, startClock: "3:12 PM", endClock: "4:15 PM", floor: 20),
+                       "3:12 PM – 4:15 PM · 1h 3m · Lid closed")
+        var ended = entry(0, 3_780, reason: .lidEnded)
+        ended.lidClosed = true
+        XCTAssertEqual(AwakeHistoryText.subtitle(ended, startClock: "3:12 PM", endClock: "4:15 PM", floor: 20),
+                       "3:12 PM – 4:15 PM · 1h 3m · Ended: lid-closed mode turned off while the lid was closed · Lid closed")
+    }
+}

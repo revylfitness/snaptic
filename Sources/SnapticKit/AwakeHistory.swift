@@ -16,9 +16,12 @@ package struct AwakeHistoryEntry: Codable, Equatable, Sendable {
     /// App sessions, for Start Again; local only.
     package var bundleID: String?
     package var endReason: AwakeEndReason
+    /// 0.3.1 B1: lid-closed mode was on at some point of the session. Written only when true, so 0.3 entries and
+    /// entries without it encode as before; read lossily (absent or odd = false).
+    package var lidClosed: Bool
 
     package init(start: Double, end: Double, kind: AwakeHistoryKind, source: AwakeSessionSource, presetID: StableID?,
-                 triggerID: StableID?, bundleID: String?, endReason: AwakeEndReason) {
+                 triggerID: StableID?, bundleID: String?, endReason: AwakeEndReason, lidClosed: Bool = false) {
         self.start = start
         self.end = end
         self.kind = kind
@@ -27,9 +30,12 @@ package struct AwakeHistoryEntry: Codable, Equatable, Sendable {
         self.triggerID = triggerID
         self.bundleID = bundleID
         self.endReason = endReason
+        self.lidClosed = lidClosed
     }
 
-    private enum CodingKeys: String, CodingKey { case start, end, kind, source, presetID, triggerID, bundleID, endReason }
+    private enum CodingKeys: String, CodingKey {
+        case start, end, kind, source, presetID, triggerID, bundleID, endReason, lidClosed
+    }
 
     /// Hand-written (N18): an unknown kind, source or endReason throws (the entry is dropped); the rest lossy.
     package init(from decoder: Decoder) throws {
@@ -42,6 +48,21 @@ package struct AwakeHistoryEntry: Codable, Equatable, Sendable {
         presetID = c.lossy(.presetID, nil)
         triggerID = c.lossy(.triggerID, nil)
         bundleID = c.lossy(.bundleID, nil)
+        lidClosed = c.lossy(.lidClosed, false)
+    }
+
+    /// The synthesized layout (absent optionals omitted), plus `lidClosed` only when true.
+    package func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(start, forKey: .start)
+        try c.encode(end, forKey: .end)
+        try c.encode(kind, forKey: .kind)
+        try c.encode(source, forKey: .source)
+        try c.encodeIfPresent(presetID, forKey: .presetID)
+        try c.encodeIfPresent(triggerID, forKey: .triggerID)
+        try c.encodeIfPresent(bundleID, forKey: .bundleID)
+        try c.encode(endReason, forKey: .endReason)
+        if lidClosed { try c.encode(true, forKey: .lidClosed) }
     }
 
     /// False for .commandLine/.rule sources and process/automatic kinds.
@@ -198,13 +219,14 @@ package enum AwakeHistoryText {
     }
 
     /// "3:12 PM – 4:15 PM · 1h 3m" (clocks formatted by the app), plus " · Ended: battery below 20%" for
-    /// interruptions.
+    /// interruptions, then " · Lid closed" when lid-closed mode was on (0.3.1 B1).
     package static func subtitle(_ e: AwakeHistoryEntry, startClock: String, endClock: String, floor: Int) -> String {
         var line = startClock + " – " + endClock + " · " + AwakeCountdown.short(max(1, e.seconds))
         if AwakeEndText.isInterruption(e.endReason) {
             let phrase = AwakeEndText.phrase(e.endReason, floor: floor, appName: nil, lockedHours: nil)
             line += " · " + L("Ended: ") + phrase
         }
+        if e.lidClosed { line += AwakeLidText.historySuffix }
         return line
     }
 

@@ -64,6 +64,8 @@ package enum AwakeArbiter {
     /// keepDisplayOnWhileLocked) or off console; maySleep → system; holds → system; keepOnWhileActive → display while
     /// real idle < displayIdleMinutes (unknown idle counts as active), else system. Manual sessions with an end and the
     /// hold stack get `deadline = sessionEnd + grace`; rule sessions have no backstop and none while guards hold.
+    /// 0.3.1 B3.3: while `lidShut` (lid-closed mode on, the lid closed, no external display) every display policy
+    /// counts as `maySleep`, so Snaptic's own assertion never keeps the closed panel lit.
     package static func plan(_ input: AwakeArbiterInput) -> AwakeAssertionPlan {
         let disk = input.driveAliveWriting
         let end = input.sessionEnd.flatMap { $0.isFinite ? $0 + timeoutGraceSeconds : nil }
@@ -90,6 +92,7 @@ package enum AwakeArbiter {
     }
 
     private static func type(for options: AwakeSessionOptions, _ input: AwakeArbiterInput) -> AwakeAssertionType {
+        if input.lidShut { return .system }
         let displayAllowed = input.consoleActive && (!input.screenLocked || input.keepDisplayOnWhileLocked)
         switch options.display {
         case .maySleep:

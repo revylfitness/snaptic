@@ -332,3 +332,19 @@ final class AwakeSessionPolicyTests: XCTestCase {
         XCTAssertEqual(r.keeping(session: a), AwakeReminders())
     }
 }
+
+// MARK: - 0.3.1 B2: `awake extend` and lid-closed mode (owner: T-lid-kit)
+
+extension AwakeSessionPolicyTests {
+    func testCommandLineCannotExtendALidClosedSession() {
+        let sources: [AwakeSessionSource] = [.menu, .hotkey, .settings, .commandLine, .launch, .rule]
+        for s in sources {
+            XCTAssertNil(AwakeStartRules.extendRefusal(source: s, lidModeOn: false), "\(s)")
+            XCTAssertEqual(AwakeStartRules.extendRefusal(source: s, lidModeOn: true), s == .commandLine ? .lidClosedSession : nil,
+                           "\(s)")
+        }
+        XCTAssertEqual(AwakeRefusal.lidClosedSession.exitCode, 4)
+        XCTAssertEqual(AwakeRefusal.lidClosedSession.text,
+                       "Lid-closed sessions can’t be extended from the command line. Use Add 1 Hour in the menu.")
+    }
+}

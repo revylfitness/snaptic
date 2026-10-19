@@ -81,10 +81,12 @@ package enum KitBackup {
         [displaysSection, "perDisplay", "*", "management", "ignoreForAutoDisconnect"],
         [displaysSection, "color", "allowGammaWithCustomProfile"],
         // Awake (0.3 §2.14, §3.2, §3.6): Drive Alive (volumes, interval, "also without a session"), pointer
-        // movement, the session started at launch, recent apps; Awake's command-line verbs like every CLI setting.
+        // movement, the session started at launch, recent apps; Awake's command-line verbs like every CLI setting;
+        // lid-closed mode (0.3.1 B5: a file never turns on what asks for an administrator password).
         [awakeSection, "drives"],
         [awakeSection, "features", "pointerNudge"],
         [awakeSection, "features", "commandLine"],
+        [awakeSection, "features", "lidClosed"],
         [awakeSection, "sessions", "behavior", "startAtLaunch"],
         [awakeSection, "sessions", "recentApps"],
     ]

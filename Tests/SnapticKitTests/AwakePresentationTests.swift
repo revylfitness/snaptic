@@ -409,3 +409,299 @@ final class AwakePresentationTests: XCTestCase {
     }
 }
 
+
+// MARK: - 0.3.1: lid-closed mode and the tab style (owner: T-lid-kit; PLAN 0.3.1 A4, B0, B1, B3)
+
+extension AwakePresentationTests {
+    private var presets: [StableID] { [id("p1"), id("p2")] }
+
+    private func lid(_ state: LidRowState = .off, takes: Bool = false) -> AwakeLidMenuFacts {
+        AwakeLidMenuFacts(state: state, sessionTakesMode: takes, presets: presets)
+    }
+
+    private func facts(_ g: AwakeGoverning, lid: AwakeLidMenuFacts?, style: AwakeMenuStyle = .own, holds: Bool = false,
+                       rules: Bool = false) -> AwakeMenuFacts {
+        var f = AwakeMenuFacts(governing: g, holdsExist: holds, rulesShown: rules, style: style)
+        f.lid = lid
+        return f
+    }
+
+    func testLidRowPlacement() {
+        // Idle: the submenu right after the default preset.
+        XCTAssertEqual(AwakeMenuModel.rows(facts(.inactive, lid: lid())),
+                       [.header, .separator, .startDefault, .lidSubmenu(presets), .startSession, .whileApp, .separator,
+                        .settings])
+        // Holds only: the same slot.
+        XCTAssertEqual(AwakeMenuModel.rows(facts(.holds([hold]), lid: lid(), holds: true)).filter { $0 != .separator },
+                       [.header, .turnOff, .startDefault, .lidSubmenu(presets), .startSession, .whileApp, .settings])
+        // A menu or Settings session started in this process: the row right after ✓ Keep Display On.
+        let timed = AwakeGoverning.manual(session(.duration(seconds: 3_600)))
+        XCTAssertEqual(AwakeMenuModel.rows(facts(timed, lid: lid(takes: true), holds: true)).filter { $0 != .separator },
+                       [.header, .turnOff, .addTime(seconds: 900), .addTime(seconds: 3_600), .keepDisplayOn,
+                        .lidClosed(.off), .endHolds, .startSession, .whileApp, .settings])
+        XCTAssertEqual(AwakeMenuModel.rows(facts(timed, lid: lid(.on, takes: true))).filter { $0 != .separator }[5],
+                       .lidClosed(.on))
+        // Any other governing state: the idle submenu (a hotkey, CLI, launch or restored session; a rule).
+        XCTAssertEqual(AwakeMenuModel.rows(facts(timed, lid: lid(takes: false))).filter { $0 != .separator }[5],
+                       .lidSubmenu(presets))
+        XCTAssertEqual(AwakeMenuModel.rows(facts(.trigger(top), lid: lid(takes: true))).filter { $0 != .separator },
+                       [.header, .turnOff, .keepDisplayOn, .lidSubmenu(presets), .startSession, .whileApp, .settings])
+        XCTAssertEqual(AwakeMenuModel.rows(facts(.inactive, lid: lid(takes: true)))[3], .lidSubmenu(presets),
+                       "idle: always the submenu")
+        // Pending and finishing rows take the same slot, disabled.
+        for state in [LidRowState.authorizing, .verifying, .stopping, .finishingEarlier] {
+            XCTAssertEqual(AwakeMenuModel.rows(facts(.inactive, lid: lid(state)))[3], .lidClosed(state), "\(state)")
+            XCTAssertEqual(AwakeMenuModel.rows(facts(timed, lid: lid(state, takes: true))).filter { $0 != .separator }[5],
+                           .lidClosed(state), "\(state)")
+        }
+        // Unavailable: no lid row anywhere.
+        for g in [AwakeGoverning.inactive, timed, .trigger(top), .holds([hold])] {
+            XCTAssertFalse(AwakeMenuModel.rows(facts(g, lid: nil)).contains {
+                if case .lidClosed = $0 { return true }
+                if case .lidSubmenu = $0 { return true }
+                return false
+            })
+        }
+        XCTAssertNil(AwakeMenuModel.lidRow(nil, governing: .inactive))
+    }
+
+    /// A4: `tab` is `own` without Awake Settings… (and the separator before it); `compact` has the lid rows too.
+    func testTabAndCompactStyles() {
+        var rng = SeededGenerator(seed: 0x7AB)
+        let states: [AwakeGoverning] = [.inactive, .manual(session(.indefinite)), .manual(session(.duration(seconds: 600))),
+                                        .trigger(top), .holds([hold])]
+        let lids: [AwakeLidMenuFacts?] = [nil, lid(), lid(.on, takes: true), lid(.verifying), lid(takes: true)]
+        for _ in 0..<500 {
+            let g = states[Int(rng.next() % 5)], l = lids[Int(rng.next() % 5)]
+            let holds = rng.next() % 2 == 0, rules = rng.next() % 2 == 0
+            let own = AwakeMenuModel.rows(facts(g, lid: l, style: .own, holds: holds, rules: rules))
+            let tab = AwakeMenuModel.rows(facts(g, lid: l, style: .tab, holds: holds, rules: rules))
+            let compact = AwakeMenuModel.rows(facts(g, lid: l, style: .compact, holds: holds, rules: rules))
+            XCTAssertEqual(Array(own.suffix(2)), [.separator, .settings])
+            XCTAssertEqual(tab, Array(own.dropLast(2)))
+            XCTAssertFalse(tab.contains(.settings))
+            XCTAssertNotEqual(tab.last, .separator)
+            XCTAssertEqual(compact, own.filter { $0 != .separator && $0 != .settings })
+            for rows in [own, tab, compact] {
+                XCTAssertEqual(rows.first, .header)
+                XCTAssertFalse(zip(rows, rows.dropFirst()).contains { $0 == .separator && $1 == .separator })
+                XCTAssertLessThanOrEqual(rows.filter { $0 != .separator }.count, 11)
+            }
+        }
+        var f = AwakeMenuFacts(governing: .inactive, holdsExist: false, rulesShown: false, style: .tab)
+        XCTAssertFalse(f.compact)
+        f.compact = true
+        XCTAssertEqual(f.style, .compact)
+        f.compact = false
+        XCTAssertEqual(f.style, .own)
+        XCTAssertEqual(AwakeMenuFacts(governing: .inactive, holdsExist: false, rulesShown: false, compact: true).style,
+                       .compact)
+    }
+
+    func testLidRowStateAndTitles() {
+        let t = "0123456789abcdef0123456789abcdef"
+        XCTAssertEqual(AwakeLidMenuFacts.rowState(mode: .off, recovery: .pending), .finishingEarlier)
+        XCTAssertEqual(AwakeLidMenuFacts.rowState(mode: .off, recovery: .leftover), .off, "the refusal toast explains")
+        XCTAssertEqual(AwakeLidMenuFacts.rowState(mode: .on(token: t, pid: 5, until: 9), recovery: .pending), .on)
+        XCTAssertEqual(AwakeLidMenuFacts.rowState(mode: .authorizing(token: t), recovery: .nothing), .authorizing)
+        XCTAssertEqual(AwakeLidMenuFacts.rowState(mode: .failed(.spawn), recovery: .nothing), .off)
+        let titles: [(LidRowState, String, Bool, Bool)] = [
+            (.off, "Keep Awake with the Lid Closed…", true, false),
+            (.on, "Keep Awake with the Lid Closed", true, true),
+            (.authorizing, "Waiting for Password…", false, false),
+            (.verifying, "Turning On…", false, false),
+            (.stopping, "Turning Off…", false, false),
+            (.finishingEarlier, "Finishing Earlier Session…", false, false),
+        ]
+        for (state, title, enabled, checked) in titles {
+            XCTAssertEqual(AwakeLidText.rowTitle(state), title)
+            XCTAssertEqual(AwakeLidText.rowEnabled(state), enabled, title)
+            XCTAssertEqual(AwakeLidText.rowChecked(state), checked, title)
+        }
+        XCTAssertEqual(AwakeLidText.title, "Keep Awake with the Lid Closed")
+        XCTAssertEqual(AwakeLidText.presetTitle("For 1 Hour"), "For 1 Hour…")
+        XCTAssertEqual(AwakeLidText.custom, "Custom…")
+        XCTAssertEqual(AwakeLidText.setting, "Keep awake with the lid closed")
+        XCTAssertEqual(AwakeLidText.settingHelp,
+                       "Choose Keep Awake with the Lid Closed in the Awake menu. Asks for an administrator password each time.")
+        XCTAssertEqual(AwakeLidText.customHelp, "Asks for an administrator password when you click Start.")
+        XCTAssertEqual(AwakeLidText.customStart, "Start…")
+        XCTAssertEqual(AwakeLidText.advancedFooter,
+                       "While lid-closed mode is on, your Mac can’t sleep for low battery or heat. Awake turns it off at the Awake page’s battery level (at least 10%), when your Mac gets hot, or after 24 hours. Use it on a hard surface, not in a bag.")
+        XCTAssertEqual(AwakeLidText.translocated,
+                       "Snaptic is running from a temporary location. Move it to Applications to use lid-closed mode.")
+    }
+
+    /// B1: the lid line is the first extra while the mode is on; the cap's clock when the cap ends first.
+    func testLidHeaderPriority() {
+        let s = session(.untilIdle(UntilIdleSpec(), maxSeconds: 7_200))
+        var i = AwakeDetailInput(governing: .manual(s), now: now(0), nextRuleName: "Desk", holderSummary: "Held by Terminal",
+                                 activity: .declare, lidWarning: true)
+        XCTAssertFalse(AwakeDetail.extras(i).contains { $0.hasPrefix("Stays awake") })
+        XCTAssertTrue(AwakeDetail.extras(i).contains("Closing the lid will put your Mac to sleep."))
+        i.lidModeOn = true
+        let extras = AwakeDetail.extras(i)
+        XCTAssertEqual(extras.first, "Stays awake with the lid closed")
+        XCTAssertFalse(extras.contains("Closing the lid will put your Mac to sleep."), "no warning while on")
+        XCTAssertEqual(AwakeDetail.lines(i).last, "Stays awake with the lid closed", "it wins the header's second line")
+        i.lidUntilClock = "6:40 PM"
+        XCTAssertEqual(AwakeDetail.lines(i).last, "Stays awake with the lid closed until 6:40 PM")
+        XCTAssertEqual(AwakeStatusText.details(i, pausedUntilClock: nil).dropFirst().first,
+                       "Stays awake with the lid closed until 6:40 PM", "after the time left in Settings")
+        XCTAssertFalse(AwakeStatusText.details(i, pausedUntilClock: nil).contains { $0.hasPrefix("To keep it awake") })
+        var idle = AwakeDetailInput(governing: .inactive, now: now(0))
+        idle.lidModeOn = true
+        XCTAssertEqual(AwakeDetail.extras(idle), [], "nothing governs: no lid line")
+    }
+
+    func testLidWarningRule() {
+        for willSleep in [nil, false, true] as [Bool?] {
+            for on in [false, true] {
+                for battery in [false, true] {
+                    for external in [false, true] {
+                        XCTAssertEqual(AwakeDetail.showsLidWarning(lidWillSleep: willSleep, lidModeOn: on, onBattery: battery,
+                                                                   externalDisplay: external),
+                                       willSleep == true && !on && (battery || !external))
+                    }
+                }
+            }
+        }
+    }
+
+    func testLidRouteVariants() {
+        XCTAssertEqual(AwakeStatusText.lidRoute(.featureOff),
+                       "To keep it awake with the lid closed, connect power and an external display, or turn on lid-closed mode in Awake › Advanced.")
+        XCTAssertEqual(AwakeStatusText.lidRoute(.available),
+                       "To keep it awake with the lid closed, connect power and an external display, or choose Keep Awake with the Lid Closed in the Awake menu.")
+        XCTAssertEqual(AwakeStatusText.lidRoute(.unavailable),
+                       "To keep it awake with the lid closed, connect power and an external display.")
+        XCTAssertEqual(AwakeStatusText.lidRoute(.unavailable), AwakeStatusText.lidRoute, "the 0.3 text, unchanged")
+        for route in AwakeLidRoute.allCases {
+            var i = AwakeDetailInput(governing: .manual(session(.indefinite)), now: now(0), lidWarning: true, lidRoute: route)
+            XCTAssertEqual(AwakeStatusText.details(i, pausedUntilClock: nil).last, AwakeStatusText.lidRoute(route))
+            i.lidModeOn = true
+            XCTAssertFalse(AwakeStatusText.details(i, pausedUntilClock: nil).contains(AwakeStatusText.lidRoute(route)))
+        }
+    }
+
+    func testLidStatusSuffix() {
+        XCTAssertEqual(AwakeIndicatorText.accessibilityLabel(governing: .manual(session(.indefinite)), remaining: nil,
+                                                             appName: nil, ruleName: nil, holderSummary: nil, lidModeOn: true),
+                       "Awake, until turned off, even with the lid closed")
+        XCTAssertEqual(AwakeIndicatorText.accessibilityLabel(governing: .inactive, remaining: nil, appName: nil,
+                                                             ruleName: nil, holderSummary: nil, lidModeOn: true),
+                       "Awake, off")
+        XCTAssertEqual(AwakeLidText.statusSuffix, ", even with the lid closed")
+        XCTAssertEqual(AwakeLidText.voiceOverOn, "Keeping your Mac awake with the lid closed.")
+        XCTAssertEqual(AwakeLidText.voiceOverOff, "Lid-closed mode turned off.")
+    }
+
+    func testLidEndLinesAndToasts() {
+        let lines: [AwakeLidEnd: String] = [
+            .battery: "Lid-closed mode ended at 3:12 AM: battery at 20%.",
+            .heat: "Lid-closed mode ended at 3:12 AM: your Mac got hot.",
+            .cap: "Lid-closed mode ended at 3:12 AM: time limit reached.",
+            .otherApp: "Lid-closed mode ended at 3:12 AM: another app turned sleep back on.",
+            .quit: "Lid-closed mode ended at 3:12 AM: Snaptic quit.",
+        ]
+        for end in AwakeLidEnd.allCases {
+            XCTAssertEqual(AwakeLidText.lastEnd(end, clock: "3:12 AM", floor: 20), lines[end], "\(end)")
+        }
+        let toasts: [AwakeLidEnd: String] = [
+            .cap: "Lid-closed mode turned off after 24 hours. Awake is still on; your Mac sleeps if you close the lid.",
+            .battery: "Lid-closed mode turned off at 20% battery.",
+            .heat: "Lid-closed mode turned off because your Mac got hot.",
+            .otherApp: "Another app turned sleep back on, so lid-closed mode stopped.",
+        ]
+        for end in AwakeLidEnd.allCases {
+            XCTAssertEqual(AwakeLidText.endToast(end, floor: 20), toasts[end], "\(end)")
+        }
+        XCTAssertEqual(AwakeLidText.capSpan, "24 hours")
+        XCTAssertEqual(AwakeCountdown.unit(1, "hour", "hours"), "1 hour", "the singular rule stays")
+        XCTAssertEqual(AwakeLidText.capWarning,
+                       "Lid-closed mode turns off in 5 minutes. If the lid is closed then, your Mac goes to sleep.")
+        XCTAssertEqual(AwakeLidText.verifying, "Turning on lid-closed mode…")
+        XCTAssertEqual(AwakeLidText.couldNotTurnOn, "Snaptic couldn’t turn on lid-closed mode. Try again.")
+        XCTAssertEqual(AwakeLidText.alreadyOff,
+                       "Sleep is already turned off for this Mac by another app or command, so it stays awake with the lid closed.")
+        XCTAssertEqual(AwakeLidText.replaced, "Replaced the running session.")
+        XCTAssertEqual(AwakeEndText.toast(.lidEnded, floor: 20, appName: nil, lockedHours: nil),
+                       "Awake ended: lid-closed mode turned off while the lid was closed.")
+    }
+
+    func testLeftoverTexts() {
+        XCTAssertEqual(AwakeLidText.menuLeftover, "Sleep Is Turned Off")
+        XCTAssertEqual(AwakeLidText.turnSleepBackOn, "Turn Sleep Back On…")
+        XCTAssertEqual(AwakeLidText.leftover,
+                       "Your Mac can’t sleep. This may be from an earlier lid-closed session that didn’t finish.")
+        XCTAssertEqual(AwakeLidText.keepSleepOff, "Keep Sleep Off")
+        XCTAssertEqual(AwakeLidText.notNow, "Not Now")
+        XCTAssertEqual(AwakeLidText.openAwakeSettings, "Open Awake Settings…")
+        XCTAssertEqual(OtherAssertions.sleepDisabledByOther,
+                       "Sleep is turned off for this Mac by another app or command. Snaptic leaves it as it is.")
+        XCTAssertEqual(AwakeLidText.historySuffix, " · Lid closed")
+    }
+}
+
+// MARK: - 0.3.1: the shapes T-lid-app wires (owner: T-lid-kit)
+
+extension AwakePresentationTests {
+    func testMenuFactsWithLid() {
+        let p = [id("p1")]
+        let made = AwakeLidMenuFacts.make(available: true, mode: .off, recovery: .nothing, sessionTakesMode: false, presets: p)
+        XCTAssertEqual(made, AwakeLidMenuFacts(state: .off, sessionTakesMode: false, presets: p))
+        XCTAssertNil(AwakeLidMenuFacts.make(available: false, mode: .off, recovery: .pending, sessionTakesMode: true,
+                                            presets: p))
+        XCTAssertEqual(AwakeLidMenuFacts.make(available: true, mode: .off, recovery: .pending, sessionTakesMode: false,
+                                              presets: p)?.state, .finishingEarlier)
+        let f = AwakeMenuFacts(governing: .inactive, holdsExist: false, rulesShown: false, style: .tab, lid: made)
+        XCTAssertEqual(AwakeMenuModel.rows(f), [.header, .separator, .startDefault, .lidSubmenu(p), .startSession, .whileApp])
+        XCTAssertNil(AwakeMenuFacts(governing: .inactive, holdsExist: false, rulesShown: false, style: .own).lid)
+        XCTAssertEqual(LidRowState.finishingEarlier.rawValue, "finishingEarlier")
+    }
+
+    func testLidLastEndLine() {
+        let ended = AwakeLidText.lastEnd(.battery, clock: "3:12 AM", floor: 20)
+        // Idle: after the idle note, within the header's two lines.
+        let idle = AwakeDetailInput(governing: .inactive, now: now(0), idleNote: "Ended at 3:12 AM: time is up.",
+                                    lidLastEnd: ended)
+        XCTAssertEqual(AwakeDetail.lines(idle), ["Ended at 3:12 AM: time is up.", "Lid-closed mode ended at 3:12 AM: battery at 20%."])
+        XCTAssertEqual(AwakeStatusText.details(idle, pausedUntilClock: nil).last, ended)
+        let alone = AwakeDetailInput(governing: .inactive, now: now(0), lidLastEnd: ended)
+        XCTAssertEqual(AwakeDetail.lines(alone), [ended ?? ""])
+        // A session that goes on: the first extra.
+        var active = AwakeDetailInput(governing: .manual(session(.indefinite)), now: now(0), activity: .declare,
+                                      lidLastEnd: ended)
+        XCTAssertEqual(AwakeDetail.lines(active).last, ended)
+        active.lidModeOn = true
+        XCTAssertFalse(AwakeDetail.extras(active).contains(ended ?? "-"), "cleared at the next turn-on")
+        XCTAssertEqual(AwakeDetail.extras(active).first, "Stays awake with the lid closed")
+    }
+
+    func testDiagnosticsLidLine() {
+        var f = AwakeDiagnosticsFacts(effective: [], governing: nil, kind: nil, assertion: .off, assertionErrors: 0,
+                                      guardHolding: nil, activeServices: [], holds: 0, rules: 0, conditionsByKind: [:],
+                                      eventCounts: [:], drives: 0)
+        XCTAssertFalse(AwakeDiagnosticsReport.lines(f).contains { $0.contains("lid") }, "unchanged without the feature")
+        f.lid = .on
+        XCTAssertTrue(AwakeDiagnosticsReport.lines(f).contains("Awake lid-closed mode: on"))
+        f.lid = nil
+        f.lidLeftover = true
+        XCTAssertTrue(AwakeDiagnosticsReport.lines(f).contains("Awake lid-closed mode: unavailable (leftover)"))
+        let g = AwakeDiagnosticsFacts(effective: [], governing: nil, kind: nil, assertion: .off, assertionErrors: 0,
+                                      guardHolding: nil, activeServices: [], holds: 0, rules: 0, conditionsByKind: [:],
+                                      eventCounts: [:], drives: 0, lid: .verifying, lidLeftover: false)
+        XCTAssertTrue(AwakeDiagnosticsReport.lines(g).contains("Awake lid-closed mode: verifying"))
+    }
+
+    func testLidGlyph() {
+        for g in AwakeGlyphFamily.allCases {
+            XCTAssertNil(g.lidActiveSymbol, "no family has its own lid symbol: the app draws the bar")
+            var c = AwakeIndicatorConfig()
+            c.glyph = g
+            XCTAssertNil(c.lidSymbol())
+            XCTAssertEqual(c.symbol(active: true), g.active, "the bar goes under the active glyph")
+        }
+        XCTAssertTrue(AwakeGlyphFamily.lidBarHeightRatio > 0 && AwakeGlyphFamily.lidBarHeightRatio < 0.5)
+    }
+}

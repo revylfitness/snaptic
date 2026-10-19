@@ -221,3 +221,31 @@ final class AwakeArbiterTests: XCTestCase {
         }
     }
 }
+
+// MARK: - 0.3.1 B3.3: the lid-shut rule (owner: T-lid-kit)
+
+extension AwakeArbiterTests {
+    /// While `lidShut`, every display policy counts as `maySleep`: a system assertion, never a display one; the
+    /// deadline and details don't change. `lidShut` defaults to false, so 0.3 inputs plan as before.
+    func testLidShutLetsTheDisplaySleep() {
+        let governing: [AwakeGoverning] = AwakeDisplayPolicy.allCases.flatMap { policy in
+            [.manual(manual(.duration(seconds: 3_600), display: policy)), .trigger(top(policy))]
+        } + [.holds([hold(1, deadline: 500)]), .inactive]
+        for g in governing {
+            for idle in [nil, 0.0, 99_999] as [Double?] {
+                var shut = input(g, idle: idle, end: 900)
+                let open = AwakeArbiter.plan(shut)
+                XCTAssertFalse(shut.lidShut, "defaults to false")
+                shut.lidShut = true
+                let p = AwakeArbiter.plan(shut)
+                XCTAssertNotEqual(p.type, .display, "\(g)")
+                XCTAssertEqual(p.type, open.type == .off ? .off : .system, "\(g)")
+                XCTAssertEqual(p.details, open.details)
+                XCTAssertEqual(p.deadline, open.deadline)
+                XCTAssertEqual(p.preventDiskIdle, open.preventDiskIdle)
+            }
+        }
+        // The external display case: lidShut stays false and Keep Display On stands.
+        XCTAssertEqual(AwakeArbiter.plan(input(.manual(manual(display: .keepOn)))).type, .display)
+    }
+}
