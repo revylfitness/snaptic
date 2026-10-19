@@ -92,6 +92,8 @@ assemble() {
   mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
   cp "$BIN_DIR/Snaptic" "$app/Contents/MacOS/Snaptic"
   cp Resources/Info.plist "$app/Contents/Info.plist"
+  # MIT asks that the notices travel with the bundled code (Sparkle in release builds).
+  cp THIRD_PARTY_NOTICES.md "$app/Contents/Resources/THIRD_PARTY_NOTICES.md"
 }
 
 check_weak_link "$BIN_DIR/Snaptic"

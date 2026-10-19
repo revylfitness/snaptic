@@ -173,7 +173,7 @@ private struct AcknowledgementsSheet: View {
         Credit(name: "displayplacer", detail: L("Display arrangement (MIT)")),
         Credit(name: "force-hidpi", detail: L("HiDPI virtual displays (MIT)")),
         Credit(name: "Chromium", detail: L("Process responsibility handling (BSD)")),
-        // 0.3.1: bundled in release builds; its full license and notices are in THIRD_PARTY_NOTICES.md.
+        // 0.3.1: bundled in release builds; its full license ships in Contents/Resources/THIRD_PARTY_NOTICES.md.
         Credit(name: "Sparkle", detail: L("Software updates, version 2.10.0 (MIT)")),
     ]
 
