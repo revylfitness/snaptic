@@ -4,10 +4,10 @@ A free, open-source menu bar toolkit for macOS: a Windows-style **window switche
 
 **Website:** [snaptic.dev](https://snaptic.dev)
 
-Snaptic is MIT-licensed and written from scratch in Swift by revyl fitness technology, Inc. It isn’t affiliated with or derived from AltTab, BetterDisplay, MonitorControl, Lunar, Amphetamine, or Insomnia; it’s an independent take on the same ideas, with everything included and nothing behind a paywall. Third-party credits are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). What changed in 0.3 is in the [release notes](docs/design/0.3/RELEASE-NOTES-0.3.md).
+Snaptic is MIT-licensed and written from scratch in Swift by revyl fitness technology, Inc. It isn’t affiliated with or derived from AltTab, BetterDisplay, MonitorControl, Lunar, Amphetamine, or Insomnia; it’s an independent take on the same ideas, with everything included and nothing behind a paywall. Third-party credits are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). What changed is in the release notes for [0.3.1](docs/design/0.3.1/RELEASE-NOTES-0.3.1.md) and [0.3](docs/design/0.3/RELEASE-NOTES-0.3.md).
 
 - [Modules](#modules) · [Settings](#settings) · [Window Switcher](#window-switcher) · [Displays](#displays) · [Awake](#awake) · [Safety](#safety)
-- [Permissions](#permissions) · [Command line](#command-line) · [Hidden kill switches](#hidden-kill-switches) · [Install and build](#install-and-build)
+- [Permissions](#permissions) · [Command line](#command-line) · [Hidden kill switches](#hidden-kill-switches) · [Install and build](#install-and-build) · [Updates](#updates)
 - [Privacy and security](#privacy-and-security) · [Upgrading and downgrading](#upgrading-and-downgrading) · [Troubleshooting](#troubleshooting) · [Known limitations](#known-limitations) · [Not included](#not-included) · [How it works](#how-it-works)
 
 ## Modules
@@ -16,11 +16,12 @@ Snaptic is MIT-licensed and written from scratch in Swift by revyl fitness techn
 |---|---|
 | **Window Switcher** | Hold **⌥ Option**, tap **Tab**, and pick any window, not just any app. |
 | **Displays** | Brightness and volume for external displays, resolutions and HiDPI, color, arrangement, virtual displays, Picture in Picture, and more. |
-| **Awake** | Keeps your Mac awake for a while, until a time, while an app runs, until downloads and tasks finish, or automatically when conditions you choose are met. A free replacement for Amphetamine and Insomnia that needs no administrator password. |
+| **Awake** | Keeps your Mac awake for a while, until a time, while an app runs, until downloads and tasks finish, or automatically when conditions you choose are met. A free replacement for Amphetamine and Insomnia that needs no administrator password, except for opt-in lid-closed mode, which asks for one each time. |
 
 Each module can be turned on or off on its own: in **Settings › General › Choose what Snaptic does**, or with the switch at the top of the module’s own page (“Use Window Switcher”, “Use Displays”, “Use Awake”). A module that is off runs nothing: no event taps, timers, observers, IOKit handles, power assertions, private-API calls, helper processes, or permission prompts. Inside Displays and Awake, each feature has its own switch where the feature is used, and anything that’s off costs nothing either.
 
-- **First launch:** onboarding asks which modules you want, then asks only for the permissions those need. It picks up where it left off if macOS makes Snaptic relaunch.
+- **First launch:** onboarding asks which modules you want, then asks only for the permissions those need, and whether Snaptic should keep itself up to date (**Check Automatically** or **Not Now**). It picks up where it left off if macOS makes Snaptic relaunch.
+- **Upgrading from 0.3.0:** download 0.3.1 by hand one last time; from then on Snaptic can update itself. Because 0.3.1 is the first release signed by its developer, macOS asks you to allow Accessibility and Screen Recording again once, and a “Welcome to Snaptic 0.3.1” card in General walks you through it (see [Upgrading and downgrading](#upgrading-and-downgrading)).
 - **Upgrading from 0.2:** Window Switcher and Displays stay as they were. Awake starts off, with a “New: Awake” card in General, unless you used Displays’ display sleep prevention in 0.2; then Awake is on and keeps doing that job (see [Upgrading and downgrading](#upgrading-and-downgrading)).
 - **Upgrading from 0.1:** the switcher stays on; Displays and Awake start off, each with its own card.
 
@@ -37,7 +38,7 @@ Most pages show the settings people change often and keep the rest in an **Advan
 - **Command-line control:** lets scripts and other apps control Snaptic with the `snaptic` command (off by default). **Copy Install Command** copies the Terminal command that installs it; see [Command line](#command-line).
 - **Backup:** **Export Settings…** and **Import Settings…** (see [Privacy and security](#privacy-and-security) for what an export leaves out).
 - **Advanced…:** “Commands can skip confirmation” (a display change sent with `--yes` applies without asking first), the exit codes the `snaptic` command uses, **Restart in Safe Mode…**, and **Reset All Settings…**.
-- New-module cards (“New: Awake”, “New: Displays”) appear here once after an upgrade.
+- New-module cards (“New: Awake”, “New: Displays”) and the “Welcome to Snaptic 0.3.1” card appear here once after an upgrade.
 
 ## Menu Bar
 
@@ -48,6 +49,16 @@ Everything about Snaptic’s menu bar icons lives on this page.
 - **Awake time:** **Don’t Show** (default), **Time Remaining**, or **End Time** next to Awake’s icon, in your system’s 12- or 24-hour setting, with seconds only in the last minute.
 - **Displays menu:** **Standard** or **Compact** style (one slider per display), “Scroll over a slider to adjust it”, and **Customize Displays Menu…**, where every optional menu item can be shown, moved into a submenu, or hidden.
 - **Restore Menu Bar Defaults…** resets only this page.
+
+**Tabs in the Snaptic menu.** The Snaptic icon appears when a module is set to Show in Snaptic Menu. With two or more, the Snaptic menu shows a tab for each, in the order Window Switcher, Displays, Awake (all three out of the box), and only the selected module’s items below the tabs. With one module the menu has no tabs and shows that module’s section as before.
+
+- **Switching:** click a tab, or, while the menu is open, ⌘1–⌘3 choose a tab (⌘1–⌘2 with two tabs). A keyboard choice closes the menu, and the next open shows that tab. Each tab’s tooltip names its shortcut.
+- **Remembered:** the menu opens on the tab you last chose, also after a relaunch. If that module isn’t in the menu right now, the first tab shows, and your choice comes back when the module does. No reset clears it.
+- **Nothing hidden:** Safe Mode and “Sleep Is Turned Off” rows stay above the tabs, whichever tab is showing. A tab whose module needs attention (Displays is degraded, paused after Restore All Displays, or unprotected, or Window Switcher is missing Accessibility; “Paused while … runs” doesn’t count) shows a small exclamation mark, and VoiceOver adds “needs attention”. While Awake keeps your Mac awake, VoiceOver reads its tab as “Awake, on”.
+- **Awake’s tab** has the full Awake menu rows except Awake Settings…. The compact Awake section is used only when Awake is the only module in the Snaptic menu.
+- **Keyboard and VoiceOver:** the tabs are one segmented control, so VoiceOver users reach it and pick a segment with VO-Space. While VoiceOver, Switch Control, or Full Keyboard Access is on, the menu also lists **Show Window Switcher Tab**, **Show Displays Tab**, and **Show Awake Tab** above Snaptic Settings…, with the same shortcuts. Type-select reaches only the visible tab.
+- **Size:** the menu is as wide as its widest tab from the start, so a tab never moves under the pointer; its height changes when you switch.
+- The footer is unchanged: More Display Features… (while Displays is off), Recent Notices, an update row when one is waiting (see [Updates](#updates)), Snaptic Settings… (⌘,), and Quit Snaptic (⌘Q).
 
 A running Awake session is never invisible: whenever Awake keeps your Mac awake, the Snaptic icon shows its active look, and if no Snaptic icon is shown, Awake’s own icon appears for the session. With every icon hidden, open Snaptic again from Finder or Spotlight to get to Settings; shortcuts keep working. macOS can also hide menu bar icons (System Settings › Menu Bar, and the overflow on notched Macs), so every menu action is also available in Settings or as a shortcut.
 
@@ -152,7 +163,7 @@ Adjustments show in screenshots and don’t reach AirPlay, DisplayLink, or Sidec
 
 ## Awake
 
-Awake keeps your Mac from going to sleep while you want it awake, with the same public macOS power assertion `caffeinate` uses. It needs no administrator password, installs nothing, and leaves nothing behind: if Snaptic quits or crashes, macOS releases the assertion at once and your Mac sleeps normally again.
+Awake keeps your Mac from going to sleep while you want it awake, with the same public macOS power assertion `caffeinate` uses. Its sessions need no administrator password, install nothing, and leave nothing behind: if Snaptic quits or crashes, macOS releases the assertion at once and your Mac sleeps normally again. (Snaptic as a whole installs nothing either, except Sparkle’s update cache in release builds; see [Updates](#updates).) The one exception is opt-in [lid-closed mode](#keeping-awake-with-the-lid-closed), which asks for an administrator password each time you turn it on and turns sleep back on when it ends.
 
 Turn it on with **Use Awake** at the top of the Awake page. The page has a status row (**Keep Awake ▾** while nothing runs, **Options ▾** and **Turn Off** while a session or rule runs, **Keep Awake ▾** and **Turn Off** while only command-line holds run, and **Pause Rules ▾** or **Resume** whenever you have rules), Sessions, End sessions automatically, Start automatically, Keyboard, Drives ›, History ›, and **Advanced…**.
 
@@ -209,7 +220,7 @@ Guards end sessions so Awake never drains your battery or keeps a hot Mac runnin
 - **Heat:** when your Mac gets very hot (critical thermal state), every session and hold ends, Drive Alive stops, and rules stay paused while it’s hot and for 10 minutes after it cools down. This can’t be turned off. A serious (lower) thermal state shows a one-time notice.
 - **Unreadable battery:** if a laptop’s battery can’t be read twice in a row, Awake stops appearing active and keeping drives awake (it treats the battery as empty) but keeps the session, and says so.
 - **Start Anyway:** when the low-battery guard or Low Power Mode refuses a session you started in Snaptic, the notice offers **Start Anyway** for that one session. It never overrides the 5% floor or heat, and never applies to the command line.
-- **Advanced…** also has: end sessions when your Mac sleeps (when you choose Sleep or close the lid), when you switch users (immediately, after 1 hour, or never), and after the screen has been locked for 1, 4, or 12 hours; keep the display on while locked (off: the display may sleep on the lock screen while your Mac stays awake).
+- **Advanced…** also has: end sessions when your Mac sleeps (when you choose Sleep or close the lid, not in lid-closed mode), when you switch users (immediately, after 1 hour, or never), and after the screen has been locked for 1, 4, or 12 hours; keep the display on while locked (off: the display may sleep on the lock screen while your Mac stays awake).
 
 ### Appear active and pointer movement
 
@@ -237,11 +248,11 @@ Accessibility is asked for only when you turn pointer movement on. To revoke it,
 
 ### History
 
-**Awake › History ›** shows today’s and the last 7 days’ time kept awake and the past sessions, with **Start Again** for sessions you started (not for command-line, process, or automatic ones) and **Clear History…**. History stays on this Mac for 90 days (at most 500 sessions) and never goes into exports, logs, diagnostics, or the command line.
+**Awake › History ›** shows today’s and the last 7 days’ time kept awake and the past sessions, with **Start Again** for sessions you started (not for command-line, process, or automatic ones) and **Clear History…**. A session that used lid-closed mode at any point says “Lid closed” under its name. History stays on this Mac for 90 days (at most 500 sessions) and never goes into exports, logs, diagnostics, or the command line.
 
 ### In the menu bar
 
-By default Awake’s icon appears only while your Mac is being kept awake (Show When Active), next to the Snaptic icon; change that on the [Menu Bar](#menu-bar) page, along with the icon (cup, eye, or light bulb, filled while active) and the time shown next to it. The Awake menu and the compact Awake section in the Snaptic menu have the same rows: the **Keep Awake** switch with what’s keeping your Mac awake (“Held by Terminal (2)” for command-line holds), **Turn Off Keep Awake**, the Add Time items, **Keep Display On**, **End Command-Line Holds**, **Start Session ›**, **While an App Is Running ›**, and **Rules ›**. On a laptop running on battery or without an external display, the menu reminds you that closing the lid puts your Mac to sleep.
+By default Awake’s icon appears only while your Mac is being kept awake (Show When Active), next to the Snaptic icon; change that on the [Menu Bar](#menu-bar) page, along with the icon (cup, eye, or light bulb, filled while active) and the time shown next to it. The Awake menu, Awake’s tab in the Snaptic menu, and the compact Awake section (when Awake is the only module in the Snaptic menu) have the same rows: the **Keep Awake** switch with what’s keeping your Mac awake (“Held by Terminal (2)” for command-line holds), **Turn Off Keep Awake**, the Add Time items, **Keep Display On**, **End Command-Line Holds**, **Start Session ›**, **While an App Is Running ›**, and **Rules ›**. With lid-closed mode turned on in Advanced, they also have **Keep Awake with the Lid Closed** (see [Keeping awake with the lid closed](#keeping-awake-with-the-lid-closed)). On a laptop running on battery or without an external display, the menu reminds you that closing the lid puts your Mac to sleep, unless lid-closed mode is on.
 
 ### Keyboard shortcuts
 
@@ -249,13 +260,87 @@ By default Awake’s icon appears only while your Mac is being kept awake (Show 
 
 ### Other apps keeping your Mac awake
 
-**Awake › Advanced…** lists other apps that are keeping your Mac awake right now, with what each prevents, updated every few seconds. If sleep is turned off for the whole Mac (`SleepDisabled`, left by `pmset disablesleep`, Amphetamine Power Protect, or Insomnia), it says so; Snaptic can’t and won’t change that setting. See [Switching from Amphetamine or Insomnia](#switching-from-amphetamine-or-insomnia).
+**Awake › Advanced…** lists other apps that are keeping your Mac awake right now, with what each prevents, updated every few seconds. If sleep is turned off for the whole Mac (`SleepDisabled`, left by `pmset disablesleep`, Amphetamine Power Protect, or Insomnia), it says so: “Sleep is turned off for this Mac by another app or command. Snaptic leaves it as it is.” Snaptic changes that setting only for its own lid-closed mode; if an earlier lid-closed session left it off, the page says so and offers to turn sleep back on (see [If sleep stays off](#if-sleep-stays-off)). See also [Switching from Amphetamine or Insomnia](#switching-from-amphetamine-or-insomnia).
 
-### Why not with the lid closed on battery?
+### Keeping awake with the lid closed
 
-Awake can’t keep a MacBook awake with its lid closed on battery, by design. macOS allows that only with root: `pmset disablesleep`, a sudoers rule that lets apps run it without a password (Amphetamine Power Protect, Insomnia), or an undocumented clamshell call. Those settings are system-wide, stay on after the app crashes, can be used by any program running as you, and a closed laptop in a bag can overheat. Awake uses only power assertions, which macOS drops as soon as Snaptic stops.
+A MacBook goes to sleep when you close its lid, whatever power assertion an app holds. There are two ways around that:
 
-To keep a MacBook awake with the lid closed, use macOS’s own closed-display mode: connect power and an external display (and a keyboard or mouse), then close the lid.
+- **Closed-display mode** (macOS’s own, no password): connect power and an external display (and a keyboard or mouse), then close the lid.
+- **Lid-closed mode** (opt-in, on Macs with a battery): keeps a MacBook awake with its lid closed, also on battery with no external display. macOS allows that only with root, so Snaptic asks for an administrator password **each time** you turn it on. Nothing is installed and nothing persistent is granted: no helper, no launch agent, no sudoers rule.
+
+**Use it on a hard surface, not in a bag.** While lid-closed mode is on, your Mac can’t sleep for low battery or heat, so Snaptic and a watchdog it starts both watch for those (see the limits below).
+
+#### Turning it on
+
+1. Turn on **Awake › Advanced… › Lid closed › Keep awake with the lid closed**.
+2. In the Awake menu (or Awake’s tab in the Snaptic menu), choose **Keep Awake with the Lid Closed ›** and a session. Each one ends in “…” because it asks for your password; **Custom…** opens the session panel with “Keep awake with the lid closed” turned on, and its button reads **Start…**. The session starts only once lid-closed mode is on, so Cancel starts nothing.
+3. Enter an administrator password in macOS’s dialog. It reads: “Snaptic wants to keep your Mac awake with the lid closed for up to 24 hours. Sleep turns back on when the session ends, when Snaptic quits, at 20% battery, or if your Mac gets hot. Enter an administrator password to allow this.” (with your battery limit). Touch ID may work there.
+
+While a session you started from the menu or Settings is running, the menu shows **Keep Awake with the Lid Closed…** under Keep Display On instead, which adds lid-closed mode to that session. The Awake page’s **Keep Awake ▾** and **Options ▾** menus have the same items. While a request is under way the items read “Waiting for Password…”, “Turning On…”, or “Turning Off…”, and if turning on takes more than 2 seconds a notice says “Turning on lid-closed mode…”.
+
+**Only you, in Snaptic, can turn it on:** a menu click, the Custom… panel, or the Awake page. Never the command line, rules, holds, keyboard shortcuts (including session shortcuts), a session started when Snaptic opens, a session restored or resumed after a restart, History’s Start Again, or an imported backup. If something other than the Snaptic menu or Settings replaces the session (a shortcut, the command line, a rule), lid-closed mode ends. Choosing another session from the Snaptic menu or Settings keeps it, within the same 24 hours.
+
+**It won’t turn on** (a notice says why, and there is no Start Anyway):
+- on battery below your battery limit plus 5% (“Lid-closed mode needs at least 25% battery, or connect power.”);
+- while your Mac is hot;
+- in a Start Anyway session;
+- when Snaptic runs from a temporary location (“translocated”): move it to Applications first;
+- while an earlier lid-closed session is still finishing, or while sleep is still turned off from one (see [If sleep stays off](#if-sleep-stays-off)).
+
+If sleep is already turned off for this Mac by another app or command, Snaptic doesn’t touch it: your Mac already stays awake with the lid closed, and the session starts without lid-closed mode. Low Power Mode doesn’t block lid-closed mode and is a good idea with the lid closed; the session’s own “When Low Power Mode turns on” setting still applies.
+
+**Turning it off:** choose **✓ Keep Awake with the Lid Closed** (no password needed), turn Keep Awake off, let the session end, or quit Snaptic. Turning lid-closed mode off never asks for a password.
+
+#### Limits
+
+Lid-closed mode turns off by itself:
+
+- **at your battery limit:** Awake’s low-battery level, but at least 10%; 20% when “When the battery is low” is off;
+- **when your Mac gets hot** (a serious thermal state or worse);
+- **after 24 hours**, counted from when you first turned it on. Five minutes before, a notice says “Lid-closed mode turns off in 5 minutes. If the lid is closed then, your Mac goes to sleep.” With the lid open, the session continues: “Lid-closed mode turned off after 24 hours. Awake is still on; your Mac sleeps if you close the lid.”;
+- when the session ends, Awake or the feature is turned off, Safe Mode starts, or Snaptic quits, stops responding, or crashes;
+- if another app turns sleep back on.
+
+When it turns off for any of these reasons while the lid is closed, your Mac goes to sleep. If the session was still running, it ends too: “Awake ended: lid-closed mode turned off while the lid was closed.”
+
+**The screen.** While the lid is closed and no external display is connected, Snaptic lets the built-in display sleep, even in a Keep Display On session, and runs `pmset displaysleepnow` as you to turn it off. With an external display connected, your Keep Display On choice stands.
+
+#### What you see
+
+- Awake’s icon uses a lid-closed look while the mode is on, and its tooltip and VoiceOver label add “even with the lid closed”. VoiceOver says “Keeping your Mac awake with the lid closed.” when it turns on and “Lid-closed mode turned off.” when it ends.
+- The menu and the Awake page say “Stays awake with the lid closed”, or “Stays awake with the lid closed until 6:40 PM” when the 24-hour limit comes first.
+- After it ends, for 12 hours: “Lid-closed mode ended at 3:12 AM: battery at 20%.” (or “your Mac got hot”, “time limit reached”, “another app turned sleep back on”, “Snaptic quit”).
+- History marks the session “Lid closed”, and `snaptic awake status --json` has `"lidClosed": true`.
+- An update never relaunches Snaptic while lid-closed mode is on (see [Updates](#updates)).
+- `Awake.disable.lidClosed` turns the feature off for this Mac (see [Hidden kill switches](#hidden-kill-switches)).
+
+Known limits: another app’s display assertion (for example `caffeinate -d`, listed in Other apps keeping your Mac awake) can keep the built-in display lit, and the keyboard backlight may stay on, because there’s no public way to turn it off.
+
+#### If sleep stays off
+
+`SleepDisabled` survives a restart. If your Mac loses power or restarts while lid-closed mode is on, or turning sleep back on fails, sleep stays off until you decide. At the next launch, even with Awake turned off or in Safe Mode, Snaptic shows:
+
+- **in every Snaptic menu**, above everything else (and above the tabs): “Sleep Is Turned Off” and **Turn Sleep Back On…**;
+- **on the Awake page and in Awake › Advanced… › Other apps keeping your Mac awake:** “Your Mac can’t sleep. This may be from an earlier lid-closed session that didn’t finish.” with **Turn Sleep Back On…**, **Keep Sleep Off**, and **Not Now**;
+- a notice with **Turn Sleep Back On…** and **Open Awake Settings…** when Awake isn’t running.
+
+**Turn Sleep Back On…** asks for an administrator password (“Snaptic wants to turn sleep back on. It may have been left off by an earlier lid-closed session. Enter an administrator password to allow this.”) and runs only `pmset -a disablesleep 0`. **Keep Sleep Off** leaves it off without a password and removes the rows (Other apps then says sleep is turned off by another app or command); it’s only in Settings, because undoing it needs Terminal. **Not Now** hides the rows until Snaptic next starts. Snaptic never changes `SleepDisabled` when it didn’t set it itself: a value another app left is reported, never changed. You can always check and fix it yourself:
+
+```bash
+pmset -g | grep SleepDisabled      # 1 means sleep is turned off for the whole Mac
+sudo pmset -a disablesleep 0       # turn system sleep back on
+```
+
+#### Your password and what runs as root
+
+- **What runs as root.** Only while lid-closed mode is on, or when you choose Turn Sleep Back On…, Snaptic runs a short shell script as root. Its full text is in [`Sources/SnapticKit/LidWatchdog.swift`](Sources/SnapticKit/LidWatchdog.swift). It changes only `SleepDisabled` (`pmset -a disablesleep 1`, then `0`), and may run `pmset sleepnow` when sleep is back on, the lid is closed, and your Mac isn’t shutting down. It turns sleep back on when the session ends, when Snaptic quits or stops responding (it checks every 5 seconds), when the battery reaches the limit, when your Mac gets hot, after 24 hours, or if the script itself fails. It never writes, deletes, or reads the contents of your files; it only checks two files Snaptic keeps in your temporary folder.
+- **How it starts.** `/usr/bin/osascript` asks macOS for an administrator password, then starts the script, which keeps running as a watchdog after the dialog closes. It gets a minimal environment and calls every program by its full path.
+- **The dialog names osascript, not Snaptic.** Any app can show this dialog with any text. Only enter your password right after you choose **Keep Awake with the Lid Closed**, **Turn Sleep Back On…**, or **Install and Relaunch** (in Snaptic’s About page or in Sparkle’s update window).
+- **If your account can change Snaptic** (the default after you drag it to Applications), that advice isn’t enough: a program running as you could change Snaptic so that its own prompt runs something else as root. Snaptic says so under the setting. To close that gap, install Snaptic owned by root: build with `INSTALL=1`, or for a downloaded copy run `sudo chown -R root:wheel /Applications/Snaptic.app`. (Each update then asks for an administrator password; see [Updates](#updates).) Snaptic warns rather than refuses, because the same program could show the identical dialog without touching Snaptic, and refusing would remove the feature from the default install. A translocated copy is refused.
+- **What a program running as you can do:** turn sleep back on (by creating the watchdog’s stop file or deleting its heartbeat file), or, while Snaptic is hung, keep lid-closed mode going, but only while Snaptic’s process is still running and only until the 24-hour limit, the battery limit, or heat ends it, which the watchdog enforces on its own. It can’t turn lid-closed mode on without you typing a password into a dialog.
+- **Power loss or a restart while it’s on:** sleep stays off until you choose Turn Sleep Back On… or Keep Sleep Off (see [If sleep stays off](#if-sleep-stays-off)).
+- **Security software** may flag “osascript with administrator privileges”. Release builds are signed with a Developer ID, which removes one of the conditions such rules look for.
 
 ### Switching from Amphetamine or Insomnia
 
@@ -270,9 +355,10 @@ To keep a MacBook awake with the lid closed, use macOS’s own closed-display mo
 | Drive Alive | Drive Alive |
 | Statistics | History |
 | AppleScript | The `snaptic awake` command |
-| Closed-display mode on battery, Power Protect | Not offered; see [Why not with the lid closed on battery?](#why-not-with-the-lid-closed-on-battery) |
+| Closed-display mode on battery | Lid-closed mode, with an administrator password each time; see [Keeping awake with the lid closed](#keeping-awake-with-the-lid-closed) |
+| Power Protect (a sudoers rule, no password) | Not offered: Snaptic installs no sudoers rule and keeps no lasting permission |
 
-Quit the other app and remove it from Login Items first, so two apps don’t keep your Mac awake. Their closed-lid features can leave two things behind that Snaptic never touches: a **sudoers rule** that lets programs run `pmset` without a password, and the system-wide **`SleepDisabled`** setting. The commands below are for you to run in Terminal; Snaptic never runs them. Prefer the other app’s own uninstaller first (Amphetamine: Feedback & Support › Uninstall Scripts…).
+Quit the other app and remove it from Login Items first, so two apps don’t keep your Mac awake. Their closed-lid features can leave two things behind: a **sudoers rule** that lets programs run `pmset` without a password, and the system-wide **`SleepDisabled`** setting. Snaptic never touches another app’s sudoers rule, and never changes a `SleepDisabled` it didn’t set itself in lid-closed mode. The commands below are for you to run in Terminal; Snaptic never runs them for you. Prefer the other app’s own uninstaller first (Amphetamine: Feedback & Support › Uninstall Scripts…).
 
 ```bash
 # Inspect (no changes)
@@ -301,7 +387,7 @@ Display changes can leave you without a usable screen. Snaptic is built so that 
 - **Restore All Displays: ⌃⌥⌘⎋** (⌃⌥⌘⇧⎋ if the first is taken; also in Display Tools and as `snaptic panic`). It undoes resolution changes from the last minute, reconnects displays Snaptic turned off, removes dimming and overlays, resets color tables, stops virtual displays and streams, and pauses automation (layouts, protection, hooks, re-creation) until you choose Resume. Rotation and HDR aren’t touched; they always go through the confirm panel. The shortcut can’t be turned off while a display is disconnected, mirrored to a virtual display, or dimmed to black. Awake isn’t affected: keeping your Mac awake isn’t a display hazard.
 - **Safe Mode: hold ⇧ while Snaptic starts** (or start it with `--safe-mode`, or choose General › Advanced… › Restart in Safe Mode…). It also starts automatically after two launches in a row that ended within a minute. Safe Mode skips brightness and color restore, virtual displays and Smart HiDPI, protection, layouts, remembered resolutions, hooks, automatic DDC writes, XDR, and reconnection planning. In Awake it pauses rules, appear active, pointer movement, and Drive Alive; sessions you start, holds, and guards still work. It still undoes unfinished display changes from the last run, and the switcher and your shortcuts keep working. **Leave Safe Mode…** relaunches normally.
 - **Journals.** Before a risky change Snaptic writes what it would take to undo it. If the Mac or Snaptic goes down mid-change, the next launch puts things back (and says so).
-- **Awake can’t drain your battery or cook your Mac:** the 5% floor and the heat guard have no setting and no kill switch (see [Guards](#guards)).
+- **Awake can’t drain your battery or cook your Mac:** the 5% floor and the heat guard have no setting and no kill switch (see [Guards](#guards)). Lid-closed mode adds its own battery limit (at least 10%), heat cutoff, and 24-hour limit, enforced both by Snaptic and by its root watchdog, and turns sleep back on if Snaptic stops responding (see [Keeping awake with the lid closed](#keeping-awake-with-the-lid-closed)).
 
 ## Permissions
 
@@ -315,7 +401,9 @@ Snaptic asks only for what the features you turned on need, and only when you tu
 
 Accessibility and Screen Recording are in **System Settings › Privacy & Security**. The permission window shows the exact app path, with “Show Snaptic in Finder” so you add *this* copy. On macOS 27 a grant often takes effect only after a relaunch; Snaptic offers **Relaunch Snaptic**. Without Accessibility the switcher stays idle and Awake only appears active instead of moving the pointer. Without Screen Recording the switcher shows app icons and only windows on the current Space. macOS Sequoia and later re-confirm Screen Recording about once a month; that prompt comes from macOS.
 
-Most Displays features need no permission at all. Awake needs none for sessions, rules, guards, holds, appear active, history, or the menu bar: its conditions read only system state that macOS gives any app without asking (no Location, Bluetooth, Microphone, Input Monitoring, Local Network, or Downloads folder access).
+Most Displays features need no permission at all. Awake needs none for sessions, rules, guards, holds, appear active, history, or the menu bar: its conditions read only system state that macOS gives any app without asking (no Location, Bluetooth, Microphone, Input Monitoring, Local Network, or Downloads folder access). Lid-closed mode needs no permission either; instead it asks for an administrator password each time you turn it on.
+
+Release builds are signed with a Developer ID, so permissions you grant survive updates. Going from 0.3.0 (ad hoc) to 0.3.1 (Developer ID) resets Accessibility and Screen Recording once: remove the old Snaptic with − in each list, then turn on the new one.
 
 ## Command line
 
@@ -376,7 +464,7 @@ Verbs are case-insensitive, so `toggle nightShift` and `toggle smartHiDPI` work 
 
 **`prevent-sleep` is retired.** Display sleep prevention moved to Awake (your 0.2 setting became a rule; see [Upgrading and downgrading](#upgrading-and-downgrading)). The old verb answers “Moved to Awake: use “snaptic awake …”.” with exit code 2 whatever is turned on, and isn’t listed in help. It will be removed in 0.4. Use `snaptic awake start`, `snaptic awake hold`, or a rule instead.
 
-**Never from the command line:** turning on anything off-only, and changing hooks, actions, command-line settings, disconnect, auto-disconnect, dim to black, DDC unlocks, “allow without asking” choices, layout trust, or any Awake setting (rules, sessions in the menu, guards, Drive Alive, appear active, pointer movement). Accessibility-using actions (Gather windows, pointer movement) are never command-line actions.
+**Never from the command line:** turning on anything off-only, and changing hooks, actions, command-line settings, disconnect, auto-disconnect, dim to black, DDC unlocks, “allow without asking” choices, layout trust, or any Awake setting (rules, sessions in the menu, guards, Drive Alive, appear active, pointer movement), and turning on lid-closed mode. Accessibility-using actions (Gather windows, pointer movement) are never command-line actions.
 
 ### Awake commands
 
@@ -384,12 +472,12 @@ Available while Awake is on and command-line control is on (otherwise `snaptic` 
 
 | Command | What it does |
 |---|---|
-| `snaptic awake status [--json]` | `inactive`, or a tab-separated line: `active`, the source (`manual`, `automatic`, or `holds`), the kind (`indefinite`, `duration`, `until`, `app`, `idle`, `process`, or `automatic`), the display policy (`keepOn`, `maySleep`, or `keepOnWhileActive`), the end time in UTC ISO 8601 or `-`, the seconds remaining or `-`, and the number of holds. `--json` prints one object with `active`, `source`, `kind`, `display`, `end`, `remaining`, `rule` (the rule’s number), `holds`, and `pids`. No app, rule, or process names. |
+| `snaptic awake status [--json]` | `inactive`, or a tab-separated line: `active`, the source (`manual`, `automatic`, or `holds`), the kind (`indefinite`, `duration`, `until`, `app`, `idle`, `process`, or `automatic`), the display policy (`keepOn`, `maySleep`, or `keepOnWhileActive`), the end time in UTC ISO 8601 or `-`, the seconds remaining or `-`, and the number of holds. `--json` prints one object with `active`, `source`, `kind`, `display`, `end`, `remaining`, `rule` (the rule’s number), `holds`, `pids`, and `lidClosed` (whether lid-closed mode is on). No app, rule, or process names. |
 | `snaptic awake start [<duration>] [--display-may-sleep]` | Starts a session. No argument means 1 hour. Durations: `90` (minutes), `90m`, `2h`, `1.5h`, `1h30m`, `1h 30m`, `3d`, `until 17:30`, `until 5:30pm`, or `idle` (Until Downloads and Tasks Finish, at most 12 hours). Between 1 minute and 30 days. `indefinite` and `forever` are refused (exit 4): use the menu or `awake hold`. |
 | `snaptic awake hold [--pid N] [--max <duration>]` | Keeps your Mac awake while this command runs, or while process N runs, at most 12 hours, or `--max` up to 24 hours. See below. |
 | `snaptic awake preset <number\|name>` | Starts one of Sessions in the menu by its position (1 is the first) or its name. Until Turned Off sessions are refused. |
-| `snaptic awake extend <duration>` | Adds time to the running session (sessions with an end only; holds have `--max` instead). |
-| `snaptic awake stop` | Ends the running session; a rule’s session counts as turned off by you. Holds end with their own commands. |
+| `snaptic awake extend <duration>` | Adds time to the running session (sessions with an end only; holds have `--max` instead). Refused while lid-closed mode is on (exit 4): “Lid-closed sessions can’t be extended from the command line. Use Add 1 Hour in the menu.” |
+| `snaptic awake stop` | Ends the running session, and lid-closed mode with it; a rule’s session counts as turned off by you. Holds end with their own commands. |
 | `snaptic awake pause [<duration>]` | Pauses rules for 1 hour, or for up to 24 hours. |
 
 - **Your sessions come first.** `start` and `preset` are refused (exit 4) while a session you started in Snaptic runs: stop it first with `snaptic awake stop`, or use `awake hold`, which never replaces anything.
@@ -431,7 +519,7 @@ release:
 | 0 | Success (also when a hold ends normally) |
 | 2 | Usage error, unknown command, a retired command such as `prevent-sleep`, or a name that matches several displays or items |
 | 3 | Nothing matched (display, action, layout, configuration, Awake session in the menu) |
-| 4 | Refused by policy: off-only, a protected setting, the safety rules, or an Awake refusal (a guard, a session you started in Snaptic is running, 8 holds, a session without an end, a caller Snaptic couldn’t identify) |
+| 4 | Refused by policy: off-only, a protected setting, the safety rules, or an Awake refusal (a guard, a session you started in Snaptic is running, 8 holds, a session without an end, extending a lid-closed session, a caller Snaptic couldn’t identify) |
 | 5 | Unavailable: Snaptic isn’t running or quit, command-line control is off, the feature is off or unsupported, or too many Awake requests |
 | 6 | Cancelled or timed out (the confirmation was declined or expired; the client waits up to 90 s: the longest panel plus 30 s) |
 
@@ -450,7 +538,7 @@ defaults delete app.snaptic.Snaptic Awake.disable.pointerNudge                  
 ```
 
 - **Modules:** `Modules.disable.windowSwitcher`, `Modules.disable.displays`, `Modules.disable.awake`. A module turned off this way never starts, its page shows why with its switch disabled, and Awake also releases its assertion and doesn’t resume a session at the next launch.
-- **Awake features:** `presets` (sessions in the menu), `triggers` (rules), `activity` (appear active, and so pointer movement), `pointerNudge` (pointer movement), `driveAlive`, `history`, `shortcuts`, and `commandLine` (the `snaptic awake` commands). `sessions`, `batteryGuard`, `thermalGuard`, and `indicator` are ignored, so the guards and a visible indicator always stay; use `Modules.disable.awake` to turn Awake off entirely.
+- **Awake features:** `presets` (sessions in the menu), `triggers` (rules), `activity` (appear active, and so pointer movement), `pointerNudge` (pointer movement), `driveAlive`, `history`, `shortcuts`, `commandLine` (the `snaptic awake` commands), and `lidClosed` (lid-closed mode). `sessions`, `batteryGuard`, `thermalGuard`, and `indicator` are ignored, so the guards and a visible indicator always stay; use `Modules.disable.awake` to turn Awake off entirely.
 - **Displays features** (ids as in `snaptic features`): `resolution`, `hiddenModes`, `scaleMatch`, `brightness`, `brightnessApple`, `brightnessDDC`, `brightnessGamma`, `brightnessOverlay`, `brightnessRestore`, `dimToBlack`, `dimOnLock`, `nits`, `xdr`, `sync`, `autoBrightness`, `color`, `colorProfiles`, `nightShift`, `applePresets`, `ddcControls`, `ddcInput`, `ddcPower`, `ddcCustom`, `brightnessKeys`, `volumeKeys`, `shortcuts`, `osd`, `osdBroadcast`, `mainDisplay`, `arrangement`, `mirroring`, `rotation`, `underscan`, `hdrToggle`, `disconnect`, `autoDisconnectBuiltin`, `protection`, `layouts`, `virtualScreens`, `smartHiDPI`, `hdrVirtual`, `pip`, `pipFilters`, `menuBarOverlays`, `hooks`, and `customActions`. `Displays.disable.symbol.<name>` turns off one private API.
 
 ### Deploying kill switches in an organization
@@ -527,7 +615,16 @@ Replace the identifiers and the two UUIDs with your own (`uuidgen`), and list th
 
 Grab `Snaptic.dmg` from the [latest release](https://github.com/revylfitness/snaptic/releases/latest), open it, and drag Snaptic onto the Applications folder next to it. `Snaptic.zip` holds the same app if you’d rather unzip it. Releases are built by GitHub Actions from the tagged commit.
 
-Snaptic isn’t notarized by Apple yet, so the first time you open it macOS will block it. Go to System Settings › Privacy & Security and click **Open Anyway**. Run it from Applications: if macOS starts it from a temporary “translocated” location, Snaptic tells you to move it first.
+From 0.3.1 on, releases are signed with the Developer ID of Snaptic’s developer, Sean Frasure, and notarized by Apple, so macOS opens them without an **Open Anyway** step. Run Snaptic from Applications: if macOS starts it from a temporary “translocated” location, Snaptic tells you to move it first (lid-closed mode refuses to run from there).
+
+**Coming from 0.3.0?** 0.3.0 can’t update itself, so download 0.3.1 one last time and replace the old copy in Applications. After that, Snaptic can keep itself up to date (see [Updates](#updates)), and macOS asks you to allow Accessibility and Screen Recording once more (see [Upgrading and downgrading](#upgrading-and-downgrading)).
+
+To check a download yourself:
+
+```bash
+codesign -dv --verbose=2 /Applications/Snaptic.app 2>&1 | grep Authority   # Developer ID Application: Sean Frasure (7TFS5G4532)
+spctl -a -t exec -vv /Applications/Snaptic.app                             # accepted, source=Notarized Developer ID
+```
 
 ### Build and run
 
@@ -540,16 +637,16 @@ open /Applications/Snaptic.app
 
 Leave out `INSTALL=1` to build only (`build/Snaptic.app`). For a universal Apple silicon and Intel build, which needs full Xcode, add `ARCHS="arm64 x86_64"`. The unit tests in `Tests/` run with `swift test`, also on Linux.
 
-`INSTALL=1` installs the app owned by root (it runs `sudo ditto` and `chown -R root:wheel`, so it asks for your password). That way your account, and any program running as you, can’t replace the binary that holds Snaptic’s permissions. Snaptic warns before you grant a permission if its bundle is writable by you. Awake needs no root at any time; the password is only for installing.
+`INSTALL=1` installs the app owned by root (it runs `sudo ditto` and `chown -R root:wheel`, so it asks for your password). That way your account, and any program running as you, can’t replace the binary that holds Snaptic’s permissions. Snaptic warns before you grant a permission if its bundle is writable by you. A root-owned copy also makes the administrator password prompts of [lid-closed mode](#your-password-and-what-runs-as-root) safer to trust, and each update of it asks for an administrator password (see [Updates](#updates)). Awake runs nothing as root except while you use lid-closed mode, after you type your password; the `INSTALL=1` password is only for installing.
 
-GitHub Actions compiles every push and pull request. Pushes to `main` and version tags also upload a universal `Snaptic.zip` and `Snaptic.dmg` as a workflow artifact. To make the disk image from a local build, run `./scripts/make-dmg.sh` after `build-app.sh`. On public repositories a separate job, which never runs repository code, adds a build-provenance attestation. Verify that a download (zip or disk image) came from this workflow on `main`:
+GitHub Actions compiles every push and pull request, without any signing secrets. Pushes to `main` also upload an ad-hoc signed `Snaptic-adhoc` build as a workflow artifact; it doesn’t contain Sparkle, so it can’t update itself, and macOS will warn before opening it. To make the disk image from a local build, run `./scripts/make-dmg.sh` after `build-app.sh`. Pull requests and manual runs never publish a downloadable app.
+
+**Releases** are built only from a version tag (`vX.Y.Z`) on `main`. The same compiled app gets Sparkle added, is signed with the Developer ID certificate and the hardened runtime (no entitlements), and is notarized and stapled, both as `Snaptic.zip` and as `Snaptic.dmg`. Signing and publishing run in two separate GitHub environments, each limited to version tags and each needing the owner’s approval for every run. A separate job adds a build-provenance attestation to the signed zip and disk image. Verify that a download came from this workflow at its release tag:
 
 ```bash
 gh attestation verify Snaptic.zip --repo revylfitness/snaptic \
-  --signer-workflow revylfitness/snaptic/.github/workflows/build.yml --source-ref refs/heads/main
+  --signer-workflow revylfitness/snaptic/.github/workflows/build.yml --source-ref refs/tags/v0.3.1
 ```
-
-These CI builds are ad-hoc signed and not notarized, so macOS will warn before opening one. Building it yourself avoids that. Pull requests and manual runs never publish a downloadable app. Consider protecting `.github/workflows` with a branch ruleset so only reviewed workflows can attest builds.
 
 ### Signing and permissions
 
@@ -569,11 +666,44 @@ SIGN_IDENTITY="Apple Development: Your Name (TEAMID)" INSTALL=1 ./scripts/build-
 
 A stably signed build inherits its permissions automatically, so only rebuild from code you’ve reviewed. Anything that can use that certificate’s key in your login keychain could also sign a replacement that inherits Snaptic’s permissions, so keep the key’s access restricted.
 
-**Why Developer ID builds are recommended.** Snaptic’s helpers (the safety helper and virtual-display hosts) check that they were started by Snaptic, and Snaptic checks each helper, by code signature. With an ad-hoc build that signature is the exact build, so permissions are lost on every update and, after updating in place, helpers are refused until you restart Snaptic (“Restart Snaptic to finish updating”). A Developer ID signature (team plus identifier) survives updates and can be notarized. To share builds with other people, sign with a Developer ID certificate and notarize with `xcrun notarytool`.
+With a `SIGN_IDENTITY="Developer ID Application: …"` identity, `build-app.sh` also embeds and signs Sparkle, the update framework. A build without `SIGN_IDENTITY` contains no Sparkle: About says “This copy was built from source, so it can’t update itself.” and **Check for Updates…** opens the Releases page.
+
+**Why release builds use a Developer ID.** Snaptic’s helpers (the safety helper and virtual-display hosts) check that they were started by Snaptic, and Snaptic checks each helper, by code signature. With an ad-hoc build that signature is the exact build, so permissions are lost on every update and, after updating in place, helpers are refused until you restart Snaptic (“Restart Snaptic to finish updating”). A Developer ID signature (team plus identifier) survives updates and can be notarized, so from 0.3.1 on every release is signed with Sean Frasure’s Developer ID (team `7TFS5G4532`) and notarized. The trade-off: macOS accepts **any** Snaptic build signed by that team under the same permissions, including older releases. That’s why only tagged releases are ever signed with it; `main` and pull-request builds stay ad hoc.
+
+## Updates
+
+From 0.3.1 on, release builds update themselves with [Sparkle](https://sparkle-project.org) 2, from a signed feed on GitHub Releases. Snaptic checks only if you allow it.
+
+**Asking first.** Snaptic asks in its own window, never with Sparkle’s prompt: new users see a “Keep Snaptic Up to Date” step in onboarding (“Snaptic can check GitHub once a day and install updates when you quit it. GitHub sees your IP address and macOS version, nothing more.”), and people upgrading from 0.3.0 see the same choice on the “Welcome to Snaptic 0.3.1” card. **Check Automatically** turns on checks and automatic installs; **Not Now** turns both off. Until you choose, Snaptic never checks.
+
+**Settings › About › Updates**
+- **Check for Updates…** checks now (in a build without Sparkle, it opens the Releases page).
+- **Check for updates automatically:** once a day, Snaptic checks GitHub for a newer version.
+- **Download and install updates automatically** (shown while checks are on): updates download in the background and install the next time Snaptic quits.
+- A status line: when it last checked, “Checking…”, “Version 0.3.2 is available.” or “Version 0.3.2 is ready to install.” with **Install and Relaunch…**, or “Automatic checks are off.”
+
+**When an update is found,** Snaptic doesn’t pop up a window that could land behind others. Instead the Snaptic menu shows **Update Available: Snaptic 0.3.2…** above Snaptic Settings… (**Restart to Update Snaptic…** once it has downloaded and installs automatically), and the About page shows it too. Either brings Sparkle’s update window forward, with the release notes, which come inside the signed feed. After an update, Snaptic says “Snaptic was updated to 0.3.2.” once, with **What’s New**.
+
+**When updates wait.** An update never relaunches Snaptic while lid-closed mode is on or while a display change is waiting for “Keep this change?”; the status line says so (“Version 0.3.2 will install when lid-closed mode ends.”). Quitting Snaptic, which ends both, may install a downloaded update. In Safe Mode scheduled checks pause, and Sparkle’s window never appears during onboarding or in Safe Mode; **Check for Updates…** still works, so a broken release can always be replaced.
+
+**Copies owned by root** (installed with `INSTALL=1`, or after `sudo chown -R root:wheel`): each update asks for an administrator password through Sparkle’s installer, so updates install only when you choose **Install and Relaunch**, and About says “Only an administrator can change this copy of Snaptic, so each update asks for an administrator password.” instead of offering automatic installs.
+
+**Builds from source** have no Sparkle and can’t update themselves (see [Signing and permissions](#signing-and-permissions)). A future Homebrew cask would set `auto_updates true`, so Homebrew leaves updates to Snaptic.
+
+**How an update is checked.** Every update must carry a valid signature from Snaptic’s update key (EdDSA) or Snaptic’s Developer ID signature, and the feed itself is signed, so an edited feed, release notes, or download is rejected. The signature is checked before anything is unpacked. The feed address is fixed in the app and can’t be changed through preferences. Sparkle accepts either signature so a lost key can be replaced, which also means that **either secret alone could publish an update**. The two secrets live in separate GitHub environments that run only for version tags and only after the owner approves each run, and the owner reviews a tag’s changes, including `.github/`, before approving.
+
+**Processes.** Sparkle runs its own `Autoupdate` and `Updater.app` (inside Snaptic’s bundle) to install an update, and asks for an administrator password through macOS for a root-owned copy. Snaptic’s helper and command-line processes load Sparkle in a release build but never use it.
+
+### If a release key leaks
+
+- **The update key (EdDSA):** generate a new key, ship a Developer ID-signed update that carries the new public key, with the signed `Snaptic.dmg` as that one release’s download, then replace the key in the `appcast` environment.
+- **The Developer ID certificate:** revoke it in the Apple developer account (revoking can make Gatekeeper reject earlier downloads signed with it; contact Apple Developer Technical Support if older builds must stay valid), create a new one, and ship an update signed with the update key and the new certificate.
+
+Either way, a note goes in this README and on the Releases page.
 
 ## Privacy and security
 
-**No network.** Snaptic never connects to the network: no telemetry, no crash upload, no update checks (**Check for Updates…** opens the Releases page in your browser). A lint check rejects networking APIs in the source.
+**Network: only for updates, and only if you allow it.** If you allow it, Snaptic contacts GitHub (github.com and its download host) once a day, and when you choose **Check for Updates…**. It downloads the signed update feed, and an update when you install one. GitHub sees your IP address, a Sparkle User-Agent with the app version, and your macOS version; Sparkle’s system profiling is off. Every update must carry either a valid signature from Snaptic’s update key or Snaptic’s Developer ID signature, and the feed itself is signed (see [Updates](#updates)). Nothing else connects: no telemetry, no analytics, no crash upload, and a lint check still rejects networking APIs in Snaptic’s own code.
 
 **What never leaves the process.** Window pixels, window titles, app names, and key presses. The command line, hooks, diagnostics, and the event log never carry them. Diagnostics mask serial numbers; display keys are salted per Mac and the salt is never exported.
 
@@ -582,11 +712,11 @@ A stably signed build inherits its permissions automatically, so only rebuild fr
 - *Hooks and custom actions* (opt-in) run programs you chose, with a minimal environment (`SNAPTIC_EVENT`, `SNAPTIC_DISPLAY_NAME`, `SNAPTIC_DISPLAY_KEY`), without Snaptic’s permissions, stopped after 30 seconds. Programs must be absolute paths owned by you or root and not writable by others. Never in Safe Mode or while automation is paused.
 - *Awake’s power assertion* is visible to every app (`pmset -g assertions`), as all assertions are. Its name is always “Snaptic: keeping your Mac awake” and its details only say `manual` or `automatic`: never an app, rule, or condition.
 
-**On disk.** Settings (in Snaptic’s preferences), and under `~/Library/Application Support/Snaptic/` (0700): the single-instance lock, the command-line socket, undo journals for display changes, and copies of imported LUTs. Drive Alive’s only trace is the 8-byte `.snaptic-keepalive` file on drives you turned on. Backup export leaves out hooks, actions, command-line settings, the salts, DDC unlocks, “allow without asking” choices, layout trust, sensitive switches (disconnect, auto-disconnect, dim to black), Awake’s history, Drive Alive drives, pointer movement, and the apps you used recently; Awake rules are included only if you tick “Include automatic-session rules”. Import strips the same things even if present, and can only make Awake’s guards stricter.
+**On disk.** Settings (in Snaptic’s preferences), and under `~/Library/Application Support/Snaptic/` (0700): the single-instance lock, the command-line socket, undo journals for display changes, copies of imported LUTs, and, while lid-closed mode is on or its recovery is pending, a small journal (`awake/lid.json`, 0600). Lid-closed mode also keeps two empty files in a private folder (0700) of your temporary folder for its watchdog. The remembered Snaptic menu tab is a plain preference. Release builds add Sparkle’s update cache, `~/Library/Caches/app.snaptic.Snaptic/org.sparkle-project.Sparkle`, and Sparkle’s `SU…` keys in Snaptic’s preferences; **Reset All Settings…** clears those keys. Drive Alive’s only trace is the 8-byte `.snaptic-keepalive` file on drives you turned on. Backup export leaves out hooks, actions, command-line settings, the salts, DDC unlocks, “allow without asking” choices, layout trust, sensitive switches (disconnect, auto-disconnect, dim to black), Awake’s history, Drive Alive drives, pointer movement, lid-closed mode (import keeps this Mac’s choice), the update settings, the remembered menu tab, and the apps you used recently; Awake rules are included only if you tick “Include automatic-session rules”. Import strips the same things even if present, and can only make Awake’s guards stricter.
 
 **Command line.** Only your user account can connect, through a private socket (directory 0700, socket 0600); Snaptic never listens on the network. Requests are size-, rate-, and time-limited. See [Command line](#command-line) for what it can never change.
 
-**Helpers.** The safety helper and virtual-display hosts are copies of Snaptic’s own executable, started with an empty environment and their own process responsibility, so they hold none of Snaptic’s permissions. Each side checks the other’s code signature.
+**Helpers and other processes.** The safety helper and virtual-display hosts are copies of Snaptic’s own executable, started with an empty environment and their own process responsibility, so they hold none of Snaptic’s permissions. Each side checks the other’s code signature. Only for lid-closed mode, Snaptic also starts Apple’s `/usr/bin/osascript` (which asks for your password and starts the root watchdog; see [Your password and what runs as root](#your-password-and-what-runs-as-root)) and `/usr/bin/pmset displaysleepnow` as you; before either runs, Snaptic checks that it’s signed by Apple, and it starts with a minimal environment. Release builds also contain Sparkle’s `Autoupdate` and `Updater.app`, which run only to install an update, and Sparkle’s installer asks for an administrator password when the copy is owned by root.
 
 **Picture in Picture.** Display captures never include Snaptic itself, Notification Center, or apps on the protected list; browser windows marked private (Firefox, Edge, Chrome’s Incognito title) and untitled browser windows are left out. Locking or sleeping the Mac stops captures and clears their last frame. Snaptic never starts a capture by itself.
 
@@ -605,14 +735,23 @@ A stably signed build inherits its permissions automatically, so only rebuild fr
 
 Nothing Awake reads leaves your Mac, and none of it needs a permission.
 
-- **What it reads, only while a session, rule, or page needs it:** the battery and power adapter state, the thermal state, Low Power Mode, whether the screen is locked and whose session is on screen, the list of running apps, connected displays, mounted drives, connected USB devices, whether audio is playing or the microphone is in use (never the audio itself), how long since you last used the keyboard or mouse, your Mac’s network addresses and its router’s hardware address, network and disk byte counters, CPU use of your own processes (as numbers only, never their names), Bluetooth audio and input devices’ properties (never opened), and which other apps hold power assertions.
+- **What it reads, only while a session, rule, or page needs it:** the battery and power adapter state, the thermal state, Low Power Mode, whether the screen is locked and whose session is on screen, the list of running apps, connected displays, mounted drives, connected USB devices, whether audio is playing or the microphone is in use (never the audio itself), how long since you last used the keyboard or mouse, your Mac’s network addresses and its router’s hardware address, network and disk byte counters, CPU use of your own processes (as numbers only, never their names), Bluetooth audio and input devices’ properties (never opened), which other apps hold power assertions, and whether sleep is turned off for the Mac (`SleepDisabled`, from the power preferences and the kernel) and the lid is closed.
 - **What it keeps:** your rules and sessions in the menu (with the app, device, and network names you chose) in Snaptic’s preferences; routers and USB serial numbers only as salted hashes; recently used apps for the menu (at most 5); and History (90 days). Other programs running as you can read Snaptic’s preferences, as with any app.
 - **What it never does:** send anything anywhere, log app, device, network, or process names (its log keeps only counts and error codes), put names in diagnostics or the command line (the CLI shows process numbers only), or store a timeline in logs. CPU and disk samples stay in memory for the running Until Downloads and Tasks Finish session only.
-- **What it can’t be made to do:** run a program (Awake spawns nothing and has no actions besides keeping your Mac awake), type, click, or scroll, or use Snaptic’s permissions for anyone else. A program running as you can already hold the same power assertion with `caffeinate`, so the command line grants nothing new; command-line sessions are visible in the menu bar and bounded in time.
+- **What it runs:** Awake runs a program only while you use lid-closed mode: `/usr/bin/osascript` asks macOS for an administrator password, then starts a short shell script as root that runs `pmset` and turns sleep back on when the session ends, Snaptic quits or stops responding, the battery reaches your limit, your Mac gets hot, or 24 hours pass. While the lid is closed, Snaptic also runs `pmset displaysleepnow` as you to keep the screen dark.
+- **What it can’t be made to do:** type, click, or scroll, or use Snaptic’s permissions for anyone else, and nothing but you, in Snaptic’s own windows and menus, can turn on lid-closed mode. A program running as you can already hold the same power assertion with `caffeinate`, so the command line grants nothing new; command-line sessions are visible in the menu bar and bounded in time.
 
 **Startup checks.** Snaptic accepts only its own launch arguments, refuses to start with code-injection-style environment variables (`DYLD_*`, `OBJC_*`, `NS*`, `CF*`, `Malloc*`, and similar) or a `HOME` that isn’t your account’s, reads settings only from its own preferences (not command-line or managed overrides), and runs one copy at a time.
 
 ## Upgrading and downgrading
+
+**0.3 → 0.3.1.** No setting is lost, and nothing about your modules, sessions, or rules changes.
+
+- **One last manual download.** 0.3.0 has no updater, so download 0.3.1 from the [latest release](https://github.com/revylfitness/snaptic/releases/latest) and replace the copy in Applications. From 0.3.1 on, Snaptic can update itself.
+- **Permissions, once.** 0.3.1 is the first release signed by its developer, so macOS treats it as a new app for Accessibility and Screen Recording. Settings opens on General with a “Welcome to Snaptic 0.3.1” card: “Snaptic is now signed by its developer, so macOS asks you to allow it again once. After this, updates keep your permissions.” For each permission you had granted, it says “Remove the old Snaptic with −, then turn on the new one.” with **Open System Settings…**.
+- **Updates:** the card asks whether to keep Snaptic up to date (**Check Automatically** or **Not Now**), and **Done** hides it. It also hides itself once you’ve chosen and the permissions work again.
+- **Open at login:** if Snaptic doesn’t open at login after the change of signature, or Login Items lists it twice, turn Open at login off and on again in General.
+- **Going back to 0.3.0** works like any older copy: it ignores the remembered menu tab, lid-closed mode, and the update settings, and its ad-hoc signature needs the permissions granted again. Turn lid-closed mode off before you go back.
 
 **0.2 → 0.3.** No setting is lost; every 0.2 setting, button, and menu item has a home in 0.3, and Settings search finds it.
 
@@ -631,16 +770,18 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
 ## Troubleshooting
 
 - **A display went black or the picture is wrong.** Wait 15 seconds without pressing anything; unconfirmed changes revert. Otherwise press **⌃⌥⌘⎋** (or ⌃⌥⌘⇧⎋). If Snaptic won’t start cleanly, hold **⇧** while opening it for Safe Mode.
-- **Permission is on but Snaptic still asks.** Remove Snaptic from the list with −, add it again with + (use “Show Snaptic in Finder” to pick the right copy), then relaunch. After rebuilding an ad-hoc build, run `tccutil reset Accessibility app.snaptic.Snaptic` first.
+- **Permission is on but Snaptic still asks.** Remove Snaptic from the list with −, add it again with + (use “Show Snaptic in Finder” to pick the right copy), then relaunch. This is expected once after upgrading from 0.3.0 (see [Upgrading and downgrading](#upgrading-and-downgrading)). After rebuilding an ad-hoc build, run `tccutil reset Accessibility app.snaptic.Snaptic` first.
 - **“Restart Snaptic to finish updating” or “Unprotected”.** Snaptic was replaced while running, so its helpers are refused. Quit and reopen it.
 - **A display doesn’t respond to brightness or volume.** Many TVs, DisplayLink adapters, some docks, and the HDMI port on some Macs don’t pass DDC; Snaptic dims those in software instead. Hardware Controls shows whether each display answers.
 - **A feature shows “Paused while … runs”.** Another display app is running. Quit it, or choose “Run both” in Displays › Advanced… › Other display apps.
 - **No menu bar icon.** macOS may hide it in the overflow or in System Settings › Menu Bar. Open Snaptic again from Finder or Spotlight to get Settings, or use the “Show Displays Panel” shortcut if you set one.
-- **My Mac still went to sleep during a session.** Closing the lid and choosing Sleep always sleep a Mac; see [Why not with the lid closed on battery?](#why-not-with-the-lid-closed-on-battery). Otherwise the menu says why the session ended for 12 hours: a guard (battery, adapter, Low Power Mode, heat), “End sessions when your Mac sleeps”, switching users, or a locked screen (Awake › Advanced…).
-- **My Mac doesn’t sleep and Awake is off.** Look at Awake › Advanced… › Other apps keeping your Mac awake, or run `pmset -g assertions`. If it says sleep is turned off for this Mac, see [Switching from Amphetamine or Insomnia](#switching-from-amphetamine-or-insomnia).
+- **My Mac still went to sleep during a session.** Choosing Sleep always sleeps a Mac, and so does closing the lid unless lid-closed mode is on or you use closed-display mode; see [Keeping awake with the lid closed](#keeping-awake-with-the-lid-closed). If lid-closed mode was on, the menu says why it ended for 12 hours (“Lid-closed mode ended at …”). Otherwise the menu says why the session ended for 12 hours: a guard (battery, adapter, Low Power Mode, heat), “End sessions when your Mac sleeps”, switching users, or a locked screen (Awake › Advanced…).
+- **My Mac doesn’t sleep and Awake is off.** Look at Awake › Advanced… › Other apps keeping your Mac awake, or run `pmset -g assertions`. If it says sleep is turned off for this Mac, see [If sleep stays off](#if-sleep-stays-off) when an earlier lid-closed session left it off, or [Switching from Amphetamine or Insomnia](#switching-from-amphetamine-or-insomnia).
 - **The display turns off during a session.** Turn on “Keep the display on” for the session (Keep Display On in the menu). On the lock screen, the display may sleep unless “Keep the display on while locked” is on.
 - **`awake hold` ended at once, or kept holding after the work.** See [the parent-shell pitfall](#awake-hold).
 - **`snaptic` says it isn’t running, or doesn’t know `awake`.** Turn on Settings › General › Command-line control, and make sure Awake is on. Exit code 5 means Snaptic isn’t running, control is off, the feature is off, or you sent Awake requests faster than once a second.
+- **Lid-closed mode won’t turn on.** The notice says why: battery too low (connect power), too hot, a Start Anyway session, Snaptic running from a temporary location (move it to Applications), or sleep still turned off from an earlier session. If the password dialog doesn’t appear, check whether security software blocks `osascript`.
+- **No update arrives.** Look at Settings › About › Updates: automatic checks may be off, the copy may be built from source, or an update may be waiting for lid-closed mode or a display change to finish. **Check for Updates…** checks now.
 - **Filing an issue.** Copy the report from Displays › Display Information (or `snaptic diagnostics`). It has no window titles, app names, or serial numbers; Awake contributes only counts.
 
 ## Known limitations
@@ -649,7 +790,8 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
 - **Displays:** EDID-based display names are read on Intel Macs only. The panic confirmation is a notice, not a full HUD. A display “captured” by another app (a full-screen game) refuses changes and the confirm panel. Brightness sync notices changes made with a display’s own buttons only when readback is on. Auto-disconnect reads the lid state when it plans, and can’t detect a display in standby or on another input. “Disconnect on lock” ignores the screen saver. Virtual-display primaries come from EDID only (no ICC fallback). “Stream onto” associations ask rather than start. On macOS 27 the system’s own HUD also shows at the top right, so the two indicators can overlap; Snaptic’s defaults to top center there.
 - **Picture in Picture:** Safari doesn’t mark private windows (add Safari to the protected apps). Window sources are picked in the system picker each time, so they can’t start automatically or from the command line. Imported LUTs aren’t included in Backup. The cursor can’t be excluded from streams, and filters can’t be applied to a stream of the display itself.
 - **Awake:**
-  - A MacBook with its lid closed on battery sleeps, and choosing Sleep always sleeps the Mac (by design; see above).
+  - A MacBook with its lid closed sleeps unless lid-closed mode or closed-display mode is on, and choosing Sleep always sleeps the Mac.
+  - Lid-closed mode asks for an administrator password every time, and macOS’s dialog names `osascript`, not Snaptic. Another app’s display assertion can keep the built-in display lit with the lid closed, and the keyboard backlight may stay on. It is off by default and only on Macs with a battery.
   - **Bluetooth audio** conditions are Beta and cover only Bluetooth audio devices and Bluetooth keyboards, mice, and trackpads; other Bluetooth devices can’t be detected without the Bluetooth permission.
   - No Wi-Fi network name (it needs Location access) or DNS-server condition; **Connected to this network** recognizes a network by its router instead.
   - Until Downloads and Tasks Finish can’t see other users’ processes (such as Spotlight or Time Machine running as root), but their disk activity counts, so a session may run on while they work.
@@ -657,11 +799,11 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
   - Appear active keeps macOS from idling, but chat apps may still mark you away; pointer movement is Experimental and limited by its safety rules.
   - History, rules, and recently used apps are plain preferences that other programs running as you can read.
   - Starting a session at login needs “Open at login” and **Start a session when Snaptic opens**.
-- **General:** English only (all text is ready for translation, but no translations exist yet), no trackpad gesture, no automatic updates.
+- **General:** English only (all text is ready for translation, but no translations exist yet) and no trackpad gesture. Updates need a release build: copies built from source don’t update themselves, and 0.3.0 needs one manual download to reach 0.3.1.
 
 ### Needs testing on hardware
 
-0.2 and 0.3 were built without hardware testing. These depend on hardware behavior and are marked Beta or checked at runtime (a wrong guess turns the feature off rather than misbehaving). Beta labels are updated once they’re checked.
+0.2, 0.3, and 0.3.1 were built without hardware testing (0.3.1’s checks are HW-24 to HW-38 in its [plan](docs/design/0.3.1/PLAN.md#part-c-hardware-checks)). These depend on hardware behavior and are marked Beta or checked at runtime (a wrong guess turns the feature off rather than misbehaving). Beta labels are updated once they’re checked.
 
 - **Awake power:** both assertion types and how `pmset -g assertions` shows them on macOS 14, 15, 26, and 27, Intel and Apple silicon; switching between them without the display dimming; the screen saver and the lock screen with each type; lid close on battery, on power, and in closed-display mode.
 - **Awake guards:** power notifications on desktops and laptops; an underpowered USB-C charger counted as discharging; thermal states; the clock across sleep.
@@ -670,7 +812,10 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
 - **Drive Alive:** the Removable Volumes prompt; keeping a USB hard drive spinning; ejecting not blocked; disk images and startup volumes refused.
 - **Until Downloads and Tasks Finish:** the thresholds on 10-core Apple silicon and Intel Macs during compiles, links, large copies, downloads, and archive extraction.
 - **`awake hold`:** ending within a second when the client is killed, interrupted, or its terminal closes; `--pid $$` in scripts and `make`; PID reuse; 8 holds beside a session; a 12-hour idle hold.
-- **Menu bar and Settings:** status item placement and hiding on 14–27 (including notched Macs with many items and Show When Active); the custom menu rows (alignment, keyboard, VoiceOver, live values while the menu is open); sidebar search and scrolling, number fields, and switch sizes on macOS 14.
+- **Menu bar and Settings:** status item placement and hiding on 14–27 (including notched Macs with many items and Show When Active); the custom menu rows (alignment, keyboard, VoiceOver, live values while the menu is open); sidebar search and scrolling, number fields, and switch sizes on macOS 14; the tallest single tab of the Snaptic menu staying within 24 lines in the default setup.
+- **Menu tabs (0.3.1):** switching tabs in an open menu on 14, 15, 26, and 27 (resizing, highlight, with a submenu open, light and dark, Increase Contrast, Reduce Transparency, the largest text size on a 13″ display with three external displays); VoiceOver, Switch Control, and Full Keyboard Access reaching the tabs and hearing “needs attention” and “on”; ⌘1–⌘3 in an open menu while ⌘, and ⌘Q still work; sliders and switch rows in a newly shown tab.
+- **Lid-closed mode (0.3.1):** the password dialog from Developer ID and ad-hoc builds (its title, icon, text, Touch ID, Cancel); the output of `pmset`, `ioreg`, and `notifyutil` on Apple silicon and Intel, macOS 14 to 27; the lid closed on battery with and without an external display and with `caffeinate -d` running (staying awake, the built-in display going dark, Sleep grayed out, waking on lid open, the keyboard backlight, the icon); the watchdog surviving the dialog and restoring sleep after a quit, `kill -9`, a stopped Snaptic, the stop file, the 24-hour limit, a deleted heartbeat, a script error, and `sudo kill`; a restart while it’s on and both recovery buttons; the battery limit while Snaptic is stopped; the Mac sleeping within 30 seconds after each limit with the lid closed; the watchdog’s wakeups.
+- **Updates (0.3.1):** Sparkle loading in a Developer ID build; updating from a user-owned and a root-owned copy; permissions and Open at login surviving; no Gatekeeper prompt after relaunch; refusing a wrong signature, a non-Developer-ID build, and an edited feed; a root-owned copy staying `root:wheel`; waiting while lid-closed mode or a display change is pending; the menu row; no Sparkle window during onboarding or Safe Mode; a manual check in Safe Mode; installing at quit; the 0.3.0 → 0.3.1 permission re-grant; an ad-hoc build without Sparkle opening the Releases page.
 - **Hidden-config abuse:** pointer movement, Drive Alive, a battery floor of zero, and forged session state written with `defaults` while Snaptic is quit, stopped, and running: none of them may move the pointer, skip the 5% floor, or write to ineligible drives.
 - **From 0.2:** confirmed changes persisting across quit, relaunch, and reboot; the safety helper reverting after `kill -9` with virtual displays and a pending change; rotation and HDR reverts after a reboot; XDR extra brightness on M1–M5 XDR panels; gamma on virtual displays on M5; DDC over Apple silicon USB-C and HDMI, MCDP adapters, and Intel, and standby and wake through DDC; brightness and volume keys on Apple silicon laptops on macOS 26 and 27, and global shortcuts while a password field is focused; virtual displays and Smart HiDPI (HiDPI at creation, live mode changes, lock, sleep, Fast User Switching, lid closed with no external display, EDID colors on Apple silicon); Picture in Picture capture filters, window crop orientation, and the content-sharing picker on 14, 15, and 26; helper signature checks with ad-hoc and Developer ID builds and after an in-place update; Accessibility grants and relaunch on macOS 27; detecting password windows on macOS 26 without Screen Recording; Identify labels over full-screen apps and AirPlay.
 
@@ -683,8 +828,8 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
 
 **Excluded by design:**
 - **Displays:** EDID writing or overrides (can brick or blank a display); reinitializing displays, VMM7100 resets, forced HDR, dithering, and similar private framebuffer tricks (blank screens); NVRAM resets and factory profile removal (destructive, need root); model-specific adaptations.
-- **Awake:** keeping a closed laptop awake on battery (`pmset disablesleep`, sudoers rules, Power Protect, or undocumented clamshell calls: root, persists after a crash, and a heat risk); a privileged helper, admin prompts, or launch agents; turning Low Power Mode on or off (needs root); a Wi-Fi network name condition (Location access); a DNS-server condition; brand-specific VPN conditions; spawning `caffeinate`; synthetic key presses or clicks of any kind; Insomnia’s lid-close extras (freezing apps, muting, writing other apps’ settings, hotspot failover, typing into terminals, relaunching browsers); macOS notifications (Snaptic uses its own notices); custom menu bar images.
-- **Everywhere:** a `snaptic://` URL scheme (any web page could fire it), an HTTP server or distributed-notification commands (unauthenticated), telemetry, crash upload, licensing, and network update checks.
+- **Awake:** keeping a closed laptop awake without asking each time (sudoers rules, Power Protect, an installed privileged helper, or undocumented clamshell calls: lasting root that any program running as you could use; lid-closed mode asks for a password each time instead); launch agents; turning Low Power Mode on or off (needs root); a Wi-Fi network name condition (Location access); a DNS-server condition; brand-specific VPN conditions; spawning `caffeinate`; synthetic key presses or clicks of any kind; Insomnia’s lid-close extras (freezing apps, muting, writing other apps’ settings, hotspot failover, typing into terminals, relaunching browsers); macOS notifications (Snaptic uses its own notices); custom menu bar images.
+- **Everywhere:** a `snaptic://` URL scheme (any web page could fire it), an HTTP server or distributed-notification commands (unauthenticated), telemetry, analytics, crash upload, licensing, and any network connection other than the update checks you allow.
 
 ## How it works
 
@@ -698,13 +843,15 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
 | `Sources/Snaptic/Displays/` | The Displays module: services, one controller per feature group, the safety helper, transactions and journals, settings pages. |
 | `Sources/Snaptic/Awake/` | The Awake module: the assertion, sessions, guards, rules, activity, Drive Alive, history, the command-line verbs, the condition sources, its menu, and its pages. |
 | `site/` | The project website at [snaptic.dev](https://snaptic.dev), deployed by Vercel on every push to `main`. |
-| `docs/design/` | The 0.2 and 0.3 plans and platform research. |
+| `Sources/Snaptic/Core/UpdaterController.swift` | The only file that uses Sparkle; in a build without Sparkle it’s never reached. |
+| `docs/design/` | The 0.2, 0.3, and 0.3.1 plans, their release notes, and platform research. |
 
 ### How Awake keeps your Mac awake
 
 - **One named IOKit power assertion.** Awake holds at most one sleep assertion at a time, created with `IOPMAssertionCreateWithProperties` and named “Snaptic: keeping your Mac awake”: `PreventUserIdleDisplaySleep` when the display stays on, `PreventUserIdleSystemSleep` when it may sleep. Changing the type, details, or end creates the new assertion first and then releases the old one, so there’s never a gap.
 - **Backstops.** A session with an end also gets a timeout with `TimeoutActionRelease`, so macOS releases the assertion even if Snaptic were stuck; Snaptic ends sessions itself on its own continuous clock (which counts sleep and ignores clock changes).
-- **No root, nothing left behind.** No `pmset`, no `caffeinate` process, no helper, no launch agent, no sudoers rule. macOS releases a process’s assertions when it exits, so a crash can’t leave your Mac unable to sleep.
+- **No root for sessions, nothing left behind.** Sessions use no `pmset`, no `caffeinate` process, no helper, no launch agent, and no sudoers rule. macOS releases a process’s assertions when it exits, so a crash can’t leave your Mac unable to sleep.
+- **Lid-closed mode** is the one exception. After you enter an administrator password, a short root shell script (in `LidWatchdog.swift`, started through `osascript`) sets `pmset -a disablesleep 1` and stays as a watchdog: every 5 seconds it checks Snaptic’s process, a heartbeat file Snaptic touches, the battery, the heat, and its 24-hour limit, and its exit always sets `disablesleep 0` again, then puts a Mac with a closed lid to sleep (unless the Mac is shutting down). Snaptic writes a journal before sleep is turned off, so a restart or power loss in between is caught at the next launch (see [If sleep stays off](#if-sleep-stays-off)).
 - **Drive Alive** adds a separate `PreventDiskIdle` assertion while it writes; **Appear active** uses `IOPMAssertionDeclareUserActivity`; **pointer movement** posts mouse-moved events from a private event source (the only code in Snaptic that posts mouse events).
 - **Rules** read system state with public APIs: `NSWorkspace` notifications, CoreGraphics display callbacks, IOKit power-source notifications and USB matching, CoreAudio device properties, `SCDynamicStore`, `sysctl` routing and interface counters, `host_statistics`, `proc_pid_rusage`, and IORegistry disk counters.
 - **Holds** watch the client process with a kqueue `EVFILT_PROC` source and identify it through the command-line socket; they never signal, spawn, or wrap a command.
@@ -715,7 +862,7 @@ Snaptic uses private macOS functions where no public one exists. Every one is lo
 
 - **Switcher:** `_AXUIElementGetWindow`, `_SLPSSetFrontProcessWithOptions` and `SLPSPostEventRecordTo`, `SLSMainConnectionID` and `SLSCopySpacesForWindows`, `SLSSetSymbolicHotKeyEnabled` and `SLSIsSymbolicHotKeyEnabled`, and the deprecated `GetProcessForPID`. The focusing technique follows public reverse-engineering documented by [yabai](https://github.com/koekeishiya/yabai) (MIT).
 - **Displays:** DisplayServices (Apple brightness, auto-brightness), CoreBrightness (Night Shift), MonitorPanel (rotation, underscan, HDR, Apple presets), CoreGraphics `CGS…` calls (hidden modes, disconnect, HDR state), `CGVirtualDisplay` (virtual displays), `IOAVService` (DDC on Apple silicon), CoreDisplay (display info), the OSD framework, and libsystem’s process-responsibility calls for helpers.
-- **Awake:** no private functions. It reads two undocumented keys with public calls, and only reads them: `CGSSessionScreenIsLocked` from `CGSessionCopyCurrentDictionary`, to know whether the screen is locked, and the `SleepDisabled` power setting (`SystemPowerSettings` in the `com.apple.PowerManagement` preferences, through `CFPreferencesCopyValue`), to tell you when something else has turned sleep off.
+- **Awake:** no private functions. It reads undocumented keys with public calls: `CGSSessionScreenIsLocked` from `CGSessionCopyCurrentDictionary`, to know whether the screen is locked; the `SleepDisabled` power setting (`SystemPowerSettings` in the `com.apple.PowerManagement` preferences, through `CFPreferencesCopyValue`) and the kernel’s `SleepDisabled` and `AppleClamshellState` properties on `IOPMrootDomain` (through IOKit), to tell you when sleep is turned off and whether the lid is closed. It changes `SleepDisabled` only in lid-closed mode, and only through `pmset` after you enter an administrator password.
 
 ## License
 
