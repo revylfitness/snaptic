@@ -36,8 +36,7 @@ final class AwakeGuardsTests: XCTestCase {
     func testDesktopSkipsBatteryRules() {
         XCTAssertEqual(eval(facts(battery: false, percent: nil)).verdict, .allow)
         XCTAssertEqual(eval(facts(battery: false, percent: 1)).verdict, .allow)
-        XCTAssertTrue(AwakeGuards.allowsBackgroundWork(facts(battery: false, percent: nil), config: AwakeGuardsConfig(),
-                                                       memory: GuardMemory()))
+        XCTAssertTrue(AwakeGuards.allowsBackgroundWork(facts(battery: false, percent: nil), config: AwakeGuardsConfig()))
     }
 
     func testUserFloorEndsWhileDischargingAndStartAnywayOverrides() {
@@ -126,31 +125,31 @@ final class AwakeGuardsTests: XCTestCase {
         let first = eval(once)
         XCTAssertEqual(first.verdict, .allow, "sessions continue")
         XCTAssertEqual(first.memory.unreadableReads, 1)
-        XCTAssertFalse(AwakeGuards.batteryUnreadable(once, memory: first.memory))
-        XCTAssertTrue(AwakeGuards.allowsBackgroundWork(once, config: c, memory: first.memory))
+        XCTAssertFalse(AwakeGuards.batteryUnreadable(once))
+        XCTAssertTrue(AwakeGuards.allowsBackgroundWork(once, config: c))
         XCTAssertNil(AwakeGuards.backgroundBlock(once, config: c))
         // Re-evaluating the same read (a re-check timer, a settings change) never confirms it.
         let again = eval(once, memory: first.memory).memory
         XCTAssertEqual(again.unreadableReads, 1)
-        XCTAssertFalse(AwakeGuards.batteryUnreadable(once, memory: again))
+        XCTAssertFalse(AwakeGuards.batteryUnreadable(once))
         // The second consecutive read confirms it: background work stops (as at 0%) and the toast is due.
         let twice = facts(battery: true, percent: nil, streak: 2)
         let m = eval(twice, memory: again).memory
         XCTAssertEqual(m.unreadableReads, 2)
-        XCTAssertTrue(AwakeGuards.batteryUnreadable(twice, memory: m))
-        XCTAssertFalse(AwakeGuards.allowsBackgroundWork(twice, config: c, memory: m))
+        XCTAssertTrue(AwakeGuards.batteryUnreadable(twice))
+        XCTAssertFalse(AwakeGuards.allowsBackgroundWork(twice, config: c))
         XCTAssertEqual(AwakeGuards.backgroundBlock(twice, config: c), .batteryUnreadable)
         XCTAssertEqual(eval(twice, memory: m).verdict, .allow, "no session end for an unreadable battery")
         let longer = facts(battery: true, percent: nil, streak: 7)
-        XCTAssertTrue(AwakeGuards.batteryUnreadable(longer, memory: eval(longer, memory: m).memory), "stays while it lasts")
+        XCTAssertTrue(AwakeGuards.batteryUnreadable(longer), "stays while it lasts")
         // One readable reading clears it.
         let readable = eval(facts(percent: 80), memory: m).memory
         XCTAssertEqual(readable.unreadableReads, 0)
-        XCTAssertTrue(AwakeGuards.allowsBackgroundWork(facts(percent: 80), config: c, memory: readable))
+        XCTAssertTrue(AwakeGuards.allowsBackgroundWork(facts(percent: 80), config: c))
         // Stale memory never blocks a readable battery.
-        XCTAssertTrue(AwakeGuards.allowsBackgroundWork(facts(percent: 80), config: c, memory: m))
-        XCTAssertFalse(AwakeGuards.batteryUnreadable(facts(percent: 80), memory: m))
-        XCTAssertFalse(AwakeGuards.batteryUnreadable(facts(battery: false, percent: nil, streak: 0), memory: m), "desktop")
+        XCTAssertTrue(AwakeGuards.allowsBackgroundWork(facts(percent: 80), config: c))
+        XCTAssertFalse(AwakeGuards.batteryUnreadable(facts(percent: 80)))
+        XCTAssertFalse(AwakeGuards.batteryUnreadable(facts(battery: false, percent: nil, streak: 0)), "desktop")
     }
 
     /// The toast fires on the false → true edge of `batteryUnreadable` over a sequence of reads (SessionController's
@@ -167,7 +166,7 @@ final class AwakeGuardsTests: XCTestCase {
             memory = eval(f, memory: memory).memory
             // Evaluated twice per read on purpose (a re-check): it must not move the edge.
             memory = eval(f, memory: memory).memory
-            let now = AwakeGuards.batteryUnreadable(f, memory: memory)
+            let now = AwakeGuards.batteryUnreadable(f)
             if now && !was { toasts.append(i) }
             was = now
         }
@@ -264,19 +263,17 @@ final class AwakeGuardsTests: XCTestCase {
 
     func testAllowsBackgroundWork() {
         let c = AwakeGuardsConfig()
-        XCTAssertTrue(AwakeGuards.allowsBackgroundWork(facts(percent: 50), config: c, memory: GuardMemory()))
-        XCTAssertFalse(AwakeGuards.allowsBackgroundWork(facts(percent: 19), config: c, memory: GuardMemory()))
-        XCTAssertTrue(AwakeGuards.allowsBackgroundWork(facts(percent: 19), config: floorOff, memory: GuardMemory()))
-        XCTAssertFalse(AwakeGuards.allowsBackgroundWork(facts(percent: 4), config: floorOff, memory: GuardMemory()))
-        XCTAssertFalse(AwakeGuards.allowsBackgroundWork(facts(ac: true, percent: 4, falling: true), config: floorOff,
-                                                        memory: GuardMemory()))
-        XCTAssertTrue(AwakeGuards.allowsBackgroundWork(facts(ac: true, percent: 4), config: floorOff, memory: GuardMemory()))
-        XCTAssertTrue(AwakeGuards.allowsBackgroundWork(facts(percent: nil, streak: 1), config: c, memory: GuardMemory()),
+        XCTAssertTrue(AwakeGuards.allowsBackgroundWork(facts(percent: 50), config: c))
+        XCTAssertFalse(AwakeGuards.allowsBackgroundWork(facts(percent: 19), config: c))
+        XCTAssertTrue(AwakeGuards.allowsBackgroundWork(facts(percent: 19), config: floorOff))
+        XCTAssertFalse(AwakeGuards.allowsBackgroundWork(facts(percent: 4), config: floorOff))
+        XCTAssertFalse(AwakeGuards.allowsBackgroundWork(facts(ac: true, percent: 4, falling: true), config: floorOff))
+        XCTAssertTrue(AwakeGuards.allowsBackgroundWork(facts(ac: true, percent: 4), config: floorOff))
+        XCTAssertTrue(AwakeGuards.allowsBackgroundWork(facts(percent: nil, streak: 1), config: c),
                       "one unreadable read is a blip")
-        XCTAssertFalse(AwakeGuards.allowsBackgroundWork(facts(percent: nil, streak: 2), config: c, memory: GuardMemory()))
-        XCTAssertFalse(AwakeGuards.allowsBackgroundWork(facts(battery: false, thermal: .critical), config: c,
-                                                        memory: GuardMemory()))
-        XCTAssertTrue(AwakeGuards.allowsBackgroundWork(facts(thermal: .serious), config: c, memory: GuardMemory()))
+        XCTAssertFalse(AwakeGuards.allowsBackgroundWork(facts(percent: nil, streak: 2), config: c))
+        XCTAssertFalse(AwakeGuards.allowsBackgroundWork(facts(battery: false, thermal: .critical), config: c))
+        XCTAssertTrue(AwakeGuards.allowsBackgroundWork(facts(thermal: .serious), config: c))
     }
 
     // MARK: Config
@@ -403,13 +400,13 @@ final class AwakeGuardsTests: XCTestCase {
             // Override never skips the hard floor or heat, and only matters for battery and LPM.
             if case .end(.lowPowerMode) = r.verdict { XCTAssertFalse(override) }
             // Background work is never allowed where a session would end for the hard floor or heat.
-            let background = AwakeGuards.allowsBackgroundWork(f, config: config, memory: r.memory)
+            let background = AwakeGuards.allowsBackgroundWork(f, config: config)
             if f.thermal == .critical { XCTAssertFalse(background) }
             if f.discharging, let p = f.percent, p < AwakeGuards.hardFloorPercent { XCTAssertFalse(background) }
             let confirmed = f.batteryPresent && f.percent == nil && streak >= AwakeGuards.unreadableReadsToConfirm
             if confirmed { XCTAssertFalse(background) }
             XCTAssertEqual(background, AwakeGuards.backgroundBlock(f, config: config) == nil)
-            XCTAssertEqual(AwakeGuards.batteryUnreadable(f, memory: r.memory), confirmed && f.thermal != .critical)
+            XCTAssertEqual(AwakeGuards.batteryUnreadable(f), confirmed && f.thermal != .critical)
             XCTAssertEqual(r.memory.unreadableReads, f.batteryPresent && f.percent == nil ? streak : 0)
             // Memory stays sane.
             XCTAssertEqual(r.memory.holding == nil, r.memory.heldSince == nil)

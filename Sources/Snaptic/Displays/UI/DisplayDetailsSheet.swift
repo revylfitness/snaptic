@@ -173,8 +173,13 @@ struct DisplayDetailsSheet: View, ControlDeclaring {
         alert.informativeText = DisplaySettingsCopy.message(source: name)
         alert.addButton(withTitle: L("Copy Settings"))
         alert.addButton(withTitle: L("Cancel"))
-        let offersMove = DisplaySettingsCopy.movablePIPCount(from: source, to: target, in: env.config.value.perDisplay) > 0
-        let checkbox = offersMove ? NSButton(checkboxWithTitle: DisplaySettingsCopy.movePIPTitle, target: nil, action: nil) : nil
+        let perDisplay = env.config.value.perDisplay
+        let movable = DisplaySettingsCopy.movablePIPCount(from: source, to: target, in: perDisplay)
+        let total = DisplaySettingsCopy.pipCount(of: source, in: perDisplay)
+        let checkbox = movable > 0
+            ? NSButton(checkboxWithTitle: DisplaySettingsCopy.movePIPTitle(movable: movable, total: total), target: nil,
+                       action: nil)
+            : nil
         if let checkbox {
             checkbox.state = .off
             checkbox.sizeToFit()

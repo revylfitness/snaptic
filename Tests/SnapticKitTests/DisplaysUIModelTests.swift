@@ -786,6 +786,33 @@ final class DisplaysRootModelTests: XCTestCase {
         XCTAssertEqual(DisplaySettingsCopy.question(source: "LG HDR 4K"), "Copy the settings of “LG HDR 4K” to this display?")
         XCTAssertTrue(DisplaySettingsCopy.message(source: "LG HDR 4K").contains("keeps remembering “LG HDR 4K”"))
         XCTAssertEqual(DisplaySettingsCopy.movePIPTitle, "Also move its Picture in Picture setups")
+        // Review7 ui-ux N1: a partial move says so; the message has the serial comma and no mechanism names.
+        XCTAssertEqual(DisplaySettingsCopy.movePIPTitle(movable: 3, total: 3), "Also move its Picture in Picture setups")
+        XCTAssertEqual(DisplaySettingsCopy.movePIPTitle(movable: 1, total: 1), "Also move its Picture in Picture setup")
+        XCTAssertEqual(DisplaySettingsCopy.movePIPTitle(movable: 2, total: 3),
+                       "Also move 2 of its 3 Picture in Picture setups")
+        let message = DisplaySettingsCopy.message(source: "LG")
+        XCTAssertTrue(message.contains("keys (with their audio device), and connection settings"), message)
+        XCTAssertFalse(message.contains("DDC"), message)
+        XCTAssertTrue(message.contains("Unlocked manufacturer codes aren’t copied."), message)
+    }
+
+    /// Review7 security N5: codes unlocked on the remembered display's model never reach this display; this
+    /// display's own unlocks stay.
+    func testCopySettingsKeepsEachDisplaysUnlockedCodes() throws {
+        let source = key("a"), target = key("b")
+        var lg = tuned(name: "LG", brightness: 0.3, contrast: 1.4, measured: true)
+        lg.ddc.unlockedCodes = [VCPKey(0xE0), VCPKey(0xF4)]
+        var dell = tuned(name: "DELL", brightness: 0.8, contrast: 1, measured: false)
+        dell.ddc.unlockedCodes = [VCPKey(0xE2)]
+        let result = try XCTUnwrap(DisplaySettingsCopy.copying(from: source, to: target,
+                                                                in: LossyMap([source: lg, target: dell])))
+        XCTAssertEqual(result[target]?.ddc.unlockedCodes, [VCPKey(0xE2)])
+        XCTAssertEqual(result[source]?.ddc.unlockedCodes, lg.ddc.unlockedCodes)
+        let fresh = try XCTUnwrap(DisplaySettingsCopy.copying(from: source, to: target, in: LossyMap([source: lg])))
+        XCTAssertEqual(fresh[target]?.ddc.unlockedCodes, [])
+        XCTAssertEqual(DisplaySettingsCopy.pipCount(of: source, in: LossyMap([source: lg])), 1)
+        XCTAssertEqual(DisplaySettingsCopy.pipCount(of: target, in: LossyMap([source: lg])), 0)
     }
 
     /// Round 3 ui N2: the help and the alert name everything a copy replaces (DDC tuning, keys with their audio

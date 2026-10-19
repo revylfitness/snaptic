@@ -139,7 +139,10 @@ final class SettingsHelpAnchorsTests: XCTestCase {
     func testMostSpecificPrefixWins() {
         XCTAssertEqual(SettingsHelpAnchors.anchor(for: "displays.color"), "color")
         XCTAssertEqual(SettingsHelpAnchors.anchor(for: "displays.color.advanced"), "color")
-        XCTAssertEqual(SettingsHelpAnchors.anchor(for: "displays.pip"), "displays")
+        XCTAssertEqual(SettingsHelpAnchors.anchor(for: "displays.pip"), "picture-in-picture")
+        XCTAssertEqual(SettingsHelpAnchors.anchor(for: "displays.pip.filters"), "picture-in-picture")
+        XCTAssertEqual(SettingsHelpAnchors.anchor(for: "displays.overview"), "displays")
+        XCTAssertEqual(SettingsHelpAnchors.anchor(for: "awake.drives"), "drive-alive")
         XCTAssertEqual(SettingsHelpAnchors.anchor(for: "windowSwitcher"), "window-switcher")
         XCTAssertEqual(SettingsHelpAnchors.anchor(for: "switcher.advanced"), "window-switcher")
         XCTAssertEqual(SettingsHelpAnchors.anchor(for: "awake.rules"), "awake")
@@ -199,8 +202,12 @@ final class SettingsHelpAnchorsTests: XCTestCase {
 
     /// Each page that shows (?) has its own anchor (the README headings these name are listed for the docs).
     func testPagesWithHelpHaveSpecificAnchors() {
-        for page in ["displays.brightness", "displays.hardware", "displays.color", "displays.keyboard", "displays.info"] {
+        // Review7 ui-ux N3: every Displays sub-page and Awake's Drives page, not only the first five.
+        for page in ["displays.brightness", "displays.hardware", "displays.color", "displays.keyboard", "displays.info",
+                     "displays.resolution", "displays.connection", "displays.matchTextSize", "displays.layouts",
+                     "displays.virtual", "displays.pip", "displays.automations"] {
             XCTAssertNotEqual(SettingsHelpAnchors.anchor(for: page), "displays", page)
         }
+        XCTAssertNotEqual(SettingsHelpAnchors.anchor(for: "awake.drives"), "awake")
     }
 }

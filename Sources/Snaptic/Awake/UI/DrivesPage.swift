@@ -266,11 +266,11 @@ private struct DriveRowView: View {
         if list != mounted { mounted = list }
     }
 
-    /// Security M1: the guards' verdict for background work (false while unknown), with SessionController's
-    /// in-memory guard memory, never the outside-writable snapshot store (security S-1).
+    /// Security M1: the guards' verdict for background work (false while unknown), from the live power facts, never
+    /// the outside-writable snapshot store (security S-1).
     func backgroundWorkAllowed(_ config: AwakeConfig) -> Bool {
         guard let context, let facts = context.power.facts else { return false }
-        return AwakeGuards.allowsBackgroundWork(facts, config: config.guards, memory: context.sessions.guardMemory)
+        return AwakeGuards.allowsBackgroundWork(facts, config: config.guards)
     }
 
     /// The switch was turned on: store the volume (first write not done), then write to it right away.

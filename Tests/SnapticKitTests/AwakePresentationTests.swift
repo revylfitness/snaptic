@@ -236,6 +236,7 @@ final class AwakePresentationTests: XCTestCase {
                                       drives: 1)
         XCTAssertEqual(AwakeDiagnosticsReport.lines(f), [
             "Awake features: indicator, sessions",
+            "Awake kill switches: none",
             "Awake governing: manual (duration)",
             "Awake assertion: display",
             "Awake guard: none",
@@ -245,6 +246,26 @@ final class AwakePresentationTests: XCTestCase {
             "Awake drives: 1",
             "Awake event awake.hold.started: 2",
         ])
+    }
+
+    /// Review7 security N1: the kill switches that are set are listed by id, unkillable ones dropped, so a deployed
+    /// `Awake.disable.history` reads differently from History turned off by the user.
+    func testDiagnosticsListsAwakeKillSwitches() {
+        let f = AwakeDiagnosticsFacts(effective: [.sessions], governing: nil, kind: nil, assertion: .off,
+                                      assertionErrors: 0, guardHolding: nil, activeServices: [], holds: 0, rules: 0,
+                                      conditionsByKind: [:], eventCounts: [:], drives: 0,
+                                      killSwitches: [.history, .pointerNudge, .batteryGuard, .sessions])
+        XCTAssertEqual(f.killSwitches, [.history, .pointerNudge])
+        XCTAssertTrue(AwakeDiagnosticsReport.lines(f).contains("Awake kill switches: history, pointerNudge"))
+        for feature in AwakeFeature.allCases {
+            let one = AwakeDiagnosticsFacts(effective: [], governing: nil, kind: nil, assertion: .off,
+                                            assertionErrors: 0, guardHolding: nil, activeServices: [], holds: 0,
+                                            rules: 0, conditionsByKind: [:], eventCounts: [:], drives: 0,
+                                            killSwitches: [feature])
+            let line = AwakeDiagnosticsReport.lines(one).first { $0.hasPrefix("Awake kill switches: ") }
+            XCTAssertEqual(line, "Awake kill switches: "
+                           + (AwakeFeatureGraph.unkillable.contains(feature) ? "none" : feature.rawValue))
+        }
     }
 
     // MARK: Settings status row

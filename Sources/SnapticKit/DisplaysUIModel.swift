@@ -923,10 +923,10 @@ package enum DisplayInformationText {
 // MARK: - Display Details › Copy settings from (ux N3; owner F)
 
 /// "Copy settings from" is a real copy: this display takes a remembered display's brightness, color, resolution,
-/// hardware control tuning (DDC timing, custom controls, input names, unlocked codes), keys (with their audio
-/// device) and connection settings, and the remembered display stays as it was. This display keeps what is its own:
-/// name, icon and fingerprint, what Snaptic measured about its panel (the gamma and XDR answers, the learned DDC
-/// framing), and its Picture in Picture setups (their ids name Keyboard Shortcuts actions, so they are never
+/// hardware control tuning (DDC timing, custom controls, input names), keys (with their audio device), and
+/// connection settings, and the remembered display stays as it was. This display keeps what is its own: name, icon
+/// and fingerprint, what Snaptic measured about its panel (the gamma and XDR answers, the learned DDC framing), the
+/// manufacturer codes unlocked on it (model-specific, review7 security N5), and its Picture in Picture setups (their ids name Keyboard Shortcuts actions, so they are never
 /// duplicated). `movePIP` (off by default, review round 3 parity R1) also moves the remembered display's setups here,
 /// as 0.2's transfer did: appended after this display's own, up to `PerDisplayPIP.maxConfigurations`, and removed
 /// from the remembered display, so every id stays in one place. A moved stream that pointed at this display has no
@@ -947,6 +947,9 @@ package enum DisplaySettingsCopy {
         copied.brightness.xdrOverlayWorks = own.brightness.xdrOverlayWorks
         copied.brightness.xdrGammaWorks = own.brightness.xdrGammaWorks
         copied.ddc.framing = own.ddc.framing
+        // Manufacturer codes (E0–FF) unlocked on one model say nothing about another: each display keeps its own
+        // (review7 security N5).
+        copied.ddc.unlockedCodes = own.ddc.unlockedCodes
         var moved = false
         if movePIP {
             let present = Set(copied.pip.configurations.map(\.id))
@@ -990,9 +993,21 @@ package enum DisplaySettingsCopy {
 
     /// The confirmation's message: what is replaced, and that the remembered display stays.
     package static func message(source: String) -> String {
-        L("This display’s brightness, color, resolution, hardware control tuning (such as DDC timing and custom controls), keys (with their audio device) and connection settings are replaced. Snaptic keeps remembering “\(source)”.")
+        L("This display’s brightness, color, resolution, hardware control tuning, keys (with their audio device), and connection settings are replaced. Unlocked manufacturer codes aren’t copied. Snaptic keeps remembering “\(source)”.")
     }
 
     /// The confirmation's checkbox, shown when the remembered display has setups that can move (off by default).
     package static var movePIPTitle: String { L("Also move its Picture in Picture setups") }
+
+    /// The checkbox for `movable` of the remembered display's `total` setups: says so when only some fit here
+    /// (review7 ui-ux N1), "Also move 2 of its 3 Picture in Picture setups".
+    package static func movePIPTitle(movable: Int, total: Int) -> String {
+        guard movable < total else { return total == 1 ? L("Also move its Picture in Picture setup") : movePIPTitle }
+        return L("Also move \(movable) of its \(total) Picture in Picture setups")
+    }
+
+    /// How many Picture in Picture setups the remembered display has.
+    package static func pipCount(of source: DisplayKey, in perDisplay: LossyMap<DisplayKey, PerDisplayConfig>) -> Int {
+        perDisplay[source]?.pip.configurations.count ?? 0
+    }
 }

@@ -133,7 +133,6 @@ import SnapticKit
     /// Security M1 (fail-safe: no power facts yet reads as "not allowed").
     private func backgroundWorkAllowed(_ context: AwakeContext) -> Bool {
         guard let facts = context.power.facts else { return false }
-        return AwakeGuards.allowsBackgroundWork(facts, config: context.config.value.guards,
-                                                memory: context.sessions.guardMemory)
+        return AwakeGuards.allowsBackgroundWork(facts, config: context.config.value.guards)
     }
 }

@@ -483,11 +483,16 @@ package struct AwakeDiagnosticsFacts: Equatable, Sendable {
     package var conditionsByKind: [AwakeCriterionKind: Int]
     package var eventCounts: [String: Int]
     package var drives: Int
+    /// `Awake.disable.<feature>` keys that are set (fixed ids only), so an administrator can tell a kill switch from
+    /// the user's own switch; unkillable ones are dropped, since they change nothing (review7 security N1).
+    package var killSwitches: Set<AwakeFeature>
 
     package init(effective: Set<AwakeFeature>, governing: AwakeStatusSource?, kind: AwakeHistoryKind?,
                  assertion: AwakeAssertionType, assertionErrors: Int, guardHolding: AwakeEndReason?,
                  activeServices: [AwakeServiceID], holds: Int, rules: Int,
-                 conditionsByKind: [AwakeCriterionKind: Int], eventCounts: [String: Int], drives: Int) {
+                 conditionsByKind: [AwakeCriterionKind: Int], eventCounts: [String: Int], drives: Int,
+                 killSwitches: Set<AwakeFeature> = []) {
+        self.killSwitches = killSwitches.subtracting(AwakeFeatureGraph.unkillable)
         self.effective = effective
         self.governing = governing
         self.kind = kind
@@ -508,6 +513,8 @@ package enum AwakeDiagnosticsReport {
     package static func lines(_ f: AwakeDiagnosticsFacts) -> [String] {
         var out: [String] = []
         out.append("Awake features: " + f.effective.map(\.rawValue).sorted().joined(separator: ", "))
+        let killed = f.killSwitches.map(\.rawValue).sorted()
+        out.append("Awake kill switches: " + (killed.isEmpty ? "none" : killed.joined(separator: ", ")))
         out.append("Awake governing: " + (f.governing?.rawValue ?? "inactive") + (f.kind.map { " (" + $0.rawValue + ")" } ?? ""))
         out.append("Awake assertion: " + f.assertion.rawValue + (f.assertionErrors > 0 ? " (\(f.assertionErrors) errors)" : ""))
         out.append("Awake guard: " + (f.guardHolding?.rawValue ?? "none"))

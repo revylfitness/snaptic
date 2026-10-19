@@ -392,7 +392,7 @@ Available while Awake is on and command-line control is on (otherwise `snaptic` 
 
 A hold keeps your Mac awake beside whatever else runs: up to 8 holds at a time, next to your own session and rules. Snaptic never runs your command; a hold only watches a process. The menu says “Held by Terminal” (or the app that started it, with a count).
 
-- **`snaptic awake hold`** holds for as long as this `snaptic` process runs. It prints “Holding until this command ends (at most 12 h). Press Control-C to stop.” and keeps running. The hold ends when the command exits or is killed, its terminal closes, you press Control-C, time is up, you choose **End Command-Line Holds** or turn Keep Awake off in Snaptic, a guard ends it, or command-line control or Awake is turned off. It then prints why (“Awake hold ended: time is up.”) and exits 0, or exits 5 if Snaptic quit.
+- **`snaptic awake hold`** holds for as long as this `snaptic` process runs. It prints “Holding until this command ends (at most 12 h). Press Control-C to stop.” and keeps running. The hold ends when the command exits or is killed, its terminal closes, you press Control-C, time is up, you choose **End Command-Line Holds** in Snaptic (or turn Keep Awake off while holds are what keeps it awake), a guard ends it, or command-line control or Awake is turned off. It then prints why (“Awake hold ended: time is up.”) and exits 0, or exits 5 if Snaptic quit.
 - **`snaptic awake hold --pid N`** holds while process N runs (one of your own processes; N > 1). It prints “Holding while process N runs (at most 12 h).” and exits at once. The hold survives a Snaptic relaunch.
 - A ninth hold is refused: “Snaptic is already holding for 8 commands.” (exit 4).
 
@@ -401,16 +401,18 @@ A hold keeps your Mac awake beside whatever else runs: up to 8 holds at a time, 
 snaptic awake hold --pid $$
 rsync -a ~/Projects/ /Volumes/Backup/Projects/
 
-# Around one command in an interactive shell or a single script
-snaptic awake hold & HOLD=$!; make release; kill $HOLD
+# Around one command in an interactive shell: a subshell, so the trap doesn't stay in your shell
+( snaptic awake hold & hold=$!; trap 'kill $hold 2>/dev/null' EXIT INT TERM; make release )
 ```
 
-**The parent-shell pitfall.** `make` recipe lines, `npm run` steps, CI step runners, and AI agents’ tool calls run each line in a fresh `sh -c` that exits as soon as the line ends. There, `--pid $$` names a shell that exits at once, so the hold ends within milliseconds (the reply and a notice say so), and a backgrounded `hold &` left behind by one line keeps holding after the work is done, until its cap. Put the hold, the work, and the `kill` in **one** shell: one recipe line joined with `;` or `&&`, `.ONESHELL:` in a Makefile, or a script file. Or pass `--pid` of a process that lives as long as the work, or use `snaptic awake start 2h`. On CI machines, `caffeinate -w <pid>` remains a fine choice.
+**Control-C.** In a script or recipe, a background `snaptic awake hold &` stops on Control-C like the work beside it (Snaptic resets the Control-C signal a background job inherits ignored), and the `trap` in these examples ends the hold whenever the shell is interrupted or exits early, so it never outlives the work.
+
+**The parent-shell pitfall.** `make` recipe lines, `npm run` steps, CI step runners, and AI agents’ tool calls run each line in a fresh `sh -c` that exits as soon as the line ends. There, `--pid $$` names a shell that exits at once, so the hold ends within milliseconds (a notice says so), and a backgrounded `hold &` left behind by one line keeps holding after the work is done, until its cap. Put the hold, the work, and the `kill` in **one** shell: one recipe line joined with `;` or `&&`, `.ONESHELL:` in a Makefile, or a script file. Or pass `--pid` of a process that lives as long as the work, or use `snaptic awake start 2h`. On CI machines, `caffeinate -w <pid>` remains a fine choice.
 
 ```make
 # Makefile: one recipe line, so the hold, the work, and the kill share one shell
 release:
-	snaptic awake hold & hold=$$!; ./build.sh && ./upload.sh; status=$$?; kill $$hold; exit $$status
+	snaptic awake hold & hold=$$!; trap 'kill $$hold 2>/dev/null' EXIT INT TERM; ./build.sh && ./upload.sh
 ```
 
 ### Exit codes
@@ -428,7 +430,7 @@ release:
 
 ## Hidden kill switches
 
-Kill switches turn a module or a feature off for this Mac, whatever Settings says. They are Boolean keys in Snaptic’s own preferences (`app.snaptic.Snaptic`), they only ever turn things off, and pages show what they turned off as “Turned off for this Mac by an administrator or a Terminal command.” with the command that undoes it. Quit and reopen Snaptic to apply a change. Diagnostics lists the ones that are set.
+Kill switches turn a module or a feature off for this Mac, whatever Settings says. They are Boolean keys in Snaptic’s own preferences (`app.snaptic.Snaptic`), they only ever turn things off, and pages show what they turned off as “Turned off for this Mac by an administrator or a Terminal command.” with the command that undoes it. Quit and reopen Snaptic to apply a change. The Diagnostics Report lists the Displays and Awake feature switches that are set; a module turned off this way says so on its page, and a turned-off private API shows as unavailable.
 
 ```bash
 defaults write app.snaptic.Snaptic Modules.disable.awake -bool true                # a whole module
@@ -446,7 +448,7 @@ defaults delete app.snaptic.Snaptic Awake.disable.pointerNudge                  
 
 Snaptic reads only the user’s own preferences, never managed (forced) preferences, so a profile payload that *forces* a key has no effect. To deploy kill switches, write them into each user’s own `app.snaptic.Snaptic` domain:
 
-- **With a configuration profile:** a Custom Settings (`com.apple.ManagedClient.preferences`) payload whose keys are applied **Set-Once**, so macOS writes them into the user’s preferences rather than forcing them. Install it as a user-scope profile. Check on a test Mac that `defaults read app.snaptic.Snaptic Awake.disable.pointerNudge` prints `1` and that Settings shows the feature as turned off; if your macOS version applies the payload as managed instead, use the script below.
+- **With a configuration profile:** a Custom Settings (`com.apple.ManagedClient.preferences`) payload whose keys are applied **Set-Once**, so macOS writes them into the user’s preferences rather than forcing them. Install it as a user-scope profile. Where macOS puts Set-Once values isn’t documented, so the sample below is untested: check on a test Mac that Settings shows the feature as turned off. That check is the one that counts, because Settings uses the same reader as the feature (`defaults read app.snaptic.Snaptic Awake.disable.pointerNudge` may print `1` for a managed value Snaptic ignores). If Settings doesn’t show it, your macOS version applies the payload as managed; use the script below.
 - **With a script** your management tool runs as the user (or with `sudo -u <user>`): the `defaults write` lines above.
 
 A key written this way is a default the user can delete again, not an enforcement; Snaptic’s hard limits (the 5% battery floor, the heat guard, pointer movement only for sessions you start in Snaptic) don’t depend on it.
