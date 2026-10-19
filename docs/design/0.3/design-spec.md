@@ -10,6 +10,8 @@ Guiding rules, taken from Apple's Settings HIG [S1]:
 
 Success test: each module page shows **at most about 8 controls** before the "Advanced…" button. Everything else sits one click deeper.
 
+**0.3.1 amendments** (`docs/design/0.3.1/PLAN.md`) are marked "(0.3.1)": §1.5 (lid-closed mode in Awake's Advanced), §3.3 (tabs in the Snaptic menu and the attention-mark exception), §3.4 (the resize exception), §4.7 (terminology) and §5 (icons).
+
 ---
 
 ## 1. Information architecture
@@ -97,6 +99,13 @@ Avoid tabs inside pages and nested sheets.
   - "When the power adapter is disconnected": switch.
 - Section "Start automatically" (modeled on Focus > "Turn On Automatically"): a list of conditions plus an "Add Condition…" button. Conditions are when an app is open, when a display is connected, while charging, and on a schedule.
 - Advanced…: allow sleep when the lid is closed (with a warning about heat), prevent screen saver, and log sessions.
+- **(0.3.1) Advanced… › "Lid closed"**, following the experimental pointer-movement pattern, on Macs with a battery only:
+  - Toggle "Keep awake with the lid closed" (opt-in, off by default), help: "Choose Keep Awake with the Lid Closed in the Awake menu. Asks for an administrator password each time."
+  - While it's on and Snaptic's bundle is writable by the user, a `SettingsRowNote`: "Your account can change this copy of Snaptic, so another app could change it and misuse the password prompt." with **Learn More…** (README › "Your password and what runs as root").
+  - The heat warning is the section footer: "While lid-closed mode is on, your Mac can’t sleep for low battery or heat. Awake turns it off at the Awake page’s battery level (at least 10%), when your Mac gets hot, or after 24 hours. Use it on a hard surface, not in a bag. Learn More…"
+  - No time-limit picker (the limit is a fixed 24 hours) and no separate battery setting (it's derived from Awake's).
+  - From a translocated copy, the row is replaced by "Snaptic is running from a temporary location. Move it to Applications to use lid-closed mode."
+  - The lid isn't a setting on the main page; the lid route line there points to Advanced or to the menu.
 
 ### 1.6 Search
 
@@ -523,6 +532,36 @@ Revisit when the SDK moves to 26 or later:
 
 There's one Snaptic item by default. The Menu Bar page offers "Show Awake as a separate item" and "Show Displays as a separate item". Sections for disabled modules don't appear.
 
+**(0.3.1) Tabs.** The Menu Bar page now has one placement pop-up per module (0.3). When two or more modules are set to Show in Snaptic Menu, the shared menu shows a tab bar, one segment per module in the order Window Switcher, Displays, Awake, and only the selected module's items below it. With one module there is no tab bar and the section keeps its header (the sketch further down); own-icon menus don't change.
+
+```
+┌──────────────────────────────────────┐
+│ Safe Mode Is On / Leave Safe Mode…    │  first group, any tab
+│ Sleep Is Turned Off                   │  host-level leftover rows, any tab
+│ Turn Sleep Back On…                   │
+├──────────────────────────────────────┤
+│ [ Window Switcher | Displays | Awake ]│  tab bar: only with 2+ modules in the menu
+├──────────────────────────────────────┤
+│ …the selected module's items…         │  no section header (the tab names it)
+├──────────────────────────────────────┤
+│ More Display Features…                │  only while Displays is off
+│ Recent Notices         ›              │  when any
+│ Update Available: Snaptic 0.3.2…      │  when an update is waiting
+│ Snaptic Settings…               ⌘,    │  restores the last Settings pane
+│ Quit Snaptic                    ⌘Q    │
+└──────────────────────────────────────┘
+```
+
+- **Control.** An `NSSegmentedControl` (`.selectOne`, small) in a 28 pt view row that never draws the selection fill. Labels are module titles; the fallbacks, in order, are equal widths with full titles, equal widths with short titles ("Switcher"), then fitted short titles, measured with the attention image. Each segment's accessibility label is the full title, and its tooltip is "<Title> (⌘n)" ("Awake, on (⌘3)" while Awake governs). Segment labels are Title Case, like other segmented options (§4.1).
+- **Keyboard.** ⌘1–⌘n choose a tab by position. Hidden native "Show … Tab" items carry them, and show above Snaptic Settings… while VoiceOver, Switch Control or Full Keyboard Access is on. A key choice closes the menu and the next open shows the tab.
+- **Remembered.** The last tab is a plain `UserDefaults` value, kept across relaunches and never reset. A missing module falls back to the first tab without losing the choice.
+- **Awake's tab** shows the full Awake rows minus "Awake Settings…"; the compact section stays only for Awake as the single shared module.
+- **Attention marks: a deliberate exception.** The HIG says to prefer either text or images in a segmented control. A segment whose module needs attention still shows a 10 pt `exclamationmark.circle` next to its label, and VoiceOver adds ", needs attention". Without it, someone who stays on one tab would never see another module's warnings, a regression from 0.3's stacked menu. There is no "active" image: Awake's segment gets only the VoiceOver suffix ", on" and the tooltip, because the menu bar glyph already shows a session.
+- **Width** is the widest tab's, measured when the menu is built, so switching never widens the menu or moves a segment under the pointer.
+- **Row budget** (restating 0.3 PLAN §5.2 and HW-15): the tallest single tab ≤ 24 lines in the default setup.
+
+0.3's stacked layout, still used with one module and as the general shape of sections:
+
 ```
 Keep Awake                         [switch]   ← header row (hosting view)
   Ends at 3:45 PM                             ← secondary line, only when active
@@ -574,6 +613,7 @@ final class HostingMenuItem<Content: View>: NSMenuItem {
 - **Keyboard.** Native items get arrow keys, Return and type-select. Assume sliders in menu rows work with the mouse only. Make sure every slider action has a keyboard path: brightness keys, the Settings page, and native submenu presets such as Brightness › 25% / 50% / 75% / 100%.
 - **Run loop.** Menus track events in event-tracking run loop mode. Schedule countdown and refresh timers with `RunLoop.main.add(timer, forMode: .common)`. Main-queue Combine updates still arrive.
 - **Rebuilding.** Build the menu in `menuNeedsUpdate(_:)`, for example when the display list changes, and update values in place while it's open, so it doesn't flicker or resize.
+  - **(0.3.1) Exception: a tab switch.** Choosing a tab replaces the selected section in the open menu, synchronously in the control's action (no timers, no `RunLoop.main.perform`), and the menu's height changes: it grows or shrinks downward, and Quit and Settings move. The width doesn't change (§3.3). Any other change while the menu is open still only marks it for a rebuild on the next open.
 - **Accessibility.** Give header switches `accessibilityLabel("Keep Awake")`. Give sliders the display name as label and "70 percent" as value.
 
 ### 3.5 Status items
@@ -647,6 +687,7 @@ final class HostingMenuItem<Content: View>: NSMenuItem {
 | Layouts | Saved layouts (with an "Arrange…" sheet) |
 | Automation / triggers | Change automatically / Start automatically, with "Add Condition…" |
 | Prevent sleep / caffeinate | Keep Awake |
+| Closed-lid, clamshell, disablesleep, Power Protect (0.3.1) | Keep awake with the lid closed; the noun is **lid-closed mode** ("Keep Awake with the Lid Closed…" in menus, "Keep awake with the lid closed" as a setting) |
 | Diagnostics | Display Information… (Advanced) |
 | Safety mode | Confirm display changes |
 | Preferences | Settings |
@@ -673,7 +714,7 @@ final class HostingMenuItem<Content: View>: NSMenuItem {
 - **Motion.** Crossfades of 0.15–0.2 s only. No springs or slides in Settings. With `\.accessibilityReduceMotion` on, skip animated scrolling and search-highlight pulses. A live brightness preview is feedback, not motion, so it stays.
 - **Icons.**
   - SF Symbols at a weight that matches adjacent text.
-  - In menus, use no images except device rows (see 3.3).
+  - In menus, use no images except device rows and, from 0.3.1, the tab bar's attention marks (see 3.3).
   - Sidebar tiles: 20 pt. Header tiles: 40 pt. Menu device tiles: 26 pt circles.
 
 ---
