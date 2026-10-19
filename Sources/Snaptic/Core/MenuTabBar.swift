@@ -105,7 +105,7 @@ struct MenuTabSegment: Equatable {
         control.font = font
         control.segmentStyle = .automatic
         control.segmentDistribution = labelStyle.fillsEqually ? .fillEqually : .fit
-        var segmentWeights: [CGFloat] = []
+        var weights: [CGFloat] = []
         for (index, segment) in segments.enumerated() {
             let text = labelStyle.usesShortTitles ? segment.label.shortTitle : segment.label.title
             control.setLabel(text, forSegment: index)
@@ -204,6 +204,10 @@ struct MenuTabSegment: Equatable {
 }
 
 @MainActor private final class MenuTabSegmentElement: NSAccessibilityElement {
+    /// AXTabButton (NSAccessibilityTabButtonSubrole, which the SDK doesn't import as a `Subrole` member): what
+    /// NSTabView's tabs report, so VoiceOver says "tab 2 of 3".
+    private static let tabButton = NSAccessibility.Subrole(rawValue: "AXTabButton")
+
     private weak var owner: MenuTabSegmentedControl?
     private let index: Int
 
@@ -222,7 +226,7 @@ struct MenuTabSegment: Equatable {
 
     override func isAccessibilityElement() -> Bool { true }
     override func accessibilityRole() -> NSAccessibility.Role? { .radioButton }
-    override func accessibilitySubrole() -> NSAccessibility.Subrole? { .tabButton }
+    override func accessibilitySubrole() -> NSAccessibility.Subrole? { Self.tabButton }
     override func accessibilityLabel() -> String? { segment?.accessibilityLabel }
     override func accessibilityHelp() -> String? { segment?.toolTip }
     override func accessibilityValue() -> Any? { NSNumber(value: isSelected ? 1 : 0) }
