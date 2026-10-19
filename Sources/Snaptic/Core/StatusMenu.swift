@@ -574,6 +574,10 @@ import SnapticKit
     /// quit; directly above Snaptic Settings… in the shared footer (`CustomItemRow.updateAvailable` for Awake's menu).
     static func updateItems(host: ModuleHost) -> [NSMenuItem] {
         guard let updater = host.updater, let offer = updater.availableUpdate else { return [] }
+        // E4: while lid-closed mode or a display trial holds the install, the row says why instead of offering it.
+        if offer.readyToRestart, let wait = updater.waitText {
+            return [MenuKit.status(wait, control: ControlID("menu.snaptic.updateAvailable"))]
+        }
         let title = offer.readyToRestart ? L("Restart to Update Snaptic…")
             : L("Update Available: Snaptic \(offer.version)…")
         return [MenuKit.action(title, control: ControlID("menu.snaptic.updateAvailable")) { [weak updater] in

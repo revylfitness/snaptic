@@ -1,4 +1,4 @@
-# Snaptic 0.3.1 release notes
+# Snaptic 0.3.1 (one last manual download)
 
 **Coming from 0.3.0? This is one last manual download.** 0.3.0 can’t update itself, so download `Snaptic.dmg` or `Snaptic.zip` below and replace the copy in Applications. From 0.3.1 on, Snaptic can keep itself up to date.
 

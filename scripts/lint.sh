@@ -103,7 +103,8 @@ fi
 tcc='AXIsProcessTrusted|CGRequestScreenCaptureAccess|CGPreflight|SCShareableContent|SCStream|AXUIElement'
 for f in Sources/Snaptic/Safety/DisplayGuardMain.swift Sources/Snaptic/Displays/Safety/DisplayGuardMain.swift \
          Sources/Snaptic/Displays/Management/VirtualHostMain.swift Sources/Snaptic/Core/CLIClient.swift \
-         Sources/Snaptic/Core/SelfTest.swift Sources/Snaptic/Core/HelperPrologue.swift; do
+         Sources/Snaptic/Core/SelfTest.swift Sources/Snaptic/Core/SelfTestLaunch.swift \
+         Sources/Snaptic/Core/HelperPrologue.swift; do
     [ -f "$f" ] || continue
     if grep -nE "$tcc" "$f"; then fail "$f must not reference TCC-guarded APIs"; fi
 done
