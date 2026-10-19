@@ -115,7 +115,9 @@ struct CustomItemRow: Equatable {
     /// 0.3.1 A4: the section for a tab (`tabbed`), or as in 0.3. Cheap and free of side effects: StatusMenu builds
     /// each tab's section once more to measure its width.
     func menuSection(tabbed: Bool) -> [NSMenuItem]
-    /// 0.3.1 A1: the module's tab shows the attention mark.
+    /// 0.3.1 A1: the module's tab shows the attention mark: a warning its section shows that a user on another tab
+    /// would otherwise miss. Steady states (a feature paused while another app runs) don't count. Read when the
+    /// Snaptic menu is built, so a change must also request a menu rebuild, as the section's rows already do.
     var menuAttention: Bool { get }
     // Settings (0.3 §4.1):
     var tint: SettingsTint { get }
