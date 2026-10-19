@@ -684,22 +684,44 @@ From 0.3.1 on, release builds update themselves with [Sparkle](https://sparkle-p
 
 **When an update is found,** Snaptic doesn’t pop up a window that could land behind others. Instead the Snaptic menu shows **Update Available: Snaptic 0.3.2…** above Snaptic Settings… (**Restart to Update Snaptic…** once it has downloaded and installs automatically), and the About page shows it too. Either brings Sparkle’s update window forward, with the release notes, which come inside the signed feed. After an update, Snaptic says “Snaptic was updated to 0.3.2.” once, with **What’s New**.
 
-**When updates wait.** An update never relaunches Snaptic while lid-closed mode is on or while a display change is waiting for “Keep this change?”; the status line says so (“Version 0.3.2 will install when lid-closed mode ends.”). Quitting Snaptic, which ends both, may install a downloaded update. In Safe Mode scheduled checks pause, and Sparkle’s window never appears during onboarding or in Safe Mode; **Check for Updates…** still works, so a broken release can always be replaced.
+**When updates wait.** An update never relaunches Snaptic while lid-closed mode is on (or is turning on or off) or while a display change is waiting for “Keep this change?”; the status line says so (“Version 0.3.2 will install when lid-closed mode ends.”). Quitting Snaptic, which ends both, may install a downloaded update. When Snaptic restarts itself while a downloaded update waits, the update installs and the new version opens; **Restart in Safe Mode…** never installs it, so it asks you to quit Snaptic first and then hold ⇧ while you open it. In Safe Mode scheduled checks pause, and Sparkle’s window never appears during onboarding or in Safe Mode; **Check for Updates…** still works, so a broken release can always be replaced.
 
 **Copies owned by root** (installed with `INSTALL=1`, or after `sudo chown -R root:wheel`): each update asks for an administrator password through Sparkle’s installer, so updates install only when you choose **Install and Relaunch**, and About says “Only an administrator can change this copy of Snaptic, so each update asks for an administrator password.” instead of offering automatic installs.
 
 **Builds from source** have no Sparkle and can’t update themselves (see [Signing and permissions](#signing-and-permissions)). A future Homebrew cask would set `auto_updates true`, so Homebrew leaves updates to Snaptic.
 
-**How an update is checked.** Every update must carry a valid signature from Snaptic’s update key (EdDSA) or Snaptic’s Developer ID signature, and the feed itself is signed, so an edited feed, release notes, or download is rejected. The signature is checked before anything is unpacked. The feed address is fixed in the app and can’t be changed through preferences. Sparkle accepts either signature so a lost key can be replaced, which also means that **either secret alone could publish an update**. The two secrets live in separate GitHub environments that run only for version tags and only after the owner approves each run, and the owner reviews a tag’s changes, including `.github/`, before approving.
+**How an update is checked.** The feed is signed with Snaptic’s update key (EdDSA), and so is every download; the download’s signature is checked before anything is unpacked. The feed address is fixed in the app and can’t be changed through preferences. So that a lost key can be replaced, Sparkle also accepts a download that carries Snaptic’s Developer ID signature instead (a signed disk image from the same team, whose app brings a new update key). In practice:
+- **The update key alone** can sign a feed and an update that Snaptic installs.
+- **The Developer ID certificate alone** can’t sign the feed. Sparkle uses a feed it can’t verify only after its checks have failed for 20 days in a row, and then shows the update without release notes and never installs it by itself.
+- **A signed feed carries no date.** Someone who controls the release or the connection can keep serving an older signed feed, which holds copies at that version (Sparkle never installs an older one), and a program running as you can start the 20-day period early by editing Snaptic’s preferences.
+
+The two secrets live in separate GitHub environments that run only for version tags and only after the owner approves each run, and the owner reviews a tag’s changes, including `.github/`, before approving.
 
 **Processes.** Sparkle runs its own `Autoupdate` and `Updater.app` (inside Snaptic’s bundle) to install an update, and asks for an administrator password through macOS for a root-owned copy. Snaptic’s helper and command-line processes load Sparkle in a release build but never use it.
 
 ### If a release key leaks
 
-- **The update key (EdDSA):** generate a new key, ship a Developer ID-signed update that carries the new public key, with the signed `Snaptic.dmg` as that one release’s download, then replace the key in the `appcast` environment.
-- **The Developer ID certificate:** revoke it in the Apple developer account (revoking can make Gatekeeper reject earlier downloads signed with it; contact Apple Developer Technical Support if older builds must stay valid), create a new one, and ship an update signed with the update key and the new certificate.
+The release workflow keeps the update key’s public half in `.github/workflows/build.yml`: `SU_PUBLIC_ED_KEY` (the key installed copies trust; the `appcast` secret must be its seed), `SU_NEXT_PUBLIC_ED_KEY` and `SU_NEXT_KEY_TAG` (empty except during a rotation), and `SPARKLE_ARCHIVE` (`Snaptic.zip`, or `Snaptic.dmg` after a rotation). Sparkle’s `generate_keys` is in `bin/` of [Sparkle-2.10.0.tar.xz](https://github.com/sparkle-project/Sparkle/releases/tag/2.10.0).
 
-Either way, a note goes in this README and on the Releases page.
+**The update key leaks, and you still have it.** One release carries the new key but is still signed with the old one. Sparkle checks a download only against the key of the copy it updates, so every copy accepts it.
+1. Make a new key on your Mac: `./bin/generate_keys --account snaptic-2` prints its public key, and `./bin/generate_keys --account snaptic-2 -x new-key.txt` exports its seed. Keep `new-key.txt` private.
+2. In one pull request, set `SUPublicEDKey` in `Resources/Info.plist` to the new public key, set `SU_NEXT_PUBLIC_ED_KEY` to the same key and `SU_NEXT_KEY_TAG` to the new release’s tag (for example `v0.3.2`), and bump the version as for any release. Leave `SU_PUBLIC_ED_KEY` and the `appcast` secret on the old key.
+3. Merge, push the tag, and approve both deployments. CI refuses the tag unless the app carries exactly the next key, then signs the feed and the zip with the old key and checks both against it.
+4. Once the release is published, replace the secret (`gh secret set SPARKLE_ED_PRIVATE_KEY --env appcast < new-key.txt`, then delete `new-key.txt`), and in a pull request set `SU_PUBLIC_ED_KEY` to the new key, empty `SU_NEXT_PUBLIC_ED_KEY` and `SU_NEXT_KEY_TAG`, and set `SPARKLE_ARCHIVE` to `Snaptic.dmg`. CI refuses any other tag until the rotation is finished, and refuses a secret that doesn’t match `SU_PUBLIC_ED_KEY`.
+5. Ship the next release within a few days: until then, copies already on the new key report that the check failed, because the published feed is still signed with the old one.
+6. Delete the old key from your keychain (the old account’s “Private key for signing Sparkle updates” in Keychain Access) and wherever else it was kept.
+
+Copies that skipped the rotation release still trust the old key, so they can’t verify later feeds. Their checks fail for 20 days; then Sparkle shows the newest update anyway (without release notes, never automatically), and it installs because the download is the Developer ID-signed disk image, signed with the new key. Or download Snaptic again by hand.
+
+**The update key is lost.** No release can be signed with a key that installed copies trust.
+1. Make a new key as in step 1 above, and store its seed in the `appcast` environment (`gh secret set SPARKLE_ED_PRIVATE_KEY --env appcast < new-key.txt`).
+2. In one pull request, set `SUPublicEDKey` in `Resources/Info.plist` and `SU_PUBLIC_ED_KEY` to the new public key, and `SPARKLE_ARCHIVE` to `Snaptic.dmg`. Release as usual.
+3. Installed copies can’t verify the new feed: they report failed checks for 20 days, then show the update and install the signed disk image when the user chooses to. Ask users, here and on the Releases page, to download the new version by hand instead of waiting.
+4. Keep `SPARKLE_ARCHIVE` on `Snaptic.dmg` from then on, so copies that come back later can still update.
+
+**The Developer ID certificate leaks.** Revoke it in the Apple developer account (revoking can make Gatekeeper reject earlier downloads signed with it; contact Apple Developer Technical Support if older builds must stay valid), create a new one for the same team, replace `DEVELOPER_ID_P12_BASE64` and `DEVELOPER_ID_P12_PASSWORD` in the `release` environment, and release as usual. The update key signs that release, so every copy accepts it, and the team is unchanged, so permissions carry over.
+
+In every case, a note goes in this README and on the Releases page.
 
 ## Privacy and security
 
