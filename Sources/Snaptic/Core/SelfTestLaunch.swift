@@ -3,13 +3,15 @@ import SnapticKit
 
 /// `--selftest-launch <token-file>` (owner: T-update; PLAN 0.3.1 E3, HW-37 in CI), after SelfTest's token gate: builds
 /// the host the way the app does (ModuleHost: stores, migrations, modules) and checks the updater gate, without
-/// starting a module, the updater or a run loop, and without touching a TCC-guarded API (R5.5).
+/// starting a module, Sparkle's updater or a run loop, and without touching a TCC-guarded API (R5.5). With the gate
+/// closed it also runs `startUpdater()`, which then can't reach Sparkle.
 ///
 /// ModuleHost's init writes the user's settings (migrations, the first-run modules value), so this takes the instance
 /// lock first (never beside a running Snaptic) and puts Snaptic's whole defaults domain back afterwards.
 ///
-/// `SNAPTIC_SELFTEST_EXPECT_SPARKLE`: `absent` (CI's ad hoc app) or `loaded` (the signed release) makes the gate's
-/// answer a check; unset only reports it (the debug build may find Sparkle next to it).
+/// `SNAPTIC_SELFTEST_EXPECT_SPARKLE`: `absent` (CI's ad hoc app: no Sparkle) or `loaded` (the signed release: the gate
+/// is open) makes the gate's answer a check; unset only reports it (the debug build may find Sparkle next to it, and its
+/// gate then stays closed because it isn't an app bundle).
 enum SelfTestLaunch {
     static let expectVariable = "SNAPTIC_SELFTEST_EXPECT_SPARKLE"
 
@@ -50,14 +52,27 @@ enum SelfTestLaunch {
                       + "\(host.runningModules.count) running")
         if host.modules.count != ModuleID.allCases.count { problems.append("ModuleHost has \(host.modules.count) modules") }
         if !host.runningModules.isEmpty { problems.append("a module started during the self-test") }
-        if host.updater != nil { problems.append("the updater exists before startUpdater()") }
         if !host.ledgerStore.value.has(.v031Welcome) { problems.append("the 0.3.1 marker wasn't recorded") }
 
-        // The gate ModuleHost.startUpdater() uses; the updater itself never starts here (no network).
+        // The gate `UpdaterController.make()` uses (r1 C6, C8). When it is closed, `startUpdater()` runs for real (no
+        // Sparkle, no network) and must leave no updater and no welcome card. When it is open (the signed release),
+        // the updater isn't started here: that would schedule checks.
         let loaded = UpdaterController.isSparkleLoaded
-        report.append("selftest-launch: Sparkle " + (loaded ? "loaded" : "absent"))
-        if let expectation, expectation != (loaded ? "loaded" : "absent") {
-            problems.append("Sparkle is " + (loaded ? "loaded" : "absent") + ", expected " + expectation)
+        let gate = UpdaterController.gate
+        report.append("selftest-launch: Sparkle " + (loaded ? "loaded" : "absent") + ", updater gate \(gate)")
+        if gate != .ready {
+            host.startUpdater()
+            if host.updater != nil { problems.append("startUpdater() made an updater although the gate is \(gate)") }
+            if host.showsV031Welcome { problems.append("the 0.3.1 card shows in a build that can't update itself") }
+        }
+        switch expectation {
+        case "absent"?:
+            if gate != .noSparkle { problems.append("expected no Sparkle, but the updater gate is \(gate)") }
+        case "loaded"?:
+            // The signed app: Sparkle loaded, an .app bundle with a valid SUPublicEDKey.
+            if gate != .ready { problems.append("expected the updater gate open, found \(gate)") }
+        default:
+            break
         }
         return (problems, report)
     }

@@ -6,14 +6,69 @@ import Foundation
 
 /// An update Sparkle found (gentle reminders): what the menu row and About's status row offer.
 package struct UpdateOffer: Equatable, Sendable {
-    /// "0.3.2".
-    package var version: String
+    /// "0.3.2"; nil when the feed's version isn't a plain version (`UpdatePolicy.isVersion`): the texts then read
+    /// "a new version" in a form that still makes a sentence (r1 U5).
+    package var version: String?
     /// Downloaded, and installs at quit: the menu row reads "Restart to Update Snaptic…".
     package var readyToRestart: Bool
 
-    package init(version: String, readyToRestart: Bool) {
-        self.version = version
+    package init(version: String?, readyToRestart: Bool) {
+        self.version = version.flatMap { UpdatePolicy.isVersion($0) ? $0 : nil }
         self.readyToRestart = readyToRestart
+    }
+}
+
+/// What Snaptic knows of Sparkle's update session (E4; r1 C2, S9). UpdaterController feeds it Sparkle's callbacks and
+/// only keeps the install-now block while `hasInstallBlock` says it is still alive.
+package struct UpdateSession: Equatable, Sendable {
+    /// What the menu row and About offer.
+    package private(set) var offer: UpdateOffer?
+    /// Sparkle's installer is prepared and installs when Snaptic quits ("Restart to Update Snaptic…").
+    package private(set) var installWaits = false
+    /// The install-now block from `willInstallUpdateOnQuit` can still run. Sparkle's automatic driver holds it only
+    /// weakly, so it is dead once that driver's update cycle ended (or after it ran once).
+    package private(set) var hasInstallBlock = false
+
+    package enum Event: Equatable, Sendable {
+        /// `standardUserDriverWillHandleShowingUpdate`: a gentle reminder; `installing` when Sparkle resumed an update
+        /// whose installer already waits (`state.stage == .installing`).
+        case found(version: String?, installing: Bool)
+        /// `updater(_:willInstallUpdateOnQuit:immediateInstallationBlock:)` (Snaptic returned YES and kept the block).
+        case installsOnQuit(version: String?)
+        /// The user saw Sparkle's window, or its session ended (installed, skipped, dismissed or failed).
+        case attentionOrFinished
+        /// `updater(_:didFinishUpdateCycleFor:error:)`; `failed` as `UpdatePolicy.checkFailed` decides.
+        case cycleFinished(failed: Bool)
+        /// Snaptic ran the install-now block.
+        case installStarted
+    }
+
+    package init() {}
+
+    package mutating func apply(_ event: Event) {
+        switch event {
+        case .found(let version, let installing):
+            // A resumed install keeps its "Restart to Update" row; a ready offer is never downgraded (C2).
+            if installing { installWaits = true }
+            offer = UpdateOffer(version: version, readyToRestart: installWaits)
+        case .installsOnQuit(let version):
+            installWaits = true
+            hasInstallBlock = true
+            offer = UpdateOffer(version: version, readyToRestart: true)
+        case .attentionOrFinished:
+            // An install that still waits for quit keeps its row; anything else is Sparkle's window's business now.
+            if !installWaits { offer = nil }
+        case .cycleFinished(let failed):
+            // The cycle that handed over the block is over, so its driver (and the block) is gone (S9). A failure
+            // also ends the waiting install.
+            hasInstallBlock = false
+            if failed {
+                installWaits = false
+                offer = nil
+            }
+        case .installStarted:
+            hasInstallBlock = false
+        }
     }
 }
 
@@ -23,9 +78,12 @@ package enum UpdatePolicy {
     package static let feedURL = "https://github.com/revylfitness/snaptic/releases/latest/download/appcast.xml"
     /// Check for Updates… in builds without Sparkle, and the source of every release.
     package static let releasesURL = "https://github.com/revylfitness/snaptic/releases"
+    /// The Info.plist key holding the update key (E4); a bundle without it can't start Sparkle's updater.
+    package static let publicKeyInfoKey = "SUPublicEDKey"
 
     /// What can hold an install or relaunch back (E4).
     package struct Facts: Equatable, Sendable {
+        /// Lid-closed mode is on, or turning on or off (`holdsUpdates`; r1 C7).
         package var lidModeOn: Bool
         /// A display change waits for Keep or Undo, or the display queue is still applying one.
         package var displayTrialPending: Bool
@@ -54,15 +112,12 @@ package enum UpdatePolicy {
         case relaunchAfterInstall
         /// "Restart to Update Snaptic…" or About's Install and Relaunch… runs the stored install-on-quit block.
         case installNow
-        /// Relauncher quits this copy and a downloaded update waits for quit: install it on the way. `safeMode`:
-        /// the relaunch enters or leaves Safe Mode, which must never be traded for an update.
-        case relaunch(safeMode: Bool)
     }
 
     package enum Decision: Equatable, Sendable {
         case allow
         case wait(Wait)
-        /// The event doesn't happen at all (a scheduled check in Safe Mode; Relauncher's own relaunch instead).
+        /// The event doesn't happen at all (a scheduled check in Safe Mode).
         case refuse
     }
 
@@ -78,31 +133,75 @@ package enum UpdatePolicy {
             if facts.lidModeOn { return .wait(.lidClosed) }
             if facts.displayTrialPending { return .wait(.displayTrial) }
             return .allow
-        case .relaunch(let safeMode):
-            // Quitting ends lid-closed mode and display trials anyway (E4), so only a Safe Mode relaunch opts out.
-            return safeMode ? .refuse : .allow
         }
     }
 
-    /// The deferral line of About's status row (E1, E4), most important first: nil = nothing waits. Safe Mode only
-    /// pauses automatic checks, so its line shows whatever is offered.
-    package static func wait(_ facts: Facts) -> Wait? {
-        if facts.lidModeOn { return .lidClosed }
-        if facts.displayTrialPending { return .displayTrial }
-        if facts.safeMode { return .safeMode }
-        return nil
+    /// Whether lid-closed mode holds updates back (r1 C7): on, and also while the password is asked for, the
+    /// watchdog is verified, or the mode stops. Only `off` and a failure (on its way to `off`) let updates go ahead.
+    package static func holdsUpdates(_ mode: AwakeLidMode) -> Bool {
+        switch mode {
+        case .off, .failed: return false
+        case .authorizing, .verifying, .on, .stopping: return true
+        }
     }
 
-    /// nil = go ahead; otherwise the deferral line ("Version 0.3.2 will install when lid-closed mode ends.").
-    package static func waitText(_ facts: Facts, version: String) -> String? {
-        wait(facts).map { text($0, version: version) }
+    /// How Relauncher quits (E4; r1 C3, S9).
+    package enum RelaunchRoute: Equatable, Sendable {
+        /// Open a new instance, then quit (nothing waits to install).
+        case normal
+        /// Run Sparkle's install-now block: it installs the waiting update, then opens the new version.
+        case throughUpdate
+        /// An update waits to install at quit and can't take over this relaunch (a Safe Mode relaunch, which an
+        /// update must never replace, or the block is gone). A new instance opened now would start from the bundle
+        /// Sparkle replaces when this one quits, so nothing relaunches; `quitFirstText` says what to do.
+        case quitFirst
     }
 
-    /// The deferral line for `wait` (also the toast when Install and Relaunch… is clicked while it waits).
-    package static func text(_ wait: Wait, version: String) -> String {
+    package static func relaunchRoute(safeMode: Bool, session: UpdateSession) -> RelaunchRoute {
+        guard session.installWaits else { return .normal }
+        return !safeMode && session.hasInstallBlock ? .throughUpdate : .quitFirst
+    }
+
+    package static func quitFirstText(safeMode: Bool) -> String {
+        safeMode ? L("Quit Snaptic to finish installing the update first, then hold ⇧ while you open it to start in Safe Mode.")
+            : L("Quit Snaptic to finish installing the update, then open it again.")
+    }
+
+    /// Why Sparkle's updater does or doesn't start in this process (E4; r1 C8).
+    package enum Gate: Equatable, Sendable {
+        case ready
+        /// dyld didn't load Sparkle (ad hoc builds and builds from source carry none).
+        case noSparkle
+        /// Not running from an `.app` bundle (`swift run`, `.build/debug/Snaptic`): Sparkle would only show its
+        /// "Unable to Check For Updates" alert.
+        case notAppBundle
+        /// The bundle has no valid `SUPublicEDKey` (a 32-byte Ed25519 key, base64), so no update could verify.
+        case noPublicKey
+    }
+
+    package static func gate(sparkleLoaded: Bool, bundleExtension: String, publicKey: String?) -> Gate {
+        guard sparkleLoaded else { return .noSparkle }
+        guard bundleExtension == "app" else { return .notAppBundle }
+        guard let publicKey, Data(base64Encoded: publicKey)?.count == 32 else { return .noPublicKey }
+        return .ready
+    }
+
+    /// The menu row (E1): "Update Available: Snaptic 0.3.2…", or "Restart to Update Snaptic…" once it installs at quit.
+    package static func menuTitle(_ offer: UpdateOffer) -> String {
+        if offer.readyToRestart { return L("Restart to Update Snaptic…") }
+        guard let version = offer.version else { return L("Update Available: Snaptic…") }
+        return L("Update Available: Snaptic ") + version + "…"
+    }
+
+    /// The deferral line (also the toast when Install and Relaunch… is clicked while it waits; E1, E4).
+    package static func text(_ wait: Wait, version: String?) -> String {
         switch wait {
-        case .lidClosed: return L("Version ") + version + L(" will install when lid-closed mode ends.")
-        case .displayTrial: return L("Version ") + version + L(" will install when the display change is kept or undone.")
+        case .lidClosed:
+            guard let version else { return L("The update will install when lid-closed mode ends.") }
+            return L("Version ") + version + L(" will install when lid-closed mode ends.")
+        case .displayTrial:
+            guard let version else { return L("The update will install when the display change is kept or undone.") }
+            return L("Version ") + version + L(" will install when the display change is kept or undone.")
         case .safeMode: return L("Updates are paused in Safe Mode. Choose Check for Updates… to update anyway.")
         }
     }
@@ -196,9 +295,10 @@ package enum UpdateStatusText {
     package enum State: Equatable, Sendable {
         case fromSource, checking, failed, notChecked, checksOff, safeMode
         case lastChecked(LastCheck)
-        case available(String), ready(String)
+        /// The offered version, nil when the feed's isn't a plain version (U5).
+        case available(String?), ready(String?)
         /// An offer waits for lid-closed mode or a display trial.
-        case waiting(UpdatePolicy.Wait, String)
+        case waiting(UpdatePolicy.Wait, String?)
     }
 
     /// One line, most specific first: source builds, a running check, an offer (or why it waits), a failure, Safe
@@ -225,10 +325,14 @@ package enum UpdateStatusText {
         case .failed: return L("Snaptic couldn’t check for updates. Check your connection and try again.")
         case .notChecked: return L("Not checked yet")
         case .checksOff: return L("Automatic checks are off.")
-        case .safeMode: return UpdatePolicy.text(.safeMode, version: "")
+        case .safeMode: return UpdatePolicy.text(.safeMode, version: nil)
         case .lastChecked(let last): return L("Last checked ") + when(last, uses24Hour: uses24Hour)
-        case .available(let version): return L("Version ") + version + L(" is available.")
-        case .ready(let version): return L("Version ") + version + L(" is ready to install.")
+        case .available(let version):
+            guard let version else { return L("A new version is available.") }
+            return L("Version ") + version + L(" is available.")
+        case .ready(let version):
+            guard let version else { return L("A new version is ready to install.") }
+            return L("Version ") + version + L(" is ready to install.")
         case .waiting(let wait, let version): return UpdatePolicy.text(wait, version: version)
         }
     }

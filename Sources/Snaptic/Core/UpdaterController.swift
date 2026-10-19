@@ -16,7 +16,7 @@ import SnapticKit
     var automaticallyDownloadsUpdates: Bool { get set }
     /// The update Snaptic's own rows offer (gentle reminders), or nil.
     var availableUpdate: UpdateOffer? { get }
-    /// Sparkle handed over an install-on-quit block (Relauncher calls it).
+    /// Sparkle's installer waits to install a downloaded update when Snaptic quits.
     var hasPendingQuitInstall: Bool { get }
     /// Check for Updates… (also in Safe Mode).
     func checkForUpdates()
@@ -26,10 +26,11 @@ import SnapticKit
     /// 0.3.1 (T-update, additive): while a downloaded update waits for lid-closed mode or a display trial, the line
     /// the "Restart to Update Snaptic…" row shows instead (E4); nil when it can install now.
     var waitText: String? { get }
-    /// 0.3.1 (T-update, additive): Relauncher is about to quit. True when a downloaded update takes over the
-    /// relaunch (Sparkle installs it, then opens the new version); false to relaunch as usual. `safeMode`: the
-    /// relaunch enters Safe Mode, which an update never replaces.
-    func relaunchIntoUpdate(safeMode: Bool) -> Bool
+    /// 0.3.1: Relauncher is about to quit (E4; r1 C3, S9). `.throughUpdate`: the waiting update took over the relaunch
+    /// (Sparkle installs it, then opens the new version); `.normal`: relaunch as usual; `.quitFirst`: an update waits
+    /// to install at quit and can't take over (a Safe Mode relaunch, or its block is gone), so nothing relaunches and
+    /// a toast says to quit first. `safeMode`: the relaunch enters Safe Mode, which an update never replaces.
+    func prepareRelaunch(safeMode: Bool) -> UpdatePolicy.RelaunchRoute
 }
 
 @MainActor final class UpdaterController: NSObject, ObservableObject, UpdaterControlling, SPUUpdaterDelegate {
@@ -42,8 +43,16 @@ import SnapticKit
     static let deferralRecheck: TimeInterval = 5
     private static let errorDomain = "app.snaptic.updates"
 
-    /// The updater gate (E4): dyld loaded Sparkle, so its symbols exist.
+    /// dyld loaded Sparkle, so its symbols exist.
     static var isSparkleLoaded: Bool { Bundle(identifier: sparkleBundleIdentifier) != nil }
+
+    /// The updater gate `make()` uses (E4; r1 C8): Sparkle is loaded, and this is an `.app` bundle with an update key.
+    /// An unbundled debug run (`swift run`) can find Sparkle next to its binary, but Sparkle would only show its
+    /// "Unable to Check For Updates" alert there.
+    static var gate: UpdatePolicy.Gate {
+        UpdatePolicy.gate(sparkleLoaded: isSparkleLoaded, bundleExtension: Bundle.main.bundleURL.pathExtension,
+                          publicKey: Bundle.main.object(forInfoDictionaryKey: UpdatePolicy.publicKeyInfoKey) as? String)
+    }
 
     /// Whether Sparkle must ask for an administrator password to replace this copy (root-owned; E1). Such copies
     /// never install by themselves.
@@ -56,14 +65,20 @@ import SnapticKit
                                                parentWritable: access(parent, W_OK) == 0, ownedByUser: owned)
     }
 
-    @Published private(set) var availableUpdate: UpdateOffer? {
-        didSet { if availableUpdate != oldValue { onChange() } }
+    /// Kit's view of Sparkle's session: the offer, a waiting install, and whether `installBlock` is still alive.
+    private var session = UpdateSession() {
+        willSet { objectWillChange.send() }
+        didSet {
+            if !session.hasInstallBlock { installBlock = nil }
+            if session.offer != oldValue.offer || session.installWaits != oldValue.installWaits { onChange() }
+        }
     }
+    var availableUpdate: UpdateOffer? { session.offer }
     @Published private(set) var checking = false
     /// The last update cycle ended in an error that isn't "no update" or the user's own choice.
     @Published private(set) var lastCheckFailed = false
 
-    var hasPendingQuitInstall: Bool { pendingQuitInstall != nil }
+    var hasPendingQuitInstall: Bool { session.installWaits }
     /// Read once: Sparkle's own decision follows the same test (SUInstallerLauncher).
     let needsAdministrator: Bool
 
@@ -72,21 +87,21 @@ import SnapticKit
     private let facts: @MainActor () -> UpdatePolicy.Facts
     private let toast: @MainActor (String) -> Void
     private let onChange: @MainActor () -> Void
-    private var pendingQuitInstall: (() -> Void)? {
-        didSet { if (pendingQuitInstall == nil) != (oldValue == nil) { onChange() } }
-    }
+    /// Sparkle's install-now block, kept only while `session.hasInstallBlock` (S9).
+    private var installBlock: (() -> Void)?
     /// Sparkle's relaunch, held while UpdatePolicy says wait.
     private var heldRelaunch: (() -> Void)?
     private var heldRelaunchTimer: Timer?
     /// Relauncher handed the quit to Sparkle: its relaunch is never held.
     private var relaunchRequested = false
 
-    /// Nil when this build doesn't carry Sparkle (ad hoc, from source). GUI mode only (AppDelegate → ModuleHost).
+    /// Nil unless `gate` is `.ready` (ad hoc builds, builds from source, unbundled debug runs). GUI mode only
+    /// (AppDelegate → ModuleHost).
     /// `facts`: lid-closed mode, display trials and Safe Mode now; `toast`: one line to show; `onChange`: on main,
     /// after every change to `availableUpdate` or `hasPendingQuitInstall` (ModuleHost forwards it as `updaterChanged`).
     static func make(facts: @escaping @MainActor () -> UpdatePolicy.Facts, toast: @escaping @MainActor (String) -> Void,
                      onChange: @escaping @MainActor () -> Void) -> UpdaterController? {
-        guard isSparkleLoaded else { return nil }
+        guard gate == .ready else { return nil }
         let updater = UpdaterController(facts: facts, toast: toast, onChange: onChange)
         updater.start()
         return updater
@@ -161,14 +176,15 @@ import SnapticKit
     }
 
     func installUpdate() {
-        guard let block = pendingQuitInstall else {
-            // Found, not downloaded: Sparkle's window comes forward (a user check, so it shows).
+        guard let block = installBlock else {
+            // Found, not downloaded, or an install Sparkle resumed itself: Sparkle's window comes forward (a user
+            // check, so it shows; it resumes a waiting installer).
             checkForUpdates()
             return
         }
         switch UpdatePolicy.decide(.installNow, facts()) {
         case .allow:
-            pendingQuitInstall = nil
+            session.apply(.installStarted)
             EventLog.shared.record(.modules, "Installing the downloaded update")
             block()
         case .wait(let wait):
@@ -184,14 +200,23 @@ import SnapticKit
         return UpdatePolicy.text(wait, version: offer.version)
     }
 
-    func relaunchIntoUpdate(safeMode: Bool) -> Bool {
-        guard let block = pendingQuitInstall, UpdatePolicy.decide(.relaunch(safeMode: safeMode), facts()) == .allow
-        else { return false }
-        pendingQuitInstall = nil
-        relaunchRequested = true
-        EventLog.shared.record(.modules, "Relaunching into the downloaded update")
-        block()
-        return true
+    func prepareRelaunch(safeMode: Bool) -> UpdatePolicy.RelaunchRoute {
+        var route = UpdatePolicy.relaunchRoute(safeMode: safeMode, session: session)
+        if route == .throughUpdate && installBlock == nil { route = .quitFirst }
+        relaunchRequested = route == .throughUpdate
+        switch route {
+        case .normal:
+            break
+        case .throughUpdate:
+            guard let block = installBlock else { break }
+            session.apply(.installStarted)
+            EventLog.shared.record(.modules, "Relaunching into the downloaded update")
+            block()
+        case .quitFirst:
+            EventLog.shared.record(.modules, "Relaunch refused: an update waits to install when Snaptic quits")
+            toast(UpdatePolicy.quitFirstText(safeMode: safeMode))
+        }
+        return route
     }
 
     // MARK: About's status row (E1)
@@ -220,11 +245,6 @@ import SnapticKit
                                           minute: c.minute ?? 0)
     }
 
-    private static func offerVersion(_ item: SUAppcastItem) -> String {
-        // The feed is signed, but its text still reaches a menu title: only plain versions pass.
-        UpdatePolicy.isVersion(item.displayVersionString) ? item.displayVersionString : L("a new version")
-    }
-
     // MARK: SPUUpdaterDelegate (explicit selectors, so a renamed Swift spelling can't silently drop a hook)
 
     @objc(feedURLStringForUpdater:)
@@ -250,11 +270,18 @@ import SnapticKit
         checking = false
         guard let failure = error else {
             lastCheckFailed = false
+            session.apply(.cycleFinished(failed: false))
             return
         }
         let error = failure as NSError
-        guard error.domain != Self.errorDomain else { return }
+        guard error.domain != Self.errorDomain else {
+            // Snaptic's own Safe Mode refusal: no cycle ran.
+            session.apply(.cycleFinished(failed: false))
+            return
+        }
         lastCheckFailed = UpdatePolicy.checkFailed(sparkleDomain: error.domain == SUSparkleErrorDomain, code: error.code)
+        // The cycle is over, so the block its driver handed over is dead (S9).
+        session.apply(.cycleFinished(failed: lastCheckFailed))
         if lastCheckFailed { EventLog.shared.record(.modules, "Update check failed (\(error.domain) \(error.code))") }
     }
 
@@ -269,8 +296,9 @@ import SnapticKit
     func updater(_ updater: SPUUpdater, willInstallUpdateOnQuit item: SUAppcastItem,
                  immediateInstallationBlock immediateInstallHandler: @escaping () -> Void) -> Bool {
         recordInstalling(item)
-        pendingQuitInstall = immediateInstallHandler
-        availableUpdate = UpdateOffer(version: Self.offerVersion(item), readyToRestart: true)
+        installBlock = immediateInstallHandler
+        // The feed is signed, but its text still reaches a menu title: UpdateOffer keeps only plain versions.
+        session.apply(.installsOnQuit(version: item.displayVersionString))
         return true
     }
 
@@ -324,14 +352,15 @@ import SnapticKit
 
     fileprivate func handle(_ event: UpdaterUserDriverDelegate.Event) {
         switch event {
-        case .willShow(let version):
+        case .willShow(let version, let installing):
             // Scheduled updates never show Sparkle's window by themselves (not during onboarding or Safe Mode
-            // either): the menu row and About offer them, and bring the window forward on request.
-            availableUpdate = UpdateOffer(version: version, readyToRestart: false)
+            // either): the menu row and About offer them, and bring the window forward on request. A resumed install
+            // keeps "Restart to Update Snaptic…" (C2).
+            session.apply(.found(version: version, installing: installing))
         case .attentionOrFinished:
-            // The user saw Sparkle's window, or the session ended (installed, skipped, dismissed or failed). A
-            // downloaded update that installs at quit keeps its row.
-            if !(availableUpdate?.readyToRestart ?? false) || pendingQuitInstall == nil { availableUpdate = nil }
+            // The user saw Sparkle's window, or the session ended (installed, skipped, dismissed or failed). An
+            // install that waits for quit keeps its row.
+            session.apply(.attentionOrFinished)
         }
     }
 }
@@ -340,7 +369,7 @@ import SnapticKit
 /// call hops to the main queue before it touches UpdaterController.
 final class UpdaterUserDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
     enum Event {
-        case willShow(version: String)
+        case willShow(version: String, installing: Bool)
         case attentionOrFinished
     }
 
@@ -358,8 +387,7 @@ final class UpdaterUserDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
     @objc(standardUserDriverWillHandleShowingUpdate:forUpdate:state:)
     func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem,
                                                    state: SPUUserUpdateState) {
-        let version = UpdatePolicy.isVersion(update.displayVersionString) ? update.displayVersionString : L("a new version")
-        send(.willShow(version: version))
+        send(.willShow(version: update.displayVersionString, installing: state.stage == .installing))
     }
 
     @objc(standardUserDriverDidReceiveUserAttentionForUpdate:)

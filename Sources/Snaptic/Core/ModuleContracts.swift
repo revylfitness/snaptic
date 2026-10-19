@@ -82,9 +82,11 @@ struct CustomItemRow: Equatable {
     let footer: Bool
     /// Notices exist (with footer).
     let recentNotices: Bool
-    /// 0.3.1 B3.4: the leftover rows head the menu (`StatusMenu.leftoverItems(host:)`).
+    /// 0.3.1 B3.4: the leftover rows head the menu. Informational only (r1 C5): IndicatorController builds them from
+    /// `StatusMenu.leftoverItems(host:)` each time its menu opens, so nothing reads this flag.
     var leftover = false
-    /// 0.3.1 E1: the Update Available row sits in the shared footer (`StatusMenu.updateItems(host:)`).
+    /// 0.3.1 E1: the Update Available row sits in the shared footer. Informational only (r1 C5): IndicatorController
+    /// adds `StatusMenu.updateItems(host:)` wherever `footer` is set, so nothing reads this flag.
     var updateAvailable = false
 }
 
