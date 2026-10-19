@@ -2,8 +2,9 @@ import Foundation
 
 // What Awake shows (owner: G; PLAN 0.3 §2.5 toasts, §5.3, §5.4, design M8, R5-10, R5-11): holder summaries, end and
 // last-end texts, the switch header's detail lines, the status item's title and accessibility label, the Awake menu's
-// row plan and the Rules submenu selection, and the diagnostics section. App names, holder names and rule names come
-// from the app (local UI only); nothing here reaches logs or the CLI.
+// row plan and the Rules submenu selection, and the diagnostics section; since 0.3.1 (owner: T-lid-kit) also the
+// lid-closed mode rows and words (B0–B3.4) and the `tab` style (A4). App names, holder names and rule names come from
+// the app (local UI only); nothing here reaches logs or the CLI.
 
 /// "Held by Terminal (2)" (N17): holders grouped by name in first-seen order; nil names are "the command line".
 package enum AwakeHolderText {
@@ -230,12 +231,19 @@ package struct AwakeDetailInput: Equatable, Sendable {
     package var idleNote: String?
     /// "Appear active is paused: Snaptic can't read the battery level." (`AwakeBackgroundText.paused`).
     package var backgroundPaused: String?
+    /// 0.3.1 B1: lid-closed mode is on (the lid line comes first; no lid warning).
+    package var lidModeOn: Bool = false
+    /// 0.3.1 B1: the cap's end time ("6:40 PM") when the cap ends before the session (`AwakeLidPolicy.capEndsFirst`).
+    package var lidUntilClock: String?
+    /// 0.3.1 B1: which `lidRoute` line the Settings status row shows after the lid warning.
+    package var lidRoute: AwakeLidRoute = .unavailable
 
     package init(governing: AwakeGoverning, now: ClockNow, endClock: String? = nil, appName: String? = nil,
                  ruleName: String? = nil, nextRuleName: String? = nil, holderSummary: String? = nil,
                  quietFor: Double? = nil, activity: AwakeActivityMode = .off, activityCapped: Bool = false,
                  stopAfterHours: Int = 1, lidWarning: Bool = false, idleNote: String? = nil,
-                 backgroundPaused: String? = nil) {
+                 backgroundPaused: String? = nil, lidModeOn: Bool = false, lidUntilClock: String? = nil,
+                 lidRoute: AwakeLidRoute = .unavailable) {
         self.governing = governing
         self.now = now
         self.endClock = endClock
@@ -250,6 +258,9 @@ package struct AwakeDetailInput: Equatable, Sendable {
         self.lidWarning = lidWarning
         self.idleNote = idleNote
         self.backgroundPaused = backgroundPaused
+        self.lidModeOn = lidModeOn
+        self.lidUntilClock = lidUntilClock
+        self.lidRoute = lidRoute
     }
 }
 
@@ -286,9 +297,10 @@ package enum AwakeDetail {
         }
     }
 
-    /// Extra lines in priority order, each only while true.
+    /// Extra lines in priority order, each only while true. Lid-closed mode's line comes first (0.3.1 B1).
     package static func extras(_ i: AwakeDetailInput) -> [String] {
         var out: [String] = []
+        if i.lidModeOn && i.governing.isActive { out.append(AwakeLidText.headerLine(untilClock: i.lidUntilClock)) }
         if case .manual(let s) = i.governing, case .untilIdle(let spec, _) = s.kind {
             let quiet = AwakeCountdown.unit(max(1, spec.sanitized().quietSeconds / 60), L("min"), L("min"))
             var line = L("Ends after ") + quiet + L(" with no activity")
@@ -317,9 +329,16 @@ package enum AwakeDetail {
             } else if i.activity == .declare {
                 out.append(L("Appearing active"))
             }
-            if i.lidWarning { out.append(L("Closing the lid will put your Mac to sleep.")) }
+            if i.lidWarning && !i.lidModeOn { out.append(L("Closing the lid will put your Mac to sleep.")) }
         }
         return out
+    }
+
+    /// The lid warning's rule (0.3.1 B1): closing the lid would sleep the Mac, lid-closed mode is off, and the Mac is on
+    /// battery or has no external display. Re-evaluated on `lidWillSleep`, screen and lid-mode changes.
+    package static func showsLidWarning(lidWillSleep: Bool?, lidModeOn: Bool, onBattery: Bool,
+                                        externalDisplay: Bool) -> Bool {
+        lidWillSleep == true && !lidModeOn && (onBattery || !externalDisplay)
     }
 
     /// At most `maxLines` lines: the primary line and the first extra; idle shows only `idleNote`.
@@ -342,9 +361,17 @@ package enum AwakeIndicatorText {
         }
     }
 
-    /// "Awake, 1 hour 42 minutes remaining" / "Awake, until turned off" / "Awake, held by Terminal" / "Awake, off".
+    /// "Awake, 1 hour 42 minutes remaining" / "Awake, until turned off" / "Awake, held by Terminal" / "Awake, off";
+    /// while lid-closed mode is on, ", even with the lid closed" follows (0.3.1 B1; the tooltip uses the same label).
     package static func accessibilityLabel(governing: AwakeGoverning, remaining: Double?, appName: String?,
-                                           ruleName: String?, holderSummary: String?) -> String {
+                                           ruleName: String?, holderSummary: String?, lidModeOn: Bool = false) -> String {
+        let label = baseLabel(governing: governing, remaining: remaining, appName: appName, ruleName: ruleName,
+                              holderSummary: holderSummary)
+        return lidModeOn && governing.isActive ? label + AwakeLidText.statusSuffix : label
+    }
+
+    private static func baseLabel(governing: AwakeGoverning, remaining: Double?, appName: String?, ruleName: String?,
+                                  holderSummary: String?) -> String {
         let prefix = L("Awake, ")
         switch governing {
         case .inactive:
@@ -411,6 +438,8 @@ package struct AwakeMenuFacts: Equatable, Sendable {
     package var rulesShown: Bool
     /// 0.3.1 A4: replaces 0.3's `compact: Bool`.
     package var style: AwakeMenuStyle
+    /// 0.3.1 B1: the lid rows' facts; nil while lid-closed mode isn't available (no lid row then).
+    package var lid: AwakeLidMenuFacts?
 
     /// The compact section in the Snaptic menu (no separators, no Settings item). Kept for 0.3 callers and tests.
     package var compact: Bool {
@@ -438,23 +467,31 @@ package enum AwakeMenuModel {
     /// Awake Settings…. Active: Turn Off Keep Awake in the default item's slot, then Add 15 Minutes / Add 1 Hour (timed
     /// and capped manual sessions), ✓ Keep Display On (manual and rule sessions), End Command-Line Holds (holds under
     /// another source). Holds only: Turn Off (it ends the stack) and the default preset (adds a session beside them).
+    /// 0.3.1 B1: the lid row (`lidRow`) follows the default preset, or ✓ Keep Display On while a session or rule
+    /// governs. Styles (A4): `compact` has no separators and no Awake Settings…; `tab` is `own` without Awake
+    /// Settings… and the separator before it.
     package static func rows(_ f: AwakeMenuFacts) -> [AwakeMenuRow] {
         var rows: [AwakeMenuRow] = [.header]
+        let lid = lidRow(f.lid, governing: f.governing)
         if !f.compact { rows.append(.separator) }
         switch f.governing {
         case .inactive:
             rows.append(.startDefault)
+            if let lid { rows.append(lid) }
         case .holds:
             rows.append(.turnOff)
             rows.append(.startDefault)
+            if let lid { rows.append(lid) }
         case .manual(let s):
             rows.append(.turnOff)
             if AwakeClock.canExtend(s) { rows += addSteps.map { .addTime(seconds: $0) } }
             rows.append(.keepDisplayOn)
+            if let lid { rows.append(lid) }
             if f.holdsExist { rows.append(.endHolds) }
         case .trigger:
             rows.append(.turnOff)
             rows.append(.keepDisplayOn)
+            if let lid { rows.append(lid) }
             if f.holdsExist { rows.append(.endHolds) }
         }
         rows.append(.startSession)
@@ -463,11 +500,51 @@ package enum AwakeMenuModel {
             if !f.compact { rows.append(.separator) }
             rows.append(.rules)
         }
-        if !f.compact {
+        if f.style == .own {
             rows.append(.separator)
             rows.append(.settings)
         }
         return rows
+    }
+
+    /// The lid row (0.3.1 B1), also for the Settings pull-downs: ✓ while on; the pending text while a request or an
+    /// earlier session's journal is pending (disabled); "Keep Awake with the Lid Closed…" in a manual session started
+    /// from the menu or Settings in this process; otherwise (idle, or any other governing state) the idle submenu.
+    /// nil while the mode isn't available.
+    package static func lidRow(_ lid: AwakeLidMenuFacts?, governing: AwakeGoverning) -> AwakeMenuRow? {
+        guard let lid else { return nil }
+        switch lid.state {
+        case .on, .authorizing, .verifying, .stopping, .finishingEarlier:
+            return .lidClosed(lid.state)
+        case .off:
+            if lid.sessionTakesMode, case .manual = governing { return .lidClosed(.off) }
+            return .lidSubmenu(lid.presets)
+        }
+    }
+}
+
+/// What the lid rows need (0.3.1 B1).
+package struct AwakeLidMenuFacts: Equatable, Sendable {
+    /// `AwakeLidMode.rowState`, or `.finishingEarlier` while an earlier session's journal is pending (B3.4) and the
+    /// mode is off.
+    package var state: LidRowState
+    /// The governing manual session was started from the menu or Settings in this process
+    /// (`AwakeLidGate.addsToSession`), so the mode is added to it.
+    package var sessionTakesMode: Bool
+    /// The idle submenu's presets, in preset order.
+    package var presets: [StableID]
+
+    package init(state: LidRowState, sessionTakesMode: Bool, presets: [StableID]) {
+        self.state = state
+        self.sessionTakesMode = sessionTakesMode
+        self.presets = presets
+    }
+
+    /// The row state from the mode and the recovery: the mode's own state first; while it is off, a pending journal
+    /// shows "Finishing Earlier Session…".
+    package static func rowState(mode: AwakeLidMode, recovery: AwakeLidRecovery) -> LidRowState {
+        let s = mode.rowState
+        return s == .off && recovery == .pending ? .finishingEarlier : s
     }
 }
 
@@ -650,8 +727,21 @@ package enum AwakeStatusPlan {
 /// The status row's text: one primary line and secondary details, each only while true.
 package enum AwakeStatusText {
     package static let idle = L("Your Mac can sleep as usual.")
-    /// After the lid line: how macOS keeps a Mac awake with its lid closed (closed-display mode).
+    /// After the lid line: how macOS keeps a Mac awake with its lid closed (closed-display mode). The 0.3 text, still
+    /// the `unavailable` variant.
     package static let lidRoute = L("To keep it awake with the lid closed, connect power and an external display.")
+
+    /// 0.3.1 B1: the `lidRoute` line by lid-closed mode's state.
+    package static func lidRoute(_ route: AwakeLidRoute) -> String {
+        switch route {
+        case .featureOff:
+            return L("To keep it awake with the lid closed, connect power and an external display, or turn on lid-closed mode in Awake › Advanced.")
+        case .available:
+            return L("To keep it awake with the lid closed, connect power and an external display, or choose Keep Awake with the Lid Closed in the Awake menu.")
+        case .unavailable:
+            return lidRoute
+        }
+    }
 
     /// "Keeping your Mac awake until 3:45 PM", "…until turned off", "…while Xcode is running", "…until downloads
     /// and tasks finish", "…while “Desk dock” applies", "Held by Terminal (2)"; idle: "Your Mac can sleep as usual."
@@ -688,7 +778,7 @@ package enum AwakeStatusText {
         }
         out += AwakeDetail.extras(i)
         // §1.4 closed-display mode: the native route, where there is room for it (the menu header keeps 2 lines).
-        if i.lidWarning { out.append(lidRoute) }
+        if i.lidWarning && !i.lidModeOn { out.append(lidRoute(i.lidRoute)) }
         if !i.governing.isActive, let note = i.idleNote { out.append(note) }
         // Drive Alive runs without a session too: say why it stopped while idle as well.
         if !i.governing.isActive, let paused = i.backgroundPaused { out.append(paused) }
@@ -706,4 +796,140 @@ package enum AwakeRuleRowText {
         if waiting { return L("Waiting") }
         return nil
     }
+}
+
+/// Where the Settings status row's `lidRoute` line points (0.3.1 B1).
+package enum AwakeLidRoute: String, CaseIterable, Sendable {
+    /// The feature is off: turn it on in Awake › Advanced.
+    case featureOff
+    /// On and available: choose it in the Awake menu.
+    case available
+    /// Translocated, no lid (or no battery): the 0.3 text.
+    case unavailable
+}
+
+/// Lid-closed mode's words (0.3.1 B0–B3.4): the menus, Settings, toasts, VoiceOver and the History suffix. The
+/// password dialogs' texts are `LidWatchdog.promptText(floor:)` and `restorePromptText`; the refusals are
+/// `AwakeLidRefusal.text`.
+package enum AwakeLidText {
+    // MARK: Names (B0)
+
+    /// The submenu, and the row while on (shown with a checkmark: turning it off asks nothing).
+    package static let title = L("Keep Awake with the Lid Closed")
+    /// The row in a menu or Settings session: asks for the password.
+    package static let action = L("Keep Awake with the Lid Closed…")
+    /// The idle submenu's last item: the Custom… panel with lid-closed mode turned on.
+    package static let custom = L("Custom…")
+    /// The Advanced setting and the Custom… panel's toggle.
+    package static let setting = L("Keep awake with the lid closed")
+    package static let settingHelp = L("Choose Keep Awake with the Lid Closed in the Awake menu. Asks for an administrator password each time.")
+    package static let customHelp = L("Asks for an administrator password when you click Start.")
+    /// The Custom… panel's button while the toggle is on.
+    package static let customStart = L("Start…")
+    /// The Advanced section's title.
+    package static let section = L("Lid closed")
+    package static let learnMore = L("Learn More…")
+    /// The translocated row (B1), also the refusal's toast.
+    package static let translocated = L("Snaptic is running from a temporary location. Move it to Applications to use lid-closed mode.")
+
+    /// A preset in the idle submenu: its title and "…" (each asks for a password).
+    package static func presetTitle(_ title: String) -> String { title + "…" }
+
+    /// The row's title by state (B0).
+    package static func rowTitle(_ state: LidRowState) -> String {
+        switch state {
+        case .off: return action
+        case .on: return title
+        case .authorizing: return L("Waiting for Password…")
+        case .verifying: return L("Turning On…")
+        case .stopping: return L("Turning Off…")
+        case .finishingEarlier: return L("Finishing Earlier Session…")
+        }
+    }
+
+    /// Pending rows are disabled.
+    package static func rowEnabled(_ state: LidRowState) -> Bool { state == .off || state == .on }
+    /// The row carries a checkmark while on.
+    package static func rowChecked(_ state: LidRowState) -> Bool { state == .on }
+
+    /// The Advanced footer (B1), before its Learn More… link.
+    package static var advancedFooter: String {
+        L("While lid-closed mode is on, your Mac can’t sleep for low battery or heat. Awake turns it off at the Awake page’s battery level (at least 10%), when your Mac gets hot, or after ")
+            + capSpan + L(". Use it on a hard surface, not in a bag.")
+    }
+
+    /// "24 hours" (`AwakeCountdown.unit`).
+    package static var capSpan: String { AwakeCountdown.unit(LidWatchdog.capSeconds / 3_600, L("hour"), L("hours")) }
+
+    // MARK: Status (B1)
+
+    /// The accessibility label's and N11's suffix while the mode is on.
+    package static let statusSuffix = L(", even with the lid closed")
+
+    /// The header's and status row's first extra while on: the cap's clock when the cap ends first.
+    package static func headerLine(untilClock: String?) -> String {
+        untilClock.map { L("Stays awake with the lid closed until ") + $0 } ?? L("Stays awake with the lid closed")
+    }
+
+    /// "Lid-closed mode ended at 3:12 AM: battery at 20%." (kept 12 h, cleared at the next turn-on); nil for ends the
+    /// user chose or that another line explains.
+    package static func lastEnd(_ end: AwakeLidEnd, clock: String, floor: Int) -> String? {
+        guard let phrase = endPhrase(end, floor: floor) else { return nil }
+        return L("Lid-closed mode ended at ") + clock + ": " + phrase + "."
+    }
+
+    /// The "ended at" phrase: battery, heat, the time limit, another app, or quitting.
+    package static func endPhrase(_ end: AwakeLidEnd, floor: Int) -> String? {
+        switch end {
+        case .battery: return L("battery at \(floor)%")
+        case .heat: return L("your Mac got hot")
+        case .cap: return L("time limit reached")
+        case .otherApp: return L("another app turned sleep back on")
+        case .quit: return L("Snaptic quit")
+        case .user, .sessionEnded, .replaced, .watchdogLost, .safeMode, .featureOff, .moduleStopped: return nil
+        }
+    }
+
+    // MARK: Toasts and VoiceOver (B1, B3)
+
+    /// After 2 s of verifying.
+    package static let verifying = L("Turning on lid-closed mode…")
+    package static let couldNotTurnOn = L("Snaptic couldn’t turn on lid-closed mode. Try again.")
+    /// `check` found sleep already turned off (exit 3, or the preflight read 1).
+    package static let alreadyOff = L("Sleep is already turned off for this Mac by another app or command, so it stays awake with the lid closed.")
+    /// An idle-submenu start that replaced another governing session.
+    package static let replaced = L("Replaced the running session.")
+    package static let capWarning = L("Lid-closed mode turns off in 5 minutes. If the lid is closed then, your Mac goes to sleep.")
+    package static let voiceOverOn = L("Keeping your Mac awake with the lid closed.")
+    package static let voiceOverOff = L("Lid-closed mode turned off.")
+
+    /// The toast when the mode ends but the session goes on (B3.1 step 7, B3.3); nil for the other ends. While the
+    /// lid is shut the session ends too (`AwakeLidPolicy.endsSession`) and its `.lidEnded` toast shows instead.
+    package static func endToast(_ end: AwakeLidEnd, floor: Int) -> String? {
+        switch end {
+        case .cap:
+            return L("Lid-closed mode turned off after ") + capSpan
+                + L(". Awake is still on; your Mac sleeps if you close the lid.")
+        case .battery: return L("Lid-closed mode turned off at \(floor)% battery.")
+        case .heat: return L("Lid-closed mode turned off because your Mac got hot.")
+        case .otherApp: return L("Another app turned sleep back on, so lid-closed mode stopped.")
+        case .user, .sessionEnded, .replaced, .watchdogLost, .quit, .safeMode, .featureOff, .moduleStopped: return nil
+        }
+    }
+
+    // MARK: Leftovers (B3.4)
+
+    /// The menus' status row and its action (never Keep Sleep Off in a menu).
+    package static let menuLeftover = L("Sleep Is Turned Off")
+    package static let turnSleepBackOn = L("Turn Sleep Back On…")
+    /// The Awake page's and Other Apps' row, and the toast when Awake isn't running.
+    package static let leftover = L("Your Mac can’t sleep. This may be from an earlier lid-closed session that didn’t finish.")
+    package static let keepSleepOff = L("Keep Sleep Off")
+    package static let notNow = L("Not Now")
+    package static let openAwakeSettings = L("Open Awake Settings…")
+
+    // MARK: History (B1)
+
+    /// The subtitle's suffix for an entry with lid-closed mode.
+    package static let historySuffix = L(" · Lid closed")
 }

@@ -3,8 +3,9 @@ import Foundation
 // Other processes keeping the Mac awake, and the system-wide "SleepDisabled" setting (owner: J; PLAN 0.3 §1.1, §1.3,
 // §2.8, §3.6). Pure parsing of what the app reads: `IOPMCopyAssertionsByProcess` (pid → assertion dictionaries) and
 // the "SystemPowerSettings" dictionary of the `com.apple.PowerManagement` preferences (what `pmset disablesleep`,
-// Amphetamine Power Protect and Insomnia leave behind). Read-only: Snaptic never writes SleepDisabled. Local UI only:
-// nothing here is logged, stored, exported or sent over the CLI.
+// Amphetamine Power Protect and Insomnia leave behind). Read-only here: the only writer of SleepDisabled in Snaptic is
+// lid-closed mode's root watchdog (0.3.1 B3.2, LidWatchdog.swift), while that mode is on or during recovery. Local UI
+// only: nothing here is logged, stored, exported or sent over the CLI.
 
 /// What another process's assertion keeps from happening, strongest last.
 package enum OtherAssertionKind: Int, CaseIterable, Comparable, Sendable {
@@ -138,6 +139,10 @@ package enum OtherAssertions {
             return row
         }
     }
+
+    /// Advanced › Other Apps while SleepDisabled is on and no Snaptic journal explains it (0.3.1 B3.4; it replaces
+    /// 0.3's "Snaptic can’t change this."). With a journal, the leftover row (`AwakeLidText.leftover`) shows instead.
+    package static let sleepDisabledByOther = L("Sleep is turned off for this Mac by another app or command. Snaptic leaves it as it is.")
 
     /// The SleepDisabled flag from the "SystemPowerSettings" dictionary. An absent dictionary or key (no custom
     /// settings) is false; a present key is true for `true`, any non-zero number or "1"/"true"/"yes"; anything else

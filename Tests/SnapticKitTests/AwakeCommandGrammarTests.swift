@@ -104,14 +104,33 @@ final class AwakeCommandGrammarTests: XCTestCase {
 
     func testStatusJSON() {
         XCTAssertEqual(AwakeCommandGrammar.statusJSON(facts(active: false, pids: [])),
-                       #"{"active":false,"source":null,"kind":null,"display":null,"end":null,"remaining":null,"rule":null,"holds":0,"pids":[]}"#)
+                       #"{"active":false,"source":null,"kind":null,"display":null,"end":null,"remaining":null,"rule":null,"holds":0,"pids":[],"lidClosed":false}"#)
         XCTAssertEqual(AwakeCommandGrammar.statusJSON(facts(source: .holds, kind: .process, display: .maySleep, rule: nil,
                                                             pids: [4242, 77])),
-                       #"{"active":true,"source":"holds","kind":"process","display":"maySleep","end":"2025-10-18T17:30:00Z","remaining":3541,"rule":null,"holds":2,"pids":[4242,77]}"#)
+                       #"{"active":true,"source":"holds","kind":"process","display":"maySleep","end":"2025-10-18T17:30:00Z","remaining":3541,"rule":null,"holds":2,"pids":[4242,77],"lidClosed":false}"#)
         let rule = AwakeCommandGrammar.statusJSON(facts(source: .automatic, kind: .automatic, end: nil, remaining: nil, rule: 3))
         XCTAssertTrue(rule.contains(#""rule":3"#))
         // Valid JSON on every platform.
         XCTAssertNoThrow(try JSONSerialization.jsonObject(with: Data(rule.utf8)))
+    }
+
+    /// 0.3.1 B1: `lidClosed` is the JSON's last key; the tab-separated line doesn't change; nothing governing reads
+    /// false.
+    func testStatusLidClosed() {
+        var on = facts()
+        on.lidClosed = true
+        XCTAssertTrue(AwakeCommandGrammar.statusJSON(on).hasSuffix(#","pids":[],"lidClosed":true}"#))
+        XCTAssertEqual(AwakeCommandGrammar.statusLine(on), AwakeCommandGrammar.statusLine(facts()))
+        var idle = facts(active: false)
+        idle.lidClosed = true
+        XCTAssertTrue(AwakeCommandGrammar.statusJSON(idle).hasSuffix(#""lidClosed":false}"#))
+        XCTAssertNoThrow(try JSONSerialization.jsonObject(with: Data(AwakeCommandGrammar.statusJSON(on).utf8)))
+        let n = ClockNow(wall: 1_700_000_000, continuous: 100, bootSession: "B")
+        let s = AwakeClock.start(.indefinite, options: AwakeSessionOptions(), presetID: nil, source: .menu, now: n,
+                                 id: StableID.derived(namespace: "lid", name: "s"))
+        XCTAssertTrue(AwakeStatusFacts(governing: .manual(s), holds: [], now: n, lidClosed: true).lidClosed)
+        XCTAssertFalse(AwakeStatusFacts(governing: .manual(s), holds: [], now: n).lidClosed)
+        XCTAssertFalse(AwakeStatusFacts(governing: .inactive, holds: [], now: n, lidClosed: true).lidClosed)
     }
 
     func testISOTimeIsHandFormattedUTC() {

@@ -35,6 +35,12 @@ package enum AwakeStartRules {
         }
     }
 
+    /// `awake extend` (0.3.1 B2): refused from the command line while lid-closed mode is on, so another program can
+    /// only turn it off (`awake stop` still works). Menu, Settings and toast extensions are the user's own.
+    package static func extendRefusal(source: AwakeSessionSource, lidModeOn: Bool) -> AwakeRefusal? {
+        source == .commandLine && lidModeOn ? .lidClosedSession : nil
+    }
+
     /// CLI untilIdle starts and CLI presets of an uncapped untilIdle preset get the 12 h cap (parity minor 7).
     package static func cliCapped(_ kind: AwakeSessionKind) -> AwakeSessionKind {
         if case .untilIdle(let spec, nil) = kind { return .untilIdle(spec, maxSeconds: AwakeClock.holdDefaultCapSeconds) }
