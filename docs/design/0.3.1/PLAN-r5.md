@@ -951,7 +951,7 @@ If the user clicks Install and Relaunch while something defers it, a toast gives
 
 **Detecting an upgrader.** 0.3.0 stores no last-run version.
 - A new migration marker, `MigrationID.v031Welcome`, is recorded the first time 0.3.1 runs.
-- The user counts as an **upgrader** when the `SnapticModulesV1` defaults key already existed before that marker. Otherwise they are a **new user**.
+- The user counts as an **upgrader** when the `SnapticModulesV1` defaults key already existed **before this launch**. Reuse `ModuleHost`'s `modulesExisted`, which is read before the first write (ModuleHost.swift:80-91), or `isFirstLaunch`. A new user's first launch writes that key itself, so checking afterwards would count every new user as an upgrader. Otherwise they are a **new user**.
 - From 0.3.1 on, a `SnapticLastRunVersion` key (`CFBundleVersion`) is written at every launch, so later versions can tell upgrades apart directly. It is navigation state: not backed up and not cleared by Reset.
 
 **Upgraders, first launch of 0.3.1**
@@ -1049,14 +1049,14 @@ If the user clicks Install and Relaunch while something defers it, a toast gives
    1. **Guards.**
       - The tag must match `^v[0-9]+\.[0-9]+\.[0-9]+$`, and its commit must be an ancestor of `origin/main`.
       - The tag must equal `CFBundleShortVersionString`.
-      - `CFBundleVersion` must be an integer greater than the version in the current latest appcast.
+      - `CFBundleVersion` must be an integer greater than the version in the current latest appcast. A **404 counts as 0 only if no release with an appcast has ever been published**; that is checked through the releases API and is true only before 0.3.1. Otherwise a 404 fails the job. It can happen when a release published in the UI is already "latest" without an appcast.
    2. **Sparkle check.** The SHA-256 hashes of `Sparkle.framework/Versions/B/{Sparkle, Autoupdate, Updater.app/Contents/MacOS/Updater}` must equal the hashes pinned in the workflow. The pins are taken from the **SwiftPM artifact zip** for 2.10.0 (checksum `17e28312…`), not the tarball.
    3. **Code signing.**
       - Create a temporary keychain and import the p12.
       - Sign inside out with `codesign -f -o runtime --timestamp -s "$IDENTITY"`: Autoupdate, then `Updater.app`, then the framework, then the app.
       - Run `codesign --verify --strict --deep` and check that the app has no entitlements.
    4. **Disk image.** Build the DMG with **inline fixed `hdiutil` commands**, from the signed app with an Applications symlink (the same steps as `make-dmg.sh`). No repository script runs while the keychain is unlocked. Then `codesign --timestamp -s` the DMG.
-   5. **Keychain teardown.** Delete the keychain before any network step.
+   5. **Keychain teardown.** Delete the keychain before notarization. `codesign --timestamp` contacts Apple's timestamp server, which is expected.
    6. **Notarize and staple.**
       - App: `notarytool submit --wait` on a zip of the app, then `stapler staple` the app, then `spctl -a -t exec -vv`, then re-zip as `Snaptic.zip`.
       - DMG: notarize, staple, then `spctl -a -t open --context context:primary-signature -vv`.
@@ -1075,7 +1075,7 @@ If the user clicks Install and Relaunch while something defers it, a toast gives
       - Because the app's Info.plist sets `SURequireSignedFeed`, `generate_appcast` signs the feed.
       - Verify the feed signature against the pinned `SUPublicEDKey` with Sparkle's verifier before uploading.
    6. **Upload and publish.**
-      - Upload `Snaptic.zip`, `Snaptic.dmg` and `appcast.xml` to the draft.
+      - Upload `Snaptic.zip`, `Snaptic.dmg` and `appcast.xml` with `--clobber`, so a pre-seeded asset on a reused release is always replaced.
       - Run `gh release edit --draft=false --latest` **last**. An explicit `--latest` means a hand-made release can't take over "latest".
 
 **Owner's release steps**
@@ -1432,4 +1432,5 @@ New `ControlState` cases: `updaterAvailable`, `updateAvailable` and `v031Welcome
 | parity m5 (Settings reachable while Awake is off) | Leftover rows show regardless of module state |
 | parity m6 ("checks are off" text) | E1 and E1a |
 | parity m7 (row order) | E1 |
+| r5 confirmation notes (code, security) | Upgrader detection uses `modulesExisted`; the appcast-404 rule; keychain deleted before notarization; `--clobber` |
 
