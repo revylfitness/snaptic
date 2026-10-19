@@ -32,6 +32,7 @@ package enum StatusMenuControls: ControlTable {
         // 0.3.1 A6: tabs (2+ modules in the Snaptic menu); the Show … Tab items carry ⌘n.
         ControlSpec("menu.snaptic.tabs", .menuTabBar, menu: snapticMenu),
         ControlSpec("menu.snaptic.showTab", .menuItem, when: [.perItem("module")], menu: snapticMenu),
+        ControlSpec("menu.snaptic.emptyTab", .menuItem, menu: snapticMenu),
         // 0.3.1 B7: "Sleep Is Turned Off" and "Turn Sleep Back On…" (no Keep Sleep Off in menus).
         ControlSpec("menu.snaptic.lidLeftover", .menuItem, when: [.state(.lidLeftover)], menu: everyMenu),
         ControlSpec("menu.snaptic.lidRestore", .menuItem, when: [.state(.lidLeftover)], menu: everyMenu),

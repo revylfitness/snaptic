@@ -596,7 +596,7 @@ import SnapticKit
     /// when the module has nothing (it stopped while the menu was open), so the groups stay single-separated.
     private func tabSection(_ id: ModuleID, host: ModuleHost) -> [NSMenuItem] {
         let items = section(id, host: host, header: false, tabbed: true)
-        return items.isEmpty ? [MenuKit.status(MenuTabs.emptySection)] : items
+        return items.isEmpty ? [MenuKit.status(MenuTabs.emptySection, control: ControlID("menu.snaptic.emptyTab"))] : items
     }
 
     /// A2: the widest tab section, measured in a scratch menu. Its items are removed right after, so nothing keeps
