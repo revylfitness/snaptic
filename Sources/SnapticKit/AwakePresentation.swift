@@ -90,7 +90,7 @@ package enum AwakeEndText {
         case .moduleStopped: return L("Awake was turned off")
         case .safeMode: return L("Snaptic restarted in Safe Mode")
         case .reboot: return L("your Mac restarted")
-        case .assertionFailed: return L("Snaptic couldn't keep your Mac awake")
+        case .assertionFailed: return L("Snaptic couldn’t keep your Mac awake")
         case .commandLineOff: return L("command-line control was turned off")
         }
     }
@@ -102,7 +102,7 @@ package enum AwakeEndText {
         case .user, .replaced, .triggerEnded, .moduleStopped, .safeMode, .reboot:
             return nil
         case .assertionFailed:
-            return L("Snaptic couldn't keep your Mac awake. Try again, or restart Snaptic.")
+            return L("Snaptic couldn’t keep your Mac awake. Try again, or restart Snaptic.")
         case .batteryLow:
             return L("Awake ended: battery is below \(floor)%.")
         default:
@@ -133,7 +133,7 @@ package enum AwakeEndText {
         case .lowPowerMode: return L("Low Power Mode is on.")
         case .thermal: return L("Your Mac is too hot to keep awake right now.")
         case .adapterDisconnected: return L("The power adapter is disconnected.")
-        default: return L("Awake can't start right now.")
+        default: return L("Awake can’t start right now.")
         }
     }
 }
@@ -183,9 +183,9 @@ package enum AwakeBackgroundText {
     /// The one toast when the battery becomes unreadable; nil when neither activity nor Drive Alive is in use.
     package static func unreadableToast(activity: Bool, drives: Bool) -> String? {
         switch (activity, drives) {
-        case (true, true): return L("Snaptic can't read the battery level, so it stopped appearing active and keeping drives awake.")
-        case (true, false): return L("Snaptic can't read the battery level, so it stopped appearing active.")
-        case (false, true): return L("Snaptic can't read the battery level, so it stopped keeping drives awake.")
+        case (true, true): return L("Snaptic can’t read the battery level, so it stopped appearing active and keeping drives awake.")
+        case (true, false): return L("Snaptic can’t read the battery level, so it stopped appearing active.")
+        case (false, true): return L("Snaptic can’t read the battery level, so it stopped keeping drives awake.")
         case (false, false): return nil
         }
     }
@@ -203,7 +203,7 @@ package enum AwakeBackgroundText {
         let reason: String
         switch block {
         case .heat: reason = L("your Mac is too hot")
-        case .batteryUnreadable: reason = L("Snaptic can't read the battery level")
+        case .batteryUnreadable: reason = L("Snaptic can’t read the battery level")
         case .batteryLow: reason = L("the battery is low")
         }
         return subject + ": " + reason + "."

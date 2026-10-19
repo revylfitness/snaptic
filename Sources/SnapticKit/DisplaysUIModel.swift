@@ -207,7 +207,7 @@ package enum DisplaysOnboardingPlan {
     package static func summary(_ chip: OnboardingChip) -> String {
         switch chip {
         case .basics: return L("Brightness, resolution, hardware controls, arrangement, and the brightness indicator.")
-        case .keys: return L("Use the keyboard's brightness and volume keys with external displays.")
+        case .keys: return L("Use the keyboard’s brightness and volume keys with external displays.")
         case .sharperText: return L("Resolution control, and sharper text on displays that have no sharp mode.")
         case .virtualScreens: return L("Displays that exist only in software. Beta.")
         case .pip: return L("A display or window in a floating window. Needs Screen Recording.")
@@ -568,7 +568,7 @@ package enum DisplaysFeatureGroupsModel {
                              help: L("Shrinks the picture to fit TVs that cut off its edges."),
                              features: [.underscan], badge: .experimental),
         DisplayFeatureSwitch("autoBrightness", L("Built-in auto-brightness"),
-                             help: L("Turns the built-in display's automatic brightness on or off here."),
+                             help: L("Turns the built-in display’s automatic brightness on or off here."),
                              features: [.autoBrightness], badge: .experimental),
         DisplayFeatureSwitch("broadcast", L("Brightness broadcast"),
                              help: L("Tells other apps when Snaptic changes brightness or volume."),

@@ -141,7 +141,7 @@ private struct MenuBarPageContent: View {
                 if presence == .ownIcon || presence == .ownIconWhenActive {
                     PickerSetting(L("Time"), help: L("Shows how long your Mac stays awake next to the icon."),
                                   selection: SettingsBinding.store(awake, \.indicator.style),
-                                  options: [PickerOption(AwakeIndicatorStyle.icon, L("Don't Show")),
+                                  options: [PickerOption(AwakeIndicatorStyle.icon, L("Don’t Show")),
                                             PickerOption(AwakeIndicatorStyle.iconAndTime, L("Time Remaining")),
                                             PickerOption(AwakeIndicatorStyle.iconAndEndTime, L("End Time"))],
                                   style: .popUp, defaultValue: AwakeIndicatorConfig().style,

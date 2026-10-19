@@ -131,7 +131,7 @@ import SnapticKit
         }
     }
 
-    private static let unavailable = ControlResponse.failure(ControlExit.unavailable, L("Awake isn't running."))
+    private static let unavailable = ControlResponse.failure(ControlExit.unavailable, L("Awake isn’t running."))
     private static let usage = ControlResponse.failure(ControlExit.usage, L("Usage error. Run “snaptic help awake”."))
 
     private func refused(_ r: AwakeRefusal) -> ControlResponse { .failure(r.exitCode, r.text) }
@@ -231,7 +231,7 @@ import SnapticKit
         // connection's EOF is the authoritative end).
         guard let hold = control.hold, !hold.isClosed, control.peer.pid > 1, let start = control.peer.startTime,
               control.peer.uid == getuid() else {
-            return .failure(AwakeRefusal.invalid.exitCode, L("Snaptic couldn't identify the caller."))
+            return .failure(AwakeRefusal.invalid.exitCode, L("Snaptic couldn’t identify the caller."))
         }
         switch ctx.sessions.addHold(.connection(pid: control.peer.pid, startTime: start), capSeconds: cap) {
         case .success(let added):
@@ -253,7 +253,7 @@ import SnapticKit
             }
             return .holding(AwakeCommandGrammar.holdReply(pid: nil, capSeconds: cap))
         case .failure(.invalid):
-            return .failure(AwakeRefusal.invalid.exitCode, L("Snaptic couldn't identify the caller."))
+            return .failure(AwakeRefusal.invalid.exitCode, L("Snaptic couldn’t identify the caller."))
         case .failure(let r):
             return refused(r)
         }

@@ -27,7 +27,7 @@ import SnapticShims
     init() {}
 
     func availability(of feature: DisplayFeature, context: DisplaysContext) -> FeatureAvailability {
-        VirtualHostsService.isAvailable ? .available : .unavailable(L("Virtual displays aren't available on this Mac"))
+        VirtualHostsService.isAvailable ? .available : .unavailable(L("Virtual displays aren’t available on this Mac"))
     }
 
     func start(_ context: DisplaysContext, lifetime: Lifetime, effective: Set<DisplayFeature>) {
@@ -66,7 +66,7 @@ import SnapticShims
                                   lifetime: lifetime) { [weak self] req, _ in
             guard let self else { return .failure(ControlExit.unavailable, "") }
             let a = req.arguments
-            guard a.first?.lowercased() == "off" else { return .failure(ControlExit.refused, L("Only 'off' is allowed")) }
+            guard a.first?.lowercased() == "off" else { return .failure(ControlExit.refused, L("Only “off” is allowed")) }
             return await self.turnOffCommand(a.count > 1 ? a[1] : "all", requireOn: false)
         }
         // R5.4 exposure name `toggle smartHiDPI` (verbs match case-insensitively), plus the

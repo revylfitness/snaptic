@@ -43,7 +43,7 @@ final class AwakePresentationTests: XCTestCase {
         XCTAssertEqual(AwakeEndText.toast(.lockedTooLong, floor: 20, appName: nil, lockedHours: 4),
                        "Awake ended: the screen was locked for 4 hours.")
         XCTAssertEqual(AwakeEndText.toast(.assertionFailed, floor: 20, appName: nil, lockedHours: nil),
-                       "Snaptic couldn't keep your Mac awake. Try again, or restart Snaptic.")
+                       "Snaptic couldn’t keep your Mac awake. Try again, or restart Snaptic.")
         for silent: AwakeEndReason in [.user, .replaced, .triggerEnded, .moduleStopped, .safeMode, .reboot] {
             XCTAssertNil(AwakeEndText.toast(silent, floor: 20, appName: nil, lockedHours: nil), silent.rawValue)
         }
@@ -340,13 +340,13 @@ final class AwakePresentationTests: XCTestCase {
     func testBackgroundTextNamesOnlyWhatIsInUse() {
         XCTAssertNil(AwakeBackgroundText.unreadableToast(activity: false, drives: false))
         XCTAssertEqual(AwakeBackgroundText.unreadableToast(activity: true, drives: true),
-                       "Snaptic can't read the battery level, so it stopped appearing active and keeping drives awake.")
+                       "Snaptic can’t read the battery level, so it stopped appearing active and keeping drives awake.")
         XCTAssertEqual(AwakeBackgroundText.unreadableToast(activity: false, drives: true),
-                       "Snaptic can't read the battery level, so it stopped keeping drives awake.")
+                       "Snaptic can’t read the battery level, so it stopped keeping drives awake.")
         XCTAssertNil(AwakeBackgroundText.paused(nil, activity: true, drives: true))
         XCTAssertNil(AwakeBackgroundText.paused(.heat, activity: false, drives: false))
         XCTAssertEqual(AwakeBackgroundText.paused(.batteryUnreadable, activity: true, drives: false),
-                       "Appear active is paused: Snaptic can't read the battery level.")
+                       "Appear active is paused: Snaptic can’t read the battery level.")
         XCTAssertEqual(AwakeBackgroundText.paused(.heat, activity: true, drives: true),
                        "Appear active and Drive Alive are paused: your Mac is too hot.")
     }

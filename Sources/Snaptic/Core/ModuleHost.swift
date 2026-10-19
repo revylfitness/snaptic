@@ -383,7 +383,7 @@ import SnapticKit
 
     private func registerHostCommands() {
         commands.register("version", policy: .read, offOnly: false, cliAllowed: true,
-                          summary: L("Show Snaptic's version"), lifetime: lifetime) { _, _ in
+                          summary: L("Show Snaptic’s version"), lifetime: lifetime) { _, _ in
             let info = Bundle.main.infoDictionary
             let version = (info?["CFBundleShortVersionString"] as? String ?? "?") + " (" + (info?["CFBundleVersion"] as? String ?? "?") + ")"
             return .ok("Snaptic " + version)
@@ -418,7 +418,7 @@ import SnapticKit
             return .ok()
         }
         commands.register("open-settings", policy: .low, offOnly: false, cliAllowed: true,
-                          summary: L("Open Snaptic's Settings, optionally at a page"), lifetime: lifetime) { [weak self] request, _ in
+                          summary: L("Open Snaptic’s Settings, optionally at a page"), lifetime: lifetime) { [weak self] request, _ in
             let page = request.arguments.first.flatMap(SettingsWindowHost.validPageID)
             self?.settingsWindow.show(page: page, external: true)
             return .ok()

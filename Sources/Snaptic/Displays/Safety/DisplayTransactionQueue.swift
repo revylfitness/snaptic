@@ -109,7 +109,7 @@ import SnapticShims
             guard let self else { return }
             self.requestTrialRevert(.guardLost, log: "safety helper lost")
             if context.guardClient.isUnprotected {
-                context.toasts.show(L("Snaptic's safety helper stopped. Restart Snaptic to stay protected."))
+                context.toasts.show(L("Snaptic’s safety helper stopped. Restart Snaptic to stay protected."))
             }
         }
         context.sessionGate.observeEvents(lifetime: lifetime) { [weak self] event in
@@ -273,7 +273,7 @@ import SnapticShims
             if !consumeRate(req, ctx: ctx) { return .busy }
         }
         if let prepare = req.prepare {
-            do { try await prepare() } catch { return .failed(L("Couldn't prepare the change.")) }
+            do { try await prepare() } catch { return .failed(L("Couldn’t prepare the change.")) }
             guard isCurrent(epoch) else { return off }
         }
         guard let before = ctx.registry.snapshot() else { return off }
@@ -290,7 +290,7 @@ import SnapticShims
         // MonitorPanel changes need a helper that can revert them (R5.2).
         for c in changes where c.isMonitorPanel {
             guard ctx.privateAPI.monitorPanelSupports(Self.monitorPanelGroup(c)) else {
-                return .failed(L("This macOS version doesn't let Snaptic change that."))
+                return .failed(L("This macOS version doesn’t let Snaptic change that."))
             }
         }
 
@@ -304,7 +304,7 @@ import SnapticShims
         if risk == .trial, changes.contains(where: \.isMonitorPanel) {
             let ok = await ctx.guardClient.ensureRunning()
             guard isCurrent(epoch) else { return off }
-            guard ok, ctx.guardClient.canMonitorPanel else { return .failed(L("Safety helper can't revert this.")) }
+            guard ok, ctx.guardClient.canMonitorPanel else { return .failed(L("Safety helper can’t revert this.")) }
         }
 
         // Invariants on the predicted layout.
@@ -346,7 +346,7 @@ import SnapticShims
                 let ops = UndoPlanner.merge(long.undo, undo)
                 guard journal?.writeSession(undo: ops, restoreColorSync: long.restoreColorSync, trialID: nil,
                                             live: before) == true else {
-                    return .failed(L("Couldn't save the undo information."))
+                    return .failed(L("Couldn’t save the undo information."))
                 }
                 journaledLong = ops
             }
@@ -415,7 +415,7 @@ import SnapticShims
             journaledLong = nil
             pending = nil
             layoutFactsChanged()
-            return .failed(L("Couldn't save the undo information."))
+            return .failed(L("Couldn’t save the undo information."))
         }
         journaledLong = nil
         let panelSeconds = Double(ctx.config.value.safety.confirmSeconds)
@@ -716,7 +716,7 @@ import SnapticShims
             let target = Invariants.normalizedRotation(degrees)
             let start = SessionGate.uptime()
             while Invariants.normalizedRotation(Int(CGDisplayRotation(id).rounded())) != target {
-                if SessionGate.uptime() - start > 10 { return ApplyResult(failure: L("The display didn't rotate.")) }
+                if SessionGate.uptime() - start > 10 { return ApplyResult(failure: L("The display didn’t rotate.")) }
                 try? await Task.sleep(nanoseconds: 200_000_000)
                 if shouldStop() { return ApplyResult(stopped: true) }
             }

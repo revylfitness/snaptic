@@ -39,9 +39,9 @@ package enum HotkeyRules {
     package static func message(_ problem: Problem) -> String {
         switch problem {
         case .needsModifier: return L("Add ⌘ or ⌃ (only F-keys work alone).")
-        case .optionShiftOnly: return L("macOS doesn't allow ⌥ or ⇧ alone; add ⌘ or ⌃.")
+        case .optionShiftOnly: return L("macOS doesn’t allow ⌥ or ⇧ alone; add ⌘ or ⌃.")
         case .modifierKey: return L("Press a key together with the modifiers.")
-        case .unknownKey: return L("That key can't be used.")
+        case .unknownKey: return L("That key can’t be used.")
         }
     }
 

@@ -96,7 +96,7 @@ private struct PanicShortcutSettings: Equatable {
             guard let self else { return .failure(ControlExit.unavailable, L("Displays are off")) }
             let was = self.isLatched
             self.resume()
-            return .ok(was ? L("Display automation resumed.") : L("Display automation wasn't paused."))
+            return .ok(was ? L("Display automation resumed.") : L("Display automation wasn’t paused."))
         }
         context.menus.register(self, lifetime: lifetime)
         context.diagnostics.register(self, section: L("Restore All Displays"), lifetime: lifetime)

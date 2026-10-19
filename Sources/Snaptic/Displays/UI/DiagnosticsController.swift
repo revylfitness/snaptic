@@ -41,7 +41,7 @@ struct DiagnosticsReport {
         context.commands.register("diagnostics", policy: .read, offOnly: false, cliAllowed: true,
                                   summary: L("Print the Display Information report (identifiers masked)"),
                                   lifetime: lifetime) { [weak self] _, _ in
-            guard let ctx = self?.context else { return .failure(ControlExit.unavailable, L("Displays isn't running")) }
+            guard let ctx = self?.context else { return .failure(ControlExit.unavailable, L("Displays isn’t running")) }
             return .ok(Self.makeReport(context: ctx, runtime: ctx.runtime).text)
         }
     }

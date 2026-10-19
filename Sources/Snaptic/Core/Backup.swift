@@ -19,7 +19,7 @@ import UniformTypeIdentifiers
     /// checkbox (off by default, 0.3 §4.3); `AwakeConfig.exportable(includeTriggers:)`.
     static func export(host: ModuleHost, includeAwakeRules: Bool = false) {
         guard let document = makeDocument(host: host, includeAwakeRules: includeAwakeRules) else {
-            host.toasts.show(L("The settings couldn't be exported."))
+            host.toasts.show(L("The settings couldn’t be exported."))
             return
         }
         let panel = NSSavePanel()
@@ -34,7 +34,7 @@ import UniformTypeIdentifiers
             EventLog.shared.record(.modules, includeAwakeRules ? "Settings exported with Awake rules" : "Settings exported")
             host.toasts.show(L("Settings exported."))
         } catch {
-            host.toasts.show(L("The settings couldn't be saved there."))
+            host.toasts.show(L("The settings couldn’t be saved there."))
         }
     }
 
@@ -78,11 +78,11 @@ import UniformTypeIdentifiers
     /// §4.10(6): no symlinks, regular file only, ≤ 1 MB, never blocks on a FIFO.
     nonisolated static func readPickedFile(_ path: String) -> Result<Data, BackupFileError> {
         let fd = open(path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
-        guard fd >= 0 else { return .failure(BackupFileError(L("The file couldn't be opened."))) }
+        guard fd >= 0 else { return .failure(BackupFileError(L("The file couldn’t be opened."))) }
         defer { close(fd) }
         var info = stat()
         guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else {
-            return .failure(BackupFileError(L("That isn't a regular file.")))
+            return .failure(BackupFileError(L("That isn’t a regular file.")))
         }
         guard info.st_size <= off_t(KitBackup.maxBytes) else { return .failure(BackupFileError(BackupError.tooLarge.message)) }
         var data = Data()
@@ -161,7 +161,7 @@ import UniformTypeIdentifiers
         }
         text += L("Hooks, actions, command-line settings, auto-disconnect exceptions and \"allow\" switches are never imported. Protected apps are only ever added.")
         if newAwake != nil {
-            text += "\n\n" + L("Awake's Drive Alive disks, pointer movement, recent apps and launch session are never imported, and its battery and power limits only get stricter.")
+            text += "\n\n" + L("Awake’s Drive Alive disks, pointer movement, recent apps and launch session are never imported, and its battery and power limits only get stricter.")
         }
 
         let alert = NSAlert()

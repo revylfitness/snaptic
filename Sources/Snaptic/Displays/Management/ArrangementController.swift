@@ -74,7 +74,7 @@ import SnapticKit
     func setMainRefusal(_ key: DisplayKey) -> String? {
         guard let ctx = context, let d = ManagedDisplays.info(ctx, key: key) else { return L("Display not found") }
         if d.isMain { return L("Already the main display") }
-        if !d.isActive || d.mirrorOf != nil { return L("Mirrored or disconnected displays can't be main") }
+        if !d.isActive || d.mirrorOf != nil { return L("Mirrored or disconnected displays can’t be main") }
         let anyStrong = ctx.registry.displays.contains(where: \.isStronglyVisible)
         if anyStrong && !d.isStronglyVisible { return L("The main display must be a visible physical display") }
         return nil
@@ -238,7 +238,7 @@ import SnapticKit
                 let src = ManagedDisplays.cliSelectOne(ctx, a[1])
                 if let error = src.error { return error }
                 guard let s = src.display, s.key != d.key else {
-                    return .failure(ControlExit.usage, L("A display can't mirror itself"))
+                    return .failure(ControlExit.usage, L("A display can’t mirror itself"))
                 }
                 source = s.desktopID
             }

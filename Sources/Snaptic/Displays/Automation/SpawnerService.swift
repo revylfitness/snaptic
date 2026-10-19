@@ -43,7 +43,7 @@ import SnapticKit
     @discardableResult
     func run(_ command: CommandSpec, environment: [String: String], throttleKey: String?) async -> String? {
         guard let ctx = context, let lifetime, !lifetime.isEnded else { return report(L("Automation is off.")) }
-        guard !ctx.safeMode.isActive else { return report(L("Hooks and actions don't run in Safe Mode.")) }
+        guard !ctx.safeMode.isActive else { return report(L("Hooks and actions don’t run in Safe Mode.")) }
         guard !ctx.panic.isLatched else { return report(L("Hooks and actions are paused until display automation resumes.")) }
         if let key = throttleKey, !throttle.allow(key, now: ProcessInfo.processInfo.systemUptime) {
             return report(L("Skipped: this hook already ran in the last 10 seconds."))
@@ -76,7 +76,7 @@ import SnapticKit
         } catch HelperSpawnError.unavailable(let reason) {
             return report(reason)
         } catch {
-            return report(L("The command couldn't be started."))
+            return report(L("The command couldn’t be started."))
         }
     }
 

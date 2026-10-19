@@ -47,7 +47,7 @@ struct AboutPage: View, ControlDeclaring {
                         SettingsShell.shared.open(page: DisplayInformationPageControls.surface, external: false)
                     }
                 } else {
-                    ButtonRow(L("Diagnostics Report…"), help: L("A summary of Snaptic's state to attach to a bug report."),
+                    ButtonRow(L("Diagnostics Report…"), help: L("A summary of Snaptic’s state to attach to a bug report."),
                               control: ControlID("about.page.diagnostics")) {
                         showingReport = true
                     }

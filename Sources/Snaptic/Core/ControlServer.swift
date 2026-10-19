@@ -52,18 +52,18 @@ import SnapticShims
             directory = (override as NSString).deletingLastPathComponent
         } else {
             guard let home = AccountPaths.home else {
-                status = .failed(L("Your account's home folder couldn't be found."))
+                status = .failed(L("Your account’s home folder couldn’t be found."))
                 return
             }
             directory = KitControl.socketDirectory(home: home)
             path = KitControl.socketPath(home: home)
         }
         guard KitControl.isUsableSocketPath(path) else {
-            status = .failed(L("The path to Snaptic's socket is too long for macOS."))
+            status = .failed(L("The path to Snaptic’s socket is too long for macOS."))
             return
         }
         guard override == nil ? Self.prepareDirectory(directory) : Self.isPrivateDirectory(directory) else {
-            status = .failed(L("Snaptic couldn't create a private folder for its socket."))
+            status = .failed(L("Snaptic couldn’t create a private folder for its socket."))
             return
         }
         let registry = self.registry
@@ -343,7 +343,7 @@ private final class ControlListener: @unchecked Sendable {
             unlink(path)
         }
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard fd >= 0 else { return L("Snaptic couldn't create its socket.") }
+        guard fd >= 0 else { return L("Snaptic couldn’t create its socket.") }
         _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
 
         var address = sockaddr_un()
@@ -352,7 +352,7 @@ private final class ControlListener: @unchecked Sendable {
         let capacity = MemoryLayout.size(ofValue: address.sun_path)
         guard bytes.count < capacity else {
             close(fd)
-            return L("The path to Snaptic's socket is too long for macOS.")
+            return L("The path to Snaptic’s socket is too long for macOS.")
         }
         withUnsafeMutableBytes(of: &address.sun_path) { raw in
             raw.copyBytes(from: bytes)
@@ -366,7 +366,7 @@ private final class ControlListener: @unchecked Sendable {
         guard bound == 0, chmod(path, 0o600) == 0, listen(fd, 16) == 0 else {
             close(fd)
             unlink(path)
-            return L("Snaptic couldn't listen on its socket.")
+            return L("Snaptic couldn’t listen on its socket.")
         }
         let flags = fcntl(fd, F_GETFL)
         if flags >= 0 { _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK) }

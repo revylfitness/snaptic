@@ -645,18 +645,18 @@ package enum AwakeRefusal: Error, Equatable, Sendable {
             case .lowPowerMode: return L("Low Power Mode is on.")
             case .thermal: return L("Your Mac is too hot to keep awake right now.")
             case .adapterDisconnected: return L("The power adapter is disconnected.")
-            default: return L("Awake can't start right now.")
+            default: return L("Awake can’t start right now.")
             }
         case .unavailable(let reason):
             switch reason {
             case .featureOff: return L("Awake is turned off.")
-            case .safeMode: return L("This isn't available in Safe Mode.")
+            case .safeMode: return L("This isn’t available in Safe Mode.")
             case .turnedOffByDefaults: return DefaultsLock.text
             }
         case .invalid:
-            return L("That session can't start. Check the duration, the app or the process.")
+            return L("That session can’t start. Check the duration, the app or the process.")
         case .notAllowedFromCLI:
-            return L("Sessions without an end can't start from the command line. Use the menu or “snaptic awake hold”.")
+            return L("Sessions without an end can’t start from the command line. Use the menu or “snaptic awake hold”.")
         case .uiSessionRunning:
             return L("A session started in Snaptic is running. Stop it first with “snaptic awake stop”, or use “snaptic awake hold”.")
         case .holdLimit:
@@ -667,7 +667,7 @@ package enum AwakeRefusal: Error, Equatable, Sendable {
             switch reason {
             case .userSwitch: return L("Awake ended at once: another user is using this Mac.")
             case .lockedTooLong: return L("Awake ended at once: the screen has been locked too long.")
-            case .assertionFailed: return L("Snaptic couldn't keep your Mac awake. Try again, or restart Snaptic.")
+            case .assertionFailed: return L("Snaptic couldn’t keep your Mac awake. Try again, or restart Snaptic.")
             default:
                 return L("Awake ended at once: ") + AwakeEndText.phrase(reason, floor: AwakeGuards.hardFloorPercent,
                                                                        appName: nil, lockedHours: nil) + "."

@@ -124,7 +124,7 @@ import SnapticKit
         }
         ctx.actions.isEffective = { [weak self] feature in self?.effective.contains(feature) ?? false }
         ctx.actions.onRefused = { [weak ctx] action in
-            ctx?.toasts.show(L("“\(action.title)” isn't available right now: its feature is off."))
+            ctx?.toasts.show(L("“\(action.title)” isn’t available right now: its feature is off."))
         }
         paused = ctx.otherApps.pausedDisplayFeatures
         ctx.otherApps.onChange = { [weak self] in

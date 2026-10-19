@@ -39,7 +39,7 @@ struct SwitcherShortcutsSheet: View, ControlDeclaring {
             } header: {
                 Text(L("Gather windows"))
             } footer: {
-                Text(L("Needs Accessibility. The menu's Gather Windows on This Display does the same without asking."))
+                Text(L("Needs Accessibility. The menu’s Gather Windows on This Display does the same without asking."))
                     .foregroundStyle(.secondary)
             }
         }

@@ -82,7 +82,7 @@ struct SwitcherAdvancedSheet: View, ControlDeclaring {
                               isOn: SwitcherBinding.feature(settings, .commandTabTakeover),
                               anchor: ControlID("switcher.advanced.commandTab"))
                 ToggleSetting(L("Pass shortcuts through to apps"),
-                              help: L("In the apps listed below, Snaptic's shortcuts go to the app."),
+                              help: L("In the apps listed below, Snaptic’s shortcuts go to the app."),
                               isOn: SwitcherBinding.feature(settings, .passthrough),
                               anchor: ControlID("switcher.advanced.passthrough"))
                 if passthroughOn {

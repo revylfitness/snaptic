@@ -352,9 +352,9 @@ final class AwakeTriggerEngineTests: XCTestCase {
         any.criteria[1].negated = true
         XCTAssertEqual(TriggerEngine.summary(any), "When Xcode is open or the power adapter is not connected")
         let s = rule("", [.schedule(days: .weekdays, startMinute: 540, endMinute: 1_020)])
-        XCTAssertEqual(TriggerEngine.summary(s), "When it's 9:00 AM–5:00 PM on weekdays")
+        XCTAssertEqual(TriggerEngine.summary(s), "When it’s 9:00 AM–5:00 PM on weekdays")
         XCTAssertEqual(TriggerEngine.summary(s, text: AwakeTextContext(uses24Hour: true, decimalSeparator: ",")),
-                       "When it's 09:00–17:00 on weekdays")
+                       "When it’s 09:00–17:00 on weekdays")
         XCTAssertEqual(TriggerEngine.summary(rule("", [.display(.specific(record: FingerprintRecord(t2: digest), name: "DELL U2720Q"))])),
                        "When “DELL U2720Q” is connected")
         XCTAssertEqual(TriggerEngine.summary(rule("", [])), "No conditions")

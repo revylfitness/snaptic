@@ -160,7 +160,7 @@ import SnapticShims
                     return .failure(ControlExit.unavailable, L("Night Shift controls are off"))
                 }
                 guard let on = self.toggleNightShift() else {
-                    return .failure(ControlExit.unavailable, L("Night Shift isn't available"))
+                    return .failure(ControlExit.unavailable, L("Night Shift isn’t available"))
                 }
                 return .ok(on ? L("Night Shift on") : L("Night Shift off"))
             }

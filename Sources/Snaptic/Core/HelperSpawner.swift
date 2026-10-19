@@ -142,7 +142,7 @@ final class HelperHandle: @unchecked Sendable {
     var isReady: Bool { identity != nil }
 
     /// Why a spawn requested before `prepare()` finished is refused (transient).
-    static var notReadyMessage: String { L("Snaptic's helpers are still starting. Try again in a moment.") }
+    static var notReadyMessage: String { L("Snaptic’s helpers are still starting. Try again in a moment.") }
 
     /// Captures our code identity and runs the `/usr/bin/true` canary off the main thread
     /// (SecCode and the canary never run on main). Called once at startup, before any
@@ -451,13 +451,13 @@ final class HelperHandle: @unchecked Sendable {
     /// Off main where possible; bounded either way.
     nonisolated private static func computeIdentity() -> Result<Identity, HelperSpawnError> {
         guard SNSpawn.disclaimAvailable() else {
-            return .failure(.unavailable(L("This version of macOS can't start Snaptic's helpers safely")))
+            return .failure(.unavailable(L("This version of macOS can’t start Snaptic’s helpers safely")))
         }
         guard let requirement = try? SNProcess.designatedRequirementOfSelf(), !requirement.isEmpty else {
-            return .failure(.unavailable(L("Snaptic's code signature couldn't be read")))
+            return .failure(.unavailable(L("Snaptic’s code signature couldn’t be read")))
         }
         guard let executable = SNProcess.path(for: getpid()), executable.hasPrefix("/") else {
-            return .failure(.unavailable(L("Snaptic couldn't find its own executable")))
+            return .failure(.unavailable(L("Snaptic couldn’t find its own executable")))
         }
         guard runCanary() else {
             return .failure(.unavailable(L("Starting helper processes failed a safety check")))

@@ -235,7 +235,7 @@ import SnapticKit
             return .failure(ControlExit.notFound, L("No such action."))
         }
         // Only actions the user marked "Allow from the command line" (R5.4).
-        guard spec.cliAllowed else { return .failure(ControlExit.refused, L("This action isn't allowed from the command line.")) }
+        guard spec.cliAllowed else { return .failure(ControlExit.refused, L("This action isn’t allowed from the command line.")) }
         let environment = ["PATH": KitHookPolicy.searchPath, "SNAPTIC_EVENT": "action"]
         if let problem = await ctx.spawner.run(spec.command, environment: environment, throttleKey: "cli." + spec.id.rawValue) {
             return .failure(ControlExit.unavailable, problem)

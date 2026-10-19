@@ -14,7 +14,7 @@ enum MenuPlacement {
         case .ownIcon: return L("Always Show in Menu Bar")
         case .ownIconWhenActive: return L("Show When Active")
         case .inSnapticMenu: return L("Show in Snaptic Menu")
-        case .hidden: return L("Don't Show")
+        case .hidden: return L("Don’t Show")
         }
     }
 

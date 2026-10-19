@@ -649,7 +649,7 @@ import SnapticShims
                 }
                 if code == VCPPolicy.power, value != VCPPolicy.powerOn,
                    !ctx.registry.displays.contains(where: { $0.key != display.key && $0.isOnline && $0.isStronglyVisible }) {
-                    return .failure(ControlExit.refused, L("That's the only display you can see"))
+                    return .failure(ControlExit.refused, L("That’s the only display you can see"))
                 }
                 let outcome = await self.writeOutcome(code, value, to: display.key)
                 guard outcome == .done else { return .failure(outcome.exitCode, Self.message(outcome)) }

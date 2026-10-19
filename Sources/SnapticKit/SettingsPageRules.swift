@@ -74,10 +74,10 @@ package enum SettingsText {
     package static var exitCodes: String {
         [
             "0 " + L("Done."),
-            "2 " + L("The command or its options weren't understood."),
+            "2 " + L("The command or its options weren’t understood."),
             "3 " + L("Nothing matched."),
             "4 " + L("Not allowed."),
-            "5 " + L("Unavailable: Snaptic isn't running, command-line control is off, or the feature is off."),
+            "5 " + L("Unavailable: Snaptic isn’t running, command-line control is off, or the feature is off."),
             "6 " + L("Cancelled or timed out."),
         ].joined(separator: "\n") + "\n\n" + L("Add --json for machine-readable output.")
     }

@@ -32,7 +32,7 @@ import SnapticKit
     /// there (menus, the Arrangement page; F's Features page can show `disconnectNote`).
     static var disconnectIsExperimental: Bool { !ManagedHardware.isAppleSilicon }
     static var disconnectNote: String? {
-        disconnectIsExperimental ? L("Experimental on Intel Macs: a disconnected display may need a replug if macOS doesn't bring it back.") : nil
+        disconnectIsExperimental ? L("Experimental on Intel Macs: a disconnected display may need a replug if macOS doesn’t bring it back.") : nil
     }
     static var disconnectTitle: String { disconnectIsExperimental ? L("Disconnect (Experimental)") : L("Disconnect") }
 
@@ -347,7 +347,7 @@ import SnapticKit
         guard !keys.isEmpty else { return .ok(L("Nothing to reconnect")) }
         await reenable(keys, automatic: false)
         let still = keys.filter { disabled[$0] != nil }
-        return still.isEmpty ? .ok() : .failure(ControlExit.unavailable, L("Some displays couldn't be reconnected"))
+        return still.isEmpty ? .ok() : .failure(ControlExit.unavailable, L("Some displays couldn’t be reconnected"))
     }
 
     func diagnostics() -> [(String, String)] {

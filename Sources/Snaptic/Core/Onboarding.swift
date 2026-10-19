@@ -171,7 +171,7 @@ private struct OnboardingView: View {
     private var modules: some View {
         VStack(spacing: 0) {
             heading(L("Choose What Snaptic Does"),
-                    L("A feature that's off adds nothing to the menu bar and doesn't run. You can change this in Settings."))
+                    L("A feature that’s off adds nothing to the menu bar and doesn’t run. You can change this in Settings."))
             Form {
                 Section {
                     ForEach(ModuleID.allCases, id: \.self) { id in
@@ -244,7 +244,7 @@ private struct OnboardingView: View {
                 .font(.system(size: 64))
                 .foregroundStyle(.green)
                 .accessibilityHidden(true)
-            Text(L("You're All Set"))
+            Text(L("You’re All Set"))
                 .font(.largeTitle.weight(.semibold))
             Text(L("Snaptic is in the menu bar. To change settings later, choose Snaptic Settings… from its menu, or open Snaptic again from Finder."))
                 .foregroundStyle(.secondary)

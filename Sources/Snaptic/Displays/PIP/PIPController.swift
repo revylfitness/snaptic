@@ -364,7 +364,7 @@ fileprivate extension DisplayActionID {
         }
         let c = entry.configuration
         if origin == .cli, entry.source == .window {
-            return refuse(ControlExit.refused, L("“\(c.name)” uses a window chosen in a picker, so it can't start from the command line."))
+            return refuse(ControlExit.refused, L("“\(c.name)” uses a window chosen in a picker, so it can’t start from the command line."))
         }
         if ctx.permissions.state(.screenRecording) != .granted {
             if origin == .user {
@@ -379,7 +379,7 @@ fileprivate extension DisplayActionID {
         var sourceInfo: DisplayInfo?
         if case .display(let key) = entry.source {
             guard let info = ctx.registry.info(for: key), info.isOnline else {
-                return refuse(ControlExit.unavailable, L("“\(c.name)”: the source display isn't connected."))
+                return refuse(ControlExit.unavailable, L("“\(c.name)”: the source display isn’t connected."))
             }
             sourceInfo = info
         }
@@ -456,14 +456,14 @@ fileprivate extension DisplayActionID {
     func streamRefusal(source: PIPSourceRef, configuration c: PIPConfiguration, excluding: StableID?) -> String? {
         guard let ctx = context else { return L("Picture in Picture is off.") }
         guard let target = c.target else { return L("Choose a display for “\(c.name)” to cover.") }
-        guard let t = ctx.registry.info(for: target), t.isOnline else { return L("The target display isn't connected.") }
+        guard let t = ctx.registry.info(for: target), t.isOnline else { return L("The target display isn’t connected.") }
         // A full-screen window on any member of a mirror set covers the whole set.
         func mirrorRoot(_ d: DisplayInfo) -> UInt32 { d.mirrorOf ?? d.desktopID }
         let covered = mirrorRoot(t)
         if case .display(let key) = source {
-            if key == target { return L("A display can't stream onto itself.") }
+            if key == target { return L("A display can’t stream onto itself.") }
             if let s = ctx.registry.info(for: key), s.desktopID == t.desktopID || mirrorRoot(s) == covered {
-                return L("A display can't stream onto itself or its mirror.")
+                return L("A display can’t stream onto itself or its mirror.")
             }
         }
         let others = ctx.registry.displays.filter { $0.key != target && $0.isOnline && mirrorRoot($0) != covered }
@@ -478,7 +478,7 @@ fileprivate extension DisplayActionID {
             if s.configuration.target == target { return L("Another stream already covers that display.") }
             if case .display(let theirs) = s.source, theirs == target,
                case .display(let mine) = source, s.configuration.target == mine {
-                return L("Two streams can't point at each other.")
+                return L("Two streams can’t point at each other.")
             }
         }
         return nil
@@ -809,7 +809,7 @@ fileprivate extension DisplayActionID {
             guard let self else { return }
             self.lutLoading.remove(id)
             guard let loaded else {
-                _ = self.remember(L("A LUT couldn't be read; it was skipped."))
+                _ = self.remember(L("A LUT couldn’t be read; it was skipped."))
                 return
             }
             self.lutCache[id] = loaded

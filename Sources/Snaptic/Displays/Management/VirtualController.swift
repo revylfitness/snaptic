@@ -31,9 +31,9 @@ import SnapticShims
     init() {}
 
     func availability(of feature: DisplayFeature, context: DisplaysContext) -> FeatureAvailability {
-        guard VirtualHostsService.isAvailable else { return .unavailable(L("Virtual displays aren't available on this Mac")) }
+        guard VirtualHostsService.isAvailable else { return .unavailable(L("Virtual displays aren’t available on this Mac")) }
         if feature == .hdrVirtual && !SNVirtualDisplayHDR.supported {
-            return .unavailable(L("HDR virtual modes aren't supported on this macOS version"))
+            return .unavailable(L("HDR virtual modes aren’t supported on this macOS version"))
         }
         return .available
     }

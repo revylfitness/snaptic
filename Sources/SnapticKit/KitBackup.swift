@@ -10,8 +10,8 @@ package enum BackupError: Error, Equatable, Sendable {
     package var message: String {
         switch self {
         case .tooLarge: return L("The file is larger than 1 MB.")
-        case .notJSON: return L("The file isn't a Snaptic settings backup.")
-        case .wrongFormat: return L("The file isn't a Snaptic settings backup.")
+        case .notJSON: return L("The file isn’t a Snaptic settings backup.")
+        case .wrongFormat: return L("The file isn’t a Snaptic settings backup.")
         case .newerVersion(let v): return L("The backup was made by a newer Snaptic (format ") + String(v) + ")."
         case .noSections: return L("The backup contains no settings.")
         }

@@ -382,7 +382,7 @@ import SnapticKit
         let favs = favorites(key)
         guard favs.indices.contains(index), let d = info(key) else { return }
         guard let ref = favs[index].resolve(in: allModes(d).map(\.ref)) else {
-            context?.toasts.show(L("Favorite \(index + 1) isn't available on this display"), lifetime: lifetime)
+            context?.toasts.show(L("Favorite \(index + 1) isn’t available on this display"), lifetime: lifetime)
             return
         }
         apply(ref, to: key, label: L("Apply favorite resolution"))
@@ -636,7 +636,7 @@ import SnapticKit
                 if let n = favorite {
                     let favs = favorites(d.key)
                     guard favs.indices.contains(n - 1), let ref = favs[n - 1].resolve(in: allModes(d).map(\.ref)) else {
-                        return .failure(ControlExit.notFound, L("Favorite \(n) isn't available on \(d.name)"))
+                        return .failure(ControlExit.notFound, L("Favorite \(n) isn’t available on \(d.name)"))
                     }
                     plan.append((d, ref, L("Apply favorite resolution"), .normal))
                 } else if let t = cliTarget(sub, d) {

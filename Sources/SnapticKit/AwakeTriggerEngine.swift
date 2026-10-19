@@ -362,7 +362,7 @@ package enum TriggerEngine {
             let range = AwakeCountdown.clock(hour: s / 60, minute: s % 60, uses24Hour: text.uses24Hour) + "–"
                 + AwakeCountdown.clock(hour: e / 60, minute: e % 60, uses24Hour: text.uses24Hour)
             let when = range + " " + daysText(days)
-            return not ? L("it's outside \(when)") : L("it's \(when)")
+            return not ? L("it’s outside \(when)") : L("it’s \(when)")
         case .cpuAbove(let p):
             return not ? L("CPU use is \(p)% or less") : L("CPU use is above \(p)%")
         case .audio(let condition):
@@ -373,7 +373,7 @@ package enum TriggerEngine {
             }
         case .idle(let m):
             let span = AwakeCountdown.unit(m, L("minute"), L("minutes"))
-            return not ? L("you were active in the last \(span)") : L("you've been idle for \(span)")
+            return not ? L("you were active in the last \(span)") : L("you’ve been idle for \(span)")
         case .volumeMounted(_, let name):
             let n = quoted(name, L("a drive"))
             return not ? L("\(n) is not mounted") : L("\(n) is mounted")

@@ -101,7 +101,7 @@ import SnapticKit
         }
         if let setting = KitControl.protectedSetting(verb: entry.verb, arguments: match.arguments) {
             note(entry.verb, .refusedProtected, "CLI \(entry.verb) refused: protected setting")
-            return .failure(ControlExit.refused, L("“") + setting + L("” can't be changed from the command line."))
+            return .failure(ControlExit.refused, L("“") + setting + L("” can’t be changed from the command line."))
         }
         if entry.offOnly && KitControl.requestsTurningOn(match.arguments) {
             note(entry.verb, .refusedOffOnly, "CLI \(entry.verb) refused: off-only")

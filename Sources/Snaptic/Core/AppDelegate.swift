@@ -160,7 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate()
         let alert = NSAlert()
         alert.messageText = L("Snaptic is already running")
-        var detail = L("Another copy of Snaptic holds its lock, so this one won't start.")
+        var detail = L("Another copy of Snaptic holds its lock, so this one won’t start.")
         var canQuitOther = false
         if let pid = holder, pid > 0, kill(pid, 0) == 0 {
             let path = SNProcess.path(for: pid).map { TextSanitizer.clean($0, maxScalars: 300) } ?? L("unknown path")
@@ -176,7 +176,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if canQuitOther, response == .alertFirstButtonReturn, let pid = holder {
             NSRunningApplication(processIdentifier: pid)?.terminate()
             waitForLock(seconds: 10) { [weak self] in
-                self?.failClosed(L("The other copy didn't quit."))
+                self?.failClosed(L("The other copy didn’t quit."))
             }
         } else {
             exit(0)
@@ -186,7 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func failClosed(_ reason: String) {
         NSApp.activate()
         let alert = NSAlert()
-        alert.messageText = L("Snaptic couldn't start")
+        alert.messageText = L("Snaptic couldn’t start")
         alert.informativeText = reason
         alert.runModal()
         exit(1)
@@ -294,22 +294,22 @@ struct InstanceLock {
     mutating func acquire() -> Outcome {
         if fd >= 0 { return .acquired }
         guard let folder = AccountPaths.supportDirectory() else {
-            return .failed(L("Snaptic can't use its folder in ~/Library/Application Support."))
+            return .failed(L("Snaptic can’t use its folder in ~/Library/Application Support."))
         }
         let path = folder + "/instance.lock"
         // Never follow a symlink planted at this path; only lock a regular file we own.
         let fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW | O_NOCTTY, 0o600)
-        guard fd >= 0 else { return .failed(L("Snaptic can't open its lock file at ") + path) }
+        guard fd >= 0 else { return .failed(L("Snaptic can’t open its lock file at ") + path) }
         var info = stat()
         guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, info.st_uid == getuid() else {
             close(fd)
-            return .failed(L("Snaptic's lock file isn't a regular file you own: ") + path)
+            return .failed(L("Snaptic’s lock file isn’t a regular file you own: ") + path)
         }
         guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
             let error = errno
             let holder = Self.readPID(fd)
             close(fd)
-            guard error == EWOULDBLOCK else { return .failed(L("Snaptic can't lock ") + path) }
+            guard error == EWOULDBLOCK else { return .failed(L("Snaptic can’t lock ") + path) }
             return .busy(holder: holder)
         }
         _ = ftruncate(fd, 0)
