@@ -11,6 +11,7 @@ package enum AwakeMenuRowsControls: ControlTable {
     private static let startSubmenu = MenuPlacementSpec("Awake menu, Start Session submenu", customize: .none)
     private static let appSubmenu = MenuPlacementSpec("Awake menu, While an App Is Running submenu", customize: .none)
     private static let rulesSubmenu = MenuPlacementSpec("Awake menu, Rules submenu", customize: .none)
+    private static let lidSubmenu = MenuPlacementSpec("Keep Awake with the Lid Closed submenu", customize: .none)
 
     package static let controls: [ControlSpec] = [
         // The Keep Awake switch of the Awake menu and the compact section; whether it shows is the Menu Bar page's
@@ -25,6 +26,13 @@ package enum AwakeMenuRowsControls: ControlTable {
         ControlSpec("menu.awake.addTime", .menuItem, when: [.state(.awakeActive), .state(.timedOrCapped)], menu: awakeMenu),
         ControlSpec("menu.awake.keepDisplayOn", .menuItem, when: [.state(.awakeActive)], menu: awakeMenu),
         ControlSpec("menu.awake.endHolds", .menuItem, when: [.state(.awakeActive), .state(.holdsExist)], menu: awakeMenu),
+        // 0.3.1 B1 (own, compact and tab styles): "Keep Awake with the Lid Closed…" in a menu or Settings session (✓
+        // without the ellipsis while lid-closed mode is on: a title, not a condition), else the idle submenu.
+        ControlSpec("menu.awake.lidClosed", .menuItem, when: [.awakeFeature(.lidClosed)], menu: awakeMenu),
+        ControlSpec("menu.awake.lidSubmenu", .menuSubmenu, when: [.awakeFeature(.lidClosed)], menu: awakeMenu),
+        ControlSpec("menu.awake.lidPreset", .menuItem, when: [.awakeFeature(.lidClosed), .perItem("preset")],
+                    menu: lidSubmenu),
+        ControlSpec("menu.awake.lidCustom", .menuItem, when: [.awakeFeature(.lidClosed)], menu: lidSubmenu),
         ControlSpec("menu.awake.startSession", .menuSubmenu, menu: awakeMenu),
         ControlSpec("menu.awake.preset", .menuItem, when: [.perItem("preset")], menu: startSubmenu),
         ControlSpec("menu.awake.custom", .menuItem, menu: startSubmenu),

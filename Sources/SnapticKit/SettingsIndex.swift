@@ -183,6 +183,12 @@ package enum SettingsIndexCoverage {
         "about.page.displayInformation": "Opens Displays › Display Information, which has its own entry.",
         "displays.advanced.confirm.useDefaultShortcut": "Part of the Restore All Displays shortcut row, which has an entry.",
         "menubar.customize.needFeatures": "Groups dimmed items that each have their own entry.",
+        // 0.3.1 E1a: the upgraders' one-time welcome card (General opens on it).
+        "general.page.card.v031.openAccessibility": "A one-time card row; the Permissions page has entries.",
+        "general.page.card.v031.openScreenRecording": "A one-time card row; the Permissions page has entries.",
+        "general.page.card.v031.autoCheck": "A one-time card button; About's update settings have entries.",
+        "general.page.card.v031.notNow": "A one-time card button; About's update settings have entries.",
+        "general.page.card.v031.done": "Dismisses the one-time welcome card.",
     ]
 
     /// Controls whose owners add a search entry in step 3 (lead: empty this list at the step-3 exit).
@@ -205,7 +211,7 @@ package enum SettingsIndexCoverage {
             return true
         case .button, .list:
             return perItem == nil
-        case .statusAction, .menuItem, .menuSlider, .menuSubmenu, .menuSwitchHeader:
+        case .statusAction, .menuItem, .menuSlider, .menuSubmenu, .menuSwitchHeader, .menuTabBar:
             return false
         }
     }

@@ -9,6 +9,8 @@ import SnapticKit
 /// move, so closing the window and relaunching resumes where it stopped.
 @MainActor final class Onboarding: NSObject, NSWindowDelegate, ControlDeclaring {
     typealias Controls = OnboardingControls
+    /// 0.3.1 E1a: the Keep Snaptic Up to Date step. Step 0 stub: T-update uses these ids in step 1 (and deletes this list).
+    private static let step0Controls = [ControlID("onboarding.updates.check"), ControlID("onboarding.updates.notNow")]
     static let size = NSSize(width: 600, height: 580)
 
     private weak var host: ModuleHost?

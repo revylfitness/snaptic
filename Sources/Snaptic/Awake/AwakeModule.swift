@@ -137,6 +137,10 @@ import SnapticKit
     /// §5.4: the compact section (G's AwakeMenuRows through the indicator).
     func menuSection() -> [NSMenuItem] { context == nil ? [] : (indicator?.compactSection() ?? []) }
 
+    /// 0.3.1 A1, N11: lid-closed mode is on (", even with the lid closed" on the shared glyph's label). What the plan
+    /// calls `AwakeHost.lidModeOn`: StatusMenu reaches Awake through the module, not through AwakeHost.
+    var lidModeOn: Bool { runtime.lidMode.isOn }
+
     /// Awake's sub-pages (§4.3). G's routes join this switch when its page lands.
     func settingsDestination(_ route: SettingsRoute) -> AnyView? {
         switch route.id {

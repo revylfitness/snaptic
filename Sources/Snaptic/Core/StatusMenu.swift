@@ -438,6 +438,35 @@ import SnapticKit
         }
     }
 
+    // MARK: 0.3.1 cross-team hooks (lead, step 0)
+
+    /// B3.4: "Sleep Is Turned Off" and "Turn Sleep Back On…", first in every Snaptic menu while a leftover shows.
+    /// Static and fresh on each call, because a menu item belongs to one menu: IndicatorController builds Awake's own
+    /// menu from it too (`CustomItemRow.leftover`). No Keep Sleep Off here: it has no undo but Terminal.
+    static func leftoverItems(host: ModuleHost) -> [NSMenuItem] {
+        guard host.lidRecovery.showsRows else { return [] }
+        return [
+            MenuKit.status(L("Sleep Is Turned Off"), control: ControlID("menu.snaptic.lidLeftover")),
+            MenuKit.action(L("Turn Sleep Back On…"), control: ControlID("menu.snaptic.lidRestore")) { [weak host] in
+                host?.lidRecovery.turnSleepBackOn()
+            },
+        ]
+    }
+
+    /// E1: "Update Available: Snaptic 0.3.2…", or "Restart to Update Snaptic…" once it downloaded and installs at
+    /// quit; directly above Snaptic Settings… in the shared footer (`CustomItemRow.updateAvailable` for Awake's menu).
+    static func updateItems(host: ModuleHost) -> [NSMenuItem] {
+        guard let updater = host.updater, let offer = updater.availableUpdate else { return [] }
+        let title = offer.readyToRestart ? L("Restart to Update Snaptic…")
+            : L("Update Available: Snaptic ") + offer.version + "…"
+        return [MenuKit.action(title, control: ControlID("menu.snaptic.updateAvailable")) { [weak updater] in
+            updater?.installUpdate()
+        }]
+    }
+
+    /// A6: the tab bar and the Show … Tab items. Step 0 stub: T-menu builds them in step 1 (and deletes this list).
+    private static let step0Controls = [ControlID("menu.snaptic.tabs"), ControlID("menu.snaptic.showTab")]
+
     private func recentNotices(_ host: ModuleHost) -> NSMenuItem? {
         let recent = host.toasts.recent
         guard !recent.isEmpty else { return nil }

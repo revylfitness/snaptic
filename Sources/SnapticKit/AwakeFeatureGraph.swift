@@ -6,6 +6,8 @@ import Foundation
 package enum AwakeFeature: String, Codable, CaseIterable, Sendable {
     case sessions, presets, batteryGuard, thermalGuard, indicator
     case triggers, activity, pointerNudge, driveAlive, history, shortcuts, commandLine
+    /// 0.3.1 B5: keep awake with the lid closed (opt-in; asks for an administrator password each time).
+    case lidClosed
 }
 
 /// One controller class per id.
@@ -71,6 +73,7 @@ package enum AwakeFeatureGraph {
             .history: AwakeFeatureSpec(.standard, all: [.sessions], controller: .history),
             .shortcuts: AwakeFeatureSpec(.standard, all: [.sessions], controller: .automation),
             .commandLine: AwakeFeatureSpec(.standard, all: [.sessions], uses: [.process], controller: .automation),
+            .lidClosed: AwakeFeatureSpec(.optIn, all: [.sessions], uses: [.power, .system], controller: .sessions),
         ]
     }
 
@@ -89,7 +92,7 @@ package enum AwakeFeatureGraph {
     /// stops the whole module instead (N14). `.indicator`: R5 (N11).
     package static let unkillable: Set<AwakeFeature> = [.sessions, .batteryGuard, .thermalGuard, .indicator]
 
-    package static let safeModeRemoves: Set<AwakeFeature> = [.triggers, .pointerNudge, .driveAlive, .activity]
+    package static let safeModeRemoves: Set<AwakeFeature> = [.triggers, .pointerNudge, .driveAlive, .activity, .lidClosed]
 
     /// raw − (kill switches − unkillable) − unavailable − Safe Mode removals, closed over requirements: a feature
     /// whose requirement is missing is removed too.

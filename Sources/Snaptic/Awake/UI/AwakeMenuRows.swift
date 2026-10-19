@@ -76,11 +76,17 @@ import SnapticKit
                     self?.context?.host.openSettings(SettingsRoute("awake"))
                 })
             case .separator: out.append(MenuKit.separator())
+            case .lidClosed, .lidSubmenu:
+                break   // 0.3.1 B1: T-lid-app builds these in step 1 (AwakeMenuModel doesn't emit them yet).
             }
         }
         if footer && !compact { out += footerItems(ctx) }
         return out
     }
+
+    /// 0.3.1 B7: the lid rows' controls. Step 0 stub: T-lid-app uses them in its builders (and deletes this list).
+    private static let step0Controls = [ControlID("menu.awake.lidClosed"), ControlID("menu.awake.lidSubmenu"),
+                                        ControlID("menu.awake.lidPreset"), ControlID("menu.awake.lidCustom")]
 
     /// Rules › exists while ≥ 1 rule exists and `triggers` is effective (lead r4, r3 product M2).
     private func rulesShown(_ ctx: AwakeContext) -> Bool {

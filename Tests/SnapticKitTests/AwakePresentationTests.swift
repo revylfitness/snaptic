@@ -52,6 +52,15 @@ final class AwakePresentationTests: XCTestCase {
         }
     }
 
+    /// 0.3.1 B3.3: the session ended because lid-closed mode turned off with the lid shut.
+    func testLidEndedText() {
+        XCTAssertEqual(AwakeEndText.toast(.lidEnded, floor: 20, appName: nil, lockedHours: nil),
+                       "Awake ended: lid-closed mode turned off while the lid was closed.")
+        XCTAssertEqual(AwakeEndText.lastEnd(.lidEnded, clock: "3:12 AM", floor: 20, lockedHours: nil),
+                       "Ended at 3:12 AM: lid-closed mode turned off while the lid was closed.")
+        XCTAssertTrue(AwakeEndText.isInterruption(.lidEnded))
+    }
+
     func testLastEndOnlyForInterruptions() {
         XCTAssertEqual(AwakeEndText.lastEnd(.batteryLow, clock: "3:12 AM", floor: 20, lockedHours: nil),
                        "Ended at 3:12 AM: battery below 20%.")

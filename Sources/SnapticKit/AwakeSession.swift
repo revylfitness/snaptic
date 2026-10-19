@@ -464,6 +464,10 @@ package struct AwakeSession: Codable, Equatable, Sendable, Identifiable {
     package var bootSession: String
     /// One-shot "Start Anyway"; not in CodingKeys, never persisted (security H2).
     package var overrideGuards: Bool = false
+    /// 0.3.1 B2 (N19): lid-closed mode belongs to this session. Runtime only, exactly like `overrideGuards`: not in
+    /// CodingKeys, false after decoding and sanitizing, so no persisted path can carry it. Only SessionController sets
+    /// it (lint L16).
+    package var lidRequested: Bool = false
 
     private enum CodingKeys: String, CodingKey {
         case id, kind, options, presetID, source, startedAt, startedContinuous, deadline, bootSession
@@ -497,6 +501,7 @@ package struct AwakeSession: Codable, Equatable, Sendable, Identifiable {
         deadline = c.lossy(.deadline, nil)
         bootSession = c.lossy(.bootSession, "")
         overrideGuards = false
+        lidRequested = false
     }
 
     package func encode(to encoder: Encoder) throws {
@@ -522,6 +527,7 @@ package struct AwakeSession: Codable, Equatable, Sendable, Identifiable {
         let maxSpan = Double(AwakeClock.maxSessionSeconds)
         var s = self
         s.overrideGuards = false
+        s.lidRequested = false
         s.options = options.sanitized()
         switch kind {
         case .indefinite:
@@ -561,6 +567,8 @@ package enum AwakeEndReason: String, Codable, CaseIterable, Sendable {
     case user, timeUp, appQuit, processExited, tasksFinished, replaced, triggerEnded, batteryLow,
          adapterDisconnected, lowPowerMode, thermal, systemSleep, userSwitch, lockedTooLong, moduleStopped, safeMode,
          reboot, assertionFailed, commandLineOff
+    /// 0.3.1 B3.3: lid-closed mode ended for another reason while the lid was shut, so the session ended too.
+    case lidEnded
 
     /// Ends the user chose (no end toast, no "Last end" line).
     package var isUserEnd: Bool {
@@ -632,6 +640,8 @@ package enum AwakeRefusal: Error, Equatable, Sendable {
     /// The session started but its own first arbitration ended it (off console longer than allowed, locked too
     /// long, the assertion couldn't be created): the reply names that end (awake-correctness N2).
     case endedAtStart(AwakeEndReason)
+    /// 0.3.1 B2: `awake extend` while lid-closed mode is on.
+    case lidClosedSession
 
     /// 4 for every refusal (0.2 CLI table). The Awake rate limit isn't a refusal: ControlCommandRegistry answers it
     /// with exit 5 before any handler runs.
@@ -661,6 +671,8 @@ package enum AwakeRefusal: Error, Equatable, Sendable {
             return L("A session started in Snaptic is running. Stop it first with “snaptic awake stop”, or use “snaptic awake hold”.")
         case .holdLimit:
             return L("Snaptic is already holding for 8 commands.")
+        case .lidClosedSession:
+            return L("Lid-closed sessions can’t be extended from the command line. Use Add 1 Hour in the menu.")
         case .endedAtStart(let reason):
             switch reason {
             case .userSwitch: return L("Awake ended at once: another user is using this Mac.")

@@ -61,9 +61,11 @@ package struct AwakeStatusFacts: Equatable, Sendable {
     package var remaining: Double?
     package var triggerNumber: Int?
     package var holdPIDs: [Int32]
+    /// 0.3.1 B1: lid-closed mode is on (`--json` only, its last key; the tab-separated line doesn't change).
+    package var lidClosed: Bool
 
     package init(active: Bool, source: AwakeStatusSource?, kind: AwakeHistoryKind?, display: AwakeDisplayPolicy?,
-                 endUnix: Double?, remaining: Double?, triggerNumber: Int?, holdPIDs: [Int32]) {
+                 endUnix: Double?, remaining: Double?, triggerNumber: Int?, holdPIDs: [Int32], lidClosed: Bool = false) {
         self.active = active
         self.source = source
         self.kind = kind
@@ -72,6 +74,7 @@ package struct AwakeStatusFacts: Equatable, Sendable {
         self.remaining = remaining
         self.triggerNumber = triggerNumber
         self.holdPIDs = holdPIDs
+        self.lidClosed = lidClosed
     }
 
     /// The facts for a governing state (no names: rule numbers, kinds and pids only).

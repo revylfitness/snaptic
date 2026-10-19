@@ -10,6 +10,8 @@ import SnapticKit
 
 struct CustomSessionPanel: View, ControlDeclaring {
     typealias Controls = CustomSessionPanelControls
+    /// 0.3.1 B7: Keep awake with the lid closed (Start mode). Step 0 stub: T-lid-app uses these ids in step 1 (and deletes this list).
+    private static let step0Controls = [ControlID("awake.custom.lidClosed")]
 
     enum Mode: Equatable { case start, extend }
     enum Kind: Hashable { case duration, until, whileApp }

@@ -12,6 +12,7 @@ final class KitArgsTests: XCTestCase {
         XCTAssertEqual(KitArgs.mode(arguments: ["/A/Snaptic", "--selftest-controls", "/tmp/t"]), .selftestControls)
         XCTAssertEqual(KitArgs.mode(arguments: ["/A/Snaptic", "--selftest-control-server", "/tmp/t"]),
                        .selftestControlServer)
+        XCTAssertEqual(KitArgs.mode(arguments: ["/A/Snaptic", "--selftest-launch", "/tmp/t"]), .selftestLaunch)
         XCTAssertEqual(KitArgs.mode(arguments: ["/A/Snaptic", "cli", "list"]), .cli)
         // Exact flags only.
         XCTAssertEqual(KitArgs.mode(arguments: ["/A/Snaptic", "--selftest-control"]), .app)

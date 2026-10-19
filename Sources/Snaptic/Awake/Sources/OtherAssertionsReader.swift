@@ -114,6 +114,10 @@ import SnapticKit
         return OtherAssertions.holders(byProcess, ownPID: ownPID)
     }
 
+    /// 0.3.1 B3.1: the stored SleepDisabled preference, for lid-closed mode's preflight (the kernel's value is read from
+    /// IORegistry separately). IPC: call it off main.
+    nonisolated static func sleepDisabledPreference() -> Bool { readSleepDisabled() }
+
     /// kCFPreferencesAnyUser + kCFPreferencesCurrentHost, read-only: what `pmset -g` reports as "SleepDisabled 1".
     private nonisolated static func readSleepDisabled() -> Bool {
         let value = CFPreferencesCopyValue(OtherAssertions.settingsKey as CFString,

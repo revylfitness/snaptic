@@ -2,7 +2,8 @@ import Foundation
 
 // Awake › Advanced (owner: G; PLAN 0.3 §4.3 "Advanced (11)", §2.14, R5-11): Activity, End sessions automatically,
 // Display, Restart, and the live "Other apps keeping your Mac awake" section (OtherAssertionsSection, J's reader).
-// Footer: Restore Awake Defaults… (keeps history, the rules, the indicator and the shortcuts).
+// Footer: Restore Awake Defaults… (keeps history, the rules, the indicator and the shortcuts). 0.3.1 B7: the Lid closed
+// section and the leftover rows under Other Apps.
 
 package enum AwakeAdvancedSheetControls: ControlTable {
     package static let surface = "awake.advanced"
@@ -59,6 +60,19 @@ package enum AwakeAdvancedSheetControls: ControlTable {
                                                                                        "sleep disabled", "insomnia",
                                                                                        "amphetamine"],
                                        root: root, sheet: sheet)),
+        // 0.3.1 B1: Lid closed (laptops), with the writable-bundle note.
+        ControlSpec("awake.advanced.lidClosed", .setting, when: awake + [.hardware(.battery)],
+                    keys: ["features.lidClosed"],
+                    search: SearchSpec("Keep awake with the lid closed",
+                                       keywords: ["lid", "clamshell", "closed display", "insomnia", "amphetamine",
+                                                  "disablesleep"], root: root, sheet: sheet)),
+        ControlSpec("awake.advanced.lidBundleLearnMore", .statusAction,
+                    when: awake + [.hardware(.battery), .parentOn(ControlID("awake.advanced.lidClosed")),
+                                   .state(.bundleWritable)]),
+        // 0.3.1 B3.4: Turn Sleep Back On…, Keep Sleep Off, Not Now under Other Apps.
+        ControlSpec("awake.advanced.lidRestore", .statusAction, when: awake + [.state(.lidLeftover)]),
+        ControlSpec("awake.advanced.lidKeepOff", .statusAction, when: awake + [.state(.lidLeftover)]),
+        ControlSpec("awake.advanced.lidDismiss", .statusAction, when: awake + [.state(.lidLeftover)]),
         ControlSpec("awake.advanced.restore", .button, keys: ["features", "sessions", "guards", "activity"],
                     search: SearchSpec("Restore Awake Defaults", keywords: ["reset"], root: root, sheet: sheet)),
     ]

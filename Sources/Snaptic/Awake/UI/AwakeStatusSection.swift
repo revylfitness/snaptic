@@ -10,6 +10,12 @@ import SnapticKit
 /// (R5-8): right after an external open of the window it does nothing.
 struct AwakeStatusSection: View, ControlDeclaring {
     typealias Controls = AwakePageControls
+    /// 0.3.1 B7: the lid pull-down items and the leftover rows. Step 0 stub: T-lid-app uses these ids in step 1 (and deletes this list).
+    private static let step0Controls = [ControlID("awake.page.status.lidClosed"),
+                                        ControlID("awake.page.status.lidPreset"),
+                                        ControlID("awake.page.status.lidRestore"),
+                                        ControlID("awake.page.status.lidKeepOff"),
+                                        ControlID("awake.page.status.lidDismiss")]
 
     let env: AwakePageEnvironment
     let context: AwakeContext

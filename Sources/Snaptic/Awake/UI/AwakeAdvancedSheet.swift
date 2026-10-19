@@ -8,6 +8,11 @@ import SnapticKit
 /// icon and shortcuts; turns pointer movement and Drive Alive off).
 struct AwakeAdvancedSheet: View, ControlDeclaring {
     typealias Controls = AwakeAdvancedSheetControls
+    /// 0.3.1 B7: Lid closed and the leftover rows under Other Apps. Step 0 stub: T-lid-app uses these ids in step 1 (and deletes this list).
+    private static let step0Controls = [ControlID("awake.advanced.lidClosed"),
+                                        ControlID("awake.advanced.lidBundleLearnMore"),
+                                        ControlID("awake.advanced.lidRestore"),
+                                        ControlID("awake.advanced.lidKeepOff"), ControlID("awake.advanced.lidDismiss")]
 
     let env: AwakePageEnvironment
     @ObservedObject private var config: ConfigStore<AwakeConfig>

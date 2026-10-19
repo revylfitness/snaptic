@@ -82,6 +82,10 @@ struct CustomItemRow: Equatable {
     let footer: Bool
     /// Notices exist (with footer).
     let recentNotices: Bool
+    /// 0.3.1 B3.4: the leftover rows head the menu (`StatusMenu.leftoverItems(host:)`).
+    var leftover = false
+    /// 0.3.1 E1: the Update Available row sits in the shared footer (`StatusMenu.updateItems(host:)`).
+    var updateAvailable = false
 }
 
 /// A module with a custom item builds it ONLY inside `applyStatusItem`, so the Kit plan and the item can't diverge
@@ -108,6 +112,11 @@ struct CustomItemRow: Equatable {
     /// undoes session/overlay/gamma/virtual/capture/helper state.
     func stop()
     func menuSection() -> [NSMenuItem]
+    /// 0.3.1 A4: the section for a tab (`tabbed`), or as in 0.3. Cheap and free of side effects: StatusMenu builds
+    /// each tab's section once more to measure its width.
+    func menuSection(tabbed: Bool) -> [NSMenuItem]
+    /// 0.3.1 A1: the module's tab shows the attention mark.
+    var menuAttention: Bool { get }
     // Settings (0.3 §4.1):
     var tint: SettingsTint { get }
     /// Off-state block.
@@ -124,4 +133,6 @@ extension SnapticModule {
     var highlights: [FeatureHighlight] { [] }
     func settingsDestination(_ route: SettingsRoute) -> AnyView? { nil }
     func settingsIndex() -> [SettingsSearchEntry] { [] }
+    func menuSection(tabbed: Bool) -> [NSMenuItem] { menuSection() }
+    var menuAttention: Bool { false }
 }

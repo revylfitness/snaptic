@@ -37,9 +37,13 @@ package struct AwakeArbiterInput: Equatable, Sendable {
     package var guardsHold: Bool
     /// AwakeClock.continuousEnd of the governing manual session, or the latest deadline of the hold stack.
     package var sessionEnd: Double?
+    /// 0.3.1 B3.3: lid-closed mode is on, the lid is shut and no external display is attached, so the session's
+    /// display policy counts as `maySleep` (Snaptic's own assertion never keeps the closed panel lit).
+    package var lidShut: Bool
 
     package init(governing: AwakeGoverning, screenLocked: Bool, consoleActive: Bool, realIdleSeconds: Double?,
-                 keepDisplayOnWhileLocked: Bool, driveAliveWriting: Bool, guardsHold: Bool, sessionEnd: Double?) {
+                 keepDisplayOnWhileLocked: Bool, driveAliveWriting: Bool, guardsHold: Bool, sessionEnd: Double?,
+                 lidShut: Bool = false) {
         self.governing = governing
         self.screenLocked = screenLocked
         self.consoleActive = consoleActive
@@ -48,6 +52,7 @@ package struct AwakeArbiterInput: Equatable, Sendable {
         self.driveAliveWriting = driveAliveWriting
         self.guardsHold = guardsHold
         self.sessionEnd = sessionEnd
+        self.lidShut = lidShut
     }
 }
 

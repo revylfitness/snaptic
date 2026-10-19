@@ -47,6 +47,13 @@ import SnapticKit
     let displays: DisplaysModule
     let awake: AwakeModule
 
+    /// 0.3.1 B3.4: sleep left off by an earlier lid-closed session (host level: whatever Awake's state, also in Safe
+    /// Mode). StatusMenu and IndicatorController draw its rows; T-lid-app fills it in.
+    let lidRecovery = LidRecoveryState()
+    /// 0.3.1 E4: Sparkle's updater, nil when this build doesn't carry Sparkle (ad hoc, from source) or before
+    /// `startUpdater()`. Nothing else calls into Sparkle.
+    private(set) var updater: (any UpdaterControlling)?
+
     /// This is the first launch ever (no earlier Snaptic ran for this user).
     let isFirstLaunch: Bool
 
@@ -205,6 +212,10 @@ import SnapticKit
     }
 
     // MARK: Lifecycle
+
+    /// 0.3.1 E4: creates the updater when dyld loaded Sparkle (GUI mode only: AppDelegate calls it after
+    /// `bootstrap()`). Step 0 stub: no updater yet; T-update fills it in.
+    func startUpdater() {}
 
     /// Startup step 11–12: modules per settings, then the status items.
     func bootstrap() {

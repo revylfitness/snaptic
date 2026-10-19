@@ -7,6 +7,9 @@ import SnapticKit
 /// design m14) or Diagnostics Report… (a host report sheet) when it doesn't.
 struct AboutPage: View, ControlDeclaring {
     typealias Controls = AboutPageControls
+    /// 0.3.1 E7: the Updates section. Step 0 stub: T-update uses these ids in step 1 (and deletes this list).
+    private static let step0Controls = [ControlID("about.page.autoCheck"), ControlID("about.page.autoInstall"),
+                                        ControlID("about.page.installUpdate")]
     @ObservedObject var host: ModuleHost
     @State private var showingAcknowledgements = false
     @State private var showingReport = false

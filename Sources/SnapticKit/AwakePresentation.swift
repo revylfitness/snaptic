@@ -54,7 +54,7 @@ package enum AwakeEndText {
     package static func isInterruption(_ reason: AwakeEndReason) -> Bool {
         switch reason {
         case .batteryLow, .adapterDisconnected, .lowPowerMode, .thermal, .systemSleep, .userSwitch, .lockedTooLong,
-             .assertionFailed, .commandLineOff:
+             .assertionFailed, .commandLineOff, .lidEnded:
             return true
         case .user, .timeUp, .appQuit, .processExited, .tasksFinished, .replaced, .triggerEnded, .moduleStopped,
              .safeMode, .reboot:
@@ -86,6 +86,7 @@ package enum AwakeEndText {
         case .reboot: return L("your Mac restarted")
         case .assertionFailed: return L("Snaptic couldn’t keep your Mac awake")
         case .commandLineOff: return L("command-line control was turned off")
+        case .lidEnded: return L("lid-closed mode turned off while the lid was closed")
         }
     }
 
@@ -378,6 +379,28 @@ package enum AwakeMenuRow: Equatable, Sendable {
     case rules
     case settings
     case separator
+    /// 0.3.1 B1: "Keep Awake with the Lid Closed…" in a menu or Settings session, ✓ while on, or a pending row.
+    case lidClosed(LidRowState)
+    /// 0.3.1 B1: the idle "Keep Awake with the Lid Closed ›" submenu: these presets (each "…"), then Custom….
+    case lidSubmenu([StableID])
+}
+
+/// The lid row's state (0.3.1 B0, B1, B3.0).
+package enum LidRowState: Equatable, Sendable {
+    /// "Keep Awake with the Lid Closed…" (asks for the password).
+    case off
+    /// "✓ Keep Awake with the Lid Closed" (turning it off asks nothing).
+    case on
+    /// Disabled: "Waiting for Password…", "Turning On…", "Turning Off…".
+    case authorizing, verifying, stopping
+    /// Disabled: "Finishing Earlier Session…" (an earlier session's journal is still pending, B3.4).
+    case finishingEarlier
+}
+
+/// Which menu the Awake rows are for (0.3.1 A4): Awake's own menu, the compact section (Awake is the Snaptic menu's
+/// only module), or Awake's tab (the own rows minus Awake Settings…).
+package enum AwakeMenuStyle: String, CaseIterable, Sendable {
+    case own, compact, tab
 }
 
 package struct AwakeMenuFacts: Equatable, Sendable {
@@ -386,14 +409,24 @@ package struct AwakeMenuFacts: Equatable, Sendable {
     package var holdsExist: Bool
     /// Rules › shows: ≥ 1 rule exists and `triggers` is effective.
     package var rulesShown: Bool
-    /// The compact section in the Snaptic menu (no separators, no Settings item).
-    package var compact: Bool
+    /// 0.3.1 A4: replaces 0.3's `compact: Bool`.
+    package var style: AwakeMenuStyle
 
-    package init(governing: AwakeGoverning, holdsExist: Bool, rulesShown: Bool, compact: Bool) {
+    /// The compact section in the Snaptic menu (no separators, no Settings item). Kept for 0.3 callers and tests.
+    package var compact: Bool {
+        get { style == .compact }
+        set { style = newValue ? .compact : .own }
+    }
+
+    package init(governing: AwakeGoverning, holdsExist: Bool, rulesShown: Bool, style: AwakeMenuStyle) {
         self.governing = governing
         self.holdsExist = holdsExist
         self.rulesShown = rulesShown
-        self.compact = compact
+        self.style = style
+    }
+
+    package init(governing: AwakeGoverning, holdsExist: Bool, rulesShown: Bool, compact: Bool) {
+        self.init(governing: governing, holdsExist: holdsExist, rulesShown: rulesShown, style: compact ? .compact : .own)
     }
 }
 

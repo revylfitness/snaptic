@@ -304,6 +304,23 @@ final class HelperHandle: @unchecked Sendable {
         return handle
     }
 
+    // MARK: Lid-closed mode (0.3.1 B3.1, B3.3; T-lid-app)
+
+    /// Runs `LidWatchdog.osascriptPath -e <script.source>`: a suspended spawn with a minimal environment, checked
+    /// against `LidWatchdog.osascriptRequirement` before SIGCONT, stdout through the reply pipe (64 KB line cap), exit
+    /// observed on main, SIGTERM to osascript's pid only after 120 s. Callers: LidClosedController and LidRecovery
+    /// (lint L18). Step 0 stub: always throws.
+    func spawnAdminScript(_ script: AdminScript, onLine: @escaping @MainActor (Data) -> Void,
+                          onExit: @escaping @MainActor (Int32) -> Void) async throws -> HelperHandle {
+        throw HelperSpawnError.unavailable(L("Not built yet"))
+    }
+
+    /// Runs a fixed user-level command (`LidWatchdog.displaySleepArgv`) with the same checks (`anchor apple` before
+    /// SIGCONT, minimal environment, disclaimed); single flight. Step 0 stub: always throws.
+    func spawnTool(_ command: ToolCommand, onExit: @escaping @MainActor (Int32) -> Void) async throws -> HelperHandle {
+        throw HelperSpawnError.unavailable(L("Not built yet"))
+    }
+
     // MARK: Hooks and actions
 
     /// Runs a user-chosen executable for a hook or custom action (PLAN §4.10(1), R3C §5.3):

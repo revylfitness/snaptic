@@ -86,6 +86,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                               relauncher: relauncher)
         self.host = host
         host.bootstrap()
+        // 0.3.1 Part E: Sparkle, when this build carries it (the host's own; created in GUI mode only).
+        host.startUpdater()
 
         if safeMode.isActive {
             toasts.show(L("Snaptic started in Safe Mode. Automation is paused."),

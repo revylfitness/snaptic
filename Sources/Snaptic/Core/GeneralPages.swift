@@ -15,6 +15,12 @@ enum GeneralPages {
 /// Advanced… (?). The module navigation rows of r1 are gone (the sidebar lists the modules; design M1).
 struct GeneralPage: View, ControlDeclaring {
     typealias Controls = GeneralPageControls
+    /// 0.3.1 E1a: the welcome card. Step 0 stub: T-update uses these ids in step 1 (and deletes this list).
+    private static let step0Controls = [ControlID("general.page.card.v031.openAccessibility"),
+                                        ControlID("general.page.card.v031.openScreenRecording"),
+                                        ControlID("general.page.card.v031.autoCheck"),
+                                        ControlID("general.page.card.v031.notNow"),
+                                        ControlID("general.page.card.v031.done")]
     @ObservedObject var host: ModuleHost
 
     var body: some View {
