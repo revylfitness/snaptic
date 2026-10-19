@@ -87,6 +87,6 @@ Fail-safe stub values chosen so nothing acts before its owner lands: `PowerFacts
   apostrophes, and pop-up, segmented and pull-down options in title case (radio groups and Apple's "Use as" words
   exempt). The menu-contributor check reads declarations only (a generic parameter or a `where` constraint isn't a
   conformance) and follows protocols that refine `DisplayMenuContributor`. Each check has self-check cases.
-- **Pending list the lead keeps.** `SettingsShellRulesTests.awaitingREADME`: README headings step 5 adds (the test
-  skips until then, and fails once a listed heading exists). The 0.2-names lint has no allowances left, so its
+- **Pending lists.** `SettingsShellRulesTests.awaitingREADME` (README headings still to come) is empty since the
+  step-5 README; the test fails if a listed heading exists. The 0.2-names lint has no allowances left, so its
   pending list was removed.
