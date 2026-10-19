@@ -248,10 +248,11 @@ import SnapticKit
     @objc(updater:didFinishUpdateCycleForUpdateCheck:error:)
     func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: (any Error)?) {
         checking = false
-        guard let error = error as NSError? else {
+        guard let failure = error else {
             lastCheckFailed = false
             return
         }
+        let error = failure as NSError
         guard error.domain != Self.errorDomain else { return }
         lastCheckFailed = UpdatePolicy.checkFailed(sparkleDomain: error.domain == SUSparkleErrorDomain, code: error.code)
         if lastCheckFailed { EventLog.shared.record(.modules, "Update check failed (\(error.domain) \(error.code))") }
