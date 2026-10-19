@@ -556,7 +556,12 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
             } else {
                 manual = m
                 resumedSessionID = m.id
-                resumeSegment(.session(m), stored: stored, snapshot: snapshot, now: now)
+                // History only (r1 A5): an entry that continues the segment keeps "Lid closed"; after a real gap the
+                // part before it got its own entry with it. The mode itself is never restored (N19).
+                if !resumeSegment(.session(m), stored: stored, snapshot: snapshot, now: now),
+                   snapshot.lidSession == m.id {
+                    lidSessions.insert(m.id)
+                }
                 reminders = snapshot.reminders
                 usesDefaultOptions = Self.followsDefaults(m, sessions: ctx.config.value.sessions,
                                                           effective: ctx.runtime.effectiveFeatures)
@@ -599,14 +604,17 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
 
     /// A resumed item after a real gap: the part before it is its own history entry and the item's history
     /// continues from now (time Snaptic wasn't running isn't counted, F1); after a short gap the segment goes on.
+    /// True when the part before the gap became its own entry.
+    @discardableResult
     private func resumeSegment(_ item: AwakeAwayEnd.Item, stored: AwakeRuntimeSnapshot, snapshot: AwakeRuntimeSnapshot,
-                               now: ClockNow) {
+                               now: ClockNow) -> Bool {
         if let before = stored.resumedSegment(item, now: now) {
             awayEnds.fire(before)
             segmentStarts[item.id] = now.wall
-        } else if let start = snapshot.segmentStarts[item.id] {
-            segmentStarts[item.id] = start
+            return true
         }
+        if let start = snapshot.segmentStarts[item.id] { segmentStarts[item.id] = start }
+        return false
     }
 
     /// Where the history entry of a running session or hold starts: its start, or where its resume began (F1).
@@ -1122,7 +1130,8 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
                                     suppressions: triggers?.suppressions ?? [:], pausedUntil: triggers?.pausedUntil,
                                     guardMemory: guardMemory,
                                     stop: carried ? AwakeStopStamp(wall: now.wall, continuous: now.continuous, clean: clean) : nil,
-                                    rule: rule, segmentStarts: segmentStarts, reminders: reminders)
+                                    rule: rule, segmentStarts: segmentStarts, reminders: reminders,
+                                    lidSession: manual.flatMap { lidSessions.contains($0.id) ? $0.id : nil })
     }
 
     /// The top rule candidate as a record: its wall start is computed once per rule session (TriggerController

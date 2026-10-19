@@ -33,6 +33,9 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
     package var segmentStarts: LossyMap<StableID, Double>
     /// The reminders already shown for `manual` (N1: the 8-hour one stays once per session across relaunches).
     package var reminders: AwakeReminders
+    /// History only (0.3.1 B1, r1 A5): `manual`'s id when lid-closed mode was on at some point in it, so its entry
+    /// keeps "Lid closed" across a quit or crash. Never read by the lid gate (N19): the mode itself is never restored.
+    package var lidSession: StableID?
 
     package init() {
         bootSession = ""
@@ -45,10 +48,12 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
         rule = nil
         segmentStarts = LossyMap()
         reminders = AwakeReminders()
+        lidSession = nil
     }
 
     private enum CodingKeys: String, CodingKey {
-        case bootSession, manual, holds, suppressions, pausedUntil, guardMemory, stop, rule, segmentStarts, reminders
+        case bootSession, manual, holds, suppressions, pausedUntil, guardMemory, stop, rule, segmentStarts, reminders,
+             lidSession
     }
 
     /// R5-3: a bad `manual` decodes as nil and the rest is kept; holds element-wise, duplicate ids keep the first.
@@ -64,13 +69,14 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
         rule = c.lossy(.rule, nil)
         segmentStarts = c.lossy(.segmentStarts, LossyMap())
         reminders = c.lossy(.reminders, AwakeReminders())
+        lidSession = c.lossy(.lidSession, nil)
     }
 
     /// The snapshot SessionController writes from its runtime state: connection holds are left out (N17).
     package init(bootSession: String, manual: AwakeSession?, holds: [AwakeHold],
                  suppressions: [StableID: TriggerSuppression], pausedUntil: Double?, guardMemory: GuardMemory,
                  stop: AwakeStopStamp? = nil, rule: AwakeRuleRecord? = nil, segmentStarts: [StableID: Double] = [:],
-                 reminders: AwakeReminders = AwakeReminders()) {
+                 reminders: AwakeReminders = AwakeReminders(), lidSession: StableID? = nil) {
         self.bootSession = bootSession
         var m = manual
         m?.overrideGuards = false
@@ -83,6 +89,7 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
         self.rule = rule
         self.segmentStarts = LossyMap(segmentStarts)
         self.reminders = reminders
+        self.lidSession = lidSession
         self = sanitized()
     }
 
@@ -116,6 +123,7 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
         let ids = Set([c.manual?.id].compactMap { $0 } + c.holds.map(\.id))
         c.segmentStarts = LossyMap(segmentStarts.values.filter { ids.contains($0.key) && $0.value.isFinite && $0.value >= 0 })
         c.reminders = reminders.keeping(session: c.manual?.id)
+        if lidSession != c.manual?.id { c.lidSession = nil }
         return c
     }
 
@@ -150,6 +158,7 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
         let carried = Set([c.manual?.id].compactMap { $0 } + c.holds.map(\.id))
         c.segmentStarts = LossyMap(base.segmentStarts.values.filter { carried.contains($0.key) })
         c.reminders = base.reminders.keeping(session: c.manual?.id)
+        c.lidSession = c.manual != nil && base.lidSession == c.manual?.id ? base.lidSession : nil
         // The stamp and the rule record are read once by restore (`awayEnds`, `restoreEnd`, `resumedSegment`,
         // `ruleEnd`) from the stored snapshot.
         c.stop = nil
@@ -251,7 +260,8 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
     /// process exited, command-line control off): it ended when Snaptic stopped.
     package func restoreEnd(_ item: AwakeAwayEnd.Item, reason: AwakeEndReason, now: ClockNow) -> AwakeAwayEnd {
         let start = segmentStart(item.id, startedAt: item.startedAt)
-        return AwakeAwayEnd(item: item, startWall: start, endWall: max(start, stoppedWall(now: now)), reason: reason)
+        return AwakeAwayEnd(item: item, startWall: start, endWall: max(start, stoppedWall(now: now)), reason: reason,
+                            lidClosed: hadLidMode(item))
     }
 
     /// A resumed item's segment before the gap (Snaptic not running) as its own entry, ending `.moduleStopped` when
@@ -262,7 +272,14 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
         let stopped = stoppedWall(now: now)
         let start = segmentStart(item.id, startedAt: item.startedAt)
         guard now.wall - stopped >= Self.splitGapSeconds, stopped > start else { return nil }
-        return AwakeAwayEnd(item: item, startWall: start, endWall: stopped, reason: .moduleStopped)
+        return AwakeAwayEnd(item: item, startWall: start, endWall: stopped, reason: .moduleStopped,
+                            lidClosed: hadLidMode(item))
+    }
+
+    /// The item is the manual session that had lid-closed mode (`lidSession`).
+    package func hadLidMode(_ item: AwakeAwayEnd.Item) -> Bool {
+        if case .session(let s) = item { return lidSession != nil && lidSession == s.id }
+        return false
     }
 
     /// One item's away end: limited by the stop stamp when it was written in the item's boot, else (same boot) by
@@ -287,12 +304,13 @@ package struct AwakeRuntimeSnapshot: ConfigModel {
            e.continuous <= limit.continuous || e.wall <= limit.wall {
             guard valid(ClockNow(wall: e.wall - 1, continuous: e.continuous - 1, bootSession: boot)) else { return nil }
             let endWall = max(min(e.wall, limit.wall), startedAt)
-            return AwakeAwayEnd(item: item, startWall: min(start, endWall), endWall: endWall, reason: .timeUp)
+            return AwakeAwayEnd(item: item, startWall: min(start, endWall), endWall: endWall, reason: .timeUp,
+                                lidClosed: hadLidMode(item))
         }
         guard valid(ClockNow(wall: limit.wall, continuous: limit.continuous, bootSession: boot)) else { return nil }
         let endWall = max(limit.wall, startedAt)
         return AwakeAwayEnd(item: item, startWall: min(start, endWall), endWall: endWall,
-                            reason: sameBoot ? .timeUp : .reboot)
+                            reason: sameBoot ? .timeUp : .reboot, lidClosed: hadLidMode(item))
     }
 
     /// A session's end on both clocks; nil when it has none.
@@ -370,7 +388,8 @@ extension AwakeHistoryEntry {
             var bundleID: String?
             if case .whileApp(let b, _) = s.kind { bundleID = b }
             self.init(start: min(e.startWall, e.endWall), end: e.endWall, kind: s.kind.historyKind, source: s.source,
-                      presetID: s.presetID, triggerID: nil, bundleID: bundleID, endReason: e.reason)
+                      presetID: s.presetID, triggerID: nil, bundleID: bundleID, endReason: e.reason,
+                      lidClosed: e.lidClosed)
         case .hold:
             self.init(start: min(e.startWall, e.endWall), end: e.endWall, kind: .process, source: .commandLine,
                       presetID: nil, triggerID: nil, bundleID: nil, endReason: e.reason)
@@ -407,11 +426,14 @@ package struct AwakeAwayEnd: Equatable, Sendable {
     package var startWall: Double
     package var endWall: Double
     package var reason: AwakeEndReason
+    /// The manual session had lid-closed mode (0.3.1 B1: the History entry's `lidClosed`).
+    package var lidClosed: Bool
 
-    package init(item: Item, startWall: Double, endWall: Double, reason: AwakeEndReason) {
+    package init(item: Item, startWall: Double, endWall: Double, reason: AwakeEndReason, lidClosed: Bool = false) {
         self.item = item
         self.startWall = startWall
         self.endWall = endWall
         self.reason = reason
+        self.lidClosed = lidClosed
     }
 }
