@@ -584,3 +584,4 @@ Tests/SnapticKitTests/BundleCopyTextTests.swift	T-lid-app	L	-	-
 Sources/Snaptic/Core/UpdaterController.swift	T-update	L	-	-
 Sources/SnapticKit/UpdatePolicy.swift	T-update	L	-	-
 Tests/SnapticKitTests/UpdatePolicyTests.swift	T-update	L	-	-
+Sources/Snaptic/Core/SelfTestLaunch.swift	T-update	L	-	-

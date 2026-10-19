@@ -47,12 +47,14 @@ enum SelfTest {
 
     // MARK: --selftest-launch
 
-    /// 0.3.1 E3 (HW-37 in CI): `--selftest-launch <token-file>` starts the ad-hoc app far enough to build ModuleHost
-    /// and the updater gate (Sparkle absent), then exits. Step 0 stub: the token gate only; T-update builds the rest.
+    /// 0.3.1 E3 (HW-37 in CI): `--selftest-launch <token-file>` starts the app far enough to build ModuleHost and the
+    /// updater gate (SelfTestLaunch), then exits 1 on any problem.
     private static func runLaunch(_ arguments: [String]) -> Never {
         guard arguments.count == 3, tokenMatches(file: arguments[2]) else { exit(KitArgs.exitUsage) }
-        say("selftest-launch: not built yet\n")
-        exit(0)
+        let (problems, report) = MainActor.assumeIsolated { SelfTestLaunch.run() }
+        for line in report { say(line + "\n") }
+        for problem in problems { say("selftest: launch: " + problem + "\n") }
+        exit(problems.isEmpty ? 0 : 1)
     }
 
     // MARK: --selftest-controls

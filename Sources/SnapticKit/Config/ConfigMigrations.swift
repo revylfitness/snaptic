@@ -13,6 +13,25 @@ package enum MigrationID: String, CaseIterable, Sendable {
     /// whether or not it inserted anything, so a fresh install (whose module settings never hold an Awake entry)
     /// is not taken for an upgrader on its second launch or after General › Reset.
     case awakeUpgrade = "awakeUpgrade.v1"
+    /// 0.3.1 E1a: the first 0.3.1 launch happened (recorded for every install), and the welcome card for upgraders
+    /// is finished (recorded at once for new users, and when an upgrader is done with the card).
+    case v031Welcome = "v031Welcome.v1", v031WelcomeDone = "v031Welcome.done"
+}
+
+extension MigrationLedger {
+    /// E1a: run once per install, at the first 0.3.1 launch. An upgrader is someone whose module settings
+    /// (`SnapticModulesV1`) existed before this launch; 0.3.0 stored no last-run version, so nothing else tells them
+    /// apart. Returns whether this launch recorded the marker.
+    @discardableResult
+    package mutating func recordV031Welcome(upgrader: Bool) -> Bool {
+        guard !has(.v031Welcome) else { return false }
+        record(.v031Welcome)
+        if !upgrader { record(.v031WelcomeDone) }
+        return true
+    }
+
+    /// E1a: the welcome card is due (an upgrader who isn't done with it).
+    package var showsV031Welcome: Bool { has(.v031Welcome) && !has(.v031WelcomeDone) }
 }
 
 /// The migrations that already ran. Raw strings, so an id a newer Snaptic wrote survives this version's saves.

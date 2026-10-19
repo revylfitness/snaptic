@@ -15,12 +15,6 @@ enum GeneralPages {
 /// Advanced… (?). The module navigation rows of r1 are gone (the sidebar lists the modules; design M1).
 struct GeneralPage: View, ControlDeclaring {
     typealias Controls = GeneralPageControls
-    /// 0.3.1 E1a: the welcome card. Step 0 stub: T-update uses these ids in step 1 (and deletes this list).
-    private static let step0Controls = [ControlID("general.page.card.v031.openAccessibility"),
-                                        ControlID("general.page.card.v031.openScreenRecording"),
-                                        ControlID("general.page.card.v031.autoCheck"),
-                                        ControlID("general.page.card.v031.notNow"),
-                                        ControlID("general.page.card.v031.done")]
     @ObservedObject var host: ModuleHost
 
     var body: some View {
@@ -39,6 +33,11 @@ private struct GeneralPageContent: View {
         SettingsPageScaffold(route: SettingsRoute(SettingsRootID.general)) {
             SettingsPageHeader(L("General"), summary: L("Startup, command line, backup, and Safe Mode."),
                                symbol: "gearshape", tint: .gray)
+            if host.showsV031Welcome, let updater = host.updaterController {
+                Section {
+                    WelcomeV031Card(host: host, updater: updater, permissions: host.permissions)
+                }
+            }
             ForEach(GeneralCardRules.visible(modules.value.newModuleCards, enabled: enabled,
                                              blocked: host.disabledByDefaults), id: \.self) { card in
                 Section {
@@ -130,6 +129,81 @@ private struct GeneralPageContent: View {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(KitControl.installCommand(executable: executable), forType: .string)
         host.toasts.show(L("Install command copied. Paste it into Terminal; it asks for your password."))
+    }
+}
+
+/// 0.3.1 E1a: the upgraders' welcome card. Release builds are now Developer ID-signed, so macOS dropped the old
+/// grants once: a row per permission to allow again, the update choice, and one line of what's new. Done hides it;
+/// it also hides itself once the choice is made and nothing is left to allow.
+private struct WelcomeV031Card: View {
+    let host: ModuleHost
+    @ObservedObject var updater: UpdaterController
+    @ObservedObject var permissions: PermissionFlow
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            SettingsIcon("sparkles", tint: SettingsTint.blue, size: 40)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(L("Welcome to Snaptic 0.3.1")).font(.headline)
+                Text(L("Snaptic is now signed by its developer, so macOS asks you to allow it again once. After this, updates keep your permissions."))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                ForEach(host.v031RegrantRows, id: \.self) { permission in
+                    row(PermissionFlow.paneName(permission),
+                        detail: L("Remove the old Snaptic with −, then turn on the new one.")) {
+                        Button(L("Open System Settings…")) { permissions.presentGuide(permission) }
+                            .modifier(SettingsAnchor(permission == .accessibility
+                                ? ControlID("general.page.card.v031.openAccessibility")
+                                : ControlID("general.page.card.v031.openScreenRecording")))
+                    }
+                }
+                if !updater.consentDecided {
+                    row(L("Keep Snaptic up to date"), detail: nil) {
+                        Button(L("Not Now")) { answer(false) }
+                            .modifier(SettingsAnchor(ControlID("general.page.card.v031.notNow")))
+                        Button(L("Check Automatically")) { answer(true) }
+                            .modifier(SettingsAnchor(ControlID("general.page.card.v031.autoCheck")))
+                    }
+                }
+                Text(L("New in 0.3.1: tabs in the Snaptic menu, keeping awake with the lid closed, and automatic updates."))
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(L("Done")) { host.dismissV031Welcome() }
+                    .modifier(SettingsAnchor(ControlID("general.page.card.v031.done")))
+                    .padding(.top, 2)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .contain)
+        .onAppear { finishIfDone() }
+        .onChange(of: permissions.granted) { finishIfDone() }
+    }
+
+    private func row<Actions: View>(_ title: String, detail: String?, @ViewBuilder actions: () -> Actions) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                if let detail {
+                    Text(detail)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 8)
+            actions()
+        }
+    }
+
+    /// Check Automatically also turns on automatic install, except for root-owned copies (E1a).
+    private func answer(_ allowed: Bool) {
+        updater.setConsent(allowed)
+        finishIfDone()
+    }
+
+    private func finishIfDone() {
+        permissions.refresh()
+        host.finishV031WelcomeIfDone()
     }
 }
 

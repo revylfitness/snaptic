@@ -5,7 +5,29 @@ final class ConfigMigrationsTests: XCTestCase {
     func testIDs() {
         XCTAssertEqual(MigrationID.allCases.map(\.rawValue),
                        ["fromDisplays.v1", "fromDisplays.toast", "newModuleCards.v1", "menuShortcuts.v1", "showNits.v1",
-                        "powerSwitch.v1", "awakeUpgrade.v1"])
+                        "powerSwitch.v1", "awakeUpgrade.v1", "v031Welcome.v1", "v031Welcome.done"])
+    }
+
+    /// 0.3.1 E1a: recorded once per install; new users are done with the card at once, upgraders aren't.
+    func testV031WelcomeMarksUpgradersOnce() {
+        var fresh = MigrationLedger()
+        XCTAssertFalse(fresh.showsV031Welcome)
+        XCTAssertTrue(fresh.recordV031Welcome(upgrader: false))
+        XCTAssertTrue(fresh.has(.v031Welcome))
+        XCTAssertFalse(fresh.showsV031Welcome)
+
+        var upgrader = MigrationLedger()
+        XCTAssertTrue(upgrader.recordV031Welcome(upgrader: true))
+        XCTAssertTrue(upgrader.showsV031Welcome)
+        // A later launch (the module settings exist by then) changes nothing.
+        XCTAssertFalse(upgrader.recordV031Welcome(upgrader: true))
+        XCTAssertFalse(upgrader.recordV031Welcome(upgrader: false))
+        XCTAssertTrue(upgrader.showsV031Welcome)
+        upgrader.record(.v031WelcomeDone)
+        XCTAssertFalse(upgrader.showsV031Welcome)
+        // A new user's second launch is never taken for an upgrader.
+        XCTAssertFalse(fresh.recordV031Welcome(upgrader: true))
+        XCTAssertFalse(fresh.showsV031Welcome)
     }
 
     func testRecordAndHas() {
@@ -32,7 +54,7 @@ final class ConfigMigrationsTests: XCTestCase {
         var l = MigrationLedger()
         for id in MigrationID.allCases.reversed() { l.record(id) }
         let text = String(decoding: try JSONEncoder().encode(l), as: UTF8.self)
-        XCTAssertEqual(text, #"{"done":["awakeUpgrade.v1","fromDisplays.toast","fromDisplays.v1","menuShortcuts.v1","newModuleCards.v1","powerSwitch.v1","showNits.v1"]}"#)
+        XCTAssertEqual(text, #"{"done":["awakeUpgrade.v1","fromDisplays.toast","fromDisplays.v1","menuShortcuts.v1","newModuleCards.v1","powerSwitch.v1","showNits.v1","v031Welcome.done","v031Welcome.v1"]}"#)
     }
 
     func testSanitizedBoundsTheLedgerButKeepsKnownIDs() {

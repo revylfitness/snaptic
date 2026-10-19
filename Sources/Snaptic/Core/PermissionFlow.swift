@@ -35,9 +35,11 @@ enum PermissionStatus: Equatable { case granted, denied, unknown }
     private var observerSerial: UInt64 = 0
     private var activationToken: NSObjectProtocol?
 
-    init(relauncher: Relauncher? = nil) {
+    /// `readsGrants: false` (0.3.1 `--selftest-launch` only): starts with nothing granted and never asks macOS, so
+    /// the self-test touches no TCC-guarded API (R5.5).
+    init(relauncher: Relauncher? = nil, readsGrants: Bool = true) {
         self.relauncher = relauncher
-        granted = Set(Permission.allCases.filter { Self.isGranted($0) })
+        granted = readsGrants ? Set(Permission.allCases.filter { Self.isGranted($0) }) : []
         activationToken = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
