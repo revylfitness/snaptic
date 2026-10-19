@@ -642,3 +642,66 @@ extension AwakePresentationTests {
         XCTAssertEqual(AwakeLidText.historySuffix, " · Lid closed")
     }
 }
+
+// MARK: - 0.3.1: the shapes T-lid-app wires (owner: T-lid-kit)
+
+extension AwakePresentationTests {
+    func testMenuFactsWithLid() {
+        let p = [id("p1")]
+        let made = AwakeLidMenuFacts.make(available: true, mode: .off, recovery: .nothing, sessionTakesMode: false, presets: p)
+        XCTAssertEqual(made, AwakeLidMenuFacts(state: .off, sessionTakesMode: false, presets: p))
+        XCTAssertNil(AwakeLidMenuFacts.make(available: false, mode: .off, recovery: .pending, sessionTakesMode: true,
+                                            presets: p))
+        XCTAssertEqual(AwakeLidMenuFacts.make(available: true, mode: .off, recovery: .pending, sessionTakesMode: false,
+                                              presets: p)?.state, .finishingEarlier)
+        let f = AwakeMenuFacts(governing: .inactive, holdsExist: false, rulesShown: false, style: .tab, lid: made)
+        XCTAssertEqual(AwakeMenuModel.rows(f), [.header, .separator, .startDefault, .lidSubmenu(p), .startSession, .whileApp])
+        XCTAssertNil(AwakeMenuFacts(governing: .inactive, holdsExist: false, rulesShown: false, style: .own).lid)
+        XCTAssertEqual(LidRowState.finishingEarlier.rawValue, "finishingEarlier")
+    }
+
+    func testLidLastEndLine() {
+        let ended = AwakeLidText.lastEnd(.battery, clock: "3:12 AM", floor: 20)
+        // Idle: after the idle note, within the header's two lines.
+        let idle = AwakeDetailInput(governing: .inactive, now: now(0), idleNote: "Ended at 3:12 AM: time is up.",
+                                    lidLastEnd: ended)
+        XCTAssertEqual(AwakeDetail.lines(idle), ["Ended at 3:12 AM: time is up.", "Lid-closed mode ended at 3:12 AM: battery at 20%."])
+        XCTAssertEqual(AwakeStatusText.details(idle, pausedUntilClock: nil).last, ended)
+        let alone = AwakeDetailInput(governing: .inactive, now: now(0), lidLastEnd: ended)
+        XCTAssertEqual(AwakeDetail.lines(alone), [ended ?? ""])
+        // A session that goes on: the first extra.
+        var active = AwakeDetailInput(governing: .manual(session(.indefinite)), now: now(0), activity: .declare,
+                                      lidLastEnd: ended)
+        XCTAssertEqual(AwakeDetail.lines(active).last, ended)
+        active.lidModeOn = true
+        XCTAssertFalse(AwakeDetail.extras(active).contains(ended ?? "-"), "cleared at the next turn-on")
+        XCTAssertEqual(AwakeDetail.extras(active).first, "Stays awake with the lid closed")
+    }
+
+    func testDiagnosticsLidLine() {
+        var f = AwakeDiagnosticsFacts(effective: [], governing: nil, kind: nil, assertion: .off, assertionErrors: 0,
+                                      guardHolding: nil, activeServices: [], holds: 0, rules: 0, conditionsByKind: [:],
+                                      eventCounts: [:], drives: 0)
+        XCTAssertFalse(AwakeDiagnosticsReport.lines(f).contains { $0.contains("lid") }, "unchanged without the feature")
+        f.lid = .on
+        XCTAssertTrue(AwakeDiagnosticsReport.lines(f).contains("Awake lid-closed mode: on"))
+        f.lid = nil
+        f.lidLeftover = true
+        XCTAssertTrue(AwakeDiagnosticsReport.lines(f).contains("Awake lid-closed mode: unavailable (leftover)"))
+        let g = AwakeDiagnosticsFacts(effective: [], governing: nil, kind: nil, assertion: .off, assertionErrors: 0,
+                                      guardHolding: nil, activeServices: [], holds: 0, rules: 0, conditionsByKind: [:],
+                                      eventCounts: [:], drives: 0, lid: .verifying, lidLeftover: false)
+        XCTAssertTrue(AwakeDiagnosticsReport.lines(g).contains("Awake lid-closed mode: verifying"))
+    }
+
+    func testLidGlyph() {
+        for g in AwakeGlyphFamily.allCases {
+            XCTAssertNil(g.lidActiveSymbol, "no family has its own lid symbol: the app draws the bar")
+            var c = AwakeIndicatorConfig()
+            c.glyph = g
+            XCTAssertNil(c.lidSymbol())
+            XCTAssertEqual(c.symbol(active: true), g.active, "the bar goes under the active glyph")
+        }
+        XCTAssertTrue(AwakeGlyphFamily.lidBarHeightRatio > 0 && AwakeGlyphFamily.lidBarHeightRatio < 0.5)
+    }
+}

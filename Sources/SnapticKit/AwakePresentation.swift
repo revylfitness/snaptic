@@ -237,13 +237,16 @@ package struct AwakeDetailInput: Equatable, Sendable {
     package var lidUntilClock: String?
     /// 0.3.1 B1: which `lidRoute` line the Settings status row shows after the lid warning.
     package var lidRoute: AwakeLidRoute = .unavailable
+    /// 0.3.1 B1: "Lid-closed mode ended at 3:12 AM: battery at 20%." (`AwakeLidText.lastEnd`), kept 12 h and cleared
+    /// at the next turn-on; nil while the mode is on, or when the leftover rows already explain the state (B2).
+    package var lidLastEnd: String?
 
     package init(governing: AwakeGoverning, now: ClockNow, endClock: String? = nil, appName: String? = nil,
                  ruleName: String? = nil, nextRuleName: String? = nil, holderSummary: String? = nil,
                  quietFor: Double? = nil, activity: AwakeActivityMode = .off, activityCapped: Bool = false,
                  stopAfterHours: Int = 1, lidWarning: Bool = false, idleNote: String? = nil,
                  backgroundPaused: String? = nil, lidModeOn: Bool = false, lidUntilClock: String? = nil,
-                 lidRoute: AwakeLidRoute = .unavailable) {
+                 lidRoute: AwakeLidRoute = .unavailable, lidLastEnd: String? = nil) {
         self.governing = governing
         self.now = now
         self.endClock = endClock
@@ -261,6 +264,7 @@ package struct AwakeDetailInput: Equatable, Sendable {
         self.lidModeOn = lidModeOn
         self.lidUntilClock = lidUntilClock
         self.lidRoute = lidRoute
+        self.lidLastEnd = lidLastEnd
     }
 }
 
@@ -301,6 +305,8 @@ package enum AwakeDetail {
     package static func extras(_ i: AwakeDetailInput) -> [String] {
         var out: [String] = []
         if i.lidModeOn && i.governing.isActive { out.append(AwakeLidText.headerLine(untilClock: i.lidUntilClock)) }
+        // The mode ended under a session that goes on: say so first (idle, `lines` shows it after the idle note).
+        if !i.lidModeOn && i.governing.isActive, let ended = i.lidLastEnd { out.append(ended) }
         if case .manual(let s) = i.governing, case .untilIdle(let spec, _) = s.kind {
             let quiet = AwakeCountdown.unit(max(1, spec.sanitized().quietSeconds / 60), L("min"), L("min"))
             var line = L("Ends after ") + quiet + L(" with no activity")
@@ -341,9 +347,12 @@ package enum AwakeDetail {
         lidWillSleep == true && !lidModeOn && (onBattery || !externalDisplay)
     }
 
-    /// At most `maxLines` lines: the primary line and the first extra; idle shows only `idleNote`.
+    /// At most `maxLines` lines: the primary line and the first extra; idle shows `idleNote`, then the lid-closed
+    /// mode's last end (0.3.1).
     package static func lines(_ i: AwakeDetailInput) -> [String] {
-        guard let p = primary(i) else { return i.idleNote.map { [$0] } ?? [] }
+        guard let p = primary(i) else {
+            return Array([i.idleNote, i.lidModeOn ? nil : i.lidLastEnd].compactMap { $0 }.prefix(maxLines))
+        }
         return Array(([p] + extras(i)).prefix(maxLines))
     }
 }
@@ -413,7 +422,7 @@ package enum AwakeMenuRow: Equatable, Sendable {
 }
 
 /// The lid row's state (0.3.1 B0, B1, B3.0).
-package enum LidRowState: Equatable, Sendable {
+package enum LidRowState: String, Equatable, Sendable {
     /// "Keep Awake with the Lid Closed…" (asks for the password).
     case off
     /// "✓ Keep Awake with the Lid Closed" (turning it off asks nothing).
@@ -456,6 +465,13 @@ package struct AwakeMenuFacts: Equatable, Sendable {
 
     package init(governing: AwakeGoverning, holdsExist: Bool, rulesShown: Bool, compact: Bool) {
         self.init(governing: governing, holdsExist: holdsExist, rulesShown: rulesShown, style: compact ? .compact : .own)
+    }
+
+    /// 0.3.1 B1: with the lid facts, so `AwakeMenuModel.rows` places the lid row itself (nil: no lid row).
+    package init(governing: AwakeGoverning, holdsExist: Bool, rulesShown: Bool, style: AwakeMenuStyle,
+                 lid: AwakeLidMenuFacts?) {
+        self.init(governing: governing, holdsExist: holdsExist, rulesShown: rulesShown, style: style)
+        self.lid = lid
     }
 }
 
@@ -540,6 +556,16 @@ package struct AwakeLidMenuFacts: Equatable, Sendable {
         self.presets = presets
     }
 
+    /// The facts from what the app knows; nil (no lid row) unless the feature is effective (`available`: turned on,
+    /// available, not killed, not in Safe Mode). `sessionTakesMode` is `AwakeLidGate.addsToSession` for the governing
+    /// manual session (false while none governs).
+    package static func make(available: Bool, mode: AwakeLidMode, recovery: AwakeLidRecovery, sessionTakesMode: Bool,
+                             presets: [StableID]) -> AwakeLidMenuFacts? {
+        guard available else { return nil }
+        return AwakeLidMenuFacts(state: rowState(mode: mode, recovery: recovery), sessionTakesMode: sessionTakesMode,
+                                 presets: presets)
+    }
+
     /// The row state from the mode and the recovery: the mode's own state first; while it is off, a pending journal
     /// shows "Finishing Earlier Session…".
     package static func rowState(mode: AwakeLidMode, recovery: AwakeLidRecovery) -> LidRowState {
@@ -596,12 +622,18 @@ package struct AwakeDiagnosticsFacts: Equatable, Sendable {
     /// `Awake.disable.<feature>` keys that are set (fixed ids only), so an administrator can tell a kill switch from
     /// the user's own switch; unkillable ones are dropped, since they change nothing (review7 security N1).
     package var killSwitches: Set<AwakeFeature>
+    /// 0.3.1: lid-closed mode's state (nil while the feature isn't effective) and whether sleep was found left off
+    /// by an earlier session (B3.4). States only: no token, pid or time.
+    package var lid: LidRowState?
+    package var lidLeftover: Bool
 
     package init(effective: Set<AwakeFeature>, governing: AwakeStatusSource?, kind: AwakeHistoryKind?,
                  assertion: AwakeAssertionType, assertionErrors: Int, guardHolding: AwakeEndReason?,
                  activeServices: [AwakeServiceID], holds: Int, rules: Int,
                  conditionsByKind: [AwakeCriterionKind: Int], eventCounts: [String: Int], drives: Int,
-                 killSwitches: Set<AwakeFeature> = []) {
+                 killSwitches: Set<AwakeFeature> = [], lid: LidRowState? = nil, lidLeftover: Bool = false) {
+        self.lid = lid
+        self.lidLeftover = lidLeftover
         self.killSwitches = killSwitches.subtracting(AwakeFeatureGraph.unkillable)
         self.effective = effective
         self.governing = governing
@@ -633,6 +665,9 @@ package enum AwakeDiagnosticsReport {
         let kinds = f.conditionsByKind.filter { $0.value > 0 }.map { "\($0.key.rawValue) \($0.value)" }.sorted()
         out.append("Awake rules: \(f.rules)" + (kinds.isEmpty ? "" : " (" + kinds.joined(separator: ", ") + ")"))
         out.append("Awake drives: \(f.drives)")
+        if f.lid != nil || f.lidLeftover {
+            out.append("Awake lid-closed mode: " + (f.lid?.rawValue ?? "unavailable") + (f.lidLeftover ? " (leftover)" : ""))
+        }
         for (key, n) in f.eventCounts.sorted(by: { $0.key < $1.key }) where n > 0 {
             out.append("Awake event \(key): \(n)")
         }
@@ -780,6 +815,7 @@ package enum AwakeStatusText {
         // §1.4 closed-display mode: the native route, where there is room for it (the menu header keeps 2 lines).
         if i.lidWarning && !i.lidModeOn { out.append(lidRoute(i.lidRoute)) }
         if !i.governing.isActive, let note = i.idleNote { out.append(note) }
+        if !i.governing.isActive && !i.lidModeOn, let ended = i.lidLastEnd { out.append(ended) }
         // Drive Alive runs without a session too: say why it stopped while idle as well.
         if !i.governing.isActive, let paused = i.backgroundPaused { out.append(paused) }
         if let p = pausedUntilClock { out.append(L("Rules are paused until ") + p + ".") }
