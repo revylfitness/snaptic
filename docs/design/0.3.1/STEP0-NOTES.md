@@ -115,6 +115,7 @@ AwakeStatusSection, CustomSessionPanel, AboutPage, GeneralPages and Onboarding.
 | "only `publish` runs `gh release`" must not fail today | The rule turns on by itself once a `publish:` job exists in a workflow; no ratchet row | Today's `release` job still publishes; T-update's rewrite adds `publish` and removes `release` in one change |
 | L19 Package.swift rule must not fail before T-update | Checked once any source imports Sparkle (or Package.swift declares any `.package(`): exactly one dependency, Sparkle with `exact:`, under `#if os(macOS)`, and `Package.resolved` present | Self-activating, no lead follow-up |
 | L19 "SU* key strings" | String literals matching `SU[A-Z][a-z]…` (`SUFeedURL`, not `SUPPORT`) outside `SnapticKit/UpdatePolicy.swift` | File-level stand-in for "only in UpdateDefaultsKeys" |
+| B1 `lidRoute` "Unavailable (translocated, or no lid)" | `AwakeLidRoute.unavailable` also covers no battery, the kill switch and Safe Mode; B1 now reads "(translocated, no lid, no battery, kill switch, or Safe Mode)" | In those three the Advanced toggle is missing or locked, so "Feature off" would point at a control the user can't use (r1 A, question b) |
 | History `lidClosed` (B5) and `MigrationID.v031Welcome` (E1a) | Not added | Each has a single owner (T-lid-kit with HistoryController's input agreed with T-lid-app; T-update), and adding a Codable field changes encoded JSON that tests pin |
 
 ## Lint (frozen after step 0; teams ask the lead)
