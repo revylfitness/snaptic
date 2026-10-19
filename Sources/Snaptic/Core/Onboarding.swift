@@ -3,14 +3,16 @@ import SwiftUI
 import SnapticKit
 
 /// First-run onboarding (H; PLAN 0.3 §4.7): Welcome → Choose modules → Displays chips (F's
-/// `DisplaysOnboardingStep`, only while Displays is on) → Permissions (only what was chosen) → Done. One primary
-/// button, always in the window footer ("Continue" / "Done"; on the Displays step it applies the chips), with Back
-/// beside it. The step is saved after every
-/// move, so closing the window and relaunching resumes where it stopped.
+/// `DisplaysOnboardingStep`, only while Displays is on) → Permissions (only what was chosen) → Keep Snaptic Up to
+/// Date (0.3.1 E1a) → Done. One primary button, always in the window footer ("Continue" / "Done"; on the Displays step
+/// it applies the chips; on the updates page Check Automatically and Not Now, either of which moves on), with Back
+/// beside it. The step is saved after every move, so closing the window and relaunching resumes where it stopped.
+///
+/// The updates page shows only in builds that update themselves and while the user hasn't answered. It sits between
+/// the last saved step and Done without a saved step of its own (`ModulesConfig.onboarding` keeps the step before
+/// it), so a relaunch there comes back to it through Continue.
 @MainActor final class Onboarding: NSObject, NSWindowDelegate, ControlDeclaring {
     typealias Controls = OnboardingControls
-    /// 0.3.1 E1a: the Keep Snaptic Up to Date step. Step 0 stub: T-update uses these ids in step 1 (and deletes this list).
-    private static let step0Controls = [ControlID("onboarding.updates.check"), ControlID("onboarding.updates.notNow")]
     static let size = NSSize(width: 600, height: 580)
 
     private weak var host: ModuleHost?
@@ -46,7 +48,8 @@ import SnapticKit
             window.contentView = NSHostingView(rootView: OnboardingView(
                 host: host, store: host.modulesStore, permissions: host.permissions, model: model,
                 next: { [weak self] in self?.advance() }, back: { [weak self] in self?.goBack() },
-                finish: { [weak self] in self?.finish() }))
+                finish: { [weak self] in self?.finish() },
+                answerUpdates: { [weak self] allowed in self?.answerUpdates(allowed) }))
             window.delegate = self
             window.center()
             self.window = window
@@ -59,12 +62,35 @@ import SnapticKit
     private func advance() {
         guard let host else { return }
         guard model.step != .done else { finish(); return }
-        model.step = host.modulesStore.value.step(after: model.step)
+        let next = host.modulesStore.value.step(after: model.step)
+        if next == .done && !model.showingUpdates && Self.asksAboutUpdates(host) {
+            model.showingUpdates = true
+            return
+        }
+        model.showingUpdates = false
+        model.step = next
         save()
+    }
+
+    /// E1a: the updates question, once, in builds that update themselves.
+    static func asksAboutUpdates(_ host: ModuleHost) -> Bool {
+        guard let updater = host.updaterController else { return false }
+        return !updater.consentDecided
+    }
+
+    /// Check Automatically (checks and automatic install, never install for root-owned copies) or Not Now (both
+    /// off); either moves on.
+    private func answerUpdates(_ allowed: Bool) {
+        host?.updaterController?.setConsent(allowed)
+        advance()
     }
 
     private func goBack() {
         guard let host else { return }
+        if model.showingUpdates {
+            model.showingUpdates = false
+            return
+        }
         let steps = host.modulesStore.value.onboardingSteps()
         guard let index = steps.firstIndex(of: model.step), index > 0 else { return }
         model.step = steps[index - 1]
@@ -103,6 +129,8 @@ import SnapticKit
     @Published var step: OnboardingStep = .welcome
     /// Bumped by the footer's Continue on the Displays step: F's step applies its chips and calls `onApply`.
     @Published var displaysApplyToken = 0
+    /// 0.3.1 E1a: the Keep Snaptic Up to Date page shows (between `step` and Done).
+    @Published var showingUpdates = false
 }
 
 private struct OnboardingView: View {
@@ -113,17 +141,22 @@ private struct OnboardingView: View {
     let next: () -> Void
     let back: () -> Void
     let finish: () -> Void
+    let answerUpdates: (Bool) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
             progress
             Group {
-                switch model.step {
-                case .welcome: welcome
-                case .modules: modules
-                case .displays: displays
-                case .permissions: permissionsStep
-                case .done: done
+                if model.showingUpdates {
+                    updatesStep
+                } else {
+                    switch model.step {
+                    case .welcome: welcome
+                    case .modules: modules
+                    case .displays: displays
+                    case .permissions: permissionsStep
+                    case .done: done
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -135,19 +168,32 @@ private struct OnboardingView: View {
 
     private var steps: [OnboardingStep] { store.value.onboardingSteps() }
 
-    /// A page indicator: one dot per step.
+    /// The pages in order: the steps, with the updates page before Done while it applies (E1a).
+    private var pages: [String] {
+        var pages = steps.map(\.rawValue)
+        if model.showingUpdates || Onboarding.asksAboutUpdates(host), let done = pages.firstIndex(of: OnboardingStep.done.rawValue) {
+            pages.insert(Self.updatesPage, at: done)
+        }
+        return pages
+    }
+
+    private static let updatesPage = "updates"
+
+    private var currentPage: String { model.showingUpdates ? Self.updatesPage : model.step.rawValue }
+
+    /// A page indicator: one dot per page.
     private var progress: some View {
         HStack(spacing: 8) {
-            ForEach(steps, id: \.self) { step in
+            ForEach(pages, id: \.self) { page in
                 Circle()
-                    .fill(step == model.step ? Color.accentColor : Color.secondary.opacity(0.3))
+                    .fill(page == currentPage ? Color.accentColor : Color.secondary.opacity(0.3))
                     .frame(width: 7, height: 7)
             }
         }
         .padding(.top, 36)
         .padding(.bottom, 8)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(L("Step \((steps.firstIndex(of: model.step) ?? 0) + 1) of \(steps.count)"))
+        .accessibilityLabel(L("Step \((pages.firstIndex(of: currentPage) ?? 0) + 1) of \(pages.count)"))
     }
 
     // MARK: Steps
@@ -239,6 +285,25 @@ private struct OnboardingView: View {
         .onAppear { permissions.refresh() }
     }
 
+    /// E1a: the update consent, asked in Snaptic's own words (Sparkle's prompt never appears).
+    private var updatesStep: some View {
+        VStack(spacing: 12) {
+            Spacer(minLength: 0)
+            Image(systemName: "arrow.down.circle")
+                .font(.system(size: 64))
+                .foregroundStyle(Color.accentColor)
+                .accessibilityHidden(true)
+            Text(L("Keep Snaptic Up to Date"))
+                .font(.largeTitle.weight(.semibold))
+            Text(L("Snaptic can check GitHub once a day and install updates when you quit it. GitHub sees your IP address and macOS version, nothing more."))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 40)
+    }
+
     private var done: some View {
         VStack(spacing: 12) {
             Spacer(minLength: 0)
@@ -280,14 +345,23 @@ private struct OnboardingView: View {
                 Button(L("Back")) { back() }
             }
             Spacer()
-            Button(model.step == .done ? L("Done") : L("Continue")) {
-                switch model.step {
-                case .done: finish()
-                case .displays: model.displaysApplyToken &+= 1
-                default: next()
+            if model.showingUpdates {
+                // Either answer moves on; there is no separate Continue (E1a).
+                Button(L("Not Now")) { answerUpdates(false) }
+                    .modifier(SettingsAnchor(ControlID("onboarding.updates.notNow")))
+                Button(L("Check Automatically")) { answerUpdates(true) }
+                    .keyboardShortcut(.defaultAction)
+                    .modifier(SettingsAnchor(ControlID("onboarding.updates.check")))
+            } else {
+                Button(model.step == .done ? L("Done") : L("Continue")) {
+                    switch model.step {
+                    case .done: finish()
+                    case .displays: model.displaysApplyToken &+= 1
+                    default: next()
+                    }
                 }
+                .keyboardShortcut(.defaultAction)
             }
-            .keyboardShortcut(.defaultAction)
         }
         .padding(16)
     }
