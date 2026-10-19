@@ -191,4 +191,40 @@ final class MenuTabsTests: XCTestCase {
         XCTAssertEqual(MenuTabs.showTabTitle("Awake"), "Show Awake Tab")
         XCTAssertEqual(MenuTabs.emptySection, "Nothing to Show")
     }
+
+    /// r1 U3: the segment's help is only its key, spelled out; the label already says the title and ", on".
+    func testSegmentHelpIsTheKeySpelledOut() {
+        XCTAssertEqual(MenuTabs.segmentHelp(keyIndex: 1), "Command-1")
+        XCTAssertEqual(MenuTabs.segmentHelp(keyIndex: 3), "Command-3")
+        XCTAssertEqual(MenuTabs.segmentHelp(keyIndex: 9), "Command-9")
+        XCTAssertNil(MenuTabs.segmentHelp(keyIndex: nil))
+        XCTAssertNil(MenuTabs.segmentHelp(keyIndex: 0))
+        XCTAssertNil(MenuTabs.segmentHelp(keyIndex: 10), "past ⌘9 there is no key")
+        for n in 1...9 {
+            let help = MenuTabs.segmentHelp(keyIndex: n) ?? ""
+            XCTAssertFalse(help.contains("⌘"), "VoiceOver would read the glyph")
+            XCTAssertFalse(help.contains(", on"))
+        }
+    }
+
+    // MARK: Assistive input
+
+    /// r1 U2: Accessibility › Full Keyboard Access alone shows the Show … Tab items, as does each other input.
+    func testShowTabItemsForEveryAssistiveInput() {
+        XCTAssertFalse(MenuTabs.showsTabItems(voiceOver: false, switchControl: false, keyboardNavigation: false,
+                                             fullKeyboardAccess: false))
+        XCTAssertTrue(MenuTabs.showsTabItems(voiceOver: false, switchControl: false, keyboardNavigation: false,
+                                            fullKeyboardAccess: true), "the accessibility feature, keyboard navigation off")
+        XCTAssertTrue(MenuTabs.showsTabItems(voiceOver: false, switchControl: false, keyboardNavigation: true,
+                                            fullKeyboardAccess: false))
+        XCTAssertTrue(MenuTabs.showsTabItems(voiceOver: true, switchControl: false, keyboardNavigation: false,
+                                            fullKeyboardAccess: false))
+        XCTAssertTrue(MenuTabs.showsTabItems(voiceOver: false, switchControl: true, keyboardNavigation: false,
+                                            fullKeyboardAccess: false))
+    }
+
+    func testFullKeyboardAccessPreference() {
+        XCTAssertEqual(MenuTabs.fullKeyboardAccessDomain, "com.apple.Accessibility")
+        XCTAssertEqual(MenuTabs.fullKeyboardAccessKey, "FullKeyboardAccessEnabled")
+    }
 }

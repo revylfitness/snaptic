@@ -202,6 +202,21 @@ package enum MenuTabs {
         return n
     }
 
+    // MARK: Assistive input (A3)
+
+    /// Where macOS keeps Accessibility › Keyboard › Full Keyboard Access (macOS 12+), which has no public API.
+    /// `NSApp.isFullKeyboardAccessEnabled` reads Keyboard › Keyboard navigation (`AppleKeyboardUIMode`), a separate
+    /// setting (r1 U2). HW-25 confirms the key.
+    package static let fullKeyboardAccessDomain = "com.apple.Accessibility"
+    package static let fullKeyboardAccessKey = "FullKeyboardAccessEnabled"
+
+    /// A3: the Show … Tab items show while any assistive input is in use: VoiceOver, Switch Control, Keyboard
+    /// navigation, or Full Keyboard Access. Either keyboard setting alone is enough (r1 U2).
+    package static func showsTabItems(voiceOver: Bool, switchControl: Bool, keyboardNavigation: Bool,
+                                      fullKeyboardAccess: Bool) -> Bool {
+        voiceOver || switchControl || keyboardNavigation || fullKeyboardAccess
+    }
+
     // MARK: Text (A1–A3)
 
     /// The tab bar's accessibility label.
@@ -223,6 +238,13 @@ package enum MenuTabs {
         let base = active ? title + L(", on") : title
         guard let keyIndex else { return base }
         return base + " (⌘\(keyIndex))"
+    }
+
+    /// A segment's VoiceOver help: only its key, spelled the way `barHelp` spells it ("Command-3"); nil past ⌘9. The
+    /// label already speaks the title and ", on", so the help repeats neither and never reads the ⌘ glyph (r1 U3).
+    package static func segmentHelp(keyIndex: Int?) -> String? {
+        guard let keyIndex, keyIndex >= 1, keyIndex <= maxKeyIndex else { return nil }
+        return L("Command-\(keyIndex)")
     }
 
     /// A3: the native twin of a tab, in the footer ("Show Displays Tab").

@@ -8,9 +8,10 @@ import SnapticKit
 /// it applies the chips; on the updates page Check Automatically and Not Now, either of which moves on), with Back
 /// beside it. The step is saved after every move, so closing the window and relaunching resumes where it stopped.
 ///
-/// The updates page shows only in builds that update themselves and while the user hasn't answered. It sits between
-/// the last saved step and Done without a saved step of its own (`ModulesConfig.onboarding` keeps the step before
-/// it), so a relaunch there comes back to it through Continue.
+/// The updates page shows only in builds that update themselves and while the user hasn't answered, decided once when
+/// the window opens (`includesUpdates`), so answering doesn't renumber the pages (r1 U6). It sits between the last
+/// saved step and Done without a saved step of its own (`ModulesConfig.onboarding` keeps the step before it), so a
+/// relaunch there comes back to it through Continue.
 @MainActor final class Onboarding: NSObject, NSWindowDelegate, ControlDeclaring {
     typealias Controls = OnboardingControls
     static let size = NSSize(width: 600, height: 580)
@@ -35,6 +36,11 @@ import SnapticKit
     func show() {
         guard let host else { return }
         host.permissions.holdAutomaticGuides = true
+        if !isShowing {
+            // This run's pages: the updates question stays in them once answered (r1 U6).
+            model.includesUpdates = Self.asksAboutUpdates(host)
+            model.showingUpdates = false
+        }
         model.step = host.modulesStore.value.resumeStep
         if model.step == .done { model.step = .welcome }
         save()
@@ -63,7 +69,7 @@ import SnapticKit
         guard let host else { return }
         guard model.step != .done else { finish(); return }
         let next = host.modulesStore.value.step(after: model.step)
-        if next == .done && !model.showingUpdates && Self.asksAboutUpdates(host) {
+        if next == .done && !model.showingUpdates && model.includesUpdates {
             model.showingUpdates = true
             return
         }
@@ -131,6 +137,8 @@ import SnapticKit
     @Published var displaysApplyToken = 0
     /// 0.3.1 E1a: the Keep Snaptic Up to Date page shows (between `step` and Done).
     @Published var showingUpdates = false
+    /// E1a: this run has the updates page, decided when the window opens and kept after the answer (r1 U6).
+    @Published var includesUpdates = false
 }
 
 private struct OnboardingView: View {
@@ -166,20 +174,12 @@ private struct OnboardingView: View {
         .frame(width: Onboarding.size.width, height: Onboarding.size.height)
     }
 
-    private var steps: [OnboardingStep] { store.value.onboardingSteps() }
-
-    /// The pages in order: the steps, with the updates page before Done while it applies (E1a).
-    private var pages: [String] {
-        var pages = steps.map(\.rawValue)
-        if model.showingUpdates || Onboarding.asksAboutUpdates(host), let done = pages.firstIndex(of: OnboardingStep.done.rawValue) {
-            pages.insert(Self.updatesPage, at: done)
-        }
-        return pages
+    /// The pages in order: the steps, with the updates page before Done for the whole run that includes it (E1a, U6).
+    private var pages: [OnboardingPage] {
+        store.value.onboardingPages(includesUpdates: model.includesUpdates || model.showingUpdates)
     }
 
-    private static let updatesPage = "updates"
-
-    private var currentPage: String { model.showingUpdates ? Self.updatesPage : model.step.rawValue }
+    private var currentPage: OnboardingPage { model.showingUpdates ? .updates : .step(model.step) }
 
     /// A page indicator: one dot per page.
     private var progress: some View {
