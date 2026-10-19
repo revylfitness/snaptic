@@ -3,22 +3,24 @@ import SwiftUI
 import SnapticKit
 
 /// A list of apps by bundle id (moved from the Switcher's AppListSection; used by the Switcher and PIP): a section
-/// whose header is the title and footer the help; each app shows its icon and name with a remove button; **Add ▾**
+/// whose header is the title and footer the help (and a second footer line, `note`, for what the list never needs); each app shows its icon and name with a remove button; **Add ▾**
 /// lists running apps, then "Choose…" (an app-modal open panel, never one attached to a sheet).
 struct AppListEditor: View {
     let title: String
     let help: String?
     let bundleIDs: Binding<[String]>
     let anchor: ControlID?
+    let note: String?
 
     /// Most apps a list keeps (sanitizers clamp too).
     static let maxApps = 64
 
-    init(_ title: String, help: String?, bundleIDs: Binding<[String]>, anchor: ControlID?) {
+    init(_ title: String, help: String?, bundleIDs: Binding<[String]>, anchor: ControlID?, note: String? = nil) {
         self.title = title
         self.help = help
         self.bundleIDs = bundleIDs
         self.anchor = anchor
+        self.note = note
     }
 
     var body: some View {
@@ -48,8 +50,12 @@ struct AppListEditor: View {
         } header: {
             Text(title)
         } footer: {
-            if let help {
-                Text(help).foregroundStyle(.secondary)
+            if help != nil || note != nil {
+                VStack(alignment: .leading, spacing: 4) {
+                    if let help { Text(help) }
+                    if let note { Text(note) }
+                }
+                .foregroundStyle(.secondary)
             }
         }
         .modifier(OptionalSettingsAnchor(anchor))

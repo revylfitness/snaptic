@@ -84,7 +84,7 @@ struct ArrangeContent: View {
 
     private var offText: String {
         if case .unavailable(let reason)? = runtime.availability[.arrangement] { return reason }
-        return env.context?.otherApps.pauseReason(for: .arrangement) ?? L("Arrangement and mirroring is off.")
+        return env.context?.otherApps.pauseReason(for: .arrangement) ?? L("Arrangement and mirroring are off.")
     }
 
     private var offActions: [StatusAction] {

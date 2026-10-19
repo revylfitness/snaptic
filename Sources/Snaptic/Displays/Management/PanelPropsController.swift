@@ -73,14 +73,14 @@ import SnapticKit
     func refusal(_ feature: DisplayFeature, for d: DisplayInfo) -> String? {
         guard let ctx = context else { return L("Displays is off") }
         guard effective.contains(feature) else { return L("This feature is off") }
-        guard ctx.guardClient.canMonitorPanel else { return L("Safety helper can't revert this") }
+        guard ctx.guardClient.canMonitorPanel else { return L("Safety helper can’t revert this") }
         let group = feature == .rotation ? "rotation" : feature == .hdrToggle ? "hdr" : "underscan"
         guard ctx.privateAPI.monitorPanelSupports(group) else { return L("Not supported on this Mac") }
         switch feature {
         case .rotation:
-            if d.isBuiltin { return L("The built-in display can't be rotated") }
+            if d.isBuiltin { return L("The built-in display can’t be rotated") }
         case .hdrToggle:
-            if d.hdrSupported != true { return L("This display doesn't support HDR") }
+            if d.hdrSupported != true { return L("This display doesn’t support HDR") }
             if ManagedDisplays.onlyStronglyVisible(ctx) == d.key { return L("Refused on the only visible display") }
         case .underscan:
             if ManagedDisplays.onlyStronglyVisible(ctx) == d.key { return L("Refused on the only visible display") }

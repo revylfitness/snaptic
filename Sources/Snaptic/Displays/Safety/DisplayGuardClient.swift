@@ -186,7 +186,7 @@ import SnapticKit
             // Stopped, or superseded, or the child already died while it was being started.
             guard active, context === ctx, acks.generation == generation, !spawned.isReaped else {
                 spawned.terminate()
-                if active { lastFailure = L("Couldn't start the safety helper.") }
+                if active { lastFailure = L("Couldn’t start the safety helper.") }
                 // Exited before we took the handle: its exit was ignored, so read the status here.
                 if let status = spawned.status, HelperExitStatus.isProtocolMismatch(status) { noteRestartRequired() }
                 resolveReadyWaiters(false)
@@ -218,7 +218,7 @@ import SnapticKit
             send(.impairment(dimToBlack: impairment.dim, overlayBelowFloor: impairment.overlay))
             if !classes.isEmpty { send(.classification(classes)) }
         } else if timedOut && handle != nil && !ready {
-            lastFailure = L("The safety helper didn't answer.")
+            lastFailure = L("The safety helper didn’t answer.")
             terminate(sendShutdown: false, grace: Self.unresponsiveGraceSeconds)
         }
         return ok
@@ -233,12 +233,12 @@ import SnapticKit
 
     /// Readable text for a spawn failure (W9: never an enum dump).
     static func describe(_ error: Error) -> String {
-        guard let e = error as? HelperSpawnError else { return L("Couldn't start the safety helper.") }
+        guard let e = error as? HelperSpawnError else { return L("Couldn’t start the safety helper.") }
         switch e {
         case .unavailable(let reason): return reason
-        case .unsupportedKind: return L("Couldn't start the safety helper.")
-        case .pipe: return L("Couldn't connect to the safety helper. Restart Snaptic.")
-        case .spawnFailed: return L("macOS couldn't start the safety helper. Restart Snaptic.")
+        case .unsupportedKind: return L("Couldn’t start the safety helper.")
+        case .pipe: return L("Couldn’t connect to the safety helper. Restart Snaptic.")
+        case .spawnFailed: return L("macOS couldn’t start the safety helper. Restart Snaptic.")
         case .verificationFailed: return L("The safety helper failed a security check. Restart Snaptic.")
         case .refused(let r): return r.message
         }

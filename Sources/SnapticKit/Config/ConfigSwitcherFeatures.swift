@@ -119,8 +119,8 @@ package struct SwitcherFeaturesConfig: ConfigModel {
         case .search: return L("Off: S and / do nothing while the switcher is open.")
         case .actionClose, .actionMinimize, .actionFullscreen, .actionHide, .actionQuit:
             return L("Off: the key does nothing while the switcher is open, and its button and hint are hidden.")
-        case .hoverButtons: return L("Close, minimize and full-screen buttons on the window under the pointer.")
-        case .hoverSelect: return L("Off by default, so a bumped mouse doesn't change the target.")
+        case .hoverButtons: return L("Close, minimize, and full-screen buttons on the window under the pointer.")
+        case .hoverSelect: return L("Off by default, so a bumped mouse doesn’t change the target.")
         case .commandTabTakeover: return L("Off: shortcuts that use ⌘ are ignored and macOS keeps ⌘⇥.")
         case .passthrough: return L("Off: the app exceptions list is ignored.")
         }

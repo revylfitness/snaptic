@@ -39,12 +39,64 @@ final class DisplaysUIModelTests: XCTestCase {
         XCTAssertEqual(DisplaysOnboardingPlan.title(.virtualScreens), "Virtual displays")
     }
 
+    /// Review6 ux R3-3: feature names spliced into sentences read as sentences ("Turn off virtual displays?",
+    /// "This also turns off sharper text and HDR virtual modes.", "Keyboard shortcuts are off.").
+    func testFeatureNamesInSentences() {
+        XCTAssertEqual(L("Turn off \(SentenceText.inSentence(DisplaysUIText.title(.virtualScreens)))?"),
+                       "Turn off virtual displays?")
+        XCTAssertEqual(L("This also turns off \(DisplaysUIText.list([.smartHiDPI, .hdrVirtual]))."),
+                       "This also turns off sharper text and HDR virtual modes.")
+        XCTAssertEqual(DisplaysUIText.list([.layouts, .pip, .nightShift]),
+                       "saved layouts, Picture in Picture, and Night Shift controls")
+        XCTAssertEqual(DisplaysUIText.isOff(.shortcuts), "Keyboard shortcuts are off.")
+        XCTAssertEqual(DisplaysUIText.isOff(.brightness), "Brightness control is off.")
+        XCTAssertEqual(DisplaysUIText.notAvailableNow(.ddcControls), "Hardware controls aren’t available right now.")
+        XCTAssertEqual(DisplaysUIText.notAvailableNow(.color), "Color adjustments aren’t available right now.")
+        XCTAssertEqual(DisplaysUIText.notAvailableNow(.osd), "Brightness indicator isn’t available right now.")
+        XCTAssertEqual(DisplaysUIText.needs(.ddcControls), "Needs hardware controls.")
+        XCTAssertEqual(DisplaysUIText.needs(.layouts), "Needs saved layouts.")
+        XCTAssertEqual(DisplaysUIText.needs(.pip), "Needs Picture in Picture.")
+        XCTAssertEqual(DisplaysUIText.skippedWhileOff(.layouts), "Skipped while saved layouts are off.")
+        XCTAssertEqual(DisplaysUIText.skippedWhileOff(.rotation), "Skipped while rotation is off.")
+        for feature in DisplayFeature.allCases {
+            let inside = DisplaysUIText.inSentence(feature)
+            let title = DisplaysUIText.title(feature)
+            // Only the first letter may change, and only to lowercase.
+            XCTAssertEqual(inside.lowercased(), title.lowercased(), title)
+            XCTAssertEqual(inside.dropFirst(), title.dropFirst(), title)
+            // A plural name ends in "s" or joins two things; a singular one has no "and".
+            if DisplaysUIText.isPlural(feature) {
+                XCTAssertTrue(title.hasSuffix("s") || title.contains(" and "), title)
+            }
+            XCTAssertFalse(DisplaysUIText.isOff(feature).contains("  "), title)
+        }
+    }
+
+    /// Review6 ux R3-1: the pop-up options Kit names (pickers map these enums' titles) are title case, like menu
+    /// items. Hook "When" clauses are sentence fragments and stay sentence case.
+    func testPopUpOptionTitlesAreTitleCase() {
+        let minor: Set<String> = ["a", "an", "and", "as", "at", "but", "by", "for", "from", "in", "into", "nor", "of",
+                                  "on", "onto", "or", "over", "per", "than", "the", "to", "up", "via", "vs", "with"]
+        var titles = OSDStyle.allCases.map(\.title) + OSDPosition.allCases.map(\.title) + OSDTarget.allCases.map(\.title)
+        titles += KeyPolicy.allCases.map(\.title) + KeyTarget.allCases.map(\.title) + VolumePolicy.allCases.map(\.title)
+        titles += BrightnessMethod.allCases.map(\.title) + BrightnessRestoreMode.allCases.map(\.title)
+        titles += XDRMethod.allCases.map(\.title) + ArrangementPlacement.allCases.map(\.title)
+        for title in titles {
+            let words = title.replacingOccurrences(of: #"\([^)]*\)"#, with: "", options: .regularExpression)
+                .split(separator: " ").map { $0.trimmingCharacters(in: CharacterSet(charactersIn: ",.")) }
+            for word in words.dropFirst() where !word.isEmpty && !minor.contains(word.lowercased()) {
+                // "macOS" keeps its own case.
+                XCTAssertTrue(word.contains(where: \.isUppercase), "“\(title)”: “\(word)”")
+            }
+        }
+    }
+
     func testSharperTextNoteAgreesWithTheNumberOfDisplays() {
         let one = DisplaysOnboardingPlan.sharperTextNote(["DELL U2723QE"])
         XCTAssertTrue(one.hasPrefix("DELL U2723QE has no sharp mode"))
         XCTAssertTrue(one.contains("on that display"))
         let two = DisplaysOnboardingPlan.sharperTextNote(["LG", "BenQ"])
-        XCTAssertTrue(two.hasPrefix("LG, BenQ have no sharp mode"))
+        XCTAssertTrue(two.hasPrefix("LG and BenQ have no sharp mode"))
         XCTAssertTrue(two.contains("on those displays"))
     }
 

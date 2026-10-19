@@ -35,7 +35,7 @@ import SnapticKit
                                       control: ControlID("menu.display.d.savedLayout")) { [weak c] in
                 c?.apply(id)
             }
-            if !connected { item.toolTip = L("Its displays aren't all connected") }
+            if !connected { item.toolTip = L("Its displays aren’t all connected") }
             items.append(item)
         }
         var actions: [NSMenuItem] = []

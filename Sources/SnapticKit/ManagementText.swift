@@ -13,6 +13,8 @@ package enum ManagementText {
     package static var matchTextSize: String { L("Match Text Size…") }
     package static var halfOfNativeResolution: String { L("Half of Native Resolution") }
     package static var notchAreaOnOff: String { L("Notch Area On or Off") }
+    /// Quick Changes ▾ knows the state, so it names the change (the taller size uses the area beside the notch).
+    package static func notchAreaChange(turnsOn: Bool) -> String { turnsOn ? L("Turn On Notch Area") : L("Turn Off Notch Area") }
     package static var useAsMainDisplay: String { L("Use as Main Display") }
     package static var highDynamicRangeOnOff: String { L("High Dynamic Range On or Off") }
     package static func virtualDisplayOnOff(_ number: Int) -> String { L("Virtual Display \(number) On or Off") }
@@ -80,7 +82,8 @@ package enum ManagementText {
 
     /// Every string above, with sample arguments (for the vocabulary test).
     package static var all: [String] {
-        [sharperTextOnOff, matchTextSize, halfOfNativeResolution, notchAreaOnOff, useAsMainDisplay,
+        [sharperTextOnOff, matchTextSize, halfOfNativeResolution, notchAreaOnOff, notchAreaChange(turnsOn: true),
+         notchAreaChange(turnsOn: false), useAsMainDisplay,
          highDynamicRangeOnOff, virtualDisplayOnOff(3), mirroringOnOff, builtInDisplayOnOff,
          turnOnSharperText, turnOffSharperText, changeSharperTextSize, restoreSharperText, placeVirtualDisplay,
          mirrorVirtualDisplay,
@@ -91,5 +94,30 @@ package enum ManagementText {
          streamVirtualDisplayPrompt("Teleprompter", onto: "LG", flipped: true),
          streamVirtualDisplayPrompt("Teleprompter", onto: "LG", flipped: false), layoutsNeedSerialNumbers,
          sharperTextOnlyOff, sharperTextAlreadyOff, virtualDisplaysOff, noSuchVirtualDisplay, savedLayoutsOff]
+    }
+}
+
+/// The Keyboard Shortcuts titles of the other Displays switches (C: Brightness, Color, Hardware controls; D:
+/// Protection; E: Picture in Picture). A switch is "<menu item> On or Off", so the name a person sees in the menu
+/// finds its shortcut (review6 ux R3-2).
+package enum DisplaysToggleText {
+    package static func onOrOff(_ name: String) -> String { L("\(name) On or Off") }
+
+    package static var protectArrangement: String { onOrOff(L("Protect Arrangement")) }
+    package static var showInPictureInPicture: String { onOrOff(L("Show in Picture in Picture")) }
+    package static var mute: String { onOrOff(L("Mute")) }
+    package static var invertColors: String { onOrOff(L("Invert Colors")) }
+    package static var adjustColors: String { onOrOff(L("Adjust Colors")) }
+    package static var syncBrightness: String { onOrOff(L("Sync Brightness")) }
+    package static var nightShift: String { onOrOff(L("Night Shift")) }
+    package static var extraBrightness: String { onOrOff(L("Extra Brightness")) }
+    package static var blackMenuBarBackground: String { onOrOff(L("Black Menu Bar Background")) }
+
+    /// Each switch with the menu item it matches (nil: no menu item; Invert Colors is a shortcut only).
+    package static var withMenuItems: [(title: String, menuItem: String?)] {
+        [(protectArrangement, "d.protection"), (showInPictureInPicture, "e.pip.display"), (mute, "c.ddc.mute"),
+         (invertColors, nil), (adjustColors, "c.color.submenu"), (syncBrightness, "c.sync.toggle"),
+         (nightShift, "c.tools.nightShift"), (extraBrightness, "c.xdr.toggle"),
+         (blackMenuBarBackground, "c.menuBarStrip.toggle")]
     }
 }

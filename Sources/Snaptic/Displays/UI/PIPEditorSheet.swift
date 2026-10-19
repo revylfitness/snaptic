@@ -208,7 +208,7 @@ struct PIPEditorSheet: View, ControlDeclaring {
 
     private var sourceOptions: [PickerOption<PIPSourceRef>] {
         let config = env.config.value
-        var options = [PickerOption(PIPSourceRef.window, L("A window you choose when it starts"),
+        var options = [PickerOption(PIPSourceRef.window, L("Choose a Window When It Starts"),
                                     enabled: PIPSettingsText.canAdd(source: .window, in: config))]
         for d in PIPPageText.connected(runtime) {
             options.append(PickerOption(PIPSourceRef.display(d.key), d.name,
@@ -238,7 +238,7 @@ struct PIPEditorSheet: View, ControlDeclaring {
             PickerSetting(L("Level"), selection: field(\.level), options: [
                 PickerOption(PIPLevel.normal, L("Normal")),
                 PickerOption(PIPLevel.floating, L("Floating")),
-                PickerOption(PIPLevel.aboveAll, L("Above everything")),
+                PickerOption(PIPLevel.aboveAll, L("Above Everything")),
             ], style: .popUp, defaultValue: PIPConfiguration().level, anchor: ControlID("displays.pip.editor.level"))
             SliderSetting(L("Opacity"), value: field(\.opacity), in: PIPConfiguration.opacityRange, step: 0.05,
                           defaultValue: PIPConfiguration().opacity, format: .percent(of: 1),
@@ -326,8 +326,8 @@ struct PIPEditorSheet: View, ControlDeclaring {
             PickerSetting(L("Scaling"), selection: field(\.scaling), options: [
                 PickerOption(PIPScaling.fit, L("Fit")),
                 PickerOption(PIPScaling.fill, L("Fill")),
-                PickerOption(PIPScaling.oneToOne, L("1:1 pixels")),
-                PickerOption(PIPScaling.integer, L("Whole multiples")),
+                PickerOption(PIPScaling.oneToOne, L("1:1 Pixels")),
+                PickerOption(PIPScaling.integer, L("Whole Multiples")),
             ], style: .popUp, defaultValue: PIPConfiguration().scaling, anchor: ControlID("displays.pip.editor.scaling"))
             SliderSetting(L("Size"), help: L("Below 100% leaves a black border around the picture."),
                           value: SettingsBinding.double(field(\.underscanPercent), in: PIPConfiguration.underscanRange),
@@ -448,7 +448,7 @@ struct PIPEditorSheet: View, ControlDeclaring {
                     .disabled(refusal != nil)
             } else {
                 if entry != nil {
-                    Button(L("Delete…"), role: .destructive) { confirmingDelete = true }
+                    Button(L("Delete Picture in Picture…"), role: .destructive) { confirmingDelete = true }
                         .modifier(SettingsAnchor(ControlID("displays.pip.editor.delete")))
                 }
                 Spacer(minLength: 8)

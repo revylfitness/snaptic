@@ -655,9 +655,10 @@ private struct PIPAdvancedSheet: View, ControlDeclaring {
                               disabledReason: switcher.unavailableReason([.pipFilters]))
             }
             AppListEditor(L("Never capture these apps"),
-                          help: L("Their windows never appear when Snaptic captures a display. Snaptic, Notification Center, and private browser windows are always left out."),
+                          help: L("Their windows are left out when Snaptic captures a display."),
                           bundleIDs: prefixes,
-                          anchor: ControlID("displays.pip.advanced.neverCapture"))
+                          anchor: ControlID("displays.pip.advanced.neverCapture"),
+                          note: L("Snaptic, Notification Center, and private browser windows are always left out."))
             if !PIPPrivacy.isDefaultList(pip.value.protectedBundlePrefixes) {
                 Section {
                     ButtonRow(L("Restore Default Apps"),

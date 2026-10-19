@@ -11,7 +11,7 @@ extension AwakeActionID {
     package static let preset2 = AwakeActionID(rawValue: "awake.preset2")
     package static let preset3 = AwakeActionID(rawValue: "awake.preset3")
     package static let preset4 = AwakeActionID(rawValue: "awake.preset4")
-    /// Title "Pause Rules"; the raw value is kept (M1 moves the 0.2 sleep-prevention hotkey here, R5-12).
+    /// Shortcut title "Pause or Resume Rules"; the raw value is kept (M1 moves the 0.2 sleep-prevention hotkey here, R5-12).
     package static let pauseAutomatic = AwakeActionID(rawValue: "awake.pauseAutomatic")
 
     /// Every Awake hotkey action, in Settings order.

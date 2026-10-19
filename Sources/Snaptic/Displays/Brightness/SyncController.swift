@@ -35,7 +35,7 @@ import SnapticKit
         let items = ColorMenuItems(context: context, part: .sync, owner: self)
         menuItems = items
         context.menus.register(items, lifetime: lifetime)
-        context.actions.register(Action(id: Self.toggleAction, title: L("Sync Brightness On or Off"), feature: .sync,
+        context.actions.register(Action(id: Self.toggleAction, title: DisplaysToggleText.syncBrightness, feature: .sync,
                                         cliAllowed: true) { [weak self] _ in self?.togglePaused() }, lifetime: lifetime)
         context.commands.register("toggle sync", policy: .low, offOnly: false, cliAllowed: true,
                                   summary: L("Pause or resume brightness sync"), lifetime: lifetime) { [weak self] _, _ in

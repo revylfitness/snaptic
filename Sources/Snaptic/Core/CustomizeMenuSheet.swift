@@ -46,7 +46,7 @@ private struct CustomizeMenuContent: View {
                       restoreDefaults: RestoreDefaults(
                           title: L("Restore Displays Menu Defaults…"),
                           question: L("Restore the Displays menu to its defaults?"),
-                          message: L("Display order, visibility and every item's place go back to their defaults. Your other Snaptic settings stay as they are."),
+                          message: L("Display order, visibility, and every item’s place go back to their defaults. Your other Snaptic settings stay as they are."),
                           button: L("Restore Defaults"), destructive: false) {
                           displays.value.menu = displays.value.menu.restoringDefaults(scope: .displaysMenu)
                       }) {
@@ -82,7 +82,7 @@ private struct CustomizeMenuContent: View {
                     } footer: {
                         // One explanation for the group's Show / In Display Submenu / Hide pop-ups (ux m14).
                         if open.wrappedValue && rows.contains(where: \.offersSubmenuChoice) {
-                            Text(L("Show places an item right under the display's name; In Display Submenu keeps it in the display's submenu."))
+                            Text(L("Show places an item right under the display’s name; In Display Submenu keeps it in the display’s submenu."))
                         }
                     }
                 }
@@ -201,12 +201,12 @@ private struct CustomizeMenuContent: View {
                                 PickerOption(DisplaysMenuSection.tools, L("Tools First"))],
                       style: .segmented, defaultValue: DisplaysMenuSection.displays,
                       anchor: ControlID("menubar.customize.sectionOrder"))
-        ToggleSetting(L("Status badges"), help: L("Notes such as “Main” under each display's name."),
+        ToggleSetting(L("Status badges"), help: L("Notes such as “Main” under each display’s name."),
                       isOn: SettingsBinding.store(displays, \.menu.showBadges),
                       anchor: ControlID("menubar.customize.showBadges"),
                       disabledReason: menu.style == .compact ? L("The Compact style shows no badges.") : nil)
         ToggleSetting(L("Display row with one display"),
-                      help: L("When off, a single display's sliders come before its row."),
+                      help: L("When off, a single display’s sliders come before its row."),
                       isOn: SettingsBinding.store(displays, \.menu.headerForSingleDisplay),
                       anchor: ControlID("menubar.customize.headerForSingleDisplay"))
     }
@@ -287,7 +287,7 @@ private struct CustomizeMenuContent: View {
                             .modifier(SettingsAnchor(ControlID("menubar.customize.needFeatures")))
                     } label: {
                         Text(info.title)
-                        if let feature = info.feature { Text(L("Needs \(DisplaysUIText.title(feature))")) }
+                        if let feature = info.feature { Text(DisplaysUIText.needs(feature)) }
                     }
                     .modifier(OptionalSettingsAnchor(Self.control(for: info.id)))
                 }

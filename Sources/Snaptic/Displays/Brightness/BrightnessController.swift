@@ -69,7 +69,7 @@ enum DisplayTargets {
     }
 
     /// Displays isn't running (the controller's context is gone).
-    static func notRunning() -> ControlResponse { .failure(ControlExit.unavailable, L("Displays isn't running")) }
+    static func notRunning() -> ControlResponse { .failure(ControlExit.unavailable, L("Displays isn’t running")) }
 
     /// One line per display for `get` verbs: "<n>\t<name>\t<value…>" with n as in
     /// `snaptic list`, or a JSON array with `--json`. Empty rows: nothing matched.
@@ -87,7 +87,7 @@ enum DisplayTargets {
                 return o
             }
             guard let data = try? JSONSerialization.data(withJSONObject: objects, options: [.sortedKeys]) else {
-                return .failure(ControlExit.unavailable, L("Couldn't encode the reply"))
+                return .failure(ControlExit.unavailable, L("Couldn’t encode the reply"))
             }
             return .ok(String(decoding: data, as: UTF8.self))
         }
@@ -169,7 +169,7 @@ enum PerDisplayEdit {
             case .ended: return L("the feature stopped")
             }
         } catch {
-            return L("the shortcut couldn't be registered")
+            return L("the shortcut couldn’t be registered")
         }
     }
 }

@@ -22,7 +22,7 @@ import SnapticKit
     /// The "Bluetooth device" condition is Beta (§2.8): the rule editor labels it so.
     static let isBeta = true
     /// What the condition can see, for the rule editor's device picker.
-    static let scopeNote = L("Detects Bluetooth headphones, speakers, keyboards, mice and trackpads.")
+    static let scopeNote = L("Detects Bluetooth headphones, speakers, keyboards, mice, and trackpads.")
 
     /// One connected device, for the device picker (the name is local UI only).
     struct Device: Equatable {

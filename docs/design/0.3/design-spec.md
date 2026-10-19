@@ -595,14 +595,42 @@ final class HostingMenuItem<Content: View>: NSMenuItem {
 
 ## 4. Copy rules
 
-1. **Capitalization.**
-   - Sentence case: setting labels, subtitles, section headers, tooltips [S6][S7].
-   - Title case: menu items, buttons, window and pane titles ("Restore Defaults…", "Keep Awake For") [S12].
+1. **Capitalization** (checked by `scripts/lint03.py` where it can be).
+   - **Sentence case** [S6][S7]: setting labels, help text, section headers and footers, status rows, tooltips,
+     alert messages, toasts, and radio-group labels ("For new resolutions", "Run both"). An alert's title is a
+     sentence too ("Turn off virtual displays?").
+   - **Title case** [S12]: menu items, buttons, window, sheet and pane titles ("Restore Defaults…", "Keep Awake For"),
+     and the options of pop-up buttons, segmented controls and pull-downs, which are menu items in macOS ("HiDPI
+     and Standard Sizes", "Display with the Pointer", "Until Turned Off"). Lowercase only articles, coordinating
+     conjunctions and short prepositions after the first word (a, an, the, and, but, or, for, as, at, by, in, of,
+     on, to, up, via, with, from, into, over, than). Text in parentheses or quotes keeps its own case.
+   - **Exceptions.** Apple's own wording stays as Apple writes it: the Arrange sheet's "Use as" pop-up ("Main
+     display", "Extended display", "Mirror for “…”"), as in System Settings. Event-hook "When" clauses ("A display
+     connects") are sentence fragments and stay sentence case.
+   - **Names inside sentences.** A feature's label is sentence case ("Virtual displays"), so mid-sentence its first
+     letter is lowercased: "Turn off virtual displays?", "Needs saved layouts." Proper names and acronyms keep their
+     case ("Picture in Picture", "Night Shift controls", "HDR virtual modes"). Use Kit `SentenceText.inSentence`
+     and `DisplaysUIText.inSentence`; for a sentence whose verb depends on the name use `DisplaysUIText.isOff` /
+     `notAvailableNow` ("Keyboard shortcuts are off."), never `"\(title) is off."`.
+   - **Switch actions** (Keyboard Shortcuts, command list): a shortcut that turns something on or off is titled
+     "<menu item> On or Off" ("Sync Brightness On or Off", "Show in Picture in Picture On or Off"), so the name in
+     the menu finds its shortcut. An action that does two named things says both ("Pause or Resume Rules", "Hide or
+     Show All Pictures in Picture"). A menu that knows the current state names the change instead ("Turn On HiDPI" /
+     "Turn Off HiDPI"). Never "Toggle …".
+   - **Destructive and Restore buttons name what they do**: "Delete Virtual Display…", "Delete All Hooks and
+     Actions…", "Restore Defaults" (not "Delete…", "Restore"). A delete alert names the item in curly quotes
+     ("Delete “Desk dock”?").
 2. **Labels name the thing or the on-state, not the mechanism.** Write "Hardware brightness", not "Enable DDC brightness control". Don't write "Enable", "Disable" or "Allow X to Y". Switches turn things on or off. Toggle labels avoid verbs; buttons start with one [S9].
 3. **Describe the on state and its consequence**, in one sentence of at most about 90 characters. For example: "Your Mac stays awake, but the display can sleep to save energy." [S9]
 4. **Voice.** Never say "we". Use "your" sparingly [S9]. Say "Mac", not "computer". Say "click" for the pointer and "press" for keys. Use key names (Option, Command) or their symbols.
 5. **Errors say what to do.** "Snaptic can't control this display's brightness. Try connecting it with DisplayPort or USB-C." Not "DDC failed".
 6. **Typography and numbers.** Use the real ellipsis character (…). Write "20%" with no space, "60 Hz", "15 minutes" in prose and "15 min" in compact value labels, and "3:45 PM".
+   - **Curly apostrophes and quotes** in every user-visible string (`L(…)` text): "Don’t Show", "Snaptic’s", and
+     “name” around names. Never ' or straight double quotes; lint03 fails on a straight apostrophe in `L(…)` text.
+     Strings that don't go through `L()` (log lines, shell commands to copy) keep ASCII.
+   - **Serial comma** in every list of three or more: "Brightness, color, and resolution"; "names, window titles, or
+     serial numbers". Two items take "and" with no comma. Lists built in code use Kit `SentenceText.list` ("A", "A
+     and B", "A, B, and C"), never `joined(separator: ", ")` in a sentence.
 7. **Terminology** (Apple words first):
 
 | Avoid | Use |

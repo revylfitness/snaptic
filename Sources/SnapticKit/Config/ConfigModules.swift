@@ -349,6 +349,15 @@ extension ModulesConfig {
         statusItemPlan(running: running, awakeActive: false, displaysActive: true, awakeShortcutBound: false,
                        sharedShownAtRest: true)
     }
+
+    /// Whether the menu bar has a Snaptic item at rest (a module set to Show in Snaptic Menu, Awake's compact rows,
+    /// or "No Modules Are On"). Without one, the Menu Bar page's Snaptic icon tiles have nothing to change
+    /// (review6 ux nit 7).
+    package func hasSnapticItem(running: Set<ModuleID>) -> Bool {
+        let plan = statusItemPlan(running: running, awakeActive: false, displaysActive: false, awakeShortcutBound: true,
+                                  sharedShownAtRest: false)
+        return plan.showShared || plan.noModulesEnabled
+    }
 }
 
 extension ModulesConfig {

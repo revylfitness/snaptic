@@ -212,7 +212,7 @@ import SnapticShims
         if let h = hosts[spec.id], !h.exited, let id = h.displayID { return id }
         if let h = hosts[spec.id], !h.exited { throw HostError.failed(.alreadyCreated) }
         if restartRequired { throw HostError.failed(.protocolMismatch) }
-        guard Self.isAvailable else { throw HostError.unavailable(L("Virtual displays aren't available on this Mac")) }
+        guard Self.isAvailable else { throw HostError.unavailable(L("Virtual displays aren’t available on this Mac")) }
         guard hostCount < Self.maxHosts else { throw HostError.tooMany }
         let soc = ManagedHardware.soc
         let clean = spec.sanitized(soc: soc)

@@ -37,7 +37,7 @@ enum CaptureError: Error, Equatable {
 
     var message: String {
         switch self {
-        case .permission: return L("Screen Recording isn't allowed for Snaptic. Allow it in System Settings › Privacy & Security, then relaunch Snaptic.")
+        case .permission: return L("Screen Recording isn’t allowed for Snaptic. Allow it in System Settings › Privacy & Security, then relaunch Snaptic.")
         case .sourceMissing: return L("The source is no longer available.")
         case .cancelled: return L("Stopped.")
         case .failed(let text): return text
@@ -188,7 +188,7 @@ enum CaptureError: Error, Equatable {
     static func classify(_ error: Error) -> CaptureError {
         let ns = error as NSError
         if ns.domain == SCStreamErrorDomain, ns.code == SCStreamError.Code.userDeclined.rawValue { return .permission }
-        return .failed(L("The capture couldn't start (error \(ns.code))."))
+        return .failed(L("The capture couldn’t start (error \(ns.code))."))
     }
 
     // MARK: Streams
@@ -203,8 +203,8 @@ enum CaptureError: Error, Equatable {
         do {
             try stream.addStreamOutput(receiver, type: .screen, sampleHandlerQueue: receiver.queue)
         } catch {
-            lastFailure = L("Couldn't attach to the capture.")
-            return .failure(.failed(L("Couldn't attach to the capture.")))
+            lastFailure = L("Couldn’t attach to the capture.")
+            return .failure(.failed(L("Couldn’t attach to the capture.")))
         }
         let key = ObjectIdentifier(stream)
         active[key] = stream

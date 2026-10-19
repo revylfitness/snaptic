@@ -403,7 +403,7 @@ private struct PermissionGuideView: View {
                         Text(L("If System Settings was already open, the link may not switch panes. Quit System Settings and click the button again."))
                             .font(.callout)
                             .foregroundStyle(.secondary)
-                        step(2, L("If Snaptic isn't listed, click +, then choose this copy of Snaptic:"))
+                        step(2, L("If Snaptic isn’t listed, click +, then choose this copy of Snaptic:"))
                         Text(model.path)
                             .font(.system(.caption, design: .monospaced))
                             .textSelection(.enabled)

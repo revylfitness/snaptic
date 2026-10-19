@@ -276,7 +276,7 @@ enum SelfTest {
                 let capSeconds = cap ?? AwakeClock.holdDefaultCapSeconds
                 if let pid {
                     guard pid > 1, SNProcess.startTime(for: pid) != 0 else {
-                        return .failure(ControlExit.refused, L("Snaptic couldn't identify the caller."))
+                        return .failure(ControlExit.refused, L("Snaptic couldn’t identify the caller."))
                     }
                     return .ok(AwakeCommandGrammar.holdReply(pid: pid, capSeconds: capSeconds))
                 }
@@ -386,7 +386,7 @@ enum SelfTest {
             guard let hold = context.hold else { return .failure(ControlExit.usage, "not a hold") }
             let pid = context.peer.pid
             guard pid > 1, let started = context.peer.startTime else {
-                return .failure(ControlExit.refused, L("Snaptic couldn't identify the caller."))
+                return .failure(ControlExit.refused, L("Snaptic couldn’t identify the caller."))
             }
             let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
             source.setEventHandler { [weak hold] in
@@ -405,7 +405,7 @@ enum SelfTest {
             // Armed first, then re-verified (security M4): the same process, still there, and the client still on.
             guard !hold.isClosed, SNProcess.startTime(for: pid) == started else {
                 watches.remove(id)
-                return .failure(ControlExit.refused, L("Snaptic couldn't identify the caller."))
+                return .failure(ControlExit.refused, L("Snaptic couldn’t identify the caller."))
             }
             // Strong on purpose: the connection may be gone when this runs, and the hold drops its handlers once
             // they ran, so there is no lasting cycle.

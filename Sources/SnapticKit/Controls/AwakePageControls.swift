@@ -96,7 +96,7 @@ package enum AwakePageControls: ControlTable {
         // R5-12: M1 binds the 0.2 display-sleep hotkey here.
         ControlSpec("awake.page.shortcut.pauseRules", .shortcut, when: awake + [.awakeFeature(.shortcuts)],
                     replaces: ["l.action.d.sleepPreventionToggle"],
-                    search: SearchSpec("Pause Rules shortcut", keywords: ["hotkey", "display sleep shortcut"],
+                    search: SearchSpec("Pause or Resume Rules shortcut", keywords: ["hotkey", "display sleep shortcut"],
                                        root: root, sheet: shortcutsSheet)),
         // Navigation and footer.
         ControlSpec("awake.page.nav.drives", .navigation, when: awake,

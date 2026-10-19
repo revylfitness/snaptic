@@ -47,7 +47,7 @@ struct AboutPage: View, ControlDeclaring {
                         SettingsShell.shared.open(page: DisplayInformationPageControls.surface, external: false)
                     }
                 } else {
-                    ButtonRow(L("Diagnostics Report…"), help: L("A summary of Snaptic's state to attach to a bug report."),
+                    ButtonRow(L("Diagnostics Report…"), help: L("A summary of Snaptic’s state to attach to a bug report."),
                               control: ControlID("about.page.diagnostics")) {
                         showingReport = true
                     }
@@ -126,6 +126,12 @@ private struct AcknowledgementsSheet: View {
         Credit(name: "Chromium", detail: L("Process responsibility handling (BSD)")),
     ]
 
+    /// Awake's behavior references (THIRD_PARTY_NOTICES.md): rules Snaptic follows, none of their code.
+    private let references: [Credit] = [
+        Credit(name: "Insomnia", detail: L("Awake session and battery rules (MIT, no code used)")),
+        Credit(name: "KeepingYouAwake", detail: L("Low Power Mode and power-source rules (MIT, no code used)")),
+    ]
+
     var body: some View {
         VStack(spacing: 0) {
             Text(L("Acknowledgements"))
@@ -140,6 +146,17 @@ private struct AcknowledgementsSheet: View {
                             Text(credit.detail).foregroundStyle(.secondary)
                         }
                     }
+                }
+                Section {
+                    ForEach(references) { credit in
+                        LabeledContent(credit.name) {
+                            Text(credit.detail).foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text(L("Awake’s behavior follows"))
+                } footer: {
+                    Text(L("Snaptic studied what these apps do and follows some of their rules. It includes none of their code."))
                 }
                 Section(L("License")) {
                     Text(Self.license)
@@ -203,7 +220,7 @@ private struct DiagnosticsReportSheet: View {
             .background(Color(nsColor: .textBackgroundColor))
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color(nsColor: .separatorColor)))
             .padding(.horizontal, 16)
-            Text(L("The report has no names, window titles or serial numbers. Read it before you share it."))
+            Text(L("The report has no names, window titles, or serial numbers. Read it before you share it."))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16)

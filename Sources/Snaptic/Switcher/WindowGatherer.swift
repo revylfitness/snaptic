@@ -34,7 +34,7 @@ import SnapticKit
         guard let screen = screen ?? Self.pointerScreen, !lifetime.isEnded else { return }
         guard permissions.state(.accessibility) == .granted else {
             // Asked for by the user (menu or shortcut): always show the guide.
-            permissions.presentGuide(.accessibility, reason: L("Gather windows moves other apps' windows."))
+            permissions.presentGuide(.accessibility, reason: L("Gather windows moves other apps’ windows."))
             return
         }
         let name = TextSanitizer.clean(screen.localizedName, maxScalars: 64)

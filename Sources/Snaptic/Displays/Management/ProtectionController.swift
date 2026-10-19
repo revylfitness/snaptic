@@ -36,12 +36,12 @@ import SnapticKit
         context.menus.register(items, lifetime: lifetime)
         context.diagnostics.register(self, section: L("Protection"), lifetime: lifetime)
         context.connectPlanner.attach(self, lifetime: lifetime)
-        context.actions.register(Action(id: .dProtectionToggle, title: L("Protect Arrangement"), feature: .protection,
+        context.actions.register(Action(id: .dProtectionToggle, title: DisplaysToggleText.protectArrangement, feature: .protection,
                                         cliAllowed: false) { [weak self] _ in self?.toggleCurrent() }, lifetime: lifetime)
         context.commands.register("protect", policy: .low, offOnly: true, cliAllowed: true,
                                   summary: L("protect off: stop configuration protection"), lifetime: lifetime) { [weak self] req, _ in
             guard let self, let ctx = self.context else { return .failure(ControlExit.unavailable, "") }
-            guard req.arguments.first?.lowercased() == "off" else { return .failure(ControlExit.refused, L("Only 'off' is allowed")) }
+            guard req.arguments.first?.lowercased() == "off" else { return .failure(ControlExit.refused, L("Only “off” is allowed")) }
             ctx.config.value.features[.protection] = false
             return .ok()
         }

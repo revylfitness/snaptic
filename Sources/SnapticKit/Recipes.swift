@@ -19,7 +19,7 @@ package enum RecipeKind: String, Codable, CaseIterable, Sendable {
         case .headless:
             return L("A sharp desktop for a Mac with no display connected, for remote access. It connects at launch and keeps the Mac usable.")
         case .recording:
-            return L("A 1920 × 1080 desktop for screen recordings, placed below-right of the main display so the pointer doesn't drift into it.")
+            return L("A 1920 × 1080 desktop for screen recordings, placed below-right of the main display so the pointer doesn’t drift into it.")
         case .teleprompter:
             return L("A display shaped like the one it streams onto, flipped for a teleprompter mirror.")
         case .portrait:

@@ -27,7 +27,7 @@ struct ConfirmChangesSection: View, ControlDeclaring {
             ConfirmChangesContent(env: env)
         } else {
             Section(L("Confirm display changes")) {
-                StatusRow(L("Displays settings aren't available right now."), style: .warning)
+                StatusRow(L("Displays settings aren’t available right now."), style: .warning)
             }
         }
     }
@@ -59,11 +59,11 @@ private struct ConfirmChangesContent: View {
                           selection: SettingsBinding.store(env.config, \.safety.confirmResolution),
                           options: [
                               PickerOption(ConfirmResolutionChanges.newModesOnly, L("For new resolutions"),
-                                           help: L("Asks for a resolution you haven't kept on that display before.")),
+                                           help: L("Asks for a resolution you haven’t kept on that display before.")),
                               PickerOption(ConfirmResolutionChanges.always, L("For every change"),
                                            help: L("Asks every time a resolution changes.")),
                               PickerOption(ConfirmResolutionChanges.neverForPublic, L("Only for hidden resolutions"),
-                                           help: L("Asks only for resolutions macOS doesn't list itself.")),
+                                           help: L("Asks only for resolutions macOS doesn’t list itself.")),
                           ],
                           defaultValue: .newModesOnly,
                           anchor: ControlID("displays.advanced.confirm.resolution"))
@@ -169,6 +169,6 @@ private struct ConfirmChangesContent: View {
     private func displayName(_ key: DisplayKey) -> String {
         if let info = env.runtime.displays.first(where: { $0.key == key }) { return info.name }
         let identity = env.config.value.perDisplay[key]?.identity
-        return identity?.customName ?? identity?.lastKnownName ?? L("A display that isn't connected")
+        return identity?.customName ?? identity?.lastKnownName ?? L("A display that isn’t connected")
     }
 }

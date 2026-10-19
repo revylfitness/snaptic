@@ -34,7 +34,7 @@ import SnapticKit
                         self.inFlight = false
                         EventLog.shared.record(.modules, "Relaunch failed")
                         let alert = NSAlert()
-                        alert.messageText = L("Snaptic couldn't restart itself")
+                        alert.messageText = L("Snaptic couldn’t restart itself")
                         alert.informativeText = L("Quit Snaptic and open it again.")
                         NSApp.activate()
                         alert.runModal()

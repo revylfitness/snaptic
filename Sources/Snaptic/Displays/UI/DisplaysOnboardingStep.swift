@@ -141,10 +141,12 @@ struct DisplaysOnboardingStep: View, ControlDeclaring {
                 Text(L("Only the Displays panel, display names, and Display Information stay on."))
                     .foregroundStyle(.secondary)
             } else {
-                Text(L("Turns on: \(on.map(DisplaysUIText.title).joined(separator: ", ")).")).font(.callout)
+                Text(L("Turns on: \(DisplaysUIText.list(on)).")).font(.callout)
             }
             if !permissions.isEmpty {
-                Text(L("Needs afterwards: \(Permission.allCases.filter { permissions.contains($0) }.map { DisplaysUIText.permissionName($0, osMajor: osMajor) }.joined(separator: ", ")).")).font(.callout)
+                let names = Permission.allCases.filter { permissions.contains($0) }
+                    .map { DisplaysUIText.permissionName($0, osMajor: osMajor) }
+                Text(L("Needs afterwards: \(SentenceText.list(names)).")).font(.callout)
             }
             if applied {
                 Label(L("Saved"), systemImage: "checkmark.circle").foregroundStyle(.secondary)

@@ -83,15 +83,15 @@ import SnapticKit
 
     private func registerCommands(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("identify", policy: .low, offOnly: false, cliAllowed: true,
-                              summary: L("Show each display's number and name for 3 seconds"),
+                              summary: L("Show each display’s number and name for 3 seconds"),
                               lifetime: lifetime) { [weak self] _, _ in
-            guard let self else { return .failure(ControlExit.unavailable, L("Displays isn't running")) }
+            guard let self else { return .failure(ControlExit.unavailable, L("Displays isn’t running")) }
             let count = self.identifyDisplays()
             return .ok(L("Identifying \(count) displays"))
         }
         ctx.commands.register("redetect", policy: .low, offOnly: false, cliAllowed: true,
                               summary: L("Look for connected displays again"), lifetime: lifetime) { [weak self] _, _ in
-            guard let self else { return .failure(ControlExit.unavailable, L("Displays isn't running")) }
+            guard let self else { return .failure(ControlExit.unavailable, L("Displays isn’t running")) }
             self.redetect()
             return .ok(L("Looking for displays"))
         }

@@ -31,7 +31,7 @@ struct SwitcherShortcutsSheet: View, ControlDeclaring {
             Section {
                 ShortcutSetting(L("Gather windows"),
                                 help: L("Moves every window onto the display under the pointer. Snaptic asks first."),
-                                combo: SwitcherBinding.config(settings, \.gatherShortcut), owner: L("Gather windows"),
+                                combo: SwitcherBinding.config(settings, \.gatherShortcut), owner: L("Gather Windows on This Display"),
                                 anchor: ControlID("switcher.shortcuts.gather"))
                 if let problem = module.gatherShortcutProblem {
                     SettingsRowNote(problem)
@@ -39,7 +39,7 @@ struct SwitcherShortcutsSheet: View, ControlDeclaring {
             } header: {
                 Text(L("Gather windows"))
             } footer: {
-                Text(L("Needs Accessibility. The menu's Gather Windows on This Display does the same without asking."))
+                Text(L("Needs \(PermissionFlow.paneName(.accessibility)). The menu’s Gather Windows on This Display does the same without asking."))
                     .foregroundStyle(.secondary)
             }
         }

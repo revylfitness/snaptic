@@ -150,9 +150,67 @@ def self_check():
         (f"DispatchQueue.main.asyncAfter(deadline: .now()) {{ [weak self] in\n guard let self else {{ return }}\n"
          f" MainActor.assumeIsolated {{ self.g() }}\n}}", False),
     ]
+    # Review6 code N5: a queue named `main`, `Timer.init(`, and `self` in a string literal's text (not a use).
+    rule2_cases += [
+        (f"let main = DispatchQueue.main\nmain.asyncAfter(deadline: .now() + 1) {{ [weak self] in self?.g() }}", True),
+        (f"let main = DispatchQueue.main\nmain.asyncAfter(deadline: .now() + 1) {{ [weak self] in {wrap} }}", False),
+        (f"t = Timer.init(timeInterval: 1, repeats: false) {{ [weak self] _ in self?.g() }}", True),
+        (f"t = Timer.init(timeInterval: 1, repeats: false) {{ [weak self] _ in {wrap} }}", False),
+        (f"DispatchQueue.main.asyncAfter(deadline: .now()) {{ [weak self] in\n log({q}self test{q})\n {wrap}\n}}", False),
+        (f"DispatchQueue.main.asyncAfter(deadline: .now()) {{ [weak self] in\n log({q}{bs}(self){q})\n {wrap}\n}}", True),
+    ]
     for source, flagged in rule2_cases:
         if bool(rule2_file("Sources/Snaptic/SelfCheck.swift", source)) != flagged:
             problems.append(f"self-check: rule 2 {'missed' if flagged else 'wrongly reported'} {source!r}")
+    # Old terms in every L() form (Kit too): triple-quoted, a quote inside an interpolation, a concatenation.
+    old_cases = [
+        (f"L({q*3}\nTurn on Smart HiDPI\n{q*3})", True),
+        (f"L({q}Turn {bs}(on ? {q}on{q} : {q}off{q}) Smart HiDPI{q})", True),
+        (f"L({q}Smart {q} + {q}HiDPI{q})", True),
+        (f"L({q}{bs}(x ? {q}a virtual screen{q} : {q}b{q}){q})", True),
+        (f"L({q}Sharper text{q})", False),
+        (f"let key = {q}smart hidpi{q}", False),
+    ]
+    for source, flagged in old_cases:
+        if bool(old_terms_file("Sources/SnapticKit/SelfCheck.swift", source)) != flagged:
+            problems.append(f"self-check: old terms {'missed' if flagged else 'wrongly reported'} {source!r}")
+    apostrophe_cases = [
+        (f"L({q}Don't Show{q})", True),
+        (f"L({q}{bs}(a ? {q}it's{q} : {q}x{q}){q})", True),
+        (f"L(#{q}Snaptic's{q}#)", True),
+        (f"L({q}Don’t Show{q})", False),
+        (f"Text({q}it's{q})", False),
+        (f"L({q}{bs}(name.replacingOccurrences(of: {q}a{q}, with: {q}b{q})) is on{q})", False),
+    ]
+    for source, flagged in apostrophe_cases:
+        if bool(straight_apostrophes_file("Sources/Snaptic/SelfCheck.swift", source)) != flagged:
+            problems.append(f"self-check: apostrophes {'missed' if flagged else 'wrongly reported'} {source!r}")
+    popup = "PickerSetting(L({q}Show{q}), selection: s, options: [PickerOption(1, L({q}{title}{q}){help})], {style}defaultValue: nil)"
+    popup_cases = [
+        (popup.format(q=q, title="HiDPI sizes only", help="", style="style: .popUp, "), True),
+        (popup.format(q=q, title="All rates", help="", style=""), True),
+        (popup.format(q=q, title="For every change", help=f", help: L({q}Asks.{q})", style=""), False),
+        (popup.format(q=q, title="Run both", help="", style="style: .radio, "), False),
+        (popup.format(q=q, title="Display with the Pointer", help="", style="style: .popUp, "), False),
+        (popup.format(q=q, title=f"While “{bs}(name)” Isn’t Connected", help="", style="style: .popUp, "), False),
+        (popup.format(q=q, title="Automatic (recommended)", help="", style="style: .segmented, "), False),
+        (popup.format(q=q, title="Only for Displays macOS Can’t Control", help="", style="style: .popUp, "), False),
+    ]
+    for source, flagged in popup_cases:
+        if bool(popup_case_file("Sources/Snaptic/SelfCheck.swift", source)) != flagged:
+            problems.append(f"self-check: pop-up case {'missed' if flagged else 'wrongly reported'} {source!r}")
+    contributor_cases = [
+        ("extension Array where Element: DisplayMenuContributor {\n}", set()),
+        ("struct Box<T: DisplayMenuContributor> {\n}", set()),
+        ("final class Y: DisplayMenuContributor {\n}", {"Y"}),
+        ("@MainActor final class Z: NSObject,\n    DisplayMenuContributor {\n}", {"Z"}),
+        ("extension W: DisplayMenuContributor where T: Equatable {\n}", {"W"}),
+        ("protocol Sub: DisplayMenuContributor {\n}\nstruct X: Sub {\n}", {"X"}),
+    ]
+    for source, expected in contributor_cases:
+        got = {name for _, name in contributor_conformers([("SelfCheck.swift", source)])}
+        if got != expected:
+            problems.append(f"self-check: menu contributors found {sorted(got)} in {source!r}, expected {sorted(expected)}")
     return problems
 
 
@@ -284,6 +342,8 @@ def unratcheted_problems():
     problems += rule2()
     problems += menu_contributors()
     problems += old_terms()
+    problems += straight_apostrophes()
+    problems += popup_case()
     return problems
 
 
@@ -298,30 +358,182 @@ OLD_TERMS = {
     "on-screen display": "Brightness indicator",
     "recording screen": "recording display",
 }
-# Occurrences still waiting for their owner's fix in step-4 fix round 2 (D: Management, C: Brightness/Input; review5
-# ux N1). A count may only go down: more fails, fewer prints a warning to lower or delete the entry (lead).
-OLD_TERMS_PENDING: dict = {}
+
+
+def literal_text(lit):
+    """A string literal's text with its delimiters removed and each interpolation replaced by `\x00`."""
+    hashes = len(lit) - len(lit.lstrip("#"))
+    body = lit[hashes:len(lit) - hashes] if hashes else lit
+    body = body[3:-3] if body.startswith('"' * 3) and len(body) >= 6 else body[1:-1]
+    escape = "\\" + "#" * hashes
+    out, j = [], 0
+    while j < len(body):
+        if body.startswith(escape + "(", j):
+            j = code_end(body, j + len(escape) + 1)
+            out.append("\x00")
+            continue
+        if body.startswith(escape, j):
+            out.append(body[j:j + len(escape) + 1])
+            j += len(escape) + 1
+            continue
+        out.append(body[j])
+        j += 1
+    return "".join(out)
+
+
+def literals_in(code):
+    """[(top-level text, [nested texts])] for each string literal in `code`: the text with interpolations as `\x00`,
+    and the texts of literals inside its interpolations (recursively)."""
+    found, i = [], 0
+    while i < len(code):
+        if starts_string(code, i):
+            k = string_end(code, i)
+            lit = code[i:k]
+            nested = []
+            for m in re.finditer(r"\\#*\(", lit):
+                inner = lit[m.end():code_end(lit, m.end()) - 1]
+                for text, deeper in literals_in(inner):
+                    nested += [text] + deeper
+            found.append((literal_text(lit), nested))
+            i = k
+            continue
+        i += 1
+    return found
+
+
+def l_calls(t):
+    """(offset, argument text) of every `L(…)` call in `t`."""
+    for m in re.finditer(r"(?<![\w.])L\(", t):
+        yield m.start(), t[m.end():code_end(t, m.end()) - 1]
+
+
+def l_texts(args):
+    """The user-visible texts of one `L(…)` call's arguments: each literal's text, the literals inside its
+    interpolations, and the top-level literals joined (`L("Smart " + "HiDPI")`)."""
+    found = literals_in(args)
+    texts = [text for text, _ in found] + [n for _, nested in found for n in nested]
+    if len(found) > 1:
+        texts.append("".join(text for text, _ in found))
+    return texts
 
 
 def old_terms():
-    found = {}
-    for p in APP:
-        for m in re.finditer(r'\bL\(\s*"((?:[^"\\\n]|\\.)*)"', TEXT[p]):
-            text = m.group(1).lower()
-            for term in OLD_TERMS:
-                if term in text:
-                    found[(p, term)] = found.get((p, term), 0) + text.count(term)
     problems = []
-    for (p, term), n in sorted(found.items()):
-        allowed = OLD_TERMS_PENDING.get((p, term), 0)
-        if n > allowed:
-            problems.append(f"{p}: UI text says the 0.2 name “{term}” {n} time(s) (allowed {allowed}); "
-                            f"use “{OLD_TERMS[term]}” (PLAN 0.3 §4.2)")
-    for (p, term), n in sorted(OLD_TERMS_PENDING.items()):
-        if found.get((p, term), 0) < n:
-            print(f"lint warning: {p}: “{term}” is down to {found.get((p, term), 0)}; lower OLD_TERMS_PENDING "
-                  f"({n}) in scripts/lint03.py", file=sys.stderr)
+    for p in SOURCES:
+        problems += old_terms_file(p, TEXT[p])
     return problems
+
+
+def old_terms_file(p, t):
+    problems = []
+    for at, args in l_calls(t):
+        for text in l_texts(args):
+            for term in OLD_TERMS:
+                if term in text.lower():
+                    problems.append(f"{p}:{t.count(chr(10), 0, at) + 1}: UI text says the 0.2 name “{term}”; "
+                                    f"use “{OLD_TERMS[term]}” (PLAN 0.3 §4.2)")
+    return sorted(set(problems))
+
+
+def straight_apostrophes():
+    """UI text (`L(…)`) uses ’ and “ ”, never ' (design-spec §4.1; review6 ux R3-4.2). Strings that don't go
+    through L() (log lines, shell commands) may keep ASCII."""
+    problems = []
+    for p in SOURCES:
+        problems += straight_apostrophes_file(p, TEXT[p])
+    return problems
+
+
+def straight_apostrophes_file(p, t):
+    problems = []
+    for at, args in l_calls(t):
+        for text in l_texts(args):
+            if "'" in text:
+                problems.append(f"{p}:{t.count(chr(10), 0, at) + 1}: UI text “{text.replace(chr(0), '…')}” has a "
+                                "straight apostrophe; use ’ (or “ ” for quotes)")
+    return sorted(set(problems))
+
+
+# Pop-up, segmented and pull-down options are menu items, so they use title case (design-spec §4.1; review6 ux
+# R3-1). Radio-group labels are sentence case. Words that stay lowercase in title case after the first word:
+TITLE_MINOR = {"a", "an", "and", "as", "at", "but", "by", "for", "from", "in", "into", "nor", "of", "on", "onto",
+               "or", "over", "per", "than", "the", "to", "up", "via", "vs", "with"}
+# Options that keep Apple's own sentence-case wording (path, title): System Settings' "Use as" pop-up (PLAN §4.3).
+TITLE_CASE_EXEMPT = {
+    ("Sources/Snaptic/Displays/UI/ArrangeSheet.swift", "Main display"),
+    ("Sources/Snaptic/Displays/UI/ArrangeSheet.swift", "Extended display"),
+}
+# Known limits: an option whose title isn't a literal (an enum's `title`, a display name) and options built outside
+# the `PickerSetting(…)` call for a radio group are checked by review, not here.
+
+
+def title_case_problem(title):
+    """The first word of `title` that title case would capitalize but doesn't, or None. Text in parentheses or
+    quotes, interpolations, and words starting with a digit or symbol are skipped."""
+    text = re.sub(r"\([^)]*\)|“[^”]*”|\x00", " ", title)
+    for i, word in enumerate(text.split()):
+        core = word.strip(",.:;!?…–—")
+        if i == 0 or not core or not core[0].isalpha():
+            continue
+        if core[0].islower() and core.lower() not in TITLE_MINOR and not any(c.isupper() for c in core):  # macOS
+            return core
+    return None
+
+
+def popup_case_file(p, t):
+    problems = []
+    radios = []
+    for m in re.finditer(r"\bPickerSetting(?:<[^>]*>)?\(", t):
+        end = code_end(t, m.end())
+        call = t[m.start():end]
+        style = re.search(r"\bstyle:\s*\.(\w+)", call)
+        name = style.group(1) if style else "automatic"
+        # .automatic is a radio group when an option has help (PickerSettingStyle.resolved).
+        option_help = any(re.search(r"\bhelp:", call[o.end():code_end(call, o.end())])
+                          for o in re.finditer(r"\bPickerOption(?:<[^>]*>)?\(", call))
+        if name == "radio" or (name == "automatic" and option_help):
+            radios.append((m.start(), end))
+    for m in re.finditer(r"\bPickerOption(?:<[^>]*>)?\(", t):
+        if any(a < m.start() < b for a, b in radios):
+            continue
+        args = t[m.end():code_end(t, m.end()) - 1]
+        title = next((l_texts(a)[0] for _, a in l_calls(args) if l_texts(a)), None)
+        word = title_case_problem(title) if title is not None else None
+        if word and (p, title) not in TITLE_CASE_EXEMPT:
+            problems.append(f"{p}:{t.count(chr(10), 0, m.start()) + 1}: pop-up option “{title.replace(chr(0), '…')}” "
+                            f"isn't title case (“{word}”); pop-up, segmented and pull-down options use title case "
+                            "(design-spec §4.1)")
+    return problems
+
+
+def popup_case():
+    problems = []
+    for p in APP:
+        problems += popup_case_file(p, TEXT[p])
+    return problems
+
+
+# A type declaration or extension with an inheritance clause: its name and the clause (up to `where` or `{`).
+# Anchored at the declaration, so a generic parameter (`struct Box<T: P>`) or a `where` constraint
+# (`extension Array where Element: P`) isn't read as a conformance (review6 code N5).
+CONFORMANCE = re.compile(r"^[ \t]*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|package|internal|fileprivate|private|final|"
+                         r"open)\s+)*(class|struct|enum|extension|actor|protocol)\s+([\w.]+)\s*:\s*([^{]*?)"
+                         r"(?:\bwhere\b[^{]*)?\{", re.M)
+
+
+def contributor_conformers(texts):
+    """{(path, type)} declaring `DisplayMenuContributor`, directly or through a protocol that refines it."""
+    decls = [(p, m.group(1), m.group(2), set(re.findall(r"\w+", m.group(3))))
+             for p, t in texts for m in CONFORMANCE.finditer(t)]
+    protocols = {"DisplayMenuContributor"}
+    changed = True
+    while changed:
+        changed = False
+        for _, kind, name, inherits in decls:
+            if kind == "protocol" and name not in protocols and inherits & protocols:
+                protocols.add(name)
+                changed = True
+    return {(p, name) for p, kind, name, inherits in decls if kind != "protocol" and inherits & protocols}
 
 
 def menu_contributors():
@@ -333,11 +545,10 @@ def menu_contributors():
         return [f"{module}: menuContributorTypes not found"]
     names = set(re.findall(r"(\w+)\.self", listed.group(1)))
     problems = []
-    for p in APP:
-        for m in re.finditer(r"\b(?:class|struct|enum|extension)\s+(\w+)[^{]*?:[^{]*\bDisplayMenuContributor\b", TEXT[p]):
-            if m.group(1) not in names:
-                problems.append(f"{p}: {m.group(1)} conforms to DisplayMenuContributor but isn't listed in "
-                                "DisplaysModule.menuContributorTypes")
+    for p, name in sorted(contributor_conformers([(p, TEXT[p]) for p in APP])):
+        if name not in names:
+            problems.append(f"{p}: {name} conforms to DisplayMenuContributor but isn't listed in "
+                            "DisplaysModule.menuContributorTypes")
     return problems
 
 
@@ -347,10 +558,12 @@ def menu_contributors():
 # `queue: .main` (or such a name); a `DispatchWorkItem` passed as `execute:` is looked up in the same file. Outside
 # its `assumeIsolated` blocks the closure may read its own parameters but not `self` (a partial wrap), apart from
 # the capture list and `guard let self` / `if let self`.
+# `self` inside a string literal's text isn't a use; inside its interpolation it is.
 # Known limits: a main-actor member used without `self.` outside the wrap (Swift 5.8 implicit self after
-# `guard let self`), a queue passed in from another file, and Combine `publisher(for:)` sinks (L10 checks those in
-# Awake, for `receive(on:)` only) are not seen.
-RULE2_CALL = re.compile(r"\.asyncAfter\(|\baddObserver\(\s*forName:|(?<![\w.])Timer\(|\bscheduledTimer\(|\.observe\(\s*\\")
+# `guard let self`), a queue passed in from another file or reached through a computed property or function, and
+# Combine `publisher(for:)` sinks (L10 checks those in Awake, for `receive(on:)` only) are not seen.
+RULE2_CALL = re.compile(r"\.asyncAfter\(|\baddObserver\(\s*forName:|(?<![\w.])Timer(?:\.init)?\(|\bscheduledTimer\(|"
+                        r"\.observe\(\s*\\")
 RULE2_TOP = re.compile(r"^(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|package|internal|fileprivate|private|final)\s+)*"
                        r"(?:class|struct|enum|extension|actor)\s+([\w.]+)", re.M)
 # Types whose observers deliberately touch no main-actor state (path, top-level type): reason.
@@ -404,7 +617,7 @@ def rule2_file(p, t):
         body, args = rule2_closure(t, m)
         if call.startswith("addObserver") and not rule2_main_observer_queue(t, args):
             continue
-        if call.endswith("Timer(") and body is None and "selector:" in args:
+        if call.endswith(("Timer(", "Timer.init(")) and body is None and "selector:" in args:
             continue
         enclosing = next((name for at, name in reversed(tops) if at < m.start()), "")
         if (p, enclosing) in RULE2_EXEMPT:
@@ -437,14 +650,15 @@ def rule2_main_receiver(t, before):
     if re.search(r"(?:DispatchQueue\s*)?\.main\s*$", before):
         return True
     named = re.search(r"(?<![\w.])(?:self\??\.)?(\w+)\s*$", before)
-    return bool(named) and named.group(1) not in ("main", "self") and rule2_bound_to_main(t, named.group(1))
+    # A name the file binds to the main queue counts, `main` included (`let main = DispatchQueue.main`).
+    return bool(named) and named.group(1) != "self" and rule2_bound_to_main(t, named.group(1))
 
 
 def rule2_main_observer_queue(t, args):
     if re.search(r"queue:\s*" + RULE2_MAIN, args):
         return True
     named = re.search(r"queue:\s*(?:self\??\.)?(\w+)\b", args)
-    return bool(named) and named.group(1) not in ("nil", "main") and rule2_bound_to_main(t, named.group(1))
+    return bool(named) and named.group(1) != "nil" and rule2_bound_to_main(t, named.group(1))
 
 
 def rule2_outside_self(body):
@@ -460,9 +674,26 @@ def rule2_outside_self(body):
         rest += body[i:m.start()]
         i = end + 1
     rest += body[i:]
-    rest = re.sub(r"^\{\s*\[[^\]]*\]", "{", rest)
+    rest = re.sub(r"^\{\s*\[[^\]]*\]", "{", without_string_text(rest))
     rest = re.sub(r"\b(?:guard|if)\s+let\s+self\b(?:\s*=\s*self\b)?", "", rest)
     return re.search(r"(?<![\w.])self\b", rest) is not None
+
+
+def without_string_text(code):
+    """`code` with each string literal's text removed; its interpolations stay (they are code)."""
+    out, i = [], 0
+    while i < len(code):
+        if starts_string(code, i):
+            k = string_end(code, i)
+            lit = code[i:k]
+            out.append('""')
+            for m in re.finditer(r"\\#*\(", lit):
+                out.append("(" + without_string_text(lit[m.end():code_end(lit, m.end()) - 1]) + ")")
+            i = k
+            continue
+        out.append(code[i])
+        i += 1
+    return "".join(out)
 
 
 def l15():

@@ -5,14 +5,17 @@ import XCTest
 /// labels, toasts, Display Information sections, new virtual display names) use the 0.3 words, not 0.2's.
 final class ManagementTextTests: XCTestCase {
     private var userTexts: [String] {
-        ManagementText.all
-            + RecipeKind.allCases.flatMap { [$0.title, $0.summary] }
-            + VirtualHostFailure.allCases.map(\.message)
-            + [VirtualHostSpawnFailure.helpersStarting, .helpersUnavailable(""), .appChanged, .checkFailed,
-               .launchFailed].map(\.message)
-            + [Recipes.spec(for: .headless).name, VirtualScreenSpec(id: StableID(), name: " ", aspectWidth: 16,
-                                                                    aspectHeight: 9, sizeInches: 27, hiDPI: true,
-                                                                    modes: []).sanitized().name]
+        var texts: [String] = ManagementText.all
+        texts += DisplaysToggleText.withMenuItems.map { $0.title }
+        texts += RecipeKind.allCases.flatMap { [$0.title, $0.summary] }
+        texts += VirtualHostFailure.allCases.map(\.message)
+        let spawn: [VirtualHostSpawnFailure] = [.helpersStarting, .helpersUnavailable(""), .appChanged, .checkFailed,
+                                                .launchFailed]
+        texts += spawn.map(\.message)
+        texts.append(Recipes.spec(for: .headless).name)
+        texts.append(VirtualScreenSpec(id: StableID(), name: " ", aspectWidth: 16, aspectHeight: 9, sizeInches: 27,
+                                       hiDPI: true, modes: []).sanitized().name)
+        return texts
     }
 
     func testNoRetiredWords() {
@@ -50,6 +53,34 @@ final class ManagementTextTests: XCTestCase {
         XCTAssertEqual(ManagementText.builtInDisplayOnOff, "Built-in Display On or Off")
         // One verb pattern for switches across the Keyboard Shortcuts sheet (no "Toggle …").
         for title in ManagementText.all + [ManagementText.hiDPIOnOff] { XCTAssertFalse(title.hasPrefix("Toggle"), title) }
+    }
+
+    /// Review6 ux R3-2: every Displays switch's shortcut is "<menu item> On or Off", with the menu item's own words,
+    /// so filtering Keyboard Shortcuts for the name seen in the menu finds it.
+    func testOtherSwitchesAreMenuItemOnOrOff() throws {
+        for (title, menuItem) in DisplaysToggleText.withMenuItems {
+            XCTAssertTrue(title.hasSuffix(" On or Off"), title)
+            XCTAssertFalse(title.hasPrefix("Toggle"), title)
+            XCTAssertFalse(title.contains("'"), title)
+            guard let menuItem else { continue }
+            let info = try XCTUnwrap(DisplaysMenuPlan.info(for: DisplayMenuItemID(rawValue: menuItem)), menuItem)
+            XCTAssertEqual(title, DisplaysToggleText.onOrOff(info.title), menuItem)
+        }
+        XCTAssertEqual(DisplaysToggleText.showInPictureInPicture, "Show in Picture in Picture On or Off")
+        XCTAssertEqual(DisplaysToggleText.protectArrangement, "Protect Arrangement On or Off")
+        XCTAssertEqual(DisplaysToggleText.mute, "Mute On or Off")
+        XCTAssertEqual(DisplaysToggleText.invertColors, "Invert Colors On or Off")
+        // Every title is distinct, and none collides with D's.
+        let titles = DisplaysToggleText.withMenuItems.map { $0.title }
+        XCTAssertEqual(Set(titles).count, titles.count)
+        XCTAssertTrue(Set(titles).isDisjoint(with: ManagementText.all))
+    }
+
+    /// Quick Changes ▾ knows the notch state, so it names the change like "Turn On HiDPI" next to it.
+    func testNotchAreaQuickChangeNamesTheChange() {
+        XCTAssertEqual(ManagementText.notchAreaChange(turnsOn: true), "Turn On Notch Area")
+        XCTAssertEqual(ManagementText.notchAreaChange(turnsOn: false), "Turn Off Notch Area")
+        XCTAssertEqual(ManagementText.notchAreaOnOff, "Notch Area On or Off", "the shortcut keeps the switch title")
     }
 
     /// New names only: a stored virtual display keeps the name it has.

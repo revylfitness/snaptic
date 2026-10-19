@@ -41,7 +41,7 @@ package enum VirtualHostFailure: String, Codable, CaseIterable, Sendable {
 
     package var message: String {
         switch self {
-        case .unavailable: return L("Virtual displays aren't available on this Mac")
+        case .unavailable: return L("Virtual displays aren’t available on this Mac")
         case .invalidRequest: return L("The virtual display settings are out of range")
         case .alreadyCreated: return L("The virtual display already exists")
         case .notCreated: return L("The virtual display isn’t running")

@@ -22,7 +22,7 @@ enum SwitcherPages {
         FeatureHighlight(id: "search", symbol: "magnifyingglass", title: L("Find a window fast"),
                          text: L("Type to search, or close and minimize windows from the keyboard.")),
         FeatureHighlight(id: "thumbnails", symbol: "photo.on.rectangle", title: L("See before you switch"),
-                         text: L("Thumbnails show what's in each window.")),
+                         text: L("Thumbnails show what’s in each window.")),
     ]
 }
 

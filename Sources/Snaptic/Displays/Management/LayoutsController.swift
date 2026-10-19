@@ -264,7 +264,7 @@ import SnapticKit
     func applyAwaiting(_ id: StableID, skipConfirmation: Bool = false) async -> TransactionOutcome? {
         guard let ctx = context, let lifetime, let l = layout(id) else { return nil }
         guard matches(l) != nil else {
-            ctx.toasts.show(L("“\(l.name)” doesn't match the connected displays"), lifetime: lifetime)
+            ctx.toasts.show(L("“\(l.name)” doesn’t match the connected displays"), lifetime: lifetime)
             return nil
         }
         let p = plan(l, ctx: ctx)
@@ -287,7 +287,7 @@ import SnapticKit
         guard !lifetime.isEnded, context === ctx else { return outcome }
         ctx.osd.show(.layout, text: l.name, on: ctx.registry.displays.first(where: \.isMain)?.desktopID ?? 0)
         if !p.skipped.isEmpty {
-            ctx.toasts.show(L("Applied “\(l.name)”; skipped \(p.skipped.joined(separator: ", ")) (feature off)"), lifetime: lifetime)
+            ctx.toasts.show(L("Applied “\(l.name)”; skipped \(SentenceText.list(p.skipped)) (feature off)"), lifetime: lifetime)
         }
         if pendingMatch == id { pendingMatch = nil }
         if !trusted { offerTrust(id) }
@@ -410,7 +410,7 @@ import SnapticKit
                 guard a.count > 1, let l = self.find(a.dropFirst().joined(separator: " ")) else {
                     return .failure(ControlExit.notFound, L("No such layout"))
                 }
-                guard self.matches(l) != nil else { return .failure(ControlExit.refused, L("The layout doesn't match the connected displays")) }
+                guard self.matches(l) != nil else { return .failure(ControlExit.refused, L("The layout doesn’t match the connected displays")) }
                 // Awaits the outcome: 0 applied or kept, 6 declined or timed out (FIXES-R3 10).
                 guard let outcome = await self.applyAwaiting(l.id, skipConfirmation: req.skipConfirmation) else {
                     return .failure(ControlExit.unavailable, ManagementText.savedLayoutsOff)
@@ -422,7 +422,7 @@ import SnapticKit
                 return response
             case "capture":
                 let name = a.count > 1 ? TextSanitizer.clean(a.dropFirst().joined(separator: " "), maxScalars: SavedLayout.maxNameScalars) : nil
-                guard let l = self.captureCurrent(name: name) else { return .failure(ControlExit.refused, L("Couldn't capture a layout")) }
+                guard let l = self.captureCurrent(name: name) else { return .failure(ControlExit.refused, L("Couldn’t capture a layout")) }
                 if req.json { return .ok(KitControl.jsonText(["name": l.name, "id": l.id.rawValue]) ?? "{}") }
                 return .ok(l.name)
             default:

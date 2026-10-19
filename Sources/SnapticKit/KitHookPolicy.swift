@@ -47,18 +47,18 @@ package enum HookRefusal: Error, Equatable, Sendable {
         switch self {
         case .notAbsolute: return L("Use the full path, starting with /.")
         case .tooLong: return L("The path is too long.")
-        case .badCharacters: return L("The path contains characters Snaptic doesn't accept.")
+        case .badCharacters: return L("The path contains characters Snaptic doesn’t accept.")
         case .dotComponent: return L("The path may not contain . or .. parts.")
-        case .missing(let p): return L("Doesn't exist: ") + p
+        case .missing(let p): return L("Doesn’t exist: ") + p
         case .symlink(let p): return L("Is a symbolic link (use the real path): ") + p
         case .badOwner(let p): return L("Must be owned by you or by the system: ") + p
         case .writableByOthers(let p): return L("Other users or groups can change it: ") + p
-        case .notDirectory(let p): return L("Isn't a folder: ") + p
-        case .notRegularFile: return L("Isn't a regular file.")
-        case .notExecutable: return L("Isn't executable (chmod +x).")
-        case .insideSnaptic: return L("Snaptic's own files can't be run as hooks or actions.")
-        case .snapticIdentity: return L("Programs signed as Snaptic can't be run as hooks or actions.")
-        case .identityUnreadable: return L("Snaptic couldn't check the program's code signature, so it didn't run it.")
+        case .notDirectory(let p): return L("Isn’t a folder: ") + p
+        case .notRegularFile: return L("Isn’t a regular file.")
+        case .notExecutable: return L("Isn’t executable (chmod +x).")
+        case .insideSnaptic: return L("Snaptic’s own files can’t be run as hooks or actions.")
+        case .snapticIdentity: return L("Programs signed as Snaptic can’t be run as hooks or actions.")
+        case .identityUnreadable: return L("Snaptic couldn’t check the program’s code signature, so it didn’t run it.")
         case .tooManyArguments: return L("At most 8 arguments.")
         case .argumentTooLong: return L("An argument is too long.")
         }

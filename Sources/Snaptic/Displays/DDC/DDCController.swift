@@ -517,7 +517,7 @@ import SnapticShims
                 self.step(code, target, delta: sign * ctx.config.value.keys.step(fine: fine))
             }, lifetime: lifetime)
         }
-        ctx.actions.register(Action(id: Self.muteAction, title: L("Mute"), feature: .ddcControls,
+        ctx.actions.register(Action(id: Self.muteAction, title: DisplaysToggleText.mute, feature: .ddcControls,
                                     cliAllowed: true) { [weak self] target in self?.toggleMute(target) }, lifetime: lifetime)
         ctx.actions.register(Action(id: DisplayActionID(rawValue: "c.ddcPowerOn"), title: L("Turn On Display"),
                                     feature: .ddcPower, cliAllowed: true) { [weak self] target in
@@ -649,7 +649,7 @@ import SnapticShims
                 }
                 if code == VCPPolicy.power, value != VCPPolicy.powerOn,
                    !ctx.registry.displays.contains(where: { $0.key != display.key && $0.isOnline && $0.isStronglyVisible }) {
-                    return .failure(ControlExit.refused, L("That's the only display you can see"))
+                    return .failure(ControlExit.refused, L("That’s the only display you can see"))
                 }
                 let outcome = await self.writeOutcome(code, value, to: display.key)
                 guard outcome == .done else { return .failure(outcome.exitCode, Self.message(outcome)) }

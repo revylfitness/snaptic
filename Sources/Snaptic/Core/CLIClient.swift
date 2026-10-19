@@ -33,7 +33,7 @@ enum CLIClient {
         if let selftest = selftestSocketPath() {
             path = selftest
         } else {
-            guard let home = AccountPaths.home else { fail(ControlExit.unavailable, L("Your home folder couldn't be found.")) }
+            guard let home = AccountPaths.home else { fail(ControlExit.unavailable, L("Your home folder couldn’t be found.")) }
             path = KitControl.socketPath(home: home)
         }
         guard KitControl.isUsableSocketPath(path), let line = KitControl.encode(request) else {
@@ -43,14 +43,14 @@ enum CLIClient {
         let fd = connectSocket(path)
         guard fd >= 0 else {
             fail(ControlExit.unavailable,
-                 L("Snaptic isn't running, or command-line control is off (Settings → General → Command-Line Control)."))
+                 L("Snaptic isn’t running, or command-line control is off (Settings → General → Command-Line Control)."))
         }
         guard sendAll(fd, line) else { fail(ControlExit.unavailable, L("Snaptic closed the connection.")) }
         var reader = ControlLineReader()
         let reply: Data
         switch nextLine(fd, &reader, timeout: KitControl.clientTimeoutSeconds) {
         case .line(let data): reply = data
-        case .timedOut: fail(ControlExit.cancelled, L("Snaptic didn't answer in time."))
+        case .timedOut: fail(ControlExit.cancelled, L("Snaptic didn’t answer in time."))
         case .closed: fail(ControlExit.unavailable, L("Snaptic closed the connection."))
         }
         guard let response = KitControl.decodeResponse(reply) else { fail(ControlExit.unavailable, L("Unreadable reply.")) }

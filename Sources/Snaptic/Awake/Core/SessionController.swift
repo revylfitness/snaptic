@@ -748,7 +748,7 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
             // One toast per hold: the first failure, or the first after the previous hold ran out (F4).
             let first = guardMemory.assertionHoldUntil.map { now.continuous >= $0 } ?? true
             guardMemory = guardMemory.recordingAssertionFailure(now: now.continuous)
-            if first { ctx.host.toasts.show(L("Snaptic couldn't keep your Mac awake. Try again, or restart Snaptic.")) }
+            if first { ctx.host.toasts.show(L("Snaptic couldn’t keep your Mac awake. Try again, or restart Snaptic.")) }
             ctx.triggers.requestStep()
         case .holds:
             // Every hold ends, with the toast a manual session gets (the Mac isn't held any more, review6 N1).

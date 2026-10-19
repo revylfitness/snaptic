@@ -18,13 +18,13 @@ enum SafeMode {
     /// What Safe Mode skips, for the Safe Mode page and banner (in the words the Settings pages use, ux m15).
     static let skipped: [String] = [
         L("Restoring brightness and color"),
-        L("Reconnecting virtual displays, and Sharper Text"),
-        L("Protection, layouts and remembered resolutions"),
+        L("Reconnecting virtual displays and sharper text"),
+        L("Protection, layouts, and remembered resolutions"),
         L("Linked displays and event hooks"),
         L("Automatic hardware-control changes"),
         L("Extra brightness"),
         L("Reconnecting displays automatically"),
-        L("Awake rules, Drive Alive and Appear active"),
+        L("Awake rules, Drive Alive, and Appear active"),
     ]
 
     static let stillRuns: [String] = [

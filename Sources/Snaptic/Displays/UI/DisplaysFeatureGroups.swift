@@ -69,7 +69,7 @@ import SnapticKit
         }
         for f in features { env.enableFeature(f) }
         notice = added.isEmpty ? nil
-            : L("Also turned on: \(added.map(DisplaysUIText.title).joined(separator: ", ")).")
+            : L("Also turned on: \(DisplaysUIText.list(added)).")
         // The person asked for it: show the permission guide now, not the once-per-launch request.
         guard let ctx = env.context else { return }
         let needs = features.reduce(into: Set<Permission>()) { $0.formUnion(FeatureGraph.permissions($1)) }
@@ -117,13 +117,13 @@ struct DisplaysFeatureOffAlert: ViewModifier {
     @ObservedObject var switcher: DisplaysFeatureSwitcher
 
     func body(content: Content) -> some View {
-        content.alert(L("Turn off \(switcher.pendingOff?.title ?? "")?"),
+        content.alert(L("Turn off \(SentenceText.inSentence(switcher.pendingOff?.title ?? ""))?"),
                       isPresented: Binding(get: { switcher.pendingOff != nil },
                                            set: { if !$0 { switcher.pendingOff = nil } })) {
             Button(L("Turn Off"), role: .destructive) { switcher.confirmOff() }
             Button(L("Cancel"), role: .cancel) { switcher.pendingOff = nil }
         } message: {
-            let names = (switcher.pendingOff?.dependents ?? []).map(DisplaysUIText.title).joined(separator: ", ")
+            let names = DisplaysUIText.list(switcher.pendingOff?.dependents ?? [])
             Text(L("This also turns off \(names)."))
         }
     }

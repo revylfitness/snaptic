@@ -2,7 +2,7 @@ import Foundation
 
 // Displays › Automations (owner A; PLAN 0.3 §4.3 sub-page table "Automations"): the two section switches (event
 // hooks, custom actions), each section's list with its row controls and Add… button, the status rows, and the
-// footer's Restore Automations Defaults…. Each list row opens its editor sheet (HookEditorSheet, ActionEditorSheet).
+// footer's Delete All Hooks and Actions…. Each list row opens its editor sheet (HookEditorSheet, ActionEditorSheet).
 // Budget (§4.3 counts): 2 settings + 2 lists + 2 buttons = 6.
 
 package enum AutomationsPageControls: ControlTable {
@@ -50,6 +50,6 @@ package enum AutomationsPageControls: ControlTable {
                     when: [.module(.displays), .state(.automationPaused)]),
         ControlSpec("displays.automations.status.clearProblem", .statusAction, when: [.module(.displays)]),
         ControlSpec("displays.automations.restore", .button, when: [.module(.displays)],
-                    search: find("Restore Automations Defaults", ["delete all hooks", "delete all actions", "reset"])),
+                    search: find("Delete All Hooks and Actions", ["restore automations defaults", "reset"])),
     ]
 }

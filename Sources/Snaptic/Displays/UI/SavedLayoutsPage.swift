@@ -352,8 +352,8 @@ private struct LayoutDetailsSheet: View {
                           selection: Binding(get: { layout.autoApply }, set: { v in c.edit(id) { $0.autoApply = v } }),
                           options: [
                               PickerOption(LayoutAutoApply.never, L("Never")),
-                              PickerOption(LayoutAutoApply.whenExactly, L("When exactly these displays are connected")),
-                              PickerOption(LayoutAutoApply.whenIncludes, L("When these displays are connected")),
+                              PickerOption(LayoutAutoApply.whenExactly, L("When Exactly These Displays Are Connected")),
+                              PickerOption(LayoutAutoApply.whenIncludes, L("When These Displays Are Connected")),
                           ],
                           style: .popUp, defaultValue: LayoutAutoApply.never,
                           anchor: ControlID("displays.layouts.details.autoApply"))
@@ -477,7 +477,7 @@ private struct SavedLayoutsAdvancedSheet: View {
                        anchor: ControlID) -> some View {
         ToggleSetting(title, isOn: SettingsBinding.store(env.config, (\DisplaysConfig.management.protectionFields).appending(path: path)),
                       anchor: anchor,
-                      disabledReason: runtime.isEffective(feature) ? nil : L("Skipped while \(DisplaysUIText.title(feature)) is off."))
+                      disabledReason: runtime.isEffective(feature) ? nil : DisplaysUIText.skippedWhileOff(feature))
     }
 
     /// Protected fields and the undo notice back to their defaults; saved layouts and protected sets stay.

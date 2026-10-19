@@ -339,9 +339,9 @@ private struct AutomationsContent: View {
 
     private var restoreDefaults: RestoreDefaults {
         let store = env.config
-        return RestoreDefaults(title: L("Restore Automations Defaults…"),
-                               question: L("Restore Automations settings to their defaults?"),
-                               message: L("Every event hook and custom action is deleted. Your other Snaptic settings stay as they are."),
+        return RestoreDefaults(title: L("Delete All Hooks and Actions…"),
+                               question: L("Delete every event hook and custom action?"),
+                               message: L("Your other Snaptic settings stay as they are."),
                                button: L("Delete All"), destructive: true) {
             store.value = store.value.restoringDefaults(scope: .automations)
         }

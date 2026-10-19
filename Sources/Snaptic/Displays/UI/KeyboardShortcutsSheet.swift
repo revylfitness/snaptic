@@ -122,7 +122,7 @@ struct KeyboardShortcutsSheet: View, ControlDeclaring {
         if let problem = context.mediaKeys.keysController?.hotkeyProblems[id] {
             help = problem
         } else if !runtime.isEffective(action.feature) {
-            help = L("Needs \(DisplaysUIText.title(action.feature)).")
+            help = DisplaysUIText.needs(action.feature)
         } else {
             help = nil
         }

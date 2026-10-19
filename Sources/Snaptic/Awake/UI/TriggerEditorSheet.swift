@@ -81,7 +81,7 @@ struct TriggerEditorSheet: View, ControlDeclaring {
             if isNew { kindFocused = true }
         }
         .onDisappear { sources.end() }
-        .alert(L("Delete this rule?"), isPresented: $confirmDelete) {
+        .alert(L("Delete “\(deleteName)”?"), isPresented: $confirmDelete) {
             Button(L("Delete"), role: .destructive) {
                 delete()
                 dismiss()
@@ -90,6 +90,12 @@ struct TriggerEditorSheet: View, ControlDeclaring {
         } message: {
             Text(L("Sessions it started end, and it won’t start new ones."))
         }
+    }
+
+    /// The rule as its list row names it (its name, or its conditions' summary), stored version first.
+    private var deleteName: String {
+        let stored = draft.flatMap { d in env.config.value.triggers.triggers.first { $0.id == d.id } }
+        return (stored ?? draft)?.displayName(AwakeFormat.text) ?? ""
     }
 
     // MARK: Sections

@@ -1829,11 +1829,11 @@ package enum IdleMath {         // Kit, J
     /// Writes start/stop per volume; at most one write in flight per volume (the first open() may block on the
     /// Removable Volumes prompt; queued ticks coalesce).
     func setTargets(_ uuids: Set<VolumeUUIDKey>, interval: TimeInterval)
-    func removeKeepAliveFile(_ uuid: VolumeUUIDKey)     // when the user turns a volume off
+    func removeKeepAliveFile(_ uuid: VolumeUUIDKey, completion: (@MainActor (DriveAliveError?) -> Void)? = nil)   // when the user turns a volume off
     func activate(_ context: AwakeContext, lifetime: Lifetime)
     func deactivate()
 }
-package enum DriveAliveError: String, Codable, Sendable { case notEligible, mountChanged, notOurFile, ioError, denied }
+package enum DriveAliveError: String, Codable, Sendable, CaseIterable { case notEligible, mountChanged, notOurFile, ioError, denied, removingInTheWay }
 package enum DriveAlivePolicy {   // Kit, J, tested
     package struct VolumeFacts: Equatable, Sendable {
         package var isInternal, isRootFileSystem, isReadOnly, isLocal, isDiskImage, isTimeMachine, isBrowsable: Bool
@@ -1866,7 +1866,7 @@ Any check failure → that volume is skipped and the Drives row shows "Can't kee
 
 ### 2.10 Automation (G, `AwakeAutomation`)
 
-Hotkeys (`AwakeActionID`, owner "Awake", via `GlobalHotkeys`, all unbound by default): `awake.toggle` (Keep Awake on/off with the default preset; off = `turnOff`), `awake.keepDisplayOn`, `awake.preset1…4`, `awake.pauseAutomatic` (title "Pause Rules"; raw value kept). A hotkey start is `.hotkeyStart` for the activity gate (§2.3, §2.5).
+Hotkeys (`AwakeActionID`, owner "Awake", via `GlobalHotkeys`, all unbound by default): `awake.toggle` (Keep Awake on/off with the default preset; off = `turnOff`), `awake.keepDisplayOn`, `awake.preset1…4`, `awake.pauseAutomatic` (shortcut title "Pause or Resume Rules", since it does both; raw value kept). A hotkey start is `.hotkeyStart` for the activity gate (§2.3, §2.5).
 
 CLI verbs (registered only while `commandLine` is effective and the host CLI is on). `start`, `hold`, `stop` and `extend` share a 1 request/s limit (security L3), on top of the global 20/s. Arguments go through `AwakeCommandGrammar` (G, Kit, consistency M7):
 
@@ -3852,12 +3852,12 @@ Lint additions:
 | HW-9 | CoreAudio `DeviceIsRunningSomewhere` on input causes no microphone prompt or orange indicator; HAL queue never blocks main |
 | HW-10 | IOHIDDevice registry reads for Bluetooth input devices need no Input Monitoring |
 | HW-11 | Router MAC via routing-table `sysctl` on 15/26/27 triggers no Local Network prompt; `NET_RT_IFLIST2` counters at 10 GbE |
-| HW-12 | Removable Volumes prompt text and denial path; Drive Alive keeps a USB HDD spinning; eject not blocked; DMG and boot-container volumes refused |
+| HW-12 | Removable Volumes prompt text and denial path; Drive Alive keeps a USB HDD spinning; eject not blocked; DMG and boot-container volumes refused; exFAT and FAT32 stick: switch on, switch off, `ls -la` the root shows neither `.snaptic-keepalive` nor `.snaptic-keepalive.removing`; RENAME_EXCL support on both |
 | HW-13 | IOPS notifications on desktop Macs (no battery) and on battery percent changes; LPM notification queue; an underpowered USB-C charger/hub under load: `AC Power` with a falling percentage is treated as discharging (r3 security M3); `AppleSmartBattery` latch on every laptop model at hand; (R5-6) `falling` stays set between percent steps and IOPS `Current` is negative while the battery drains on that charger |
 | HW-14 | Status item `autosaveName`, `isVisible` KVO after ⌘-drag on 14–27; create/remove with Show When Active; countdown width stability; 26 "Allow in the Menu Bar" off; (R5-9) with the Snaptic and Awake items hidden, start For 2 Hours, an app session and Until Downloads and Tasks Finish from Settings alone; 27 overflow; notched MacBook with 20 items: the Snaptic active glyph is visible when the Awake item lands behind the notch (parity M5) |
 | HW-15 | AppKit menu rows (MenuSliderRow, MenuSwitchHeader): alignment with native items, slider keyboard behavior, highlight drawn on arrow-key navigation, vibrancy on 26/27 material, `sectionHeader` look on 14/15/26/27; Option alternates on 27 and on 14.0–14.3 with title subtitles; arrow-key and VoiceOver navigation reach "Turn Off Keep Awake"; countdown and live slider values update while the menu stays open (`.common` mode); the Snaptic menu in the default setup stays within the §5.2 row budget (≤ 24 lines; r3 product minor 16) |
 | HW-16 | Settings: `.searchable(placement: .sidebar)` + `ScrollViewReader` scroll in grouped `Form` on 14; `NavigationStack(path:).id(root)` back button; next-turn push; `.toolbar(removing: .sidebarToggle)`; fixed 715 pt width |
-| HW-17 | `NumberField` commit on blur inside `Form`; Esc revert; VoiceOver values with units; small row switch size matches System Settings on 14–27 |
+| HW-17 | `NumberField` commit on blur inside `Form`; typed-field commit: type in a number field, click Done or + with the mouse: the typed value is used; Esc revert; VoiceOver values with units; small row switch size matches System Settings on 14–27 |
 | HW-18 | Thermal states (via a load generator) produce the toasts/ends; `CLOCK_MONOTONIC_RAW` advances across sleep |
 | HW-19 | `defaults write` of pointerNudge + a nudge preset, a Drive Alive volume, floor off, a forged `.menu` snapshot with `--pid` holds, and a rebound `awake.toggle` hotkey, while Snaptic is quit, stopped and running: no pointer movement for CLI, rule, hold, restored or resumed sessions, none for the hotkey start until Allow is clicked (and the toast appears once); the 5% floor still ends a session, also on a weak charger; Drive Alive writes only to eligible volumes; a snapshot written while running has no effect |
 | HW-20 | `NSMenuItem.subtitle` with the 15.5 SDK on 14.4, 15, 26, 27; fallback rows on 14.0–14.3 |

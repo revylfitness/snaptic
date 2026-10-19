@@ -101,7 +101,7 @@ private struct GeneralPageContent: View {
         } header: {
             Text(L("Choose what Snaptic does"))
         } footer: {
-            Text(L("Anything that's off adds nothing to the menu bar and doesn't run. Each one has its own page in the sidebar."))
+            Text(L("Anything that’s off adds nothing to the menu bar and doesn’t run. Each one has its own page in the sidebar."))
                 .foregroundStyle(.secondary)
         }
     }
@@ -224,8 +224,8 @@ private struct OpenAtLoginRow: View {
             if on { try service.register() } else { try service.unregister() }
             problem = nil
         } catch {
-            problem = on ? L("Snaptic couldn't be added to your login items. Try again, or add it in System Settings.")
-                : L("Snaptic couldn't be removed from your login items. Remove it in System Settings.")
+            problem = on ? L("Snaptic couldn’t be added to your login items. Try again, or add it in System Settings.")
+                : L("Snaptic couldn’t be removed from your login items. Remove it in System Settings.")
         }
         refresh()
     }

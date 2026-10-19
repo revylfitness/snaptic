@@ -24,6 +24,41 @@ package enum Permission: String, Codable, CaseIterable, Sendable { case accessib
 /// All user-visible strings go through L() so a String Catalog can be added later.
 package func L(_ s: String) -> String { s }
 
+/// Names placed inside running text (design-spec §4.1; review6 ux R3-3). Labels are sentence case ("Virtual
+/// displays"), so mid-sentence their first letter is lowercased, unless the name starts with a proper name or an
+/// acronym ("Picture in Picture", "Night Shift controls", "HDR virtual modes").
+package enum SentenceText {
+    /// Names Apple or Snaptic capitalize wherever they appear.
+    package static let properNames = ["Picture in Picture", "Night Shift", "High Dynamic Range", "Display Information",
+                                      "Displays panel", "Window Switcher",
+                                      "True Tone", "Touch ID", "Apple", "Snaptic", "Mac", "Keep Awake", "Drive Alive",
+                                      "Safe Mode", "Sidecar", "AirPlay"]
+
+    /// "Virtual displays" → "virtual displays"; "Picture in Picture filters", "HDR virtual modes" and
+    /// "macOS" unchanged.
+    package static func inSentence(_ name: String) -> String {
+        guard let first = name.first, first.isUppercase else { return name }
+        for proper in properNames where name.hasPrefix(proper) {
+            let rest = name.dropFirst(proper.count)
+            if rest.first.map({ !$0.isLetter }) ?? true { return name }
+        }
+        let firstWord = name.prefix { $0.isLetter || $0.isNumber || $0 == "-" }
+        // An acronym or a name with inner capitals (HDR, HiDPI, USB-C) keeps its case.
+        if firstWord.dropFirst().contains(where: \.isUppercase) { return name }
+        return first.lowercased() + name.dropFirst()
+    }
+
+    /// "A", "A and B", "A, B, and C" (serial comma, design-spec §4.1); "" for none.
+    package static func list(_ items: [String]) -> String {
+        switch items.count {
+        case 0: return ""
+        case 1: return items[0]
+        case 2: return L("\(items[0]) and \(items[1])")
+        default: return L("\(items.dropLast().joined(separator: ", ")), and \(items[items.count - 1])")
+        }
+    }
+}
+
 package struct HotkeyCombo: Codable, Hashable, Sendable {
     package var keyCode: UInt32
     package var carbonModifiers: UInt32

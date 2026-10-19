@@ -87,7 +87,7 @@ import SnapticKit
         context?.runtime.indicatorVisible = visible
         guard !visible, !writingVisibility, statusItem != nil, let ctx = context else { return }
         ctx.host.setPresence(.inSnapticMenu)
-        ctx.host.toasts.show(L("Awake's menu bar icon was removed. Awake is now in the Snaptic menu; change this in Settings › Menu Bar."))
+        ctx.host.toasts.show(L("Awake’s menu bar icon was removed. Awake is now in the Snaptic menu; change this in Settings › Menu Bar."))
     }
 
     // MARK: Look
