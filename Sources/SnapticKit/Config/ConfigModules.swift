@@ -106,6 +106,13 @@ package enum OnboardingStep: String, Codable, CaseIterable, Sendable {
     case welcome, modules, displays, permissions, done
 }
 
+/// One page of onboarding (0.3.1 E1a): a saved step, or Keep Snaptic Up to Date, which sits before Done without a
+/// saved step of its own.
+package enum OnboardingPage: Hashable, Sendable {
+    case step(OnboardingStep)
+    case updates
+}
+
 /// Host settings under `SnapticModulesV1`: which modules run, where their menus go, and
 /// the other General settings (R5.1). Per-item Displays menu choices live in
 /// `DisplaysConfig.menu` (MenuConfig), the single source of truth.
@@ -302,6 +309,15 @@ package struct ModulesConfig: ConfigModel {
     /// A saved step that no longer applies (Displays turned off meanwhile) moves on.
     package var resumeStep: OnboardingStep {
         onboardingSteps().contains(onboarding) ? onboarding : step(after: .modules)
+    }
+
+    /// E1a: the pages in order (the progress dots and "Step 5 of 6"), with the updates page before Done when
+    /// `includesUpdates`. The caller decides that once per run, when the window opens, so answering the question
+    /// doesn't drop its page and renumber Done (r1 U6).
+    package func onboardingPages(includesUpdates: Bool) -> [OnboardingPage] {
+        var pages = onboardingSteps().map(OnboardingPage.step)
+        if includesUpdates, let done = pages.firstIndex(of: .step(.done)) { pages.insert(.updates, at: done) }
+        return pages
     }
 }
 

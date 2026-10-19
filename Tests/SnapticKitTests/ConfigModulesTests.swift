@@ -127,6 +127,19 @@ final class ConfigModulesTests: XCTestCase {
         XCTAssertEqual(c.resumeStep, .permissions)
     }
 
+    /// r1 U6: the updates page is in the run's pages whenever the run includes it, answered or not, so Done keeps
+    /// its number.
+    func testOnboardingPagesPutUpdatesBeforeDone() {
+        var c = ModulesConfig()
+        XCTAssertEqual(c.onboardingPages(includesUpdates: true),
+                       [.step(.welcome), .step(.modules), .step(.displays), .step(.permissions), .updates, .step(.done)])
+        XCTAssertEqual(c.onboardingPages(includesUpdates: false),
+                       [.step(.welcome), .step(.modules), .step(.displays), .step(.permissions), .step(.done)])
+        c.setEnabled(false, for: .displays)
+        XCTAssertEqual(c.onboardingPages(includesUpdates: true),
+                       [.step(.welcome), .step(.modules), .step(.permissions), .updates, .step(.done)])
+    }
+
     func testOnboardingPermissionsAreDedupedAndClearedWhenDone() throws {
         var c = ModulesConfig()
         c.onboarding = .permissions
