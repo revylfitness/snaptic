@@ -391,7 +391,7 @@ done
         }
         switch errorNumber(line) {
         case nil: return .failed(-1)
-        case -128?: return .canceled
+        case .some(-128): return .canceled
         case let n?: return .failed(n)
         }
     }
@@ -402,7 +402,7 @@ done
         if line == Array("ok".utf8) { return .restored }
         switch errorNumber(line) {
         case nil: return .failed(-1)
-        case -128?: return .canceled
+        case .some(-128): return .canceled
         case let n?: return .failed(n)
         }
     }
