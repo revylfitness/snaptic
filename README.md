@@ -603,7 +603,7 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
 
 ## Upgrading and downgrading
 
-**0.2 → 0.3.** No setting is lost; every 0.2 setting, button, and menu item has a home in 0.3 (Settings search finds them by their old names too).
+**0.2 → 0.3.** No setting is lost; every 0.2 setting, button, and menu item has a home in 0.3, and Settings search finds it.
 
 - **Display sleep prevention moved to Awake.** If it was on in 0.2 (Displays on, the feature on, and at least one display set to prevent sleep), 0.3 turns Awake on with a rule “While a display is connected” for those displays (up to 8 per rule), keeping the display on. General shows “Your display sleep setting moved to Awake.”, and the first time the rule applies, a one-time notice says so. If it wasn’t in use, Awake starts off with a “New: Awake” card.
 - **Its shortcut** moves to Awake’s **Pause Rules** if a rule was created and Pause Rules has no shortcut yet; otherwise it’s removed, and Recent Notices says “Your display sleep shortcut was removed. Set Awake shortcuts in Settings › Awake › Keyboard Shortcuts.”

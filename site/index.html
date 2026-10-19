@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Snaptic</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<meta name="description" content="Snaptic is a free, open-source window switcher and set of display utilities for Mac. Turn on only what you want.">
+<meta name="description" content="Snaptic is a free, open-source window switcher, set of display utilities, and keep-awake tool for Mac. Turn on only what you want.">
 <meta property="og:title" content="Snaptic">
-<meta property="og:description" content="Every window. Every display. A free, open-source window switcher and display toolkit for Mac.">
+<meta property="og:description" content="Every window. Every display. Awake on demand. A free, open-source window switcher, display toolkit, and keep-awake tool for Mac.">
 <meta name="theme-color" content="#0d0d0f">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -96,6 +96,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .hero .ctas { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 36px; }
 .word { display: inline-block; animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.1, 1) both; }
 .hero .mega span:nth-child(2) .word { animation-delay: 0.12s; }
+.hero .mega span:nth-child(3) .word { animation-delay: 0.24s; }
 @keyframes rise { from { transform: translateY(0.35em); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .word { animation: none; } }
 
@@ -319,7 +320,7 @@ section.block { padding-block: 160px 0; }
 
 /* Displays */
 .card .art svg.wide { width: 200px; height: 120px; }
-.shorts code { font: 15px/1.4 var(--mono); letter-spacing: 0; overflow-wrap: anywhere; }
+.shorts code, .card code { font: 15px/1.4 var(--mono); letter-spacing: 0; overflow-wrap: anywhere; }
 .safety-note { margin: 40px 0 0; color: var(--mute); font-size: 19px; max-width: 46ch; }
 .keytable .key.wide-key { min-width: 64px; }
 
@@ -382,6 +383,7 @@ footer .links a:hover { color: var(--ink); }
     </a>
     <a class="l opt" href="#how">How it works</a>
     <a class="l opt" href="#displays">Displays</a>
+    <a class="l opt" href="#awake">Awake</a>
     <a class="l opt" href="#keys">Keys</a>
     <a class="l" href="https://github.com/revylfitness/snaptic">GitHub</a>
     <a class="btn" href="#get">Get Snaptic</a>
@@ -394,8 +396,9 @@ footer .links a:hover { color: var(--ink); }
       <h1 class="mega">
         <span><span class="word">Every window.</span></span>
         <span class="gray"><span class="word">Every display.</span></span>
+        <span><span class="word">Awake on demand.</span></span>
       </h1>
-      <p class="lede">The window switcher your Mac should have shipped with, plus the display tools you'd usually pay for. Free and open source. Turn on only what you want.</p>
+      <p class="lede">The window switcher your Mac should have shipped with, the display tools you’d usually pay for, and a keep-awake switch that needs no password. Free and open source. Turn on only what you want.</p>
       <div class="ctas">
         <a class="btn light big" href="#get">Get Snaptic</a>
         <a class="btn big" href="https://github.com/revylfitness/snaptic">View on GitHub</a>
@@ -458,7 +461,7 @@ footer .links a:hover { color: var(--ink); }
           </div>
           <div class="step" data-step="3">
             <h3>Act on the spot.</h3>
-            <p>Close, minimize, go full screen, hide or quit without leaving the switcher.</p>
+            <p>Close, minimize, go full screen, hide, or quit without leaving the switcher.</p>
           </div>
           <div class="step" data-step="4">
             <h3>Your style.</h3>
@@ -476,20 +479,20 @@ footer .links a:hover { color: var(--ink); }
   <section class="block stagger">
     <div class="wrap">
       <h2 class="huge"><span>Not just</span><span>apps.</span></h2>
-      <p>Your Mac's ⌘⇥ switches between apps. Snaptic switches between windows: every document, every minimized window, every window you left on another desktop.</p>
+      <p>Your Mac’s ⌘⇥ switches between apps. Snaptic switches between windows: every document, every minimized window, every window you left on another desktop.</p>
 
       <div class="bento">
         <div class="card span-2">
           <div class="art"><span class="nine" aria-hidden="true">9</span></div>
           <h3>Shortcuts.</h3>
-          <p>Each with its own keys, style and filters.</p>
+          <p>Each with its own keys, style, and filters.</p>
         </div>
         <div class="card span-4">
           <div class="art">
             <div class="keystack" aria-hidden="true"><span class="key">W</span><span class="key">M</span><span class="key">F</span><span class="key">H</span><span class="key">Q</span></div>
           </div>
           <h3>Act without switching.</h3>
-          <p>Close, minimize, full screen, hide or quit, right from the switcher.</p>
+          <p>Close, minimize, full screen, hide, or quit, right from the switcher.</p>
         </div>
         <div class="card span-3">
           <div class="art">
@@ -523,10 +526,10 @@ footer .links a:hover { color: var(--ink); }
       <h2 class="huge"><span style="display:block">One hand.</span><span class="gray" style="display:block">No mouse.</span></h2>
       <div class="keytable">
         <div><span class="k"><span class="key">⌥</span><span class="key">⇥</span></span><span><strong>Every window.</strong> Keep tapping Tab, let go to switch.</span></div>
-        <div><span class="k"><span class="key">⌥</span><span class="key">`</span></span><span><strong>This app's windows.</strong> The key above Tab, on any layout.</span></div>
+        <div><span class="k"><span class="key">⌥</span><span class="key">`</span></span><span><strong>This app’s windows.</strong> The key above Tab, on any layout.</span></div>
         <div><span class="k"><span class="key">⇧</span></span><span><strong>Go back.</strong> Arrow keys move around the grid.</span></div>
         <div><span class="k"><span class="key">S</span></span><span><strong>Search</strong> by title or app name.</span></div>
-        <div><span class="k"><span class="key">W</span><span class="key">M</span><span class="key">F</span></span><span><strong>Close, minimize or full screen</strong> the selected window.</span></div>
+        <div><span class="k"><span class="key">W</span><span class="key">M</span><span class="key">F</span></span><span><strong>Close, minimize, or full screen</strong> the selected window.</span></div>
         <div><span class="k"><span class="key">H</span><span class="key">Q</span></span><span><strong>Hide or quit</strong> its app.</span></div>
       </div>
     </div>
@@ -535,7 +538,7 @@ footer .links a:hover { color: var(--ink); }
   <section class="block stagger" id="displays">
     <div class="wrap">
       <h2 class="huge"><span>Brighter.</span><span>Sharper.</span></h2>
-      <p>Snaptic's Displays module gives every screen the controls it should have had: brightness and volume for external monitors, sharp HiDPI text, every resolution, color, arrangement, virtual screens and picture in picture.</p>
+      <p>Snaptic’s Displays module gives every display the controls it should have had: brightness and volume for external displays, sharp HiDPI text, every resolution, color, arrangement, virtual displays, and Picture in Picture.</p>
 
       <div class="bento">
         <div class="card span-4">
@@ -555,7 +558,7 @@ footer .links a:hover { color: var(--ink); }
             <svg viewBox="0 0 96 96" aria-hidden="true"><rect x="8" y="16" width="80" height="56" rx="8" fill="none" stroke="currentColor" stroke-width="6"/><rect x="22" y="28" width="52" height="32" rx="4" fill="currentColor"/><path d="M36 84h24" stroke="currentColor" stroke-width="6" stroke-linecap="round"/></svg>
           </div>
           <h3>Every resolution.</h3>
-          <p>Modes and refresh rates, HiDPI on or off, favorites and undo. New modes ask before they stick.</p>
+          <p>Modes and refresh rates, HiDPI on or off, favorites, and undo. New modes ask before they stick.</p>
         </div>
         <div class="card span-3">
           <div class="art">
@@ -581,8 +584,8 @@ footer .links a:hover { color: var(--ink); }
       </div>
 
       <div class="shorts">
-        <div><h3>Monitor controls.</h3><p>Contrast, inputs and standby on the monitor itself.</p></div>
-        <div><h3>Color.</h3><p>Gamma, temperature, contrast and invert, per display.</p></div>
+        <div><h3>Monitor controls.</h3><p>Contrast, inputs, and standby on the display itself.</p></div>
+        <div><h3>Color.</h3><p>Gamma, temperature, contrast, and invert, per display.</p></div>
         <div><h3>Layouts.</h3><p>Save a setup and bring it back when those screens connect.</p></div>
         <div><h3>Protection.</h3><p>Puts your arrangement back when something else changes it.</p></div>
         <div><h3>Extra brightness.</h3><p>Past the usual maximum on XDR and HDR displays. Beta.</p></div>
@@ -591,13 +594,70 @@ footer .links a:hover { color: var(--ink); }
     </div>
   </section>
 
+  <section class="block stagger" id="awake">
+    <div class="wrap">
+      <h2 class="huge"><span>Stay</span><span>awake.</span></h2>
+      <p>Awake keeps your Mac from sleeping for a while, until a time, while an app runs, or until downloads and tasks finish. No administrator password, nothing installed, and nothing left behind if Snaptic quits.</p>
+
+      <div class="bento">
+        <div class="card span-4">
+          <div class="art">
+            <svg class="wide" viewBox="0 0 160 96" aria-hidden="true"><path d="M14 30h52v22a22 22 0 0 1-22 22h-8a22 22 0 0 1-22-22Z" fill="currentColor"/><path d="M66 36h6a10 10 0 0 1 0 20h-6" fill="none" stroke="currentColor" stroke-width="6"/><path d="M8 82h64" stroke="currentColor" stroke-width="6" stroke-linecap="round"/><path d="M30 10c-4 5 4 9 0 14M46 10c-4 5 4 9 0 14" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><text x="96" y="62" fill="currentColor" font-family="DM Sans, system-ui, sans-serif" font-size="30" font-weight="700">1:42</text></svg>
+          </div>
+          <h3>Sessions, your way.</h3>
+          <p>For an hour, until 5:00 PM, while an app is running, or until downloads and tasks finish. Add time from the menu, and see the time left next to the icon.</p>
+        </div>
+        <div class="card span-2">
+          <div class="art"><span class="nine" aria-hidden="true">12</span></div>
+          <h3>Conditions.</h3>
+          <p>Rules start Awake while a display is connected, on a schedule, on power, and more. No permissions.</p>
+        </div>
+        <div class="card span-3">
+          <div class="art">
+            <svg viewBox="0 0 96 96" aria-hidden="true"><rect x="10" y="30" width="68" height="36" rx="8" fill="none" stroke="currentColor" stroke-width="6"/><rect x="80" y="40" width="8" height="16" rx="3" fill="currentColor"/><rect x="18" y="38" width="10" height="20" rx="3" fill="currentColor"/></svg>
+          </div>
+          <h3>Guards built in.</h3>
+          <p>Sessions end when the battery runs low, and always below 5% or when your Mac gets too hot.</p>
+        </div>
+        <div class="card span-3">
+          <div class="art">
+            <svg viewBox="0 0 96 96" aria-hidden="true"><rect x="8" y="16" width="80" height="64" rx="10" fill="none" stroke="currentColor" stroke-width="6"/><path d="m24 40 10 8-10 8" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><path d="M42 58h24" stroke="currentColor" stroke-width="6" stroke-linecap="round"/></svg>
+          </div>
+          <h3>Scriptable.</h3>
+          <p><code>snaptic awake hold</code> keeps your Mac awake for as long as a command runs.</p>
+        </div>
+      </div>
+
+      <div class="shorts">
+        <div><h3>Drive Alive.</h3><p>External drives stay ready, with no spin-up pauses.</p></div>
+        <div><h3>History.</h3><p>Today and the last 7 days, kept only on your Mac.</p></div>
+        <div><h3>Shortcuts.</h3><p>Keep Awake, Keep Display On, and your own sessions, from any app.</p></div>
+        <div><h3>Appear active.</h3><p>Keeps apps from marking you away. Opt-in.</p></div>
+        <div><h3>Only when needed.</h3><p>Its icon shows up while your Mac is kept awake, then steps aside.</p></div>
+        <div><h3>Lid closed?</h3><p>Connect power and a display, and macOS stays awake on its own. No root tricks.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="settings">
+    <div class="wrap">
+      <h2 class="huge"><span style="display:block">Settings that</span><span class="gray" style="display:block">explain themselves.</span></h2>
+      <div class="keytable">
+        <div><span class="k"><span class="key wide-key">7</span></span><span><strong>Seven pages.</strong> General, Menu Bar, one page per module, Permissions, and About.</span></div>
+        <div><span class="k"><span class="key wide-key">Search</span></span><span><strong>Find anything.</strong> Search by name, even for settings in Advanced sheets.</span></div>
+        <div><span class="k"><span class="key">?</span></span><span><strong>Every option explained.</strong> Each one says what it does, and (?) opens its section of the guide.</span></div>
+        <div><span class="k"><span class="key wide-key">Menu</span></span><span><strong>Live menus.</strong> Sliders, values, and countdowns update while a menu is open. Each module picks its own place in the menu bar.</span></div>
+      </div>
+    </div>
+  </section>
+
   <section class="block" id="safety">
     <div class="wrap">
       <h2 class="huge"><span style="display:block">Never stuck.</span><span class="gray" style="display:block">Always a way back.</span></h2>
       <div class="keytable">
-        <div><span class="k"><span class="key wide-key">15 s</span></span><span><strong>Keep this change?</strong> New resolutions, mirroring and rotation revert on their own unless you keep them.</span></div>
+        <div><span class="k"><span class="key wide-key">15 s</span></span><span><strong>Keep this change?</strong> New resolutions, mirroring, and rotation revert on their own unless you keep them.</span></div>
         <div><span class="k"><span class="key">Esc</span></span><span><strong>Revert right now.</strong> The question shows on every screen you can see.</span></div>
-        <div><span class="k"><span class="key">⌃</span><span class="key">⌥</span><span class="key">⌘</span><span class="key">⎋</span></span><span><strong>Restore all displays.</strong> Undoes recent changes, reconnects screens and removes dimming.</span></div>
+        <div><span class="k"><span class="key">⌃</span><span class="key">⌥</span><span class="key">⌘</span><span class="key">⎋</span></span><span><strong>Restore all displays.</strong> Undoes recent changes, reconnects displays, and removes dimming.</span></div>
         <div><span class="k"><span class="key">⇧</span></span><span><strong>Safe Mode.</strong> Hold Shift while Snaptic opens to skip everything automatic.</span></div>
       </div>
       <p class="safety-note">A separate safety helper puts things back even if Snaptic stops responding, and Snaptic never turns off the last screen you can see.</p>
@@ -607,7 +667,7 @@ footer .links a:hover { color: var(--ink); }
   <section class="block statement" id="modules">
     <div class="wrap">
       <h2 class="huge"><span style="display:block">Use only</span><span class="gray" style="display:block">what you want.</span></h2>
-      <p class="lede">Turn each tool on or off, then each feature inside it. Anything that's off costs nothing: no background work, no helpers, no permission prompts.</p>
+      <p class="lede">Turn each tool on or off, then each feature inside it. Anything that’s off costs nothing: no background work, no helpers, and no permission prompts.</p>
       <div class="bento">
         <div class="card span-2">
           <div class="art"><span class="switch" aria-hidden="true"></span></div>
@@ -617,12 +677,12 @@ footer .links a:hover { color: var(--ink); }
         <div class="card span-2">
           <div class="art"><span class="switch" aria-hidden="true"></span></div>
           <h3>Displays.</h3>
-          <p>Brightness, resolution, color and more.</p>
+          <p>Brightness, resolution, color, and more.</p>
         </div>
         <div class="card span-2">
-          <div class="art"><span class="switch off" aria-hidden="true"></span></div>
-          <h3>Everything else.</h3>
-          <p>Stays off until you want it.</p>
+          <div class="art"><span class="switch" aria-hidden="true"></span></div>
+          <h3>Awake.</h3>
+          <p>Keeps your Mac awake when you choose.</p>
         </div>
       </div>
     </div>
@@ -630,14 +690,14 @@ footer .links a:hover { color: var(--ink); }
 
   <section class="block" id="get">
     <div class="wrap">
-      <h2 class="huge"><span style="display:block">Get Snaptic.</span><span class="gray" style="display:block">It's free.</span></h2>
+      <h2 class="huge"><span style="display:block">Get Snaptic.</span><span class="gray" style="display:block">It’s free.</span></h2>
       <p class="lede" style="margin-top:32px">For any Mac running macOS Sonoma or later.</p>
 
       <div class="download">
         <div>
           <h3>Download Snaptic.</h3>
-          <p>Version 0.2.0 for Apple silicon and Intel. Unzip it and drag Snaptic to Applications.</p>
-          <p>Snaptic isn't notarized by Apple yet, so the first time you open it, go to System Settings, Privacy &amp; Security, and click Open Anyway.</p>
+          <p>Version 0.3.0 for Apple silicon and Intel. Unzip it and drag Snaptic to Applications.</p>
+          <p>Snaptic isn’t notarized by Apple yet, so the first time you open it, go to System Settings, Privacy &amp; Security, and click Open Anyway.</p>
         </div>
         <a class="btn big" href="https://github.com/revylfitness/snaptic/releases/latest/download/Snaptic.zip">
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10m0 0-4-4m4 4 4-4M4 16h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -650,7 +710,7 @@ footer .links a:hover { color: var(--ink); }
       <ol class="get-steps">
         <li>
           <h3>Install the tools.</h3>
-          <p>Apple's free command line tools. Skip this if you have Xcode.</p>
+          <p>Apple’s free command line tools. Skip this if you have Xcode.</p>
           <div class="code"><div class="bar"><span>Terminal</span><button class="copy" type="button">Copy</button></div><pre><code>xcode-select --install</code></pre></div>
         </li>
         <li>
@@ -662,7 +722,7 @@ INSTALL=1 ./scripts/build-app.sh</code></pre></div>
         </li>
         <li>
           <h3>Say yes.</h3>
-          <p>Snaptic asks only for what your features need: Accessibility for the switcher and media keys, Screen Recording for thumbnails and picture in picture.</p>
+          <p>Snaptic asks only for what your features need: Accessibility for the switcher and media keys, and Screen Recording for thumbnails and Picture in Picture. Awake needs nothing.</p>
           <div class="code"><div class="bar"><span>Terminal</span><button class="copy" type="button">Copy</button></div><pre><code>open /Applications/Snaptic.app</code></pre></div>
         </li>
       </ol>
@@ -673,9 +733,9 @@ INSTALL=1 ./scripts/build-app.sh</code></pre></div>
 <footer>
   <div class="wrap">
     <p class="made">Made with &lt;/3 by revyl fitness technology, Inc.</p>
-    <p>Snaptic is free, open-source software under the MIT license. It asks for Accessibility access for the window switcher and media keys, and Screen Recording access for thumbnails and picture in picture, only when those features are on. It makes no network connections.</p>
+    <p>Snaptic is free, open-source software under the MIT license. It asks for Accessibility access for the window switcher, media keys, and Awake’s optional pointer movement, and Screen Recording access for thumbnails and Picture in Picture, only when those features are on. It makes no network connections.</p>
     <p>Snaptic is an independent project, not affiliated with or endorsed by Apple Inc. Mac and macOS are trademarks of Apple Inc. App names and window contents in the demo are fictional.</p>
-    <p>Snaptic isn't affiliated with BetterDisplay, MonitorControl or Lunar.</p>
+    <p>Snaptic isn’t affiliated with BetterDisplay, MonitorControl, Lunar, Amphetamine, or Insomnia.</p>
     <div class="links">
       <a href="https://github.com/revylfitness/snaptic">Source code</a>
       <a href="https://github.com/revylfitness/snaptic/issues">Report an issue</a>
