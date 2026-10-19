@@ -1,432 +1,798 @@
-# Snaptic 0.3.1 plan (r1)
+# Snaptic 0.3.1 plan (r2)
 
-This release has two parts:
+## What 0.3.1 adds
 
-1. **Tabs in the Snaptic menu.** The shared menu shows a row of tabs at the top, one per module that lives in it, and only the selected module's items below.
-2. **Keep awake with the lid closed.** This is an opt-in Awake mode that keeps a MacBook awake with its lid closed, including on battery without an external display. It asks for an administrator password each time you turn it on.
+0.3.1 adds two things:
 
-The owner chose both approaches on 2026-10-19:
+1. **Tabs in the Snaptic menu.** When two or more modules share the Snaptic menu, it shows a row of tabs at the top, one per module. Only the selected module's items show below the tabs.
+2. **Keeping awake with the lid closed.** This is an opt-in Awake mode, "lid-closed mode", that keeps a MacBook awake with its lid closed, including on battery with no external display. It asks for an administrator password each time it turns on.
 
-- the tabs are a segmented control inside the native `NSMenu` (not a popover), and the menu remembers the last tab;
-- lid-closed mode asks for a password each time; nothing is installed and nothing persistent is granted. The other options were a one-time helper install and a sudoers rule.
+The owner made the following decisions on 2026-10-19, and they are not reopened here:
 
-The inputs to this plan are the briefs in `docs/design/0.3.1/briefs/` (menu, awake, research). Section numbers like "0.3 §5.1" refer to `docs/design/0.3/PLAN.md`.
+- The tabs are a segmented control inside the native `NSMenu`, not a popover, and the menu remembers the last tab.
+- Lid-closed mode asks for an administrator password each time. Nothing is installed and nothing persistent is granted. The two rejected options were a one-time helper install and a sudoers rule.
 
-Ground rules carried over from 0.3:
+## Review history
 
-- SnapticKit stays Foundation-only and tested on Linux, and all pure logic lives there;
-- CI is the only compiler;
-- `lint.sh --strict` stays green with no new ratchet rows;
-- every control is in a `*Controls` table;
-- every new file has a `stubs.tsv` row.
+- **r1 → r2:** four reviews (security, code, parity, design), recorded in `review-r1-*.md`. They found 5 Blockers, 32 Majors and 51 Minors.
+- Every finding is handled in this revision. The disposition table is §R at the end.
+
+## Inputs and conventions
+
+- Inputs are `briefs/{menu,awake,research}.md`.
+- "P03 §x" means `docs/design/0.3/PLAN.md`, and "DS" means `docs/design/0.3/design-spec.md`.
+- Strings in this plan are canonical. They use ’ (curly apostrophes) so they can be pasted straight into `L()`.
+
+## Ground rules carried over from 0.3
+
+- SnapticKit is Foundation-only and tested on Linux. All pure logic lives there.
+- CI is the only compiler. `lint.sh --strict` stays green, and no new ratchet rows are added.
+- Every control lives in a `*Controls` table and is used. Every new file has a `stubs.tsv` row.
 
 ---
 
 ## Part A: Tabs in the Snaptic menu
 
-### A1. What changes for the user
+### A1. What the user sees
 
 ```
 ┌──────────────────────────────────────┐
-│ [ Window Switcher | Displays | Awake ]│   tab bar: only when 2+ modules share the menu
+│ Safe Mode Is On / Leave Safe Mode…    │  first group, any tab (as today)
+│ Sleep Is Turned Off                   │  host-level safety rows (B3.4), any tab
+│ Turn Sleep Back On…                   │
 ├──────────────────────────────────────┤
-│ …the selected module's items…         │   the full section, with no header (the tab names it)
+│ [ Window Switcher | Displays | Awake ]│  tab bar: only with 2+ modules in the menu
 ├──────────────────────────────────────┤
-│ More Display Features…   (when shown) │
+│ …the selected module's items…         │  no section header (the tab names it)
+├──────────────────────────────────────┤
+│ More Display Features…  (Displays tab │
+│                          only)        │
 │ Recent Notices         ›  (when any)  │
-│ Snaptic Settings…               ⌘,    │
+│ Snaptic Settings…               ⌘,    │  unchanged: restores the last Settings pane
 │ Quit Snaptic                    ⌘Q    │
 └──────────────────────────────────────┘
 ```
 
-**When the tab bar shows**
-- Tabs appear only in the **shared** Snaptic item, and only when `plan.shared.count >= 2`.
-- With one module in the shared menu there is no tab bar, and that module's section shows with no header (0.3 already shows a header there; drop it, because the icon names the menu).
-- With none, the menu keeps today's "No Modules Are On" row.
-- Own-icon menus (a module set to Own Icon) are unchanged.
+**Where tabs appear**
+- Tabs appear only in the shared Snaptic item, and only when `plan.shared.count >= 2`.
+- A fresh install puts Window Switcher, Displays and Awake in the shared menu, so it shows three tabs (MenuLayout.swift:126-145). That matches the owner's screenshot.
+
+**One module, no modules, own-icon menus**
+- With one module in the menu there is no tab bar, and the section keeps its 0.3 header (`menu.snaptic.sectionHeader` stays in use).
+- With no modules, "No Modules Are On" shows as today.
+- Own-icon menus don't change.
 
 **Order and labels**
 - Tabs follow `plan.shared` order: Window Switcher, Displays, Awake.
-- Labels are the module titles in Title Case (design-spec §4.1). If the three titles don't fit in the 272 pt control at small size, the labels fall back to short names ("Switcher", "Displays", "Awake"). That decision is made in Kit from measured widths passed in, so it can be tested.
+- Labels are module titles. If the full titles don't fit with `.fillEqually`, the control tries `.fit` distribution. Only if that also fails do the labels fall back to `ModuleID.shortTitle` ("Switcher", "Displays", "Awake").
+- Each segment's accessibility label is always the full title. The tooltip is "<Title> (⌘n)".
 
-**Awake in a tab**
-- Awake's tab shows the **full** Awake rows (as in its own menu), minus "Awake Settings…" because the footer covers it.
-- The compact section (0.3 §5.4) is used only when Awake is the single shared module. 0.3 used it there to keep a stacked menu short, and tabs remove that reason. Open question for review: keep compact in tabs too?
+**Attention and active marks**
+- A segment whose module has something that needs attention shows a 10 pt `exclamationmark.circle` image next to its label, and VoiceOver adds ", needs attention". Modules report this through a new `menuAttention: Bool` on the module contract (A4):
+  - Displays: degraded, paused, or helper stopped;
+  - Window Switcher: Accessibility missing;
+  - Awake: none of its own, because the leftover row is host-level.
+- While Awake governs, the Awake segment shows the active glyph and VoiceOver adds ", on".
+- Without this, a user who stays on one tab would never see another module's warnings, which would be a regression from 0.3's stacked menu.
 
-**Remembering the selection**
-- The selected tab is remembered across opens and relaunches.
-- If the remembered module isn't in `plan.shared` (it was turned off, moved to its own icon, or Awake's compact entry went away), the menu falls back to the first tab. The stored choice is kept, so it comes back when that module returns.
+**Awake's tab**
+- Awake's tab shows the full Awake rows, style `tab`: the own-menu rows minus "Awake Settings…".
+- The compact rows are used only when Awake is the single shared module, as in 0.3 §5.4.
 
-**Snaptic Settings… ⌘,**
-- With tabs, it opens Settings at the selected module's page (Window Switcher, Displays or Awake).
-- With no modules on, it opens General, as today.
+**Remembering the tab**
+- The tab is remembered across opens and relaunches.
+- If the remembered module isn't in the menu, the first tab shows. The stored choice is kept, so it comes back when that module returns.
 
-**Unchanged**
-- Recent Notices, the upgrade item, Quit and Safe Mode rows: Safe Mode rows stay above the tab bar, as the first group.
+**Footer**
+- The footer's "Snaptic Settings… ⌘," is unchanged: it restores the last-viewed Settings pane (DS §1.1, HIG).
+- "More Display Features…" moves from the footer to the end of the Displays tab, or to the single-module Displays menu.
 
 ### A2. Building and switching
 
-**The tab bar row** is a new custom-view item, `MenuTabBarRow`, in a new file `Core/MenuTabBar.swift`, which is added to the L6 exemption list next to `MenuSwitchHeader.swift`.
-- Its view is a `MenuRowView` subclass hosting an `NSSegmentedControl` (`.selectOne`, `controlSize = .small`, `segmentDistribution = .fillEqually`), inset by `MenuKit.rowInset`.
-- Row height is fixed at 28 pt.
-- Its accessibility label is "Snaptic menu sections"; each segment carries its module title.
+**The tab bar**
+- `MenuKit.tabBar(labels:selected:attention:active:control:onSelect:)` is a factory beside `MenuKit.switchHeader`, so L6 needs no new exemption. It returns an item whose view is `MenuTabBarView`, defined in the new file `Core/MenuTabBar.swift`.
+- The view is an `NSView` subclass, **not** a `MenuRowView`, so it never draws the selection fill. It hosts an `NSSegmentedControl` (`.selectOne`, `controlSize = .small`, inset by `MenuKit.rowInset`). The row is 28 pt tall.
+- The item is `isEnabled = false` so arrow keys skip it, if HW-24 confirms the control still takes clicks. Otherwise the item stays enabled and `highlightDidChange` is a no-op.
+- Accessibility label: "Menu tabs". Help: "Press Command-1 to Command-3 to switch tabs." (The range follows the tab count.)
 
-**`StatusMenu.build(shared)`**, when `plan.shared.count >= 2`:
-1. Safe Mode group (if any).
-2. Tab bar row, then a separator.
-3. The selected module's section, with `header: false` and `compact: false` for Awake.
-4. A separator, then the footer.
+**`StatusMenu.build(shared)` with tabs** builds these groups:
+1. The host safety group: Safe Mode rows, then the B3.4 leftover rows.
+2. The tab bar.
+3. The selected section, from `module.menuSection(tabbed: true)` with `header: false`.
+4. The footer.
 
-StatusMenu keeps two marker references, the tab bar item and the footer's first separator, so it knows which range of items belongs to the section.
+StatusMenu keeps three references: `tabBarItem`, `sectionItems: [NSMenuItem]` (exactly the items it inserted for the section) and `footerSeparator`.
 
-**Switching tabs** (segmented control action) runs synchronously in the action:
-1. Store the choice.
-2. `menu.removeItem` for every item between the tab bar's separator and the footer separator.
-3. Insert `section(newID, …)` items at that index.
-4. Update `minimumWidth`.
+**Switching tabs** runs synchronously in the control's action. That action fires at the end of the control's own tracking, the same cell path as the shipping `NSSwitch` and `NSSlider` rows.
+1. Store the choice (A5).
+2. Close any open submenu. MenuKit submenus get a tiny delegate that records whether they are open, and if one is, StatusMenu calls `cancelTracking()` on it first (HW-24 case).
+3. Remove exactly `sectionItems`.
+4. Insert the new section's items after the tab bar's separator, adding or removing the trailing separator so groups stay single-separated. If the new section is empty (a module stopped while the menu is open), show the status row "Nothing to Show".
+5. Post `NSAccessibility.post(element: <menu's window>, notification: .layoutChanged)`.
 
-The action runs in the menu's event-tracking mode. No timers and no `RunLoop.main.perform` (N15, L14). The removed items are never under the mouse, which is on the tab bar, so the R2C c12 slider glitch doesn't apply. The menu window resizes while open; HW-31 checks this on 14, 15, 26 and 27.
-
-Some live state is affected by a switch:
-- Awake's header refresh prunes headers whose `item.menu == nil`. A switch builds fresh items by calling `menuSection()`, so the new headers register themselves.
-- Slider rows in removed items keep their Combine sinks until they are deallocated. StatusMenu drops its references to removed items, and MenuSliderRow's sinks are weak to the view.
-
-If anything requests a rebuild while the menu is open, it still only marks the slot dirty. The tab switch builds from current state, which is fine because it is a fresh section.
-
-**Height**
-- Sections differ in height (Displays with sliders is the tallest), and the menu grows and shrinks downward from the status item.
-- The menu does not try to keep a constant height: padding rows would be worse than a resize.
+The switch uses no timers and no `RunLoop.main.perform` (N15, L14). The removed items are never under the pointer, so R2C c12 doesn't apply.
 
 **Width**
-- The tab bar is a view row, so a menu with tabs is always `MenuKit.width` (300 pt) wide. A single-module Switcher menu stays native width, as today.
+- At build, StatusMenu measures every tab's section in a scratch `NSMenu` (`menu.size.width` after adding the items) and sets `minimumWidth = max(MenuKit.width, widest)`. Switching then never widens the open menu, and the segment never moves under the pointer.
+- The scratch items are discarded. `menuSection(tabbed:)` must be cheap and free of side effects, and each module confirms this in Step 0.
 
-### A3. Keyboard and VoiceOver (0.3 §5.1 C4, parity M4)
+**Height**
+- The menu grows or shrinks downward on a switch, and Quit and Settings move. This is accepted.
+- DS §3.4's "doesn't flicker or resize while open" gets a 0.3.1 exception: a tab switch replaces the section and resizes the menu.
 
-Every module section must be reachable without a mouse, as follows:
+**Live rows**
+- A switch builds fresh items, so Awake's header refresh (which prunes items where `menu == nil`) registers the new headers.
+- A removed slider's sink is owned by its row item and dies when the item is deallocated. StatusMenu holds no other references.
+- A rebuild requested while the menu is open still only marks it dirty.
 
-- **VoiceOver:** the segmented control is an accessibility element inside the row. VO users move to it and choose a segment with VO-Space, and its value changes announce the new section. HW-32 checks this.
-- **Keyboard (native path):** each tab also has a native item, "Show Window Switcher" / "Show Displays" / "Show Awake", with key equivalents ⌘1/⌘2/⌘3.
-  - These items are hidden (`isHidden = true`, `allowsKeyEquivalentWhenHidden = true`), so they take no space.
-  - Pressing ⌘2 in the open menu switches the tab and keeps the menu open, if AppKit lets a hidden item's action run without ending tracking. If the menu closes (HW-33 decides), the next open shows the chosen tab, and the README says "⌘1–⌘3 choose a tab".
-- **Arrow keys:** the tab row highlights like other view rows (`willHighlight`). Left and Right arrows on a highlighted tab row are not promised; NSMenu tracking owns them.
-- **Type-select and key equivalents** reach only the visible tab, plus the footer (⌘, and ⌘Q). Displays' and Awake's own key equivalents work only on their tab or in their own icon's menu, and that is documented. Global shortcuts are unaffected.
+### A3. Keyboard and VoiceOver
 
-### A4. Where the logic lives (Kit)
+0.3 §5.1 C4 and parity M4 require a native path for every custom-row action. For tabs, the paths are:
 
-`SnapticKit/MenuLayout.swift` gains pure helpers:
+**Keyboard**
+- ⌘1…⌘n select tab n by **position**.
+- Native items "Show Window Switcher Tab", "Show Displays Tab" and "Show Awake Tab" sit in the footer group, just before Snaptic Settings…. There are only as many as there are tabs, and each carries ⌘n for its position.
+- They are hidden (`isHidden = true`, `allowsKeyEquivalentWhenHidden = true`) unless VoiceOver is on (`NSWorkspace.shared.isVoiceOverEnabled` at build). With VoiceOver on, they show, so VoiceOver has a native path whatever HW-25 finds.
+- `StatusMenu.menuHasKeyEquivalent` returns true with that item's target and action when `openMenus > 0` and the event is ⌘1–⌘n. Otherwise it returns false, as today.
+- The item's action stores the choice and sets `shared.dirty = true`. It never changes the menu in place.
+- The expected result is that **the menu closes and the next open shows the chosen tab**. If HW-26 finds that tracking continues, the action switches in place instead.
 
-- `MenuTabs.tabs(plan:) -> [ModuleID]`: `plan.shared` when its count is 2 or more, otherwise `[]`.
-- `MenuTabs.selected(stored: String?, tabs: [ModuleID]) -> ModuleID?`: the stored id if it is in `tabs`, otherwise `tabs.first`. It decodes leniently: an unknown string counts as nil.
-- `MenuTabs.labels(titles:short:widths:available:) -> [String]`: full titles when they fit, otherwise short names.
-- `MenuTabs.settingsPage(selected:noModules:) -> String?`.
+**Discoverability**
+- The segment tooltips, the control's accessibility help, and the Menu Bar page footer: "With two or more modules set to Show in Snaptic Menu, the menu shows a tab for each. While it’s open, press ⌘1, ⌘2, or ⌘3 to switch tabs."
+- The README says "⌘1–⌘3 choose a tab (⌘1–⌘2 with two tabs)".
 
-Tests:
-- truth tables in `MenuLayoutTests`;
-- one more fuzz invariant on the existing 5,000-case harness: "selected ∈ tabs whenever tabs is non-empty", and "tabs is empty or has at least 2 entries".
+**VoiceOver**
+- The segmented control is an accessibility element. VoiceOver users reach it and choose a segment with VO-Space, and `.layoutChanged` refreshes the menu's children (HW-25).
+
+**Other keys**
+- Type-select reaches only the visible tab.
+- The open menu's key equivalents are ⌘, ⌘Q and ⌘1–⌘n. No module defines others: Switch Windows' ⌥⇥ is drawn but never fires, as today.
+
+### A4. Contracts and the Kit logic
+
+**Module contract** (`Core/ModuleContracts.swift`):
+- `func menuSection(tabbed: Bool) -> [NSMenuItem]`. Its default calls `menuSection()`, and Awake overrides it.
+- `var menuAttention: Bool { false }`. Displays and Window Switcher override it.
+
+**Awake** (Kit, `AwakePresentation.swift`): `AwakeMenuFacts.style: AwakeMenuStyle { own, compact, tab }` replaces `compact: Bool`. A computed `compact` stays for the existing tests.
+- `tab` gives the `own` rows minus `.settings`.
+- `AwakeModule.menuSection(tabbed: true)` builds `style: .tab`.
+
+**`SnapticKit/MenuLayout.swift`** gets an `enum MenuTabs`:
+- `tabs(plan:) -> [ModuleID]`: `plan.shared` when it has 2 or more modules, otherwise `[]`.
+- `selected(stored:tabs:) -> ModuleID?`: lenient decode.
+- `labelStyle(fullWidths:fitWidths:available:) -> .fillEqually | .fit | .short`.
+- `keyIndex(for:tabs:) -> Int?` and `tab(atKeyIndex:tabs:) -> ModuleID?`.
+- `attention(_ flags: [ModuleID: Bool], tabs:) -> Set<ModuleID>`.
+
+**Tests**
+- Truth tables.
+- The existing 5,000-case fuzz gains these invariants:
+  - `tabs.isEmpty || tabs.count >= 2`;
+  - `selected ∈ tabs` whenever tabs is non-empty;
+  - key indices are a bijection onto `1...tabs.count`.
 
 ### A5. Persistence
 
-The selection is a plain `UserDefaults.standard` string under `snapticMenuTab`, following the precedent of `settingsLastRoute`.
-- It is not in `ModulesConfig`, so writing it doesn't trigger `scheduleApply` and a re-plan.
-- It is not in backups and not in the ControlRegistry key cross-check.
-- General › Reset doesn't clear it (like the last Settings route). Menu Bar › Restore Defaults does clear it.
-- Reads are lenient.
+- The selection is stored as a plain `UserDefaults.standard` string under `snapticMenuTab`, following the `settingsLastRoute` precedent. It is navigation state, so it is not in `ModulesConfig`, not in backups, and not in the key cross-check. **No reset clears it**, the same as the last Settings route.
 
-### A6. Controls, lint, docs
+### A6. Controls, lint and docs
 
 **Controls**
-- `StatusMenuControls` gains:
-  - `menu.snaptic.tabs`, a new `ControlKind.menuTabBar`. `SettingsIndex.requiresSearch` returns false for it.
-  - `menu.snaptic.showTab`, a `.menuItem` with `when: [.perItem("module")]`.
-- `menu.snaptic.sectionHeader` stays, for own-icon menus and single-module menus where it still applies. If it ends up unused, it is removed with a `ControlRemovals` reason.
+- `StatusMenuControls` gains these specs:
+
+  | ID | Kind | Notes |
+  |---|---|---|
+  | `menu.snaptic.tabs` | new `ControlKind.menuTabBar` | `SettingsIndex.requiresSearch` returns false for it |
+  | `menu.snaptic.showTab` | `.menuItem` | `when: [.perItem("module")]` |
+
+- `menu.snaptic.sectionHeader` stays: single-module menus use it.
+- `menu.snaptic.upgrade` moves to the Displays tab, with the same id.
 
 **Lint**
-- L6 exemption gains `MenuTabBar.swift`.
-- L13 and L14 already cover `Core/Menu*.swift`.
+- No L6 change: the item is built in MenuKit.
+- `MenuTabBar.swift` falls under the existing L13/L14 `Core/Menu*` globs.
 
-**Docs**
-- README "Menu Bar" and "In the menu bar" sections; design-spec §3.3 (new sketch); 0.3 PLAN §5.2's row budget is restated for 0.3.1 as "the tallest single tab ≤ 24 lines in the default setup" (HW-15 updated).
-- `MenuBarPage` summary line: "When two or more modules share the Snaptic menu, it shows a tab for each."
+**Docs.** T-docs owns all README text; T-menu supplies wording in its PR description. Pages to change:
+- README "Menu Bar" (l.42-52) and "In the menu bar" (l.242-244).
+- DS §3.3: new sketch.
+- DS §3.4: the resize exception.
+- `MenuBarPage` summary line, plus the ⌘n footer from A3.
+- HW-15's row budget, restated as "the tallest single tab ≤ 24 lines in the default setup".
 
 ---
 
 ## Part B: Keep awake with the lid closed
 
+### B0. Names, used everywhere
+
+Design-spec §4.7 gets a terminology row: "closed-lid, clamshell, disablesleep and Power Protect are all called **keep awake with the lid closed**; the noun is **lid-closed mode**."
+
+| Where | Text |
+|---|---|
+| Menu action (off) | "Keep Awake with the Lid Closed…" |
+| Menu state (on) | "✓ Keep Awake with the Lid Closed". No ellipsis, because turning it off asks nothing. |
+| Idle submenu | "Keep Awake with the Lid Closed ›" |
+| Setting | "Keep awake with the lid closed" |
+| Notices and README | "lid-closed mode" |
+| VoiceOver | "Keeping your Mac awake with the lid closed." and "Lid-closed mode turned off." |
+| Status and accessibility suffix | ", even with the lid closed" |
+
 ### B1. What the user sees
 
-**Settings › Awake, new group "Lid Closed"** (MacBooks only; the group is hidden when the Mac has no lid, `lidWillSleep == nil` at module start):
+**Settings › Awake › Advanced…** gets a new section, "Lid closed". It follows the experimental pointer-nudge pattern (DS §1.5 places the lid option in Advanced, "with a warning about heat").
 
-- **Toggle "Allow Keeping Awake with the Lid Closed"** (off by default). Footer: "Your MacBook keeps running when you close the lid, even on battery. You'll enter your administrator password each time you turn this on, because macOS only allows it with administrator rights. While it's on, macOS won't sleep for low battery or heat, so Snaptic turns it off at 10% battery or when your Mac gets hot. Keep your Mac on a hard surface with air around it, not in a bag."
-- **Stepper "Turn Off After"**, 1–24 hours, default 8: a hard cap on lid-closed time per session, separate from the session's own length.
-- **Battery floor** (picker): "Turn off at 10% / 20% / 30% battery", default 20%. It is never below 10%; that is the root side's fixed floor.
-- If Snaptic's bundle is writable by the user, a warning row says: "Apps running as you can change Snaptic, and Snaptic will ask for your administrator password. Install Snaptic with `INSTALL=1 ./scripts/build-app.sh` or move it to Applications as an administrator." This warns but does not refuse (open question: refuse instead?).
+- **`ToggleSetting(L("Keep awake with the lid closed"), help: L("Only in sessions you start in Snaptic. Asks for an administrator password each time."))`**
+  - It is backed by `features[.lidClosed]` (opt-in, off by default).
+  - It shows only on Macs with a battery (`when: .hardware(.battery)`).
+- **Dependent row**, shown when the toggle is on: `PickerSetting(L("Turn off after"))`.
+  - Options: 1, 2, 4, 8, 12, 24, 48, 72 Hours. The default is 8 Hours.
+- **Footer (two sentences):** "Your Mac can’t sleep for low battery or heat while this is on, so Snaptic turns it off at your battery limit (at least 10%) or when your Mac gets hot. Use it on a hard surface, not in a bag." It ends with a **Learn More…** link to README "Keeping awake with the lid closed".
+- **One battery limit.** Lid-closed mode turns off at `max(10, Awake’s battery floor)`, or at 20% when Awake's battery floor is turned off. There is no second picker. (Insomnia also has a single floor.)
+- **Bundle checks** reuse the Permissions page's conditions and wording. Both strings live in Kit next to the Permissions copy.
+  - **Translocated copy:** lid-closed mode is unavailable, and the existing row "Move Snaptic to Applications first" shows.
+  - **Writable by your account:** a warning row reads "Your account can change this copy of Snaptic, so another app could change it and misuse the password prompt. Learn More…". Lid-closed mode stays available; §B6 gives the reasoning (warn, not refuse).
+- **On the main Awake page,** the existing `lidRoute` line becomes:
+  - feature off: "To keep it awake with the lid closed, connect power and an external display, or turn on lid-closed mode in Advanced."
+  - feature on: "…or choose Keep Awake with the Lid Closed."
 
-**The Awake menu**, when allowed and the Mac has a lid:
-- **"Keep Awake with Lid Closed…"**, a native item. The ellipsis means a password prompt follows.
-  - If a session that you started in the menu or Settings is running, it adds lid-closed mode to that session.
-  - Otherwise it starts the default session (preset) with lid-closed mode.
-- While on, the item becomes **"Allow Sleep When Lid Closes"**. That turns lid-closed mode off and keeps the session going; it needs no password.
-- The header detail line replaces "Closing the lid will put your Mac to sleep." with "Stays awake with the lid closed until 6:40 PM." (the earliest of the session end and the cap).
-- The lid warning is computed from the actual `lidWillSleep` value, not just from the lid existing (brief §4 bug). It also refreshes on `$lidWillSleep` and on screen changes.
+**The Awake menu.** New Kit row cases are `.lidClosed(LidRowState)` and `.lidSubmenu([presets])`. They appear in all three styles: own, compact and tab.
 
-**Custom… panel:** a checkbox "Also keep awake with the lid closed (asks for your password)", shown when allowed.
+- **Idle**, when the feature is available: **"Keep Awake with the Lid Closed ›"** goes directly after the start-default row.
+  - Its first row is the disabled note "Asks for an Administrator Password".
+  - Then come the presets, in preset order.
+  - Then a separator and "Custom…", which opens the panel with the lid checkbox ticked.
+  - Choosing a preset asks for the password, and **starts the session only after lid-closed mode is verified on** (B3). Cancelling starts nothing.
+- **Active, with a session you started in Snaptic** (source menu, settings or hotkey in this process): "Keep Awake with the Lid Closed…" goes directly after "✓ Keep Display On".
+  - Choosing it asks for the password and adds the mode to the running session.
+  - While the mode is on, the row reads "✓ Keep Awake with the Lid Closed". Choosing it turns the mode off with no password.
+- **Active, with a session from the command line, at launch, or restored:** the idle submenu shows instead. Choosing a preset replaces that session once the mode is verified on, and the success toast says "Replaced the command-line session."
+- **Holds or a rule governing:** the submenu shows. A new manual session takes over as usual.
+- **While the password dialog is up:** every lid row shows "Waiting for Password…" and is disabled.
 
-**The password prompt** is macOS's own authorization dialog, through `/usr/bin/osascript`, with this prompt text:
+**Custom… panel** (only in Start mode, not in Add Time…):
+- `ToggleSetting(L("Keep awake with the lid closed"), help: L("Asks for an administrator password when you click Start."))`.
+- While it is on, the button reads "Start…".
 
-> Snaptic wants to keep your Mac awake with the lid closed. Sleep turns back on when the session ends, when Snaptic quits, at <floor>% battery, or if your Mac gets hot.
+**Awake status section (Settings):** the existing "Keep Awake" (idle) and "Options" (active) pull-downs gain the same items (B0 titles). There is no new button.
 
-Touch ID may be offered (osascript is Apple-signed); HW-35 checks this. Cancel leaves the session running without lid-closed mode and shows no error toast.
+**The password dialog.** macOS's own authorization dialog shows, via `/usr/bin/osascript`. The requester is shown as osascript, not Snaptic (HW-28 records exactly what it shows). The prompt text is built in Kit by `LidWatchdog.promptText(floor:capHours:)`:
+
+> Snaptic wants to keep your Mac awake with the lid closed for up to 8 hours. Sleep turns back on when the session ends, when Snaptic quits, at 20% battery, or if your Mac gets hot. Enter an administrator password to allow this.
+
+Touch ID is likely to work, because osascript is signed by Apple (research §4); HW-28 checks.
 
 **Status everywhere**
-- The Awake status row in Settings, the menu header, the indicator tooltip ("…, also with the lid closed"), `snaptic awake status` (new `lidClosed` field, true/false), and History (new lossy `lidClosed` flag on entries).
+- **Menu header and Settings status row.**
+  - While the mode is on, the lid line is the **first** extra.
+  - It reads "Stays awake with the lid closed" when the session ends first. When the cap ends first, it reads "Stays awake with the lid closed until 6:40 PM".
+- **Lid warning.** It becomes `lidWillSleep == true && !lidModeOn && (onBattery || !external)` (a Kit test covers it). It re-evaluates on `$lidWillSleep`, on screen changes, and on `$lidMode`.
+- **Indicator.**
+  - While the mode is on, the active glyph gets a small badge variant (`IndicatorController`), and the accessibility label and tooltip add ", even with the lid closed".
+  - The shared Snaptic glyph's N11 label gets the same suffix.
+- **The last lid end** shows in the header and status row for 12 h. Examples: "Lid-closed mode turned off at 20% battery at 3:12 AM." and "…because your Mac got hot at 3:12 AM." It is cleared at the next turn-on.
+- **History.** Entries gain `lidClosed` (true if the mode was on at any point) and `lidEnd` (lossy). The row subtitle gets " · Lid closed". The Start Again tooltip says "Starts without lid-closed mode."
+- **CLI.** `snaptic awake status` gets a last JSON key `lidClosed` (true/false), and the tab-separated line gets a last field: `lid` or `-`.
 
-### B2. Who can turn it on: the lid gate (N10 extended as "N20")
+### B2. Who can turn it on: N19, the lid gate (extends N10)
 
-Lid-closed mode turns on only through a **direct user action in Snaptic's UI in this process**:
-- the menu item;
-- the Custom… panel checkbox (menu or Settings);
-- the Awake page's "Keep Awake with Lid Closed…" button in the status section, shown when allowed.
+**Who can request it.** Only a direct user action in Snaptic's UI, in this process. That means a menu click, the Custom… panel, or a Settings pull-down item (Settings starts check `SettingsShell.mayStart()`).
 
-The rules:
+**What can never request it.** None of these: the CLI, the control socket, rules, holds, start-at-launch, restore or resume, History "Start Again", hotkeys (including preset slots), backups, presets, or `defaultOptions`. Lid-closed mode is not an `AwakeSessionOptions` field, so no persisted path can carry it.
 
-- **Never** from the CLI, rules, holds, start-at-launch, restored or resumed sessions, History "Start Again", hotkeys (including preset slots), backups or presets.
-- It is not part of `AwakeSessionOptions`, presets or `defaultOptions`, so no persisted path can carry it.
-- It is a **runtime-only** property of the running manual session: `AwakeSession.lidClosed`, left out of CodingKeys exactly like `overrideGuards`, and reset in `init(from:)` and `sanitized(now:)`.
-- Only `SessionController` may set it; lint L16 is extended to `lidClosed`.
+**How it is stored and who owns it.** There are three names:
 
-What ends lid-closed mode:
-- any end of its session;
-- replacement by another session;
-- a trigger or hold takeover (only possible after the manual session ends anyway);
-- module stop, Safe Mode, or the feature turned off;
-- a kill switch (`Awake.disable.lidClosed`, from N14);
-- a guard end;
-- "Allow Sleep When Lid Closes".
+| Name | What it is | Owner |
+|---|---|---|
+| `AwakeSession.lidRequested: Bool` | The session's runtime flag. It is not in CodingKeys and is reset in `init(from:)` and `sanitized(now:)`, exactly like `overrideGuards`. | Set only by `SessionController`. L16 is extended with the pattern `\.lidRequested\s*=(?!=)` outside `SessionController.swift`. |
+| `AwakeRuntimeState.lidMode: AwakeLidMode` | The state machine's published state (B3.0). | Assigned only in `LidClosedController.swift` (a second L16 clause). |
+| `lidClosed` | The field name in the CLI JSON and in History. | — |
 
-CLI restrictions:
-- **`snaptic awake extend` is refused** while lid-closed mode is on, with the new refusal `.lidClosedSession`, exit 4, and the text "Can't extend a lid-closed session from the command line. Use Snaptic's menu."
-- `awake stop` still works: anything may turn sleep back *on*.
+LidClosedController asks SessionController to set or clear `lidRequested` with `setLidRequested(_:for sessionID:)`, and gets a callback when the session ends.
 
-A new Kit type, `AwakeLidGate` (pure, not Codable), holds the truth table: `(source, event) -> allowed`. It mirrors `AwakeActivityGate`, with Linux tests.
+**`AwakeLidGate` (Kit, pure, exhaustively tested)** is a truth table `(source, event) -> allowed | end | keep`:
+- **Allowed** for `.menu` or `.settings` (with `mayStart`) on an idle Mac or a direct-UI session.
+- **Keep** when the session is replaced by a direct UI start in this process (menu, Settings or hotkey). The watchdog is untouched, and `until` is recomputed as the earlier of the new session's end and the cap.
+- **End** in all of these cases:
+  - the session ends;
+  - it is replaced by any other source;
+  - a trigger or hold takes over;
+  - the module stops, or Safe Mode starts;
+  - the feature is turned off, or the kill switch `Awake.disable.lidClosed` is set;
+  - restore or resume. The header then says "Lid-closed mode turned off when Snaptic quit."
 
-**Starting with guards in play**
-- Lid-closed mode refuses to start if:
-  - the battery is discharging and below `floor + 5`;
-  - Low Power Mode is on;
-  - the thermal state is `serious` or worse;
-  - the session is in "Start Anyway" (`overrideGuards`).
-- The refusal is a toast with the reason. Lid-closed mode never offers Start Anyway.
+**CLI.**
+- `awake extend` is refused while lid-closed mode is on. The refusal is `.lidClosedSession` with exit code 4 and the text: "Lid-closed sessions can’t be extended from the command line. Use Add 1 Hour in the menu."
+- `awake stop` works. Anything may turn sleep back **on**.
+
+**Starting with guards in play.** Lid-closed mode refuses to start in these cases, each with a toast:
+
+| Condition | Toast |
+|---|---|
+| Battery discharging and below `floor + 5` | "Lid-closed mode needs at least 25% battery." (the number is computed) |
+| Thermal state `serious` or worse | "Your Mac is too warm for lid-closed mode right now." |
+| The session is a Start Anyway session (`overrideGuards`) | "Lid-closed mode can’t start in a session started with Start Anyway." |
+| The bundle is translocated | the B1 row's text |
+| An earlier lid journal still exists (B3.4) | "Snaptic is finishing an earlier lid-closed session. Try again in a minute." |
+
+Low Power Mode does **not** block lid-closed mode. It follows the session's `endOnLowPowerMode` like everything else, and the README recommends Low Power Mode with the lid closed. Lid-closed mode never offers Start Anyway.
 
 ### B3. Mechanism
 
-Components:
+**Components**
 
-- **App (user):** `Awake/Core/LidClosedController.swift` owns the lifecycle.
-- **Spawning:** a new `HelperKind.adminScript` in `HelperSpawner.swift`.
-- **Kit:** `SnapticKit/LidWatchdog.swift` (script text, argument validation and state parsing); `AwakeLidGate.swift`; and presentation in `AwakePresentation.swift`.
-- **Root side:** a `/bin/sh` script started by `do shell script … with administrator privileges`. It is short, fixed text with no interpolation of anything except validated arguments.
+| Side | Files |
+|---|---|
+| App, user side | `Awake/Core/LidClosedController.swift`: the state machine, heartbeat, liveness checks and display handling. `Core/LidRecovery.swift`: host-level leftover recovery. |
+| Spawning | `HelperSpawner.spawnAdminScript`. |
+| Kit | `SnapticKit/LidWatchdog.swift`: script text, quoting, argument validation, result parsing and prompts. `AwakeLidGate.swift`. `AwakeLidPolicy.swift`: start refusals, floors, the cap clock, end classification and leftover classification. Presentation goes in `AwakePresentation.swift`. |
+| Root side | A fixed `/bin/sh` script. Its only writes are `/usr/bin/pmset -a disablesleep 0|1` and `/usr/bin/pmset sleepnow`. |
 
-**Start sequence** (LidClosedController.turnOn, on the main actor; the osascript wait runs off-main):
-1. **Preflight.** Check the gate, the feature, the guards (B2), and that the Mac has a lid. Read `SleepDisabled`:
-   - read both the IORegistry `IOPMrootDomain` `SleepDisabled` property (kernel truth) and the preference (`OtherAssertionsReader`'s existing CFPreferences read);
-   - if either is already on, Snaptic doesn't touch it and says "Sleep is already turned off for this Mac by another app or command, so your Mac stays awake with the lid closed." The session runs without lid-closed mode.
-2. **Journal before any change.** Write `~/Library/Application Support/Snaptic/awake/lid.json` (0600, in the existing 0700 directory) with `{token, bootSessionUUID, startedAt (wall + continuous), pid, capSeconds, floor}`. `token` is 128 random bits as 32 lowercase hex characters.
-3. **Beacon directory.** Create `<DARWIN_USER_TEMP_DIR>/snaptic-lid/` (0700), where `confstr(_CS_DARWIN_USER_TEMP_DIR)` is per user and outside the home folder.
-   - Check that it is a real directory (not a symlink), owned by our uid and mode 0700. If any check fails, the start is refused.
-   - Create `beat-<token>` (an empty regular file) and remove any old `stop-*` files.
-4. **Spawn.** `HelperSpawner.spawnAdminScript(source: LidWatchdog.appleScript(args))` runs `/usr/bin/osascript -e <script>`.
-   - It uses a fixed absolute path, argv only (no shell), not disclaimed (open question: does disclaiming change the dialog?), and its own process group.
-   - The app waits up to 120 s for osascript to exit, on a background queue; exit 0 means launched. A nonzero exit (including −128, "User canceled.") means "not turned on". After 120 s the app SIGTERMs osascript.
-5. **Verify.** Poll the IORegistry `SleepDisabled` every 0.5 s for up to 10 s.
-   - On: mark `runtime.lidClosed = .on(until:)`, start the heartbeat (B3.2), and post VoiceOver "Lid closed mode on."
-   - Not on within 10 s: write the stop file, show "Couldn't turn on lid-closed mode.", and log `awake.lid.failed.verify`.
-6. **Re-check after 5 s.** If `SleepDisabled` flipped back to 0 (another tool resets it; awake-parity.md:124), end lid-closed mode with "Another app turned sleep back on." Insomnia does the same.
+#### B3.0 States (single flight)
 
-#### B3.1 The root watchdog (fixed text in `LidWatchdog.script`)
+`AwakeLidMode` has these states:
+- `off`
+- `authorizing(token)`
+- `verifying(token, pid)`
+- `on(token, pid, until)`
+- `stopping(token)`
+- `failed(reason)`, which shows for one toast and then returns to `off`.
 
-It is run as `/usr/bin/nohup /bin/sh -c "$SCRIPT" snaptic-lid <uid> <pid> <token> <capSeconds> <floor> <dir> </dev/null >/dev/null 2>&1 &`. The arguments are positional, so the script body never contains them.
+How the state machine behaves:
+- **One operation at a time.** In every state except `off` and `on`, all lid entry points are disabled and show "Waiting for Password…".
+- **Token check after every await.** If the token has changed, or the session it belongs to has gone (unless the mode was keeping a session that hasn't started yet, see B3.1), the controller writes `stop-<token>` and moves to `stopping`.
+- **Leaving `authorizing` or `verifying` other than into `on`** (cancel, timeout, error, verify failure, superseded) always does the same three things:
+  1. writes `stop-<token>`;
+  2. stops the heartbeat;
+  3. keeps the journal until IORegistry `SleepDisabled` reads 0. If it still reads 1 after 30 s, the leftover row shows (B3.4).
+- **App Nap.** While the state is anything other than `off`, the controller holds `ProcessInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep, reason: "Snaptic lid-closed mode")`.
+
+#### B3.1 Turning on (LidClosedController)
+
+1. **Preflight.**
+   - Check the gate, the feature, the B2 refusals, and lid presence (feature availability: the sessions controller's `availability(of: .lidClosed)` is `.unavailable("No lid")` when `AppleClamshellState` is absent).
+   - Read `SleepDisabled` from IORegistry (`IOPMrootDomain` property, the kernel's actual state) and from the preference (`OtherAssertionsReader.sleepDisabledPreference()`, a new synchronous accessor).
+   - If either is already on, Snaptic doesn't touch it. The toast says "Sleep is already turned off for this Mac by another app or command, so it stays awake with the lid closed." The session starts or continues without lid-closed mode.
+2. **Journal.** Single slot: `~/Library/Application Support/Snaptic/awake/lid.json`, mode 0600, written atomically, containing `{token, bootSessionUUID, startedAt (wall and continuous), pid: nil, capSeconds, floor}`. `token` is 128 random bits as 32 lowercase hex characters.
+3. **Beacon directory.**
+   - Path: `D = confstr(_CS_DARWIN_USER_TEMP_DIR)` with its trailing `/` trimmed, plus `/snaptic-lid`. Both sides use exactly this string; never a realpath.
+   - Create `D` with mode 0700. Check with `lstat` that it is a directory, owned by our uid, mode 0700. If not, the toast is "Snaptic couldn’t turn on lid-closed mode. Try again." and the failure is logged as stage `beacon`.
+   - Remove old `stop-*` and `beat-*` files.
+   - Create `beat-<token>` with `open(O_CREAT|O_EXCL|O_NOFOLLOW|O_WRONLY, 0600)`.
+4. **Spawn** with `HelperSpawner.spawnAdminScript(LidWatchdog.startScript(args, prompt:))`:
+   - Suspended spawn of `LidWatchdog.osascriptPath` (`/usr/bin/osascript`) with `-e <source>`. Its stdout is a pipe (reusing `spawn`'s reply-pipe/`ReaderState` code with a 4 KB line cap). The environment is explicitly minimal: `PATH=/usr/bin:/bin`, `LANG=en_US.UTF-8`, nothing else.
+   - Before SIGCONT, the child must satisfy `anchor apple and identifier "com.apple.osascript"` (`SNProcess.process(_:satisfies:)`).
+   - Not disclaimed. Process exit is observed with a `DispatchSourceProcess` on main and `reapIfExited`, the house pattern; `waitUntilExit` stays banned.
+   - After 120 s, the controller sends SIGTERM to **osascript's pid only**, never `signalGroup`, and treats the result as a timeout (B3.0 exit path).
+   - `spawnAdminScript` does **not** require helper identity or `unavailableReason == nil`, because recovery must work while helpers are unavailable.
+5. **Result.** `LidWatchdog.parseResult(stdout) -> .launched(pid) | .canceled | .failed(code)`. The AppleScript wraps the call in `try … on error number n` and always prints one line: `ok <pid>` or `err <n>`, where −128 means canceled.
+   - Canceled: silent.
+   - Code 3 from the `check` step: someone else holds sleep, so the "already turned off" toast shows.
+   - Code 64: arguments, logged as stage `args`.
+   - Anything else: "Snaptic couldn’t turn on lid-closed mode. Try again."
+6. **Verify.** The controller records `pid` and its start time (`proc_pidinfo` `PROC_PIDTBSDINFO` `pbi_start_tvsec/usec`) in the journal. It then polls IORegistry `SleepDisabled` every 0.5 s for up to 10 s.
+   - **If on:** the state becomes `on`.
+     - For an idle start, the session starts now with `lidRequested = true` (source `.menu` or `.settings`).
+     - If that start is refused (a guard), the controller goes straight to `stopping`, and the session's refusal toast shows.
+     - VoiceOver hears "Keeping your Mac awake with the lid closed."
+   - **If not on:** B3.0 exit path, with the failed toast.
+7. **Five seconds later**, the controller re-reads `SleepDisabled`. If it reads 0 twice, the mode ends with `otherApp`: "Another app turned sleep back on, so lid-closed mode stopped." Insomnia saw a root daemon resetting the value every 2 s and does the same check.
+
+#### B3.2 The root command and watchdog
+
+**Command.** `LidWatchdog.command(args)` builds this line:
+
+```
+/bin/sh -c <Q(script)> snaptic-lid check <Q(a1)>…<Q(a6)> && /usr/bin/nohup /bin/sh -c <Q(script)> snaptic-lid run <Q(a1)>…<Q(a6)> </dev/null >/dev/null 2>&1 & echo $!
+```
+
+- `Q` is POSIX single-quoting: `'…'`, with each `'` written as `'\''`.
+- `check` runs in the foreground, so argument and ownership failures surface as the exit code of `do shell script`.
+- `appleScript(command:prompt:)` escapes `\` as `\\`, `"` as `\"`, and LF as `\n`, and refuses CR and every other control character.
+- Arguments: `uid pid token capSeconds floor dir`, all validated in Kit by the same charset and range rules as the script.
+  - `capSeconds` is 3,600…259,200 (72 h); the script adds 60 s.
+  - `floor` is 10…50.
+
+**Script** (`LidWatchdog.script`; T-lid-kit owns the exact text, and it is golden-tested):
 
 ```sh
-PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH
+IFS=' 	
+'; PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH; unset ENV BASH_ENV CDPATH
 umask 077; trap '' HUP
-UID_="$1"; PID_="$2"; TOK="$3"; CAP="$4"; FLOOR="$5"; DIR="$6"
-# Argument re-validation (defense in depth; the app validates too)
-case "$UID_$PID_$CAP$FLOOR" in *[!0-9]*|'') exit 64;; esac
-case "$TOK" in *[!0-9a-f]*|'') exit 64;; esac; [ ${#TOK} -eq 32 ] || exit 64
-case "$DIR" in /private/var/folders/*|/var/folders/*) ;; *) exit 64;; esac
-case "$DIR" in *..*|*[!A-Za-z0-9_/+.-]*) exit 64;; esac
-[ "$FLOOR" -ge 10 ] && [ "$FLOOR" -le 50 ] || exit 64
-[ "$CAP" -ge 60 ] && [ "$CAP" -le 86400 ] || exit 64
-
-sd() { pmset -g | awk '$1=="SleepDisabled"{print $2; f=1} END{if(!f) print 0}'; }
-owned() { [ -f "$1" ] && [ ! -L "$1" ] && [ "$(stat -f %u "$1")" = "$UID_" ]; }
-restore() { [ "$(sd)" = 1 ] && pmset -a disablesleep 0; exit 0; }
-
-[ "$(sd)" = 0 ] || exit 3                     # someone else holds it: never take ownership
-trap restore TERM INT
-pmset -a disablesleep 1
-START=$(date +%s); LIDWAS=no; LOWBAT=0
+MODE=$1; U=$2; P=$3; T=$4; C=$5; F=$6; D=$7
+num() { case "$1" in ''|*[!0-9]*) return 1;; esac; }
+num "$U" && num "$P" && num "$C" && num "$F" || exit 64
+case "$T" in *[!0-9a-f]*|'') exit 64;; esac; [ ${#T} -eq 32 ] || exit 64
+case "$D" in /var/folders/*/snaptic-lid) ;; *) exit 64;; esac
+case "$D" in *..*|*[!A-Za-z0-9_/+.-]*) exit 64;; esac
+[ "$F" -ge 10 ] && [ "$F" -le 50 ] && [ "$C" -ge 3600 ] && [ "$C" -le 259200 ] || exit 64
+C=$((C+60))
+# sd: 1, 0 (line absent counts as 0), or ? (pmset failed); last match wins
+sd() { O=$(/usr/bin/pmset -g 2>/dev/null) || { echo '?'; return; }
+       printf '%s\n' "$O" | /usr/bin/awk '$1=="SleepDisabled"{v=$2} END{print (v==""?0:v)}'; }
+owned() { [ -f "$1" ] && [ ! -L "$1" ] && [ "$(/usr/bin/stat -f %u "$1" 2>/dev/null)" = "$U" ]; }
+lidshut() { /usr/sbin/ioreg -r -n IOPMrootDomain -d 1 | /usr/bin/awk '/"AppleClamshellState"/{print $NF; exit}'; }
+lidsleeps() { /usr/sbin/ioreg -r -n IOPMrootDomain -d 1 | /usr/bin/awk '/"AppleClamshellCausesSleep"/{print $NF; exit}'; }
+S=$(sd); [ "$S" = 0 ] || exit 3                         # someone else holds it, or unreadable: never take it
+[ "$MODE" = check ] && exit 0
+owned "$D/stop-$T" && exit 0                             # stopped before we started (late password)
+WESET=0
+cleanup() {
+  [ "$WESET" = 1 ] || return
+  i=0; while [ $i -lt 3 ]; do
+    [ "$(sd)" = 0 ] && break
+    /usr/bin/pmset -a disablesleep 0; /bin/sleep 1; i=$((i+1)); done
+  [ "$(lidshut)" = Yes ] && [ "$(lidsleeps)" = Yes ] && /usr/bin/pmset sleepnow
+}
+trap 'cleanup' EXIT; trap 'exit 0' TERM INT
+/usr/bin/pmset -a disablesleep 1; WESET=1
+START=$(/bin/date +%s); Z=0; Q=0; LB=0
 while :; do
-  sleep 5
-  NOW=$(date +%s)
-  [ $((NOW-START)) -ge "$CAP" ] && restore                           # hard cap
-  kill -0 "$PID_" 2>/dev/null || restore                               # Snaptic gone
-  owned "$DIR/stop-$TOK" && restore                                    # asked to stop
-  owned "$DIR/beat-$TOK" || restore                                    # beacon gone
-  [ $((NOW-$(stat -f %m "$DIR/beat-$TOK"))) -le 20 ] || restore        # Snaptic hung
-  [ "$(sd)" = 1 ] || exit 0                                            # someone reset it: not ours anymore
-  B=$(pmset -g batt)                                                   # battery floor, root-side
-  case "$B" in *discharging*) P=$(printf '%s' "$B" | sed -n 's/.*[^0-9]\([0-9][0-9]*\)%.*/\1/p' | head -1)
-      if [ -z "$P" ]; then LOWBAT=$((LOWBAT+1)); [ $LOWBAT -ge 2 ] && restore
-      else LOWBAT=0; [ "$P" -le "$FLOOR" ] && restore; fi;; esac
-  T=$(notifyutil -g com.apple.system.thermalpressurelevel 2>/dev/null | awk '{print $2}')
-  [ -n "$T" ] && [ "$T" -ge 2 ] && restore                             # heavy or worse
-  L=$(ioreg -r -k AppleClamshellState -d 1 | awk '/AppleClamshellState/{print $NF; exit}')
-  [ "$L" = Yes ] && [ "$LIDWAS" = no ] && pmset displaysleepnow       # dark panel in a closed lid
-  LIDWAS=$( [ "$L" = Yes ] && echo yes || echo no )
+  /bin/sleep 5
+  N=$(/bin/date +%s); num "$N" || exit 0
+  [ $((N-START)) -ge "$C" ] && exit 0                    # hard cap
+  /bin/kill -0 "$P" 2>/dev/null || exit 0                # liveness hint only (any pid answers root)
+  owned "$D/stop-$T" && exit 0                           # asked to stop
+  owned "$D/beat-$T" || exit 0                           # beacon gone
+  M=$(/usr/bin/stat -f %m "$D/beat-$T" 2>/dev/null); num "$M" || exit 0
+  [ $((N-M)) -le 20 ] || exit 0                          # Snaptic hung: the beacon is the real bound
+  S=$(sd)
+  case "$S" in
+    1) Z=0; Q=0;;
+    0) Z=$((Z+1)); [ $Z -ge 2 ] && { WESET=0; exit 0; };;   # someone else reset it twice: not ours
+    *) Q=$((Q+1)); [ $Q -ge 2 ] && exit 0;;
+  esac
+  B=$(/usr/bin/pmset -g batt 2>/dev/null)
+  case "$B" in *discharging*)
+    PC=$(printf '%s' "$B" | /usr/bin/sed -n 's/.*[^0-9]\([0-9][0-9]*\)%.*/\1/p' | /usr/bin/awk 'NR==1')
+    if num "$PC"; then LB=0; [ "$PC" -le "$F" ] && exit 0
+    else LB=$((LB+1)); [ $LB -ge 2 ] && exit 0; fi;; esac
+  TP=$(/usr/bin/notifyutil -g com.apple.system.thermalpressurelevel 2>/dev/null | /usr/bin/awk '{print $2}')
+  num "$TP" && [ "$TP" -ge 2 ] && exit 0                 # heavy or worse (= ProcessInfo .serious)
 done
 ```
 
-Properties to review:
+**What root does.**
+- It writes only through `pmset -a disablesleep 0|1` and `pmset sleepnow`.
+- The `sleepnow` runs only in `cleanup`, and only when the lid is shut and closing it would sleep the Mac. This is needed because the kernel doesn't re-check a closed lid when `SleepDisabled` clears (xnu IOPMrootDomain.cpp:8386-8389), so the Mac would otherwise keep running in the bag.
+- It never writes, deletes, follows symlinks in, or reads the contents of user-controlled files. It only `stat`s them, checking owner, type and mtime.
+- Root does no display work at all (B3.3).
 
-- **What root touches:**
-  - It writes only through `pmset -a disablesleep 0|1` and `pmset displaysleepnow`.
-  - It never writes, deletes, follows symlinks in, or parses the contents of user-controlled files. It only `stat`s them, checking owner, type and mtime.
-  - The directory is per-user (`/var/folders/…`), and a symlinked beacon fails `owned`.
-- **What a same-user attacker can do** (the Snaptic user, or any program running as them):
-  - Create `stop-<tok>` or delete `beat-<tok>`, which **turns sleep on**. That is safe.
-  - Keep touching `beat-<tok>` while Snaptic is hung. That keeps lid-closed mode alive, bounded by the cap, the root battery floor and the heat cutoff. That is acceptable.
-  - Learn the token by reading `lid.json`. That only allows the same two actions.
-  - They cannot start lid-closed mode without the user typing a password into a dialog the user asked for.
-- **PID reuse after a crash:** `kill -0` could see a new process, but the beacon then goes stale within 20 s, so the watchdog restores.
-- **The watchdog can't be killed by the user**: it runs as root. That's fine, because every stop path is a file the user can create.
-- **Restore semantics:** it restores to 0 only if the value is still 1 and it set it. Starting from 0 is a precondition (`exit 3`). If someone else reset the value to 0 mid-session, the watchdog exits without touching it.
-- **Heat:** `notifyutil` thermal pressure 2 ("heavy") or worse. Apple silicon and Intel both publish this key (HW-36 verifies). If the key is unreadable, the app-side heat guard still ends the session, through the stop file.
-- **Battery:**
-  - The floor is root-side (≥10%), because `SleepDisabled` blocks low-battery emergency sleep (research §1).
-  - The parse fails safe: two unreadable reads restore.
-  - On some Apple silicon Macs the kernel may still shut down at hardware cutoff (research §1). The floor makes that unreachable in practice.
-- **Display:** `displaysleepnow` on lid close keeps the panel from staying lit inside a closed lid (research §1, Amphetamine 5.3). Display assertions don't stop `displaysleepnow`; HW-37 verifies.
+**Every exit restores.**
+- The EXIT trap runs `cleanup`, and TERM and INT exit through it.
+- Every check that would otherwise trip an arithmetic error is guarded by `num`.
+- Unreadable `pmset` output is never taken as "0": it counts toward a restore.
+- The single deliberate non-restoring exit, "someone reset it twice", clears `WESET` first.
 
-#### B3.2 App-side lifecycle
+**Ownership.**
+- `check` and the start both require `SleepDisabled = 0` (`exit 3` otherwise), so Snaptic never takes over another tool's setting.
+- The restore runs only when `WESET = 1`.
 
-- **Heartbeat:** while on, the app sets the beacon's mtime every 5 s from the main queue (`DispatchSourceTimer` on main, wrapped with `assumeIsolated`; not a `scheduledTimer`, per L14). If the main thread hangs for 20 s, the watchdog restores sleep (DisplayGuard's hang model).
-- **Turning off** (any end path: session end, Allow Sleep, guard, module stop, Safe Mode, quit):
-  - Create `stop-<token>` and stop the heartbeat.
-  - Poll `SleepDisabled` for up to 15 s. Off means clear the journal. Still on means a notice: "Sleep is still turned off. Turn Sleep Back On…" (B3.3).
-- **Quit:** `applicationWillTerminate` writes the stop file synchronously.
-  - `EmergencyActions` (SIGTERM, SIGINT, SIGHUP) gets a "write stop file" action. It is async-signal-safe only in the sense that the dispatch signal source runs on the main queue; that is the existing path.
-  - If none of these run (crash, `kill -9`), `kill -0` and the beacon cover it within 5–20 s.
-- **Sleep/wake:** while lid-closed mode is on, the Mac doesn't sleep. If it does anyway (a forced sleep path we don't know about), `.didWake` re-reads `SleepDisabled`, keeps the mode if it is still on, and ends it otherwise. `endOnSystemSleep` doesn't apply, since sleep is blocked.
-- **The lid-closed cap** is enforced by both sides. The app ends lid-closed mode at the cap, keeps the session, and shows the notice "Lid-closed mode turned off after 8 hours. Awake is still on, so your Mac will sleep when you close the lid." The watchdog's cap is the same value plus 60 s.
+**Late password.** If the user authenticates after the app's 120 s timeout, the app has already written `stop-<token>` (B3.0). The script checks for it before setting anything.
 
-#### B3.3 Leftovers and recovery
+**Detachment.**
+- `nohup` plus `&`, with stdin and stdout redirected.
+- The app never signals osascript's process group.
+- HW-31 checks:
+  - the watchdog survives osascript's exit and a SIGTERM to osascript;
+  - its real and effective uids are 0 and 0 (`ps -o ruid,uid`).
+- If the real uid isn't 0, the user could kill it. Then the app-side liveness check (B3.3) is the guarantee, and the README threat model says so.
 
-- **At Awake start** (before restore), if `lid.json` exists:
-  - **Other boot** (`bootSessionUUID` differs) and `SleepDisabled == 1`: the watchdog died with the old boot (a restart or power loss), and `SleepDisabled` survives a reboot. This is a leftover.
-  - **Same boot:** an old watchdog may still be alive (the app crashed and relaunched within 20 s). Wait 30 s, then re-check. Still 1 and the journal's PID is not us: a leftover.
-  - **`SleepDisabled == 0`:** clear the journal. Nothing to do.
-- **A leftover** shows a persistent row in the Awake status section and the menu: "Sleep is still turned off from an earlier lid-closed session." With:
-  - **"Turn Sleep Back On…"**: password prompt, then `/usr/bin/pmset -a disablesleep 0`, then verify, then clear the journal.
-  - **"Leave It Off"**: clears the journal and stops showing the row. It is then reported as "another app or command", as today.
-- The leftover row also shows in Awake › Advanced › Other Apps, instead of the generic "another app or command" text.
-- **Journal-less `SleepDisabled == 1`** keeps today's behavior: it's someone else's, and Snaptic reports it but never changes it.
+**Cost.** About 8 forks every 5 s. HW-31 measures wakeups with `powermetrics`. If they are significant, the period becomes 10 s and staleness 30 s.
 
-### B4. Ending, guards and interplay
+#### B3.3 App side while on
 
-- **Guards** keep ending the session as today, which also ends lid-closed mode. One change: while lid-closed mode is on, the app ends **lid-closed mode** (not the session) at `floor` and at `serious` heat, a step earlier than the session's own guards. The notice says why.
-- **Adapter disconnect, Low Power Mode, user switch, lock:** unchanged session rules, which end lid-closed mode when they end the session. One more rule: lid-closed mode also ends when **Low Power Mode turns on** (a battery signal).
-- **Fast user switching or the session going off console:** lid-closed mode keeps running if the session does (userSwitchEnd decides).
-- **Pointer movement (`nudge`):** never with the lid closed. ActivityPolicy already requires an unlocked console session; the lid adds nothing.
+**Heartbeat.**
+- It runs on a private serial queue as a `DispatchSourceTimer` every 5 s with 0.5 s leeway. It is not on main, so App Nap's timer coalescing on main can't starve it.
+- Each tick touches the beacon (`futimens` on an `O_NOFOLLOW` descriptor) **only if** `HostHeartbeat.shared.mainAgeMillis() < 10_000`. A hung main thread therefore still restores sleep within about 20 s, which is DisplayGuard's model (FIXES-R1 B5).
+- Each tick also runs the liveness checks:
+  - `kill(pid, 0)`: ESRCH means the watchdog is gone; EPERM or 0 means it is alive.
+  - The process start time must match the one recorded at verify.
+  - It reads IORegistry `SleepDisabled`.
+- State changes hop to main with `DispatchQueue.main.async { MainActor.assumeIsolated … }` (rule 2).
+- **Watchdog gone, or `SleepDisabled` reading 0 twice:** the mode ends (reason `watchdogLost` or `otherApp`). If `SleepDisabled` still reads 1 while the watchdog is gone, the leftover rows show (B3.4).
+
+**Display while the lid is shut.**
+- While the mode is on and the lid is closed (`SystemEventsMonitor.lidClosed == true`):
+  - The session's **effective** display policy is `maySleep`, through a new `AwakeArbiterInput.lidShut`. Snaptic then holds no display assertion of its own; without this, Snaptic's own assertion would cancel the display sleep request.
+  - On each heartbeat while the built-in panel is awake and no external display is attached, the app requests display sleep with `IORequestIdle` on `IODisplayWrangler`, app side with no root. It repeats every tick because powerd defers this request for about 30 s after a wake.
+- When the lid opens, `AssertionManager.declareUserActivity()` wakes the panel. L1 keeps all assertions in AssertionManager.
+- If Snaptic hangs with the lid shut, the panel may stay lit until the 20 s beacon restore puts the Mac to sleep.
+- **Known limitations** (README):
+  - Another app's display assertion (for example `caffeinate -d`) can keep the panel lit, and Other Apps lists it.
+  - The keyboard backlight may stay on, because there is no public API to turn it off (Insomnia has the same limitation). HW-30 records both.
+
+**Turning off** (any end path):
+1. Create `stop-<token>` (`O_CREAT|O_NOFOLLOW`).
+2. Stop the heartbeat.
+3. Poll IORegistry `SleepDisabled` for up to 15 s.
+   - It reads 0: clear the journal and go to `off`.
+   - It still reads 1: show the leftover rows.
+
+**Ends while the lid is shut.** When the mode ends for any reason other than the session's own end, while the lid is closed and `lidWillSleep == true`, the session ends too, with reason `.lidEnded`. The watchdog's `sleepnow` covers the hung-app case.
+
+**Quit.**
+- `applicationWillTerminate` writes the stop file synchronously.
+- At turn-on, an `EmergencyActions` action is registered that captures the stop path as an immutable C string and does only `open(O_CREAT|O_EXCL|O_NOFOLLOW|O_WRONLY)` and `close`, which are async-signal-safe. It runs off main, on the signal source's global queue. It is removed at `off`.
+- A crash or `kill -9` is caught by the watchdog's liveness checks and the beacon (5–20 s).
+
+**Sleep and wake.** Sleep is blocked while the mode is on. If a wake happens anyway, `.didWake` re-reads `SleepDisabled` and runs the liveness checks.
+
+**Cap.**
+- Both sides enforce it. The app ends the mode at `until` (the earlier of the session's end and the cap) and keeps the session only if the lid is open. The toast is "Lid-closed mode turned off after 8 hours. Awake is still on; your Mac sleeps if you close the lid."
+- The watchdog's cap is the same plus 60 s.
+
+**Guards ahead of the session's own.**
+- **Battery at or below `floor`** (B1) while discharging: the mode ends with "Lid-closed mode turned off at 20% battery."
+- **Thermal at `serious` or worse:** "Lid-closed mode turned off because your Mac got hot."
+- After either, the lid-shut rule above applies: if the lid is shut, the session ends too.
+- The root side enforces the same floor and heat cut-off independently, so the app-side checks never depend on the root parsing succeeding, and vice versa.
+
+#### B3.4 Leftovers and recovery (host level)
+
+**When it runs.** `LidRecovery.atLaunch(safeMode:)` runs in `AppDelegate` step 7, next to `RevertJournal.recoverAtLaunch`. It runs whether or not Awake, the feature, or the kill switch is on, and also in Safe Mode.
+
+**Classification.** It uses `AwakeLidPolicy.classify(journal:bootUUID:sleepDisabled:now:ownPID:)`:
+
+| Journal | `SleepDisabled` | Result |
+|---|---|---|
+| none | — | nothing (today's behavior: someone else's setting is reported and never changed) |
+| present | 0 | clear the journal |
+| from another boot | 1 | **leftover** (the setting survives a reboot) |
+| same boot | 1 | **pending**: an old watchdog may still be alive. Re-check after 30 s, then **leftover** if still 1. |
+
+- While pending or leftover, turning lid-closed mode on is refused (B2). The journal is single-slot, so an old and a new watchdog never fight.
+- A journal alone never triggers a prompt. The leftover rows show only while `SleepDisabled` actually reads 1.
+
+**What the user sees for a leftover**
+- **Every Snaptic menu** (shared, own and custom) gets these rows in its first group, above the tab bar:
+  - status row "Sleep Is Turned Off";
+  - "Turn Sleep Back On…".
+- **Awake page and Advanced › Other Apps:** "Your Mac can’t sleep: an earlier lid-closed session didn’t finish." with "Turn Sleep Back On…" and "Not Now". "Not Now" hides the rows for this launch.
+- **If Awake isn't running,** a toast shows instead, with "Turn Sleep Back On…".
+- **"Turn Sleep Back On…"** runs `LidWatchdog.restoreScript` (fixed, with no arguments: `/usr/bin/pmset -a disablesleep 0`) through the same spawner and wrapper. Its prompt is: "Snaptic wants to turn sleep back on. An earlier lid-closed session didn’t finish. Enter an administrator password to allow this." Afterwards it re-reads `SleepDisabled` and clears the journal.
+- **Advanced › Other Apps** never says "Snaptic can’t change this" while a Snaptic journal exists.
+
+### B4. Interplay
+
+- **Session guards** (battery floor, adapter, Low Power Mode, lock, user switch) are unchanged. They end the session, which ends the mode.
+- **Fast user switching:** the mode follows the session, as decided by `userSwitchEnd`.
+- **Pointer movement:** unchanged. N10 already requires an unlocked console session.
 - **Drive Alive:** unaffected.
+- **`endOnSystemSleep`:** the Advanced help becomes "When you choose Sleep or close the lid (not in lid-closed mode)."
 
 ### B5. Kit additions (all Linux-tested)
 
-- **`LidWatchdog`:**
-  - `script` (constant);
-  - `Arguments` with `validated(uid:pid:token:cap:floor:dir:) -> Arguments?`, which checks the same charset and range rules as the script;
-  - `appleScript(args:prompt:)`: AppleScript source with `do shell script "<quoted>" with prompt "<quoted>" with administrator privileges`, where quoting escapes `\` and `"` and the inputs are already restricted;
-  - `parseSleepDisabled(pmsetOutput:)`, kept for tests and parity;
-  - `promptText(floor:)`.
-  - Tests:
-    - golden script text;
-    - a fuzz test that no argument outside the allowed set validates;
-    - quoting round-trips;
-    - `appleScript` output contains each argument exactly once, only after `sh -c "$SCRIPT"`.
-- **`AwakeLidGate`**: the truth table and an exhaustive test.
-- **`AwakeLidPolicy`**: start refusals (B2), turning off ahead of the guards (B4), the cap clock (continuous), and the leftover classification (B3.3) as a pure function of `(journal?, bootUUID, sleepDisabled, now)`.
-- **Config:**
-  - `AwakeLidConfig {allowed=false, capHours=8 (1…24), floor=20 (10/20/30)}` inside `AwakeConfig`;
-  - lossy decoding;
-  - `monotonic(over:)` for import, so an import can only make it stricter: allowed true→false only, cap down, floor up;
-  - stripped from export like `pointerNudge`: `allowed` is never exported or imported.
-- **Feature:** `AwakeFeature.lidClosed`, level `.optIn` (needs `allowed`), with a kill switch `Awake.disable.lidClosed`.
-- **Text and logging:**
-  - new `AwakeEndReason` values are not needed, because lid-closed mode isn't a session;
-  - new `AwakeLogEvent` cases: `lidOn`, `lidOff(reason)`, `lidFailed(stage)` and `lidLeftover`, with fixed text and no payload;
-  - `AwakeStatusFacts.lidClosed`;
-  - presentation strings;
-  - `AwakeRefusal.lidClosedSession`.
+**`LidWatchdog`** (`AdminScript` is created only here; its init is `fileprivate`):
+- `script`; `osascriptPath`;
+- `Arguments.validated(...)`;
+- `command(args)`, `appleScript(command:prompt:)`, `startScript(args, prompt:)`, `restoreScript(prompt:)`;
+- `parseResult`, `promptText(floor:capHours:)`, `restorePromptText`.
 
-### B6. Lint and security rules
+Its tests:
+- Golden script text.
+- A round trip: shell-unquote(AppleScript-unescape(output)) equals the intended argv, checked with a small POSIX-quote parser in the test.
+- A charset/range fuzz: nothing outside the allowed set validates, and cap 72 h validates.
+- `parseResult` table: `ok 123`, `err -128`, `err 3`, `err 64`, garbage.
 
-- **Rule 12 (spawning):**
-  - The regex gains `NSAppleScript|NSUserScriptTask|OSAScript`, which closes the gap the brief found. AppleScript is allowed only through `HelperSpawner.spawnAdminScript`.
-  - `spawnAdminScript` accepts only the `/usr/bin/osascript` path and an `-e` source produced by `LidWatchdog.appleScript` or `LidWatchdog.restoreScript`. Its argument type is a Kit `AdminScript` value that only those two functions can create, with a `fileprivate` init in the same Kit file.
-- **New rule L17:** the literals `with administrator privileges`, `/usr/bin/pmset` and `disablesleep` may appear only in `SnapticKit/LidWatchdog.swift`. L4 (`"pmset"`, `"sudo"`) stays as is: `sudo` is never used.
-- **No sudoers, no LaunchDaemon, no files outside the user's own folders:** nothing persistent at the system level except the `SleepDisabled` value itself while a session runs. This is stated in the README and the site.
-- **Threat model** (new README section "Lid-closed mode and your password"):
-  - what root does;
-  - what a program running as you can and can't do (B3.1);
-  - the leftover case after a power loss;
-  - EDR products may flag "osascript with administrator privileges" from an ad-hoc-signed parent (research §4);
-  - a user-writable bundle risk (B1).
+**`AwakeLidGate`:** the N19 truth table, tested exhaustively.
 
-### B7. Docs and copy to change
+**`AwakeLidPolicy`:**
+- start refusals;
+- `floor(awakeGuards:)`, which is `max(10, floor)` or 20 when the battery floor is off;
+- `until(sessionEnd:capStart:capHours:)`, on the continuous clock;
+- `endsSession(lidShut:lidWillSleep:reason:)`;
+- `classify(...)` (B3.4).
 
-Every line in brief-awake §8's table is updated. In summary:
+**`AwakeLidMode`, `AwakeLidEnd`, `AwakeLidFailStage`.**
+- `AwakeLidEnd` cases: `user, sessionEnded, replaced, cap, battery, heat, otherApp, watchdogLost, quit, safeMode, featureOff, moduleStopped`.
+- `AwakeLidFailStage` cases: `beacon, spawn, args, verify, timeout`.
+- Both are closed `CaseIterable` enums, so log keys stay fixed.
 
-- **README:** l.19, 155, 252, 254–258 ("Why not…" becomes "Keeping awake with the lid closed"), 273, 275, 610–611, 639, 652, 686, 707 and 718.
-  - The "never runs a program" claim becomes "Awake runs one program, only when you turn on lid-closed mode: macOS's own password prompt (`osascript`), which starts `pmset`".
-- **site/index.html:** l.401, 600 and 637. The lid card becomes: "Lid closed? Turn on lid-closed mode with your password. It stops at low battery or heat."
-- **Code comments:** OtherAssertionsReader:9, OtherAssertions:6, OtherAssertionsSection:17, AwakePresentation:319 and 621.
-- **THIRD_PARTY_NOTICES:** Insomnia row. Add "re-read SleepDisabled 5 s after setting it; recovery journal before disabling sleep; displaysleepnow on lid close (Amphetamine)". These are ideas, not code, so no license text changes.
+**Config and features**
+- **The feature is the toggle.** `AwakeFeature.lidClosed` gets `AwakeFeatureSpec(.optIn, all: [.sessions], uses: [.power, .system], controller: .sessions)`. It is added to `safeModeRemoves`, it is not unkillable, and its kill switch is `Awake.disable.lidClosed` (N14).
+- **`AwakeLidConfig { capHours ∈ {1,2,4,8,12,24,48,72} = 8 }`** goes under the key `lid`. It decodes lossily, and `monotonic(over:)` only lowers the cap.
+- **Backup:**
+  - `KitBackup.allowedPaths[awake] += ["lid"]`;
+  - `removedPaths += [awake, "features", "lidClosed"]`;
+  - `importable` keeps `features[.lidClosed]` from the current Mac and applies `lid.monotonic(over: now.lid)`.
+  - `KitBackupTests` cover both.
+- **Fixtures:** `ConfigFixtures.fullAwake()` fills `lid`, and `awake.advanced.restore` keys gain `"lid"`.
+
+**Text and logs**
+- `AwakeLogEvent` cases: `lidOn`, `lidOff(AwakeLidEnd)`, `lidFailed(AwakeLidFailStage)`, `lidLeftover`.
+- `AwakeRefusal.lidClosedSession`.
+- `AwakeEndReason.lidEnded`, used when the mode's end ends the session (B3.3).
+- `AwakeStatusFacts.lidClosed`.
+- History gains `lidClosed` and `lidEnd`.
+- All B0–B3 strings live in Kit, with tests for the header line priority and the warning rule.
+
+### B6. Security model, lint and docs
+
+**Threat model.** This goes in a new README section, "Keeping awake with the lid closed" › "Your password and what runs as root".
+
+- **What runs as root.** Only while lid-closed mode is on, or during recovery, Snaptic runs a short shell script as root. Its text is in `LidWatchdog.swift`.
+  - It changes only `SleepDisabled` and may run `pmset sleepnow`.
+  - It turns sleep back on when any of these happen: the session ends, Snaptic quits or stops responding, the battery reaches the limit, the Mac gets hot, the time limit passes, or the script itself fails.
+- **What a program running as you can do.**
+  - Turn sleep back **on**: create the stop file, or delete the beacon.
+  - While Snaptic is hung, keep touching the beacon. That keeps the mode alive only within the cap, the root-side battery floor and heat cut-off, and only while Snaptic's process is alive.
+  - It can't start the mode without you typing a password into a dialog.
+- **The password dialog names osascript, not Snaptic.** Any app can show this same dialog with any text. Only enter your password right after you choose Keep Awake with the Lid Closed in Snaptic.
+- **Writable bundle: warn, not refuse.**
+  - A program running as you that can change Snaptic could make Snaptic's prompt run something else as root.
+  - But that same program can already show the identical osascript dialog with Snaptic's prompt text, without touching Snaptic at all. Refusing would add no protection against it and would remove the feature from the default drag-to-Applications install.
+  - So Snaptic warns, and the README explains how to install it owned by root (`INSTALL=1`). A translocated copy is refused, because it can't be trusted to be the same app on the next run.
+- **After a power loss or restart while the mode is on,** sleep stays off until you choose Turn Sleep Back On… (B3.4).
+- **Security software may flag** "osascript with administrator privileges" started by an ad-hoc-signed app (Elastic rule, research §4).
+- **The environment is minimal.** osascript gets only `PATH` and `LANG`. The script resets `IFS`, `PATH`, `ENV`, `BASH_ENV` and `CDPATH`, and calls every binary by absolute path.
+
+**Lint**
+- **Rule 12 (spawning).** The regex gains `NSAppleScript|NSUserScriptTask|OSAScript`.
+- **New rule L18.**
+  - These literals may appear in `Sources/` only in `SnapticKit/LidWatchdog.swift`: `with administrator privileges`, `disablesleep`, `/usr/bin/pmset`, `sleepnow`, `osascript`, `nohup`.
+  - `AdminScript(` may appear only there.
+  - `spawnAdminScript(` may be called only from `LidClosedController.swift` and `LidRecovery.swift`.
+  - The lint03.py docstring lists L18.
+- **L4** (`"pmset"`, `"sudo"`) is unchanged. It matches only the quoted bare words, and the script uses absolute paths.
+- **L16** gets the two clauses described in B2.
+
+**Docs and copy**
+- **README lines to change:** 19, 155, 212, 252, 254–258, 273, 275, 318, 543, 589, 610–611, 639, 652, 666, 673, 686, 707 and 718.
+  - The heading at 254 becomes "Keeping awake with the lid closed". Update the anchors at 273 and 639.
+  - The "spawns nothing" claim becomes: "Awake runs a program only while you use lid-closed mode: `/usr/bin/osascript` asks macOS for an administrator password, then starts a short shell script as root that runs `pmset` and turns sleep back on when the session ends, Snaptic quits or stops responding, the battery reaches your limit, your Mac gets hot, or the time limit passes."
+- **`site/index.html`** lines 401, 600 and 637. The lid card becomes: "Lid closed on battery? Turn on lid-closed mode with an administrator password. It stops at low battery, on heat, and after a time limit."
+- **UI strings** (not comments): `AwakePresentation.swift:319` (the lid warning) and `:621` (`lidRoute`), `OtherAssertionsSection.swift:17`, and `AwakeAdvancedSheet.swift:108`.
+- **Code comments:** `OtherAssertionsReader.swift:9` and `OtherAssertions.swift:6`.
+- **THIRD_PARTY_NOTICES, Insomnia row:** add "reading SleepDisabled again 5 s after setting it; a recovery journal written before sleep is turned off; display sleep with the lid closed, honouring display assertions". These are ideas, not code.
+- **Design-spec:** §1.5 (lid option, now available), §4.7 (terminology), and the §3.4 exception.
 - **Release notes:** `docs/design/0.3.1/RELEASE-NOTES-0.3.1.md`.
+
+### B7. Controls (Step 0 declares all of them, each with one stub use)
+
+| Table | Ids |
+|---|---|
+| `AwakeAdvancedSheetControls` | `awake.advanced.lidClosed`: `.setting`, `keys: ["features.lidClosed"]`, `when: awake + [.hardware(.battery)]`, search keywords "lid", "clamshell", "closed display", "insomnia", "amphetamine", "disablesleep" |
+| | `awake.advanced.lidCap`: `.setting`, `keys: ["lid.capHours"]`, `when: … + [.parentOn("awake.advanced.lidClosed")]` |
+| | `awake.advanced.lidBundle`: status, conditional |
+| | `awake.advanced.lidLeftover`: `.statusAction` |
+| `AwakePageControls` | `awake.page.status.lidClosed` (pull-down item); `awake.page.status.lidLeftover` (`.statusAction`) |
+| `AwakeMenuRowsControls` | `menu.awake.lidClosed`, `menu.awake.lidSubmenu`, `menu.awake.lidPreset` (`.perItem("preset")`), `menu.awake.lidCustom`, `menu.awake.lidNote` |
+| `StatusMenuControls` | `menu.snaptic.tabs`, `menu.snaptic.showTab`, `menu.snaptic.lidLeftover`, `menu.snaptic.lidRestore` |
+| `CustomSessionPanelControls` | `awake.custom.lidClosed` |
+
+**New `ControlState` cases:** `lidModeOn` and `lidLeftover`.
 
 ---
 
-## Part C: Hardware checks (added to PLAN §6.7's list; results decide Beta labels)
+## Part C: Hardware checks
+
+These are numbered after 0.3's HW-23. The list lives here and in README's testing section; 0.3's PLAN is final and isn't edited.
 
 | ID | Check |
 |---|---|
-| HW-31 | Switching tabs in an open menu resizes it correctly on 14, 15, 26 and 27; no flicker, and the highlight is on the right row afterwards |
-| HW-32 | VoiceOver reaches the tab segments and announces the change |
-| HW-33 | Hidden ⌘1–⌘3 items fire in an open menu: does tracking end? |
-| HW-34 | Sliders and switch headers in a newly shown tab work without reopening |
-| HW-35 | osascript admin prompt from an ad-hoc hardened-runtime Snaptic: dialog text, Touch ID, Cancel exit code, no Automation consent |
-| HW-36 | `notifyutil -g com.apple.system.thermalpressurelevel` and `pmset -g batt` output on Apple silicon and Intel, 14/15/26/27 |
-| HW-37 | Lid close on battery with no external display: Mac stays awake, the panel goes dark (`displaysleepnow`), Apple menu Sleep greyed |
-| HW-38 | The nohup'd watchdog survives osascript's exit; quit, crash (`kill -9`), hang (SIGSTOP Snaptic for 30 s), stop file and cap each restore sleep, verified with `pmset -g` |
-| HW-39 | Reboot while on: `SleepDisabled` persists; Snaptic shows the leftover row; Turn Sleep Back On works |
-| HW-40 | The battery floor triggers the restore with Snaptic SIGSTOPped (root-side floor) |
+| HW-24 | Switching tabs in an open menu on 14, 15, 26 and 27: the menu resizes correctly and the highlight lands right afterwards. Also check:<br>• a switch with a submenu open;<br>• whether the segmented control still takes clicks with `isEnabled = false`;<br>• hover look in light, dark, Increase Contrast and Reduce Transparency;<br>• a 13-inch Mac at the largest text size with the Displays tab and 3 external displays: switch away and back, with no stuck scroll arrows. |
+| HW-25 | VoiceOver reaches the segments, hears ", needs attention" and ", on", and VO-Down after a switch reaches the new section's first item. With VoiceOver on, the Show … Tab items are visible. |
+| HW-26 | ⌘1–⌘3 in an open menu: does tracking end, and does the next open show the chosen tab? ⌘, and ⌘Q still fire. |
+| HW-27 | Sliders and switch headers in a newly shown tab work without reopening the menu. |
+| HW-28 | The osascript admin dialog from an ad-hoc-signed, hardened-runtime Snaptic:<br>• the requester name, icon and title;<br>• the prompt text;<br>• Touch ID;<br>• Cancel returns `err -128`;<br>• no Automation consent is asked;<br>• Displays' dimming overlays move behind it. |
+| HW-29 | Output of `notifyutil -g com.apple.system.thermalpressurelevel`, `pmset -g batt` and `pmset -g` on Apple silicon and Intel, macOS 14, 15, 26 and 27. |
+| HW-30 | Lid closed on battery with no external display, with (a) a Keep Display On session and (b) `caffeinate -d` in another app. Check that:<br>• the Mac stays awake;<br>• the panel goes dark within 35 s;<br>• Apple menu › Sleep is greyed out;<br>• the panel wakes on lid open;<br>• the keyboard backlight's state is recorded. |
+| HW-31 | The watchdog survives osascript's exit and a SIGTERM to osascript, and `ps -o ruid,uid` shows `0 0`. Each of these must restore sleep, checked with `pmset -g`:<br>• quit;<br>• `kill -9` of Snaptic;<br>• hanging Snaptic with SIGSTOP for 30 s;<br>• the stop file;<br>• the cap;<br>• deleting the beacon in a tight loop (restored within 10 s);<br>• an induced script error. |
+| HW-32 | Restart while on: `SleepDisabled` persists, the leftover rows show in every menu even with Awake turned off, and Turn Sleep Back On… works. |
+| HW-33 | The battery floor restores sleep with Snaptic stopped by SIGSTOP (the root-side floor). |
+| HW-34 | The cap, battery floor and heat ends, each with the lid closed on battery: the Mac is asleep within 30 s (`pmset -g log`). |
+| HW-35 | Watchdog cost: `powermetrics` wakeups at a 5 s period. |
 
-## Part D: Teams and order
+## Part D: Teams, file ownership and order
 
-1. **Step 0 (lead):** this plan's final revision, file stubs and `stubs.tsv` rows, the Kit type signatures, and the lint rule changes. Commit to `feature/v031`.
-2. **Step 1, in parallel:**
-   - **T-menu:** A1–A6, covering MenuTabBar, StatusMenu, MenuLayout helpers and tests, controls, and docs.
-   - **T-lid-kit:** B5 (LidWatchdog, AwakeLidGate, AwakeLidPolicy, config and feature, presentation, log), with tests.
-   - **T-lid-app:** B1–B4 app side (LidClosedController, HelperSpawner.adminScript, SessionController integration, UI rows and pages, OtherAssertions changes, recovery, diagnostics). This depends on T-lid-kit's signatures from Step 0.
-   - **T-docs:** B6 threat model, B7 copy, release notes and site.
-3. **Step 2:** merge, CI, and `lint --strict`. Then at least 4 adversarial review rounds on the code (security, Awake correctness, menu UX/accessibility, code and consistency), each followed by fixes.
-4. Version 0.3.1 in Info.plist. Open a PR into main for the owner. No tags.
+### Step 0 (lead, on `feature/v031`)
 
-## Open questions for review
+Step 0 lands all of the following:
+- This plan's final revision.
+- `stubs.tsv` rows for every new source and test file:
+  - `MenuTabBar`, `LidWatchdog`, `AwakeLidGate`, `AwakeLidPolicy`, `LidClosedController`, `LidRecovery`;
+  - `LidWatchdogTests`, `AwakeLidGateTests`, `AwakeLidPolicyTests`, `MenuTabsTests` (or extending `MenuLayoutTests`).
+- Every signature change in the shared files:
+  - `AwakeMenuStyle`, `menuSection(tabbed:)`, `menuAttention`, and the new `AwakeMenuRow` cases;
+  - `AwakeRefusal.lidClosedSession` and `AwakeEndReason.lidEnded`;
+  - `AwakeLidMode`, `AwakeLidEnd` and `AwakeLidFailStage`;
+  - `AwakeRuntimeState.lidMode` and `lastLidEnd`;
+  - `AwakeSession.lidRequested`;
+  - `AwakeStatusFacts.lidClosed`;
+  - the `HelperSpawner.spawnAdminScript` signature;
+  - `OtherAssertionsReader.sleepDisabledPreference()`.
+- Every B7 and A6 control with a stub use, so L15 is green from Step 0.
+- The lint changes (rule 12, L16 and L18).
+- Kit type signatures, with `fatalError("Step 1")` bodies only where tests don't call them.
 
-1. In tabs, should Awake show the full rows (proposed) or the compact section?
-2. A user-writable bundle: warn (proposed) or refuse lid-closed mode?
-3. Should osascript be disclaimed? What does the auth dialog name as the requester in each case?
-4. Is the cap default of 8 hours right, and the default floor of 20%?
-5. Is `nohup … &` enough, or should the watchdog be a `launchctl submit` job so launchd owns it? (`submit` is deprecated, and `bootstrap system` would need a plist file on disk.)
-6. Should "Keep Awake with Lid Closed…" start the default preset, or the Custom… panel with the checkbox ticked?
-7. Hidden ⌘1–⌘3 items: are they enough as the keyboard path for tabs?
+### Step 1 (in parallel; one owner per file)
+
+| Team | Owns |
+|---|---|
+| **T-menu** | `StatusMenu.swift`, `MenuKit.swift`, `MenuTabBar.swift`, `MenuLayout.swift` and its tests, `ModuleContracts.swift`, Window Switcher's and Displays' `menuAttention` and `menuSection(tabbed:)` (in their module files), `DisplaysMenuBuilder` (the upgrade item move), `MenuBarPage.swift`. |
+| **T-lid-kit** | `LidWatchdog.swift`, `AwakeLidGate.swift`, `AwakeLidPolicy.swift` and their tests. `AwakePresentation.swift` and its tests, including the `tab` style, so T-menu sends requests. `AwakeSession.swift`, `AwakeSessionPolicy.swift`, `AwakeCommandGrammar.swift`, `AwakeHistory.swift`, `AwakeLogEvent.swift`, `ConfigAwake*.swift`, `KitBackup.swift`, `AwakeFeatureGraph.swift`, `OtherAssertions.swift`, `ConfigFixtures.swift`, and the Kit test files for these. |
+| **T-lid-app** | `LidClosedController.swift`, `LidRecovery.swift`, `HelperSpawner.swift`, `SessionController.swift`, `AwakeAutomation.swift`, `AwakeMenuRows.swift`, `IndicatorController.swift`, `AwakeModule.swift` (including `menuSection(tabbed:)`), `AwakeAdvancedSheet.swift`, `AwakeStatusSection.swift`, `AwakePage.swift`, `CustomSessionPanel.swift`, `OtherAssertionsReader.swift`, `OtherAssertionsSection.swift`, `SystemEventsMonitor.swift`, `AssertionManager.swift`, `HistoryController.swift`, `AwakeHistoryPage.swift`, `AwakeDiagnostics.swift`, `AppDelegate.swift`, `EmergencyActions.swift`, and the `SNSpawn` shims if needed. |
+| **T-docs** | `README.md`, `site/index.html`, `THIRD_PARTY_NOTICES.md`, the design-spec amendments, and the release notes. |
+
+### Step 2
+
+1. Merge, then CI and `lint --strict`.
+2. At least four adversarial review rounds on the code: security, Awake correctness, menu UX and accessibility, and code and consistency. Each round is followed by fixes.
+3. Set Info.plist to 0.3.1 and open a PR into main for the owner. No tags.
+
+---
+
+## §R. r1 findings and their disposition
+
+| Finding | Disposition |
+|---|---|
+| sec B1, code B2 (no EXIT trap, `$((N-))`, `sd` fails to 0, no app liveness) | B3.2 EXIT trap with `WESET`; `num` guards; three-valued `sd` that never treats unreadable as 0; B3.3 liveness checks |
+| code B1 (`$SCRIPT` undefined, two quoting layers) | B3.2 command built with `Q` plus AppleScript escaping; B5 round-trip test |
+| parity B1 (`displaysleepnow` defeated by our own assertion) | B3.3 `maySleep` while the lid is shut, app-side `IORequestIdle` every tick, wake on open; root does no display work; HW-30 |
+| parity B2 (Mac keeps running after the end with the lid shut) | B3.2 `cleanup` runs `sleepnow` when the lid is shut; B3.3 ends the session too; HW-34 |
+| sec M1 (writable bundle → refuse) | Kept as a warning, with the reasoning in B6 (the same dialog is available to any same-user app). Translocated copies are refused. |
+| sec M2 (absolute paths, L17 matches nothing) | Absolute paths throughout; L18 matches the real literals |
+| sec M3 (environment) | Minimal environment for the spawn; the script resets `IFS`, `PATH`, `ENV`, `BASH_ENV` and `CDPATH` |
+| sec M4 (dialog names osascript) | B1 and B6 say so; HW-28 |
+| sec M5 (lint pins) | L18 also covers `osascript`, `nohup`, `AdminScript(`, and the callers of `spawnAdminScript` |
+| code M1 (24 h cap fails validation) | Cap passed in seconds, up to 72 h; the script adds 60 s |
+| code M2, sec m6 (no state machine, late password) | B3.0 states, single flight, token checks; the stop file is written on every failed exit and checked before the start |
+| code M3 (Cancel vs failure, wait pattern) | `try … on error` wrapper, stdout result, `parseResult`, exit source, pid-only SIGTERM, identity check of osascript |
+| code M4 (App Nap starves the heartbeat) | Background timer, `mainAgeMillis` gate, `beginActivity` |
+| code M5, design M8 (recovery behind Awake; two watchdogs) | B3.4 host-level `LidRecovery`; single-slot journal; turning on refused while a journal is pending |
+| code M6 (full rows in tabs not wired) | A4 `AwakeMenuStyle` and `menuSection(tabbed:)` |
+| code M7, design M2 (⌘n path) | A3: positional, in the footer, `menuHasKeyEquivalent`, menu closes and the slot is marked dirty, shown when VoiceOver is on, discoverable |
+| code M8, design M3, parity M5 (controls, config, feature, backup) | B5 config and feature rewrite; B7 control table; menu row cases in B1 |
+| code M9 (team split) | Part D Step 0 and the file-ownership table |
+| design M1 (⌘, changes) | Reverted: unchanged |
+| design M4, M5 (placement, copy) | Moved to Advanced; sentence case; "an administrator password"; one floor |
+| design M6, parity m8 (names) | B0 table and the checkmark state |
+| design M7, parity M2 (Cancel leaves a session) | The session starts only after verify; a CLI session is replaced with a toast |
+| design M9 (bundle warning wording) | Permissions-page wording and conditions |
+| design M10 (README) | B6 line list, anchors, UI strings vs comments |
+| design M11, code m2 (L16 naming) | Three names in B2 |
+| parity M1 (Low Power Mode) | No longer blocks or ends the mode |
+| parity M3 (indefinite + 8 h) | Idle submenu of presets plus Custom… |
+| parity M4 (replacement drops the mode) | The gate keeps it for a direct-UI replacement |
+| parity M6 (tabs hide warnings) | Attention marks, active mark, host-level leftover rows above the tabs |
+| parity M7 (silent end) | `AwakeLidEnd`, a 12 h header line, History `lidEnd` |
+| design m1 (single-module header) | Kept as in 0.3 |
+| design m2 (labels) | `.fit` before short names; full accessibility labels |
+| design m3 (highlight fill) | Not a `MenuRowView`; disabled if clicks still work |
+| design m4–m6, m8 | A2 and A3 text; DS amendments |
+| design m7 (reset) | No reset clears the tab |
+| design m9, code m1 (L17 collision) | Renamed L18 |
+| design m10 (N20) | Renamed N19 |
+| design m11 (HW numbering) | HW-24…35 |
+| design m12–m13, m21 (strings) | Canonical strings with ’ throughout B0–B3 |
+| design m14 (button) | Pull-down items instead |
+| design m15 (nullable lid read) | `.hardware(.battery)` for the controls; feature availability for the menu |
+| design m16 (Custom… toggle) | B1 |
+| design m17, parity m5 (header line priority) | The lid line is the first extra |
+| design m18 (CLI line) | Appended field |
+| design m19 (History) | B1 |
+| design m20, parity m4 (visibility) | Indicator badge, N11 suffix |
+| design m22 (scroll case) | HW-24 |
+| parity m1 (opt-in hidden) | `lidRoute` points to Advanced |
+| parity m2 (two floors) | One derived floor |
+| parity m3 (72 h) | Cap options up to 72 h |
+| parity m6 (`lidWillSleep` ignores SleepDisabled) | Warning rule includes `!lidModeOn` |
+| parity m7 (resume) | The gate ends the mode on resume, with a header line |
+| parity m9 (upgrade item, copy) | Moved to the Displays tab; Menu Bar copy says "set to Show in Snaptic Menu" |
+| sec m1, m5 (parse fails toward off; non-integers) | `num` guards; three-valued `sd` |
+| sec m2 (detach) | `nohup` with redirects, pid-only signals, HW-31 |
+| sec m3 (fake journal prompts) | A prompt only while `SleepDisabled` reads 1; no journal field ever reaches root |
+| sec m4 (`kill -0` as root) | Comment says it is a liveness hint; the beacon is the bound |
+| code m3 (EmergencyActions runs off main) | B3.3 |
+| code m4 (stale ⌘, page) | Moot: ⌘, is unchanged |
+| code m5 (width) | Widest tab measured at build |
+| code m6 (empty sections, marker range) | `sectionItems` and "Nothing to Show" |
+| code m7 (submenu open) | Cancel tracking first; HW-24 |
+| code m8 (`sectionHeader` unused) | Still used by single-module menus |
+| code m9 (MenuKit factory) | `MenuKit.tabBar` |
+| code m10 (silent validation) | Foreground `check` step |
+| code m11 (`ioreg` cost) | `-n IOPMrootDomain -d 1`; HW-35 |
+| code m12 (`displaysleepnow` hits externals) | App-side only, and only with no external display |
+| code m13 (real uid) | HW-31 |
+| code m14 (accuracy points) | Fixed in A2, B3.1 (preference accessor), B1 (History meaning) and B5 (enum payloads); the trailing slash is trimmed |
