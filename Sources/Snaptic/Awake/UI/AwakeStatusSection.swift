@@ -214,7 +214,7 @@ struct AwakeStatusSection: View, ControlDeclaring {
         return items
     }
 
-    /// The lid-closed items for the current state (AwakeMenuRows decides which, for the menus too).
+    /// The lid-closed items for the current state (Kit's `AwakeMenuModel.lidRow`, as in the menus) with the B0 titles.
     private func lidItems() -> [ActionMenuItem] {
         guard let row = AwakeMenuRows.lidRow(context) else { return [] }
         let control = ControlID("awake.page.status.lidClosed")
@@ -224,37 +224,29 @@ struct AwakeStatusSection: View, ControlDeclaring {
             let presets = sessions.value.presets
             let children = ids.compactMap { id in presets.first { $0.id == id } }.map { (preset: AwakePreset) -> ActionMenuItem in
                 let id = preset.id
-                return ActionMenuItem(id: "lid." + id.rawValue, title: preset.title(AwakeFormat.text) + "…",
+                return ActionMenuItem(id: "lid." + id.rawValue, title: AwakeLidText.presetTitle(preset.title(AwakeFormat.text)),
                                       control: ControlID("awake.page.status.lidPreset")) { [weak lid] in
                     lid?.request(.preset(id), source: .settings)
                 }
             }
-            return [ActionMenuItem(id: "lid", title: L("Keep Awake with the Lid Closed"), children: children,
-                                   control: control)]
-        case .lidClosed(.off):
-            return [ActionMenuItem(id: "lid", title: L("Keep Awake with the Lid Closed…"), control: control) { [weak lid] in
-                lid?.request(.add, source: .settings)
-            }]
-        case .lidClosed(.on):
-            return [ActionMenuItem(id: "lid", title: L("Keep Awake with the Lid Closed"), checked: true,
-                                   control: control) { [weak lid] in
-                lid?.turnOff()
-            }]
+            return [ActionMenuItem(id: "lid", title: AwakeLidText.title, children: children, control: control)]
         case .lidClosed(let state):
-            return [ActionMenuItem(id: "lid", title: Self.pendingTitle(state), enabled: false, control: control) {}]
+            let title = AwakeLidText.rowTitle(state)
+            switch state {
+            case .off:
+                return [ActionMenuItem(id: "lid", title: title, control: control) { [weak lid] in
+                    lid?.request(.add, source: .settings)
+                }]
+            case .on:
+                return [ActionMenuItem(id: "lid", title: title, checked: AwakeLidText.rowChecked(state),
+                                       control: control) { [weak lid] in
+                    lid?.turnOff()
+                }]
+            case .authorizing, .verifying, .stopping, .finishingEarlier:
+                return [ActionMenuItem(id: "lid", title: title, enabled: AwakeLidText.rowEnabled(state), control: control) {}]
+            }
         default:
             return []
-        }
-    }
-
-    /// B0's pending rows.
-    private static func pendingTitle(_ state: LidRowState) -> String {
-        switch state {
-        case .authorizing: return L("Waiting for Password…")
-        case .verifying: return L("Turning On…")
-        case .stopping: return L("Turning Off…")
-        case .finishingEarlier: return L("Finishing Earlier Session…")
-        case .off, .on: return L("Keep Awake with the Lid Closed")
         }
     }
 }

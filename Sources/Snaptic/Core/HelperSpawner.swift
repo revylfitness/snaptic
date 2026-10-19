@@ -332,8 +332,6 @@ final class HelperHandle: @unchecked Sendable {
 
     // MARK: Lid-closed mode (0.3.1 B3.1, B3.3, B3.4; T-lid-app)
 
-    /// osascript gets SIGTERM (its pid only) after this long: nobody answered the password dialog (B3.1 step 4).
-    static let adminTimeoutSeconds: TimeInterval = 120
     /// `pmset displaysleepnow` returns at once; one that hangs is ended, so its single flight can't stick.
     static let toolTimeoutSeconds: TimeInterval = 30
     /// The whole environment of osascript (and so of the root shell it starts) and of the tool (B6).
@@ -358,7 +356,8 @@ final class HelperHandle: @unchecked Sendable {
         let handle = try await spawnLid(.adminScript, path: LidWatchdog.osascriptPath, arguments: ["-e", script.source],
                                         requirement: requirement, onLine: onLine, onExit: onExit)
         // Only osascript is signalled: the watchdog it may have started is detached, and Snaptic never signals it.
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.adminTimeoutSeconds) { [weak handle] in
+        // osascript gets SIGTERM (its pid only) once nobody answered the password dialog in time (B3.1 step 4).
+        DispatchQueue.main.asyncAfter(deadline: .now() + AwakeLidPolicy.osascriptTimeoutSeconds) { [weak handle] in
             MainActor.assumeIsolated {
                 guard let handle, !handle.isReaped else { return }
                 handle.markTimedOut()

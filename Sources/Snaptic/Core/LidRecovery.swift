@@ -38,33 +38,20 @@ enum LidSystem {
             .takeRetainedValue() != nil
     }
 
-    /// 32 lowercase hex characters: the only token shape that may name a file or reach the watchdog.
-    static func isToken(_ text: String) -> Bool {
-        text.utf8.count == 32 && text.utf8.allSatisfy { (0x30...0x39).contains($0) || (0x61...0x66).contains($0) }
-    }
-
-    /// A new token: 128 random bits (the system generator), as 32 lowercase hex characters.
-    static func newToken() -> String {
+    /// A new token from 128 random bits (the system generator): `LidWatchdog.token(randomBytes:)`.
+    static func newToken() -> String? {
         var generator = SystemRandomNumberGenerator()
-        return [UInt64.random(in: .min ... .max, using: &generator), UInt64.random(in: .min ... .max, using: &generator)]
-            .map { word in
-                let hex = String(word, radix: 16)
-                return String(repeating: "0", count: 16 - hex.count) + hex
-            }
-            .joined()
+        return LidWatchdog.token(randomBytes: (0..<16).map { _ in UInt8.random(in: .min ... .max, using: &generator) })
     }
 
-    /// `confstr(_CS_DARWIN_USER_TEMP_DIR)` with its trailing "/" trimmed, plus "/snaptic-lid". The watchdog gets this
-    /// exact string (never a realpath) and checks its shape itself.
+    /// `LidWatchdog.beaconDir(userTempDir:)` of `confstr(_CS_DARWIN_USER_TEMP_DIR)`: the exact string the watchdog
+    /// gets (never a realpath); nil when the script would refuse it.
     static func beaconDirectory() -> String? {
         let size = confstr(_CS_DARWIN_USER_TEMP_DIR, nil, 0)
         guard size > 1, size < 4_096 else { return nil }
         var buffer = [CChar](repeating: 0, count: size)
         guard confstr(_CS_DARWIN_USER_TEMP_DIR, &buffer, size) == size else { return nil }
-        var dir = String(cString: buffer)
-        while dir.hasSuffix("/") { dir.removeLast() }
-        guard dir.hasPrefix("/") else { return nil }
-        return dir + "/snaptic-lid"
+        return LidWatchdog.beaconDir(userTempDir: String(cString: buffer))
     }
 
     /// Creates `dir` (0700) when missing. True only when lstat shows a directory, not a link, owned by us, mode 0700.
@@ -76,7 +63,8 @@ enum LidSystem {
         return true
     }
 
-    /// Old `stop-*` and `beat-*` entries go (B3.1 step 3); `unlink` never follows a link.
+    /// Old stop files and beacons go (B3.1 step 3): only names `LidWatchdog` gives a token; `unlink` never follows a
+    /// link.
     static func clearBeacons(_ dir: String) {
         guard let handle = opendir(dir) else { return }
         var names: [String] = []
@@ -86,19 +74,27 @@ enum LidSystem {
             let name = withUnsafePointer(to: entry.pointee.d_name) {
                 $0.withMemoryRebound(to: CChar.self, capacity: 256) { String(cString: $0) }
             }
-            if name.hasPrefix("stop-") || name.hasPrefix("beat-") { names.append(name) }
+            if isBeaconFile(name) { names.append(name) }
         }
         closedir(handle)
         for name in names { unlink(dir + "/" + name) }
     }
 
-    /// `stop-<token>`: O_CREAT|O_NOFOLLOW, 0600 (B3.3 "Turning off" step 1). The beacon goes too, so a watchdog
+    /// `stop-<token>` or `beat-<token>` for some token.
+    private static func isBeaconFile(_ name: String) -> Bool {
+        let token = String(name.dropFirst(5))
+        return LidWatchdog.stopFileName(token: token) == name || LidWatchdog.beatFileName(token: token) == name
+    }
+
+    /// The stop file: O_CREAT|O_NOFOLLOW, 0600 (B3.3 "Turning off" step 1). The beacon goes too, so a watchdog
     /// stops even if something planted a link where the stop file belongs (B6: either one turns sleep back on).
     static func requestStop(dir: String, token: String) {
-        guard isToken(token) else { return }
-        let fd = open(dir + "/stop-" + token, O_WRONLY | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        guard let stop = LidWatchdog.stopFileName(token: token), let beat = LidWatchdog.beatFileName(token: token) else {
+            return
+        }
+        let fd = open(dir + "/" + stop, O_WRONLY | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
         if fd >= 0 { close(fd) }
-        unlink(dir + "/beat-" + token)
+        unlink(dir + "/" + beat)
     }
 }
 
@@ -108,7 +104,7 @@ final class LidStopPath: @unchecked Sendable {
     private let path: UnsafeMutablePointer<CChar>
 
     init?(dir: String, token: String) {
-        guard LidSystem.isToken(token), let copy = strdup(dir + "/stop-" + token) else { return nil }
+        guard let stop = LidWatchdog.stopFileName(token: token), let copy = strdup(dir + "/" + stop) else { return nil }
         path = copy
     }
 
@@ -128,21 +124,16 @@ enum LidJournalStore {
         AccountPaths.home.map { JournalFiles(directory: $0 + "/Library/Application Support/Snaptic/awake") }
     }
 
-    /// The journal, or nil. A file that doesn't decode, or holds a token of the wrong shape, is removed: it was never
-    /// ours to act on, and a journal alone never prompts anyway.
+    /// The journal (`AwakeLidJournal.parse`: a file that can't be read as one is `unreadable`, still Snaptic's, so
+    /// a SleepDisabled of 1 shows the leftover rows), or nil without a file. A journal alone never prompts.
     static func read() -> AwakeLidJournal? {
         guard let files = files(), let data = files.read(name) else { return nil }
-        guard let journal = try? JSONDecoder().decode(AwakeLidJournal.self, from: data),
-              LidSystem.isToken(journal.token) else {
-            files.remove(name)
-            return nil
-        }
-        return journal
+        return AwakeLidJournal.parse(data)
     }
 
     @discardableResult
     static func write(_ journal: AwakeLidJournal) -> Bool {
-        guard let files = files(), let data = try? JSONEncoder().encode(journal) else { return false }
+        guard let files = files(), let data = journal.encoded() else { return false }
         return files.write(data, to: name)
     }
 
@@ -174,8 +165,9 @@ enum LidRecovery {
         case .clear:
             LidJournalStore.remove(token: journal?.token)
         case .pending:
-            if let token = journal?.token, let dir = LidSystem.beaconDirectory() {
-                LidSystem.requestStop(dir: dir, token: token)
+            // Only a journal as Snaptic writes it names a stop file.
+            if let j = journal, j.isSane(ownPID: getpid()), let dir = LidSystem.beaconDirectory() {
+                LidSystem.requestStop(dir: dir, token: j.token)
             }
         case .leftover:
             EventLog.shared.record(AwakeLogEvent.lidLeftover)
@@ -191,8 +183,6 @@ enum LidRecovery {
 
 /// `ModuleHost.lidRecovery`.
 @MainActor final class LidRecoveryState: ObservableObject {
-    /// How long a same-boot journal may wait for the kernel to read 0 before it counts as a leftover (B3.4).
-    static let pendingSeconds: Double = 30
     /// While a leftover shows, the kernel is re-read this often: sleep turned back on by any means clears the rows.
     static let leftoverRecheckSeconds: TimeInterval = 30
     static let pollSeconds: TimeInterval = 0.5
@@ -238,7 +228,7 @@ enum LidRecovery {
         launchJournal = launch.journal
         switch launch.recovery {
         case .pending:
-            watch(token: launch.journal?.token, seconds: Self.pendingSeconds)
+            watch(token: launch.journal?.token, seconds: AwakeLidPolicy.pendingRecheckSeconds)
         case .leftover:
             setRecovery(.leftover)
         case .nothing, .clear:
@@ -254,8 +244,9 @@ enum LidRecovery {
     // MARK: Waiting for the kernel
 
     /// Keeps the journal of `token` (nil: whatever it holds) until the kernel's SleepDisabled reads 0, checked now and
-    /// every 0.5 s for up to `seconds`; then the journal goes and `completion(true)` runs. Still 1 (or unreadable)
-    /// at the end: the leftover rows show and `completion(false)` runs. Turning the mode on is refused meanwhile.
+    /// every 0.5 s for up to `seconds`; then the journal goes and `completion(true)` runs. At the end Kit's re-check
+    /// decides (`AwakeLidPolicy.recheck`): still 1 shows the leftover rows; unreadable stays pending and is checked
+    /// again later; either way `completion(false)` runs. Turning the mode on is refused meanwhile.
     func watch(token: String?, seconds: Double, completion: (@MainActor (Bool) -> Void)? = nil) {
         let until = AwakeModule.clockNow().continuous + max(0, seconds)
         if waitToken != token { waitToken = token }
@@ -280,11 +271,26 @@ enum LidRecovery {
 
     private func poll() {
         guard let until = waitUntil else { return }
-        if LidSystem.kernelSleepDisabled() == false {
+        let sleepDisabled = LidSystem.kernelSleepDisabled()
+        if sleepDisabled == false {
             LidJournalStore.remove(token: waitToken)
             finishWait(restored: true)
-        } else if AwakeModule.clockNow().continuous >= until {
+            return
+        }
+        let now = AwakeModule.clockNow().continuous
+        guard now >= until else { return }
+        switch AwakeLidPolicy.recheck(sleepDisabled: sleepDisabled) {
+        case .clear, .nothing:
+            LidJournalStore.remove(token: waitToken)
+            finishWait(restored: true)
+        case .leftover:
             finishWait(restored: false)
+        case .pending:
+            // Unreadable: the journal stays and turning on stays refused; look again after the re-check interval.
+            waitUntil = now + AwakeLidPolicy.pendingRecheckSeconds
+            let done = waiters
+            waiters = []
+            for waiter in done { waiter(false) }
         }
     }
 
@@ -320,7 +326,8 @@ enum LidRecovery {
 
     /// The rows show only while SleepDisabled reads 1 (B3.4): sleep turned back on in any way clears them.
     private func recheckLeftover() {
-        guard recovery == .leftover, !restoring, LidSystem.kernelSleepDisabled() == false else { return }
+        guard recovery == .leftover, !restoring,
+              AwakeLidPolicy.recheck(sleepDisabled: LidSystem.kernelSleepDisabled()) == .clear else { return }
         LidJournalStore.remove(token: nil)
         setRecovery(.nothing)
     }
@@ -328,11 +335,10 @@ enum LidRecovery {
     /// "Your Mac can’t sleep…" as a toast when Awake isn't running (its page and menu can't show the rows then).
     private func announceIfAwakeOff() {
         guard recovery == .leftover, !dismissed, !awakeRunning(), let toasts else { return }
-        toasts.show(L("Your Mac can’t sleep. This may be from an earlier lid-closed session that didn’t finish."),
-                    actions: [
-                        ToastAction(title: L("Turn Sleep Back On…")) { [weak self] in self?.turnSleepBackOn() },
-                        ToastAction(title: L("Open Awake Settings…")) { [weak self] in self?.openAwakeSettings() },
-                    ])
+        toasts.show(AwakeLidText.leftover, actions: [
+            ToastAction(title: AwakeLidText.turnSleepBackOn) { [weak self] in self?.turnSleepBackOn() },
+            ToastAction(title: AwakeLidText.openAwakeSettings) { [weak self] in self?.openAwakeSettings() },
+        ])
     }
 
     // MARK: The three buttons
@@ -371,7 +377,7 @@ enum LidRecovery {
         restoring = false
         let output = restoreOutput.map { String(decoding: $0, as: UTF8.self) } ?? ""
         restoreOutput = nil
-        if LidWatchdog.parseResult(output) == .canceled { return }
+        if LidWatchdog.parseRestoreResult(output) == .canceled { return }
         // powerd applies the preference to the kernel asynchronously: wait a little for 0.
         watch(token: nil, seconds: 10)
     }
@@ -398,15 +404,14 @@ struct LidLeftoverRow: View {
 
     var body: some View {
         if recovery.showsRows {
-            StatusRow(L("Your Mac can’t sleep. This may be from an earlier lid-closed session that didn’t finish."),
-                      style: .warning, actions: [
-                          StatusAction(title: L("Turn Sleep Back On…"), control: restore) { [weak recovery = self.recovery] in
+            StatusRow(AwakeLidText.leftover, style: .warning, actions: [
+                          StatusAction(title: AwakeLidText.turnSleepBackOn, control: restore) { [weak recovery = self.recovery] in
                               recovery?.turnSleepBackOn()
                           },
-                          StatusAction(title: L("Keep Sleep Off"), control: keepOff) { [weak recovery = self.recovery] in
+                          StatusAction(title: AwakeLidText.keepSleepOff, control: keepOff) { [weak recovery = self.recovery] in
                               recovery?.keepSleepOff()
                           },
-                          StatusAction(title: L("Not Now"), control: dismiss) { [weak recovery = self.recovery] in
+                          StatusAction(title: AwakeLidText.notNow, control: dismiss) { [weak recovery = self.recovery] in
                               recovery?.notNow()
                           },
                       ])

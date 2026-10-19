@@ -171,7 +171,7 @@ import SnapticKit
     }
 
     /// The Awake section of the shared diagnostics report (G's AwakeDiagnostics; §3.6: no names or identifiers).
-    func diagnosticsLines() -> [String] { AwakeDiagnostics().lines(context) }
+    func diagnosticsLines() -> [String] { AwakeDiagnostics().lines(context, recovery: moduleHost?.lidRecovery) }
 
     var tint: SettingsTint { .orange }
     var highlights: [FeatureHighlight] { AwakePage.highlights }

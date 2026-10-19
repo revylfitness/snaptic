@@ -122,6 +122,20 @@ jobs:
           set -o pipefail
           swift test --skip-build 2>&1 | tee test.log
 
+      # B3.2: the watchdog's shell test, visibly, under the only bash 3.2 CI has (/bin/sh and /bin/bash here). It must
+      # run and pass, never skip.
+      - name: Lid watchdog shell test (bash 3.2)
+        timeout-minutes: 5
+        run: |
+          set -o pipefail
+          /bin/bash --version | sed -n 1p
+          swift test --skip-build --filter LidWatchdogShellTests 2>&1 | tee -a test.log | tee shell-test.log
+          grep -q "Suite 'LidWatchdogShellTests' passed" shell-test.log
+          if grep -qi 'skipped' shell-test.log; then
+            echo "LidWatchdogShellTests skipped a test"
+            exit 1
+          fi
+
       # E4: Sparkle is weak-linked, so builds without the framework still launch.
       - name: Check Sparkle is weak-linked (debug)
         run: |

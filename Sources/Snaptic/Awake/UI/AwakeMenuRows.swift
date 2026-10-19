@@ -52,10 +52,11 @@ import SnapticKit
         headers.removeAll { $0.item.menu == nil }
         guard let ctx = context else { return [] }
         let rt = ctx.runtime
+        // Kit places the lid row and drops Awake Settings… from the tab (B1, A4).
         let facts = AwakeMenuFacts(governing: rt.governing, holdsExist: !rt.holds.isEmpty,
-                                   rulesShown: rulesShown(ctx), style: style)
+                                   rulesShown: rulesShown(ctx), style: style, lid: Self.lidFacts(ctx))
         var out: [NSMenuItem] = []
-        for row in Self.rows(facts, lid: Self.lidRow(ctx)) {
+        for row in AwakeMenuModel.rows(facts) {
             switch row {
             case .header: out.append(header(ctx))
             case .startDefault: out.append(startDefault(ctx))
@@ -94,60 +95,41 @@ import SnapticKit
 
     // MARK: Lid-closed mode (0.3.1 B1)
 
-    /// The model's rows, then the `tab` style without Awake Settings… and the lid row where B1 puts it (directly after
-    /// ✓ Keep Display On, or after the start-default row when idle), unless the model placed one itself.
-    static func rows(_ facts: AwakeMenuFacts, lid: AwakeMenuRow?) -> [AwakeMenuRow] {
-        var rows = AwakeMenuModel.rows(facts)
-        if facts.style == .tab, let settings = rows.lastIndex(of: .settings) {
-            rows.remove(at: settings)
-            if settings > 0, rows[settings - 1] == .separator { rows.remove(at: settings - 1) }
-        }
-        let placed = rows.contains { row in
-            switch row {
-            case .lidClosed, .lidSubmenu: return true
-            default: return false
-            }
-        }
-        if !placed, let lid, let anchor = rows.lastIndex(of: .keepDisplayOn) ?? rows.lastIndex(of: .startDefault) {
-            rows.insert(lid, at: anchor + 1)
-        }
-        return rows
-    }
-
-    /// Which lid row shows (B1, B3.0, B3.4): none unless the feature is effective (on, available, not killed, not in
-    /// Safe Mode); a pending row while a request runs or an earlier journal is pending; ✓ while on; "…" in a session
-    /// started from the menu or Settings; otherwise the idle submenu (hotkey, command-line, launch or restored
-    /// sessions, rules and holds included: choosing a preset there replaces what runs once the mode is on).
-    static func lidRow(_ ctx: AwakeContext) -> AwakeMenuRow? {
+    /// What Kit needs to place the lid row (B1, B3.0, B3.4): nil unless the feature is effective (on, available, not
+    /// killed, not in Safe Mode); the mode's state, or "Finishing Earlier Session…" while an earlier journal is
+    /// pending; whether the governing manual session takes the mode (`AwakeLidGate.addsToSession`: started from the
+    /// menu or Settings in this process, so restored sessions take the idle submenu); and the presets in order.
+    static func lidFacts(_ ctx: AwakeContext) -> AwakeLidMenuFacts? {
         let rt = ctx.runtime
-        guard rt.isEffective(.lidClosed) else { return nil }
-        if let state = ctx.lid.rowState { return .lidClosed(state) }
-        if ctx.host.lidRecovery?.recovery == .pending { return .lidClosed(.finishingEarlier) }
-        if case .manual(let s) = rt.governing, s.source == .menu || s.source == .settings { return .lidClosed(.off) }
-        return .lidSubmenu(ctx.config.value.sessions.presets.map(\.id))
+        var takesMode = false
+        if case .manual(let s) = rt.governing {
+            takesMode = AwakeLidGate.addsToSession(source: s.source, startedInProcess: ctx.sessions.startedInProcess(s.id))
+        }
+        return AwakeLidMenuFacts.make(available: rt.isEffective(.lidClosed), mode: rt.lidMode,
+                                      recovery: ctx.host.lidRecovery?.recovery ?? .nothing,
+                                      sessionTakesMode: takesMode, presets: ctx.config.value.sessions.presets.map(\.id))
     }
 
-    /// The B0 titles; pending rows are disabled.
+    /// The lid row for the Settings pull-downs, where the menus get it (Kit's `AwakeMenuModel.lidRow`).
+    static func lidRow(_ ctx: AwakeContext) -> AwakeMenuRow? {
+        AwakeMenuModel.lidRow(lidFacts(ctx), governing: ctx.runtime.governing)
+    }
+
+    /// The B0 titles; pending rows are disabled. ✓ has no ellipsis: turning it off asks nothing.
     private func lidItem(_ state: LidRowState) -> NSMenuItem {
         let control = ControlID("menu.awake.lidClosed")
+        let title = AwakeLidText.rowTitle(state)
         switch state {
         case .off:
-            return MenuKit.action(L("Keep Awake with the Lid Closed…"), control: control) { [weak self] in
+            return MenuKit.action(title, control: control) { [weak self] in
                 self?.context?.lid.request(.add, source: .menu)
             }
         case .on:
-            // No ellipsis: turning it off asks nothing.
-            return MenuKit.toggle(L("Keep Awake with the Lid Closed"), isOn: true, control: control) { [weak self] in
+            return MenuKit.toggle(title, isOn: AwakeLidText.rowChecked(state), control: control) { [weak self] in
                 self?.context?.lid.turnOff()
             }
-        case .authorizing:
-            return MenuKit.action(L("Waiting for Password…"), enabled: false, control: control) {}
-        case .verifying:
-            return MenuKit.action(L("Turning On…"), enabled: false, control: control) {}
-        case .stopping:
-            return MenuKit.action(L("Turning Off…"), enabled: false, control: control) {}
-        case .finishingEarlier:
-            return MenuKit.action(L("Finishing Earlier Session…"), enabled: false, control: control) {}
+        case .authorizing, .verifying, .stopping, .finishingEarlier:
+            return MenuKit.action(title, enabled: AwakeLidText.rowEnabled(state), control: control) {}
         }
     }
 
@@ -157,16 +139,16 @@ import SnapticKit
         let presets = ctx.config.value.sessions.presets
         var rows: [NSMenuItem] = ids.compactMap { id in presets.first { $0.id == id } }.map { preset in
             let id = preset.id
-            return MenuKit.action(preset.title(AwakeFormat.text) + "…", control: ControlID("menu.awake.lidPreset")) {
-                [weak self] in
+            return MenuKit.action(AwakeLidText.presetTitle(preset.title(AwakeFormat.text)),
+                                  control: ControlID("menu.awake.lidPreset")) { [weak self] in
                 self?.context?.lid.request(.preset(id), source: .menu)
             }
         }
         rows.append(MenuKit.separator())
-        rows.append(MenuKit.action(L("Custom…"), control: ControlID("menu.awake.lidCustom")) { [weak self] in
+        rows.append(MenuKit.action(AwakeLidText.custom, control: ControlID("menu.awake.lidCustom")) { [weak self] in
             self?.custom.present(.start, lidClosed: true)
         })
-        return MenuKit.submenu(L("Keep Awake with the Lid Closed"), control: ControlID("menu.awake.lidSubmenu"), rows)
+        return MenuKit.submenu(AwakeLidText.title, control: ControlID("menu.awake.lidSubmenu"), rows)
     }
 
     /// Rules › exists while ≥ 1 rule exists and `triggers` is effective (lead r4, r3 product M2).
@@ -354,7 +336,17 @@ import SnapticKit
         input.activity = rt.activity
         input.activityCapped = rt.activityCapped
         input.stopAfterHours = ctx.config.value.activity.stopAfterHours
+        // 0.3.1 B1: the lid line first while the mode is on, the lid warning (Kit's rule) and route, the last end.
+        let lidOn = rt.lidMode.isOn
+        input.lidModeOn = lidOn
+        input.lidUntilClock = ctx.lid.capClockWall.map { AwakeFormat.clock($0) }
         input.lidWarning = rt.governing.isActive && lidWarning(ctx)
+        input.lidRoute = lidRoute(ctx)
+        if !lidOn, ctx.host.lidRecovery?.showsRows != true, let end = rt.lastLidEnd,
+           Date().timeIntervalSince(end.at) < AwakeLidPolicy.lastEndKeepSeconds {
+            input.lidLastEnd = AwakeLidText.lastEnd(end.reason, clock: AwakeFormat.clock(end.at.timeIntervalSince1970),
+                                                    floor: AwakeLidPolicy.floor(awakeGuards: ctx.config.value.guards))
+        }
         let use = backgroundUse(ctx)
         input.backgroundPaused = rt.power.flatMap { AwakeGuards.backgroundBlock($0, config: ctx.config.value.guards) }
             .flatMap { AwakeBackgroundText.paused($0, activity: use.activity, drives: use.drives) }
@@ -381,15 +373,29 @@ import SnapticKit
     }
 
     /// "Closing the lid will put your Mac to sleep." on battery or without an external display (§2.12, design m5),
-    /// only while closing it would sleep the Mac and lid-closed mode is off (0.3.1 B1).
+    /// only while closing it would sleep the Mac and lid-closed mode is off (0.3.1 B1: Kit's rule).
     private static func lidWarning(_ ctx: AwakeContext) -> Bool {
-        guard ctx.runtime.lidWillSleep == true, !ctx.runtime.lidMode.isOn else { return false }
-        let onBattery = ctx.runtime.power.map { $0.batteryPresent && !$0.onAC } ?? false
+        let rt = ctx.runtime
+        let onBattery = rt.power.map { $0.batteryPresent && !$0.onAC } ?? false
         let external = NSScreen.screens.contains { screen in
             guard let n = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return false }
             return CGDisplayIsBuiltin(CGDirectDisplayID(n.uint32Value)) == 0
         }
-        return onBattery || !external
+        return AwakeDetail.showsLidWarning(lidWillSleep: rt.lidWillSleep, lidModeOn: rt.lidMode.isOn,
+                                           onBattery: onBattery, externalDisplay: external)
+    }
+
+    /// Which `lidRoute` line follows the lid warning in Settings (0.3.1 B1): choose it in the menu while the mode is
+    /// effective; turn it on in Advanced while only its switch is off on a Mac that could use it; otherwise (no lid,
+    /// no battery, translocated, a kill switch or Safe Mode) the 0.3 text.
+    private static func lidRoute(_ ctx: AwakeContext) -> AwakeLidRoute {
+        let rt = ctx.runtime
+        if rt.isEffective(.lidClosed) { return .available }
+        guard rt.availability[.lidClosed]?.isAvailable ?? false, rt.power?.batteryPresent ?? AwakeHardware.hasBattery,
+              AwakeFormat.lock([.lidClosed]) == nil, !(ctx.config.value.features[.lidClosed] ?? false) else {
+            return .unavailable
+        }
+        return .featureOff
     }
 
     private func observe(_ runtime: AwakeRuntimeState) {

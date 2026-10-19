@@ -3,20 +3,21 @@ import XCTest
 
 final class BundleCopyTextTests: XCTestCase {
     func testStringsUseCurlyApostrophesOnly() {
-        for text in [BundleCopyText.lidWritable, BundleCopyText.lidTranslocated, BundleCopyText.lidFooter] {
+        for text in [BundleCopyText.lidWritable, AwakeLidText.translocated, AwakeLidText.advancedFooter] {
             XCTAssertFalse(text.contains("'"), text)
             XCTAssertTrue(text.hasSuffix("."), text)
         }
     }
 
+    /// The Lid closed section's translocated row and footer are Kit's lid texts (one copy of each).
     func testTranslocatedTextNamesTheFix() {
-        XCTAssertTrue(BundleCopyText.lidTranslocated.hasPrefix("Snaptic is running from a temporary location."))
-        XCTAssertTrue(BundleCopyText.lidTranslocated.contains("Applications"))
+        XCTAssertTrue(AwakeLidText.translocated.hasPrefix("Snaptic is running from a temporary location."))
+        XCTAssertTrue(AwakeLidText.translocated.contains("Applications"))
     }
 
     func testFooterStatesTheLimits() {
-        XCTAssertTrue(BundleCopyText.lidFooter.contains("at least 10%"))
-        XCTAssertTrue(BundleCopyText.lidFooter.contains("after 24 hours"))
+        XCTAssertTrue(AwakeLidText.advancedFooter.contains("at least 10%"))
+        XCTAssertTrue(AwakeLidText.advancedFooter.contains("after 24 hours"))
     }
 
     func testHelpURLsPointAtTheReadmeSections() {

@@ -93,9 +93,7 @@ struct CustomSessionPanel: View, ControlDeclaring {
                                       help: L("When off, your Mac stays awake but the display can turn off."),
                                       isOn: $keepDisplayOn)
                         if lidAvailable {
-                            ToggleSetting(L("Keep awake with the lid closed"),
-                                          help: L("Asks for an administrator password when you click Start."),
-                                          isOn: $lidClosed)
+                            ToggleSetting(AwakeLidText.setting, help: AwakeLidText.customHelp, isOn: $lidClosed)
                                 .accessibilityIdentifier(ControlID("awake.custom.lidClosed").rawValue)
                         }
                     }
@@ -108,7 +106,7 @@ struct CustomSessionPanel: View, ControlDeclaring {
                 Button(L("Cancel")) { onCancel() }
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier(ControlID("awake.custom.cancel").rawValue)
-                Button(mode == .extend ? L("Add") : lidAvailable && lidClosed ? L("Start…") : L("Start")) { commit() }
+                Button(mode == .extend ? L("Add") : lidAvailable && lidClosed ? AwakeLidText.customStart : L("Start")) { commit() }
                     .disabled(!valid)
                     .accessibilityIdentifier(ControlID("awake.custom.start").rawValue)
             }

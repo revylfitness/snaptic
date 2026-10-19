@@ -156,10 +156,9 @@ struct AwakeAdvancedSheet: View, ControlDeclaring {
             let lock = AwakeFormat.lock([.lidClosed])
             Section {
                 if translocated {
-                    StatusRow(BundleCopyText.lidTranslocated, style: .warning)
+                    StatusRow(AwakeLidText.translocated, style: .warning)
                 } else {
-                    ToggleSetting(L("Keep awake with the lid closed"),
-                                  help: L("Choose Keep Awake with the Lid Closed in the Awake menu. Asks for an administrator password each time."),
+                    ToggleSetting(AwakeLidText.setting, help: AwakeLidText.settingHelp,
                                   isOn: Binding(get: { on }, set: { value in setLidClosed(value) }),
                                   anchor: ControlID("awake.advanced.lidClosed"),
                                   disabledReason: lock?.lock == .safeMode ? lock?.lock.text : nil)
@@ -169,18 +168,18 @@ struct AwakeAdvancedSheet: View, ControlDeclaring {
                     }
                     if on && lock == nil && bundleWritable {
                         SettingsRowNote(BundleCopyText.lidWritable,
-                                        fix: StatusAction(title: L("Learn More…"),
+                                        fix: StatusAction(title: AwakeLidText.learnMore,
                                                           control: ControlID("awake.advanced.lidBundleLearnMore")) {
                                             Self.open(BundleCopyText.passwordHelpURL)
                                         })
                     }
                 }
             } header: {
-                Text(L("Lid closed"))
+                Text(AwakeLidText.section)
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(BundleCopyText.lidFooter)
-                    Button(L("Learn More…")) { Self.open(BundleCopyText.lidHelpURL) }
+                    Text(AwakeLidText.advancedFooter)
+                    Button(AwakeLidText.learnMore) { Self.open(BundleCopyText.lidHelpURL) }
                         .buttonStyle(.link)
                 }
             }

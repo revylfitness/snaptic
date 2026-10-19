@@ -25,7 +25,7 @@ struct OtherAssertionsSection: View, ControlDeclaring {
                 if let runtime, let recovery {
                     SleepDisabledRows(runtime: runtime, recovery: recovery)
                 } else {
-                    StatusRow(Self.othersText, style: .warning)
+                    StatusRow(OtherAssertions.sleepDisabledByOther, style: .warning)
                 }
             }
             if !reader.hasRead {
@@ -60,9 +60,6 @@ struct OtherAssertionsSection: View, ControlDeclaring {
         .onDisappear { viewing.end() }
     }
 
-    /// B3.4: replaces 0.3's "Snaptic can’t change this." everywhere.
-    static let othersText = L("Sleep is turned off for this Mac by another app or command. Snaptic leaves it as it is.")
-
     /// What the strongest assertion of a row keeps from happening.
     static func kindsText(_ kinds: [OtherAssertionKind]) -> String {
         switch kinds.first {
@@ -86,7 +83,7 @@ private struct SleepDisabledRows: View, ControlDeclaring {
                            keepOff: ControlID("awake.advanced.lidKeepOff"),
                            dismiss: ControlID("awake.advanced.lidDismiss"))
         } else if case .off = runtime.lidMode, recovery.recovery == .nothing {
-            StatusRow(OtherAssertionsSection.othersText, style: .warning)
+            StatusRow(OtherAssertions.sleepDisabledByOther, style: .warning)
         }
     }
 }

@@ -30,11 +30,6 @@ struct LidTick: Sendable {
 /// The beacon file and its heartbeat (B3.1 step 3, B3.3). The descriptor is touched only on the private queue: the
 /// timer's handler refreshes it and its cancel handler closes it, so a reused descriptor number is never touched.
 final class LidBeacon: @unchecked Sendable {
-    static let periodSeconds: Double = 5
-    /// The beacon is refreshed only while the main thread stamped within this long (a hung Snaptic lets it go stale,
-    /// and the watchdog turns sleep back on).
-    static let mainHungMillis: UInt64 = 10_000
-
     let directory: String
     let token: String
     private let queue = DispatchQueue(label: "app.snaptic.lid-heartbeat")
@@ -44,10 +39,11 @@ final class LidBeacon: @unchecked Sendable {
     private var stopped = false
     private var watched: (pid: Int32, instance: UInt64)?
 
-    /// Creates `beat-<token>` with O_CREAT|O_EXCL|O_NOFOLLOW (0600) in a directory `LidSystem` checked; nil if it can't.
+    /// Creates the beacon (`LidWatchdog.beatFileName`) with O_CREAT|O_EXCL|O_NOFOLLOW (0600) in a directory `LidSystem`
+    /// checked; nil if it can't.
     init?(directory: String, token: String) {
-        guard LidSystem.isToken(token) else { return nil }
-        let fd = open(directory + "/beat-" + token, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        guard let name = LidWatchdog.beatFileName(token: token) else { return nil }
+        let fd = open(directory + "/" + name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
         guard fd >= 0 else { return nil }
         self.directory = directory
         self.token = token
@@ -59,17 +55,20 @@ final class LidBeacon: @unchecked Sendable {
         lock.lock(); watched = (pid, instance); lock.unlock()
     }
 
-    /// Every 5 s (0.5 s leeway): refresh the beacon (`futimens`), then read the liveness facts; `onTick` runs on
-    /// the private queue.
+    /// Every 5 s (0.5 s leeway): refresh the beacon (`futimens`) while the main thread answered within 10 s (a hung
+    /// Snaptic lets it go stale, and the watchdog turns sleep back on), then read the liveness facts; `onTick` runs
+    /// on the private queue.
     func start(_ onTick: @escaping @Sendable (LidTick) -> Void) {
         lock.lock()
         guard timer == nil, !stopped else { lock.unlock(); return }
         let fd = self.fd
         let source = DispatchSource.makeTimerSource(queue: queue)
-        source.schedule(deadline: .now() + Self.periodSeconds, repeating: Self.periodSeconds, leeway: .milliseconds(500))
+        let period = AwakeLidPolicy.heartbeatSeconds
+        source.schedule(deadline: .now() + period, repeating: period,
+                        leeway: .milliseconds(Int(AwakeLidPolicy.heartbeatLeewaySeconds * 1_000)))
         source.setEventHandler { [weak self] in
             guard let self else { return }
-            if HostHeartbeat.shared.mainAgeMillis() < Self.mainHungMillis { _ = futimens(fd, nil) }
+            if HostHeartbeat.shared.mainAgeMillis() < UInt64(AwakeLidPolicy.mainAgeLimitMillis) { _ = futimens(fd, nil) }
             onTick(self.read())
         }
         source.setCancelHandler { _ = close(fd) }
@@ -112,18 +111,13 @@ final class LidBeacon: @unchecked Sendable {
     /// Weak: controllers never keep the context strongly.
     weak var context: AwakeContext?
 
-    static let verifyPollNanoseconds: UInt64 = 500_000_000
-    /// Polls of the kernel after the watchdog started (10 s).
-    static let verifyPolls = 20
-    /// "Turning on lid-closed mode…" once verifying took this many polls (2 s).
-    static let slowVerifyPolls = 4
-    /// B3.1 step 7: the check five seconds after turning on.
-    static let recheckNanoseconds: UInt64 = 5_000_000_000
-    /// B3.3: turning off waits this long for the kernel to read 0; B3.0: a failed turn-on keeps its journal this long.
-    static let stopWaitSeconds: Double = 15
-    static let abandonWaitSeconds: Double = 30
-    /// B3.3: `pmset displaysleepnow` at most this often (powerd defers it for about 30 s after a wake).
-    static let displaySleepIntervalSeconds: Double = 10
+    /// Kit's timings (AwakeLidPolicy) in the units the waits take.
+    static let verifyPollNanoseconds = UInt64(AwakeLidPolicy.verifyPollSeconds * 1_000_000_000)
+    /// Polls of the kernel after the watchdog started (10 s), and the one after which the slow-verify toast shows (2 s).
+    static let verifyPolls = Int((AwakeLidPolicy.verifyLimitSeconds / AwakeLidPolicy.verifyPollSeconds).rounded())
+    static let slowVerifyPolls = Int((AwakeLidPolicy.verifyToastSeconds / AwakeLidPolicy.verifyPollSeconds).rounded())
+    /// B3.1 step 7: the second look five seconds after turning on.
+    static let recheckNanoseconds = UInt64(AwakeLidPolicy.recheckAfterOnSeconds * 1_000_000_000)
 
     /// A request between its click and `on` (B3.0 `authorizing`, `verifying`).
     private struct Pending {
@@ -157,8 +151,8 @@ final class LidBeacon: @unchecked Sendable {
     private var activity: NSObjectProtocol?
     private var admin: HelperHandle?
     private var adminOutput: Data?
-    /// Consecutive beats that read the kernel's SleepDisabled as 0.
-    private var zeroReads = 0
+    /// The heartbeat's liveness rule (Kit): the watchdog gone, or SleepDisabled 0 twice in a row.
+    private var liveness = AwakeLidLiveness()
     private var capWarned = false
     private var lastDisplaySleep: Double?
     private var displaySleepRunning = false
@@ -188,15 +182,13 @@ final class LidBeacon: @unchecked Sendable {
         active != nil && context?.runtime.lidClosed == true && !Self.displays().external
     }
 
-    /// The lid row of the menus and the Settings pull-downs (B1).
-    var rowState: LidRowState? {
-        switch mode {
-        case .authorizing: return .authorizing
-        case .verifying: return .verifying
-        case .stopping: return .stopping
-        case .on: return .on
-        case .off, .failed: return nil
-        }
+    /// B1: while on and the cap ends before the session (`AwakeLidPolicy.capEndsFirst`), the cap's wall time for the
+    /// header's "Stays awake with the lid closed until 6:40 PM"; nil otherwise.
+    var capClockWall: Double? {
+        guard case .on(_, _, let until) = mode, until.isFinite,
+              AwakeLidPolicy.capEndsFirst(until: until, sessionEnd: sessionEnd()) else { return nil }
+        let now = AwakeModule.clockNow()
+        return now.wall + (until - now.continuous)
     }
 
     // MARK: Lifecycle (SessionController)
@@ -233,7 +225,10 @@ final class LidBeacon: @unchecked Sendable {
         let mayStart = source != .settings || SettingsShell.shared.mayStart()
         var running: AwakeSession?
         if request == .add {
-            guard case .manual(let s) = ctx.runtime.governing, s.id == ctx.sessions.manual?.id else { return }
+            // Only a menu or Settings session started in this process takes the mode (restored ones don't).
+            guard case .manual(let s) = ctx.runtime.governing, s.id == ctx.sessions.manual?.id,
+                  AwakeLidGate.addsToSession(source: s.source, startedInProcess: ctx.sessions.startedInProcess(s.id))
+            else { return }
             running = s
         }
         guard AwakeLidGate.decide(source: source, mayStart: mayStart, event: .request(running: running?.source))
@@ -250,9 +245,12 @@ final class LidBeacon: @unchecked Sendable {
             refuse(refusal)
             return
         }
-        let token = LidSystem.newToken()
+        guard let token = LidSystem.newToken() else {
+            ctx.host.toasts.show(AwakeLidText.couldNotTurnOn)
+            return
+        }
         pending = Pending(token: token, request: request, source: source, sessionID: running?.id, floor: floor)
-        zeroReads = 0
+        liveness = AwakeLidLiveness()
         capWarned = false
         set(.authorizing(token: token))
         Task { @MainActor [weak self] in await self?.authorize(token) }
@@ -264,20 +262,22 @@ final class LidBeacon: @unchecked Sendable {
         end(.user)
     }
 
+    /// One toast with Kit's text and buttons (B2); the mode never offers Start Anyway.
     private func refuse(_ refusal: AwakeLidRefusal) {
         guard let ctx = context else { return }
-        if refusal == .leftover {
-            ctx.host.toasts.show(refusal.text, actions: [
-                ToastAction(title: L("Turn Sleep Back On…")) { [weak recovery = ctx.host.lidRecovery] in
-                    recovery?.turnSleepBackOn()
-                },
-                ToastAction(title: L("Open Awake Settings…")) { [weak self] in
+        let actions = refusal.buttons.compactMap { title -> ToastAction? in
+            switch title {
+            case AwakeLidText.turnSleepBackOn:
+                return ToastAction(title: title) { [weak recovery = ctx.host.lidRecovery] in recovery?.turnSleepBackOn() }
+            case AwakeLidText.openAwakeSettings:
+                return ToastAction(title: title) { [weak self] in
                     self?.context?.host.openSettings(SettingsRoute(SettingsRootID.awake))
-                },
-            ])
-        } else {
-            ctx.host.toasts.show(refusal.text)
+                }
+            default:
+                return nil
+            }
         }
+        if actions.isEmpty { ctx.host.toasts.show(refusal.text) } else { ctx.host.toasts.show(refusal.text, actions: actions) }
     }
 
     // MARK: Turning on (B3.1)
@@ -288,10 +288,10 @@ final class LidBeacon: @unchecked Sendable {
             (LidSystem.kernelSleepDisabled(), OtherAssertionsReader.sleepDisabledPreference())
         }
         guard var p = pending, p.token == token, let ctx = context else { return }
-        guard let kernel else { return abandon(token, failure: .verify, toast: Self.couldNotTurnOn) }
+        guard let kernel else { return abandon(token, failure: .verify, toast: AwakeLidText.couldNotTurnOn) }
         if kernel || preference {
             // Someone else's setting: never touched. The session starts or continues without the mode.
-            abandon(token, failure: nil, toast: Self.alreadyOff)
+            abandon(token, failure: nil, toast: AwakeLidText.alreadyOff)
             startWithoutMode(p)
             return
         }
@@ -299,14 +299,14 @@ final class LidBeacon: @unchecked Sendable {
         let now = AwakeModule.clockNow()
         let journal = AwakeLidJournal(token: token, bootSessionUUID: now.bootSession, startedAtWall: now.wall,
                                       startedAtContinuous: now.continuous, floor: p.floor)
-        guard LidJournalStore.write(journal) else { return abandon(token, failure: .beacon, toast: Self.couldNotTurnOn) }
+        guard LidJournalStore.write(journal) else { return abandon(token, failure: .beacon, toast: AwakeLidText.couldNotTurnOn) }
         // 3. The beacon directory, the beacon and the heartbeat (it runs while the dialog waits, too).
         guard let dir = LidSystem.beaconDirectory(), LidSystem.prepareBeaconDirectory(dir) else {
-            return abandon(token, failure: .beacon, toast: Self.couldNotTurnOn)
+            return abandon(token, failure: .beacon, toast: AwakeLidText.couldNotTurnOn)
         }
         LidSystem.clearBeacons(dir)
         guard let beacon = LidBeacon(directory: dir, token: token) else {
-            return abandon(token, failure: .beacon, toast: Self.couldNotTurnOn)
+            return abandon(token, failure: .beacon, toast: AwakeLidText.couldNotTurnOn)
         }
         self.beacon = beacon
         let target = CallbackTarget(self)
@@ -322,7 +322,7 @@ final class LidBeacon: @unchecked Sendable {
         guard let args = LidWatchdog.Arguments.validated(uid: getuid(), pid: getpid(), token: token,
                                                          capSeconds: LidWatchdog.capSeconds, floor: p.floor, dir: dir),
               let script = LidWatchdog.startScript(args, prompt: LidWatchdog.promptText(floor: p.floor)) else {
-            return abandon(token, failure: .args, toast: Self.couldNotTurnOn)
+            return abandon(token, failure: .args, toast: AwakeLidText.couldNotTurnOn)
         }
         p.spawnWall = Date().timeIntervalSince1970
         p.spawnContinuous = AwakeModule.clockNow().continuous
@@ -337,7 +337,7 @@ final class LidBeacon: @unchecked Sendable {
                 self?.adminExited(token, status: status)
             })
         } catch {
-            return abandon(token, failure: .spawn, toast: Self.couldNotTurnOn)
+            return abandon(token, failure: .spawn, toast: AwakeLidText.couldNotTurnOn)
         }
         guard pending?.token == token else {
             handle.interrupt()   // superseded while osascript was being checked
@@ -354,21 +354,19 @@ final class LidBeacon: @unchecked Sendable {
         adminOutput = nil
         guard let p = pending, p.token == token, case .authorizing = mode else { return }
         let elapsed = AwakeModule.clockNow().continuous - p.spawnContinuous
-        if timedOut || elapsed >= HelperSpawner.adminTimeoutSeconds {
-            return abandon(token, failure: .timeout, toast: Self.couldNotTurnOn)
+        if timedOut || elapsed >= AwakeLidPolicy.osascriptTimeoutSeconds {
+            return abandon(token, failure: .timeout, toast: AwakeLidText.couldNotTurnOn)
         }
-        switch LidWatchdog.parseResult(output) {
-        case .launched(let pid):
+        switch AwakeLidPolicy.launchStep(LidWatchdog.parseResult(output)) {
+        case .verify(let pid):
             Task { @MainActor [weak self] in await self?.verify(token, pid: pid) }
         case .canceled:
             abandon(token, failure: nil, toast: nil)
-        case .failed(3):
-            abandon(token, failure: nil, toast: Self.alreadyOff)
+        case .alreadyOff:
+            abandon(token, failure: nil, toast: AwakeLidText.alreadyOff)
             startWithoutMode(p)
-        case .failed(64):
-            abandon(token, failure: .args, toast: Self.couldNotTurnOn)
-        case .failed:
-            abandon(token, failure: .spawn, toast: Self.couldNotTurnOn)
+        case .failed(let stage):
+            abandon(token, failure: stage, toast: AwakeLidText.couldNotTurnOn)
         }
     }
 
@@ -376,9 +374,13 @@ final class LidBeacon: @unchecked Sendable {
     private func verify(_ token: String, pid: Int32) async {
         guard let p = pending, p.token == token else { return }
         set(.verifying(token: token, pid: pid))
+        // The instance id is the start time in microseconds (0: gone); the real uid is -1 when unreadable.
         let instance = SNProcess.instanceID(for: pid)
-        guard instance != 0, SNProcess.realUID(for: pid) == 0, Double(instance) >= p.spawnWall * 1_000_000 else {
-            return abandon(token, failure: .verify, toast: Self.couldNotTurnOn)
+        let uid = SNProcess.realUID(for: pid)
+        guard instance != 0, AwakeLidPolicy.watchdogVerified(realUID: UInt32(exactly: uid),
+                                                             startTime: Double(instance) / 1_000_000,
+                                                             spawnedAt: p.spawnWall) else {
+            return abandon(token, failure: .verify, toast: AwakeLidText.couldNotTurnOn)
         }
         if var journal = LidJournalStore.read(), journal.token == token {
             journal.pid = pid
@@ -393,9 +395,9 @@ final class LidBeacon: @unchecked Sendable {
                 turnedOn(token, pid: pid)
                 return
             }
-            if poll == Self.slowVerifyPolls { context?.host.toasts.show(L("Turning on lid-closed mode…")) }
+            if poll == Self.slowVerifyPolls { context?.host.toasts.show(AwakeLidText.verifying) }
         }
-        abandon(token, failure: .verify, toast: Self.couldNotTurnOn)
+        abandon(token, failure: .verify, toast: AwakeLidText.couldNotTurnOn)
     }
 
     private func turnedOn(_ token: String, pid: Int32) {
@@ -422,25 +424,27 @@ final class LidBeacon: @unchecked Sendable {
             switch result {
             case .success(let s):
                 active?.sessionID = s.id
-                if replacing { ctx.host.toasts.show(L("Replaced the running session.")) }
+                if replacing { ctx.host.toasts.show(AwakeLidText.replaced) }
             case .failure:
                 // The session's own refusal toast shows; the mode goes straight to stopping.
                 return end(.sessionEnded)
             }
         }
         updateUntil()
-        announce(L("Keeping your Mac awake with the lid closed."))
+        announce(AwakeLidText.voiceOverOn)
         observeScreens()
         ctx.sessions.arbitrate()
         maySleepDisplay()
-        // 7. Five seconds later: an app that turned sleep back on at once (it reads 0 twice) ends the mode.
+        // 7. Five seconds later: an app that turned sleep back on at once (it reads 0 twice) ends the mode. Two looks
+        // half a second apart, through the heartbeat's liveness rule.
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: Self.recheckNanoseconds)
-            guard let self, self.active?.token == token else { return }
-            guard LidSystem.kernelSleepDisabled() == false else { return }
+            guard let self, self.active?.token == token, let beacon = self.beacon else { return }
+            self.tick(token, beacon.read())
+            guard self.active?.token == token, self.liveness.zeroReads > 0 else { return }
             try? await Task.sleep(nanoseconds: Self.verifyPollNanoseconds)
-            guard self.active?.token == token, LidSystem.kernelSleepDisabled() == false else { return }
-            self.end(.otherApp)
+            guard self.active?.token == token, let beacon = self.beacon else { return }
+            self.tick(token, beacon.read())
         }
     }
 
@@ -465,7 +469,7 @@ final class LidBeacon: @unchecked Sendable {
         if let dir = beacon?.directory { LidSystem.requestStop(dir: dir, token: token) }
         tearDown()
         if let recovery = context?.host.lidRecovery {
-            recovery.watch(token: token, seconds: Self.abandonWaitSeconds)
+            recovery.watch(token: token, seconds: AwakeLidPolicy.failedExitPollSeconds)
         } else if LidSystem.kernelSleepDisabled() == false {
             LidJournalStore.remove(token: token)
         }
@@ -488,22 +492,21 @@ final class LidBeacon: @unchecked Sendable {
 
     private func tick(_ token: String, _ t: LidTick) {
         guard let a = active, a.token == token else { return }
-        if t.watchdogGone == true {
-            end(.watchdogLost, leftover: t.sleepDisabled != false)
-            return
-        }
-        if t.sleepDisabled == false {
-            zeroReads += 1
-            if zeroReads >= 2 { return end(.otherApp) }
-        } else {
-            zeroReads = 0
+        switch liveness.tick(watchdogAlive: t.watchdogGone != true, sleepDisabled: t.sleepDisabled) {
+        case .watchdogLost?:
+            // Gone with sleep still off (or unreadable): nobody will turn it back on.
+            return end(.watchdogLost, leftover: t.sleepDisabled != false)
+        case let reason?:
+            return end(reason)
+        case nil:
+            break
         }
         let now = AwakeModule.clockNow().continuous
-        if now >= a.capStart + Double(LidWatchdog.capSeconds) { return end(.cap) }
+        if now >= AwakeLidPolicy.until(sessionEnd: nil, capStart: a.capStart) { return end(.cap) }
         if !capWarned, case .on(_, _, let until) = mode,
            AwakeLidPolicy.capWarningDue(until: until, sessionEnd: sessionEnd(), now: now) {
             capWarned = true
-            context?.host.toasts.show(L("Lid-closed mode turns off in 5 minutes. If the lid is closed then, your Mac goes to sleep."))
+            context?.host.toasts.show(AwakeLidText.capWarning)
         }
         maySleepDisplay()
     }
@@ -512,10 +515,9 @@ final class LidBeacon: @unchecked Sendable {
     /// lid-shut rule; the session's own guards follow in SessionController.
     private func powerChanged() {
         guard let a = active, let facts = context?.power.facts else { return }
-        if facts.discharging, let percent = facts.percent, percent <= a.floor {
-            end(.battery)
-        } else if facts.thermal >= .serious {
-            end(.heat)
+        if let reason = AwakeLidPolicy.guardEnd(batteryPercent: facts.percent, discharging: facts.discharging,
+                                                floor: a.floor, thermalSerious: facts.thermal >= .serious) {
+            end(reason)
         }
     }
 
@@ -551,7 +553,7 @@ final class LidBeacon: @unchecked Sendable {
     private func maySleepDisplay() {
         guard lidShut, !displaySleepRunning, let spawner = context?.host.spawner else { return }
         let now = AwakeModule.clockNow().continuous
-        if let last = lastDisplaySleep, now - last < Self.displaySleepIntervalSeconds { return }
+        if let last = lastDisplaySleep, now - last < AwakeLidPolicy.displaySleepIntervalSeconds { return }
         if Self.displays().builtInAsleep == true { return }
         lastDisplaySleep = now
         displaySleepRunning = true
@@ -629,7 +631,7 @@ final class LidBeacon: @unchecked Sendable {
         if let p = pending, p.sessionID == session.id { supersede() }
         guard let a = active, a.sessionID == session.id else { return }
         if keepAcross == session.id { return }
-        end(reason == .replaced ? .replaced : .sessionEnded)
+        end(AwakeLidPolicy.lidEnd(sessionEnded: reason, terminating: context?.host.signals.isTerminating ?? false))
     }
 
     /// The session's end moved (Add Time): `until` follows.
@@ -671,18 +673,13 @@ final class LidBeacon: @unchecked Sendable {
             break
         }
         if !quitting {
-            switch reason {
-            case .battery: ctx.host.toasts.show(L("Lid-closed mode turned off at \(a.floor)% battery."))
-            case .heat: ctx.host.toasts.show(L("Lid-closed mode turned off because your Mac got hot."))
-            case .otherApp: ctx.host.toasts.show(L("Another app turned sleep back on, so lid-closed mode stopped."))
-            default: break
-            }
-            announce(L("Lid-closed mode turned off."))
+            announce(AwakeLidText.voiceOverOff)
+            // Lid shut: the session ends too, and its `.lidEnded` toast shows; otherwise the mode's own toast, if any.
             if !sessionsOwnEnd, let id = a.sessionID, ctx.sessions.manual?.id == id,
                AwakeLidPolicy.endsSession(lidShut: shut, lidWillSleep: rt.lidWillSleep, reason: reason) {
                 ctx.sessions.endLidSession(id)
-            } else if reason == .cap {
-                ctx.host.toasts.show(L("Lid-closed mode turned off after 24 hours. Awake is still on; your Mac sleeps if you close the lid."))
+            } else if let text = AwakeLidText.endToast(reason, floor: a.floor) {
+                ctx.host.toasts.show(text)
             }
             if !sessionsOwnEnd { ctx.sessions.arbitrate() }
         }
@@ -693,10 +690,10 @@ final class LidBeacon: @unchecked Sendable {
             recovery.markLeftover()
             set(.off)
         } else if quitting {
-            recovery.watch(token: token, seconds: Self.abandonWaitSeconds)
+            recovery.watch(token: token, seconds: AwakeLidPolicy.failedExitPollSeconds)
             set(.off)
         } else {
-            recovery.watch(token: token, seconds: Self.stopWaitSeconds) { [weak self] _ in
+            recovery.watch(token: token, seconds: AwakeLidPolicy.stopPollSeconds) { [weak self] _ in
                 guard let self, self.mode.token == token else { return }
                 self.set(.off)
             }
@@ -715,7 +712,7 @@ final class LidBeacon: @unchecked Sendable {
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
         screenObserver = nil
         lastDisplaySleep = nil
-        zeroReads = 0
+        liveness = AwakeLidLiveness()
     }
 
     /// B3.0: App Nap must not starve the heartbeat while the mode isn't off.
@@ -741,7 +738,4 @@ final class LidBeacon: @unchecked Sendable {
             DispatchQueue.global(qos: .userInitiated).async { continuation.resume(returning: work()) }
         }
     }
-
-    static let couldNotTurnOn = L("Snaptic couldn’t turn on lid-closed mode. Try again.")
-    static let alreadyOff = L("Sleep is already turned off for this Mac by another app or command, so it stays awake with the lid closed.")
 }

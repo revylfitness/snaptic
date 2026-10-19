@@ -105,12 +105,17 @@ import SnapticKit
         let governing = rt?.governing ?? .inactive
         let config = context?.config.value.indicator ?? AwakeIndicatorConfig()
         let active = governing.isActive
-        let symbol = config.symbol(active: active)
         let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular, scale: .medium)
-        var image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
-            ?? NSImage(systemSymbolName: AwakeGlyphFamily.cup.idle, accessibilityDescription: nil)
-        let lidOn = rt?.lidMode.isOn ?? false
-        if lidOn, let base = image { image = Self.lidImage(base) }
+        func glyph(_ name: String) -> NSImage? {
+            NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
+        }
+        // B1: while lid-closed mode is on, the family's lid symbol, or its active glyph with Kit's bar under it.
+        let lidOn = active && (rt?.lidMode.isOn ?? false)
+        var image: NSImage?
+        if lidOn, let lid = config.lidSymbol() { image = glyph(lid) }
+        if image == nil { image = glyph(config.symbol(active: active)) }
+        if image == nil { image = NSImage(systemSymbolName: AwakeGlyphFamily.cup.idle, accessibilityDescription: nil) }
+        if lidOn, config.lidSymbol() == nil, let base = image { image = Self.lidImage(base) }
         image?.isTemplate = true
         button.image = image
 
@@ -125,18 +130,18 @@ import SnapticKit
                                              endClock: endClock)
         button.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.menuBarFont(ofSize: 0).pointSize, weight: .regular)
         button.title = title.map { " " + $0 } ?? ""
-        var label = AwakeIndicatorText.accessibilityLabel(governing: governing, remaining: rt?.remaining, appName: appName,
-                                                          ruleName: ruleName(governing), holderSummary: rt?.holderSummary)
-        if lidOn { label += L(", even with the lid closed") }
+        let label = AwakeIndicatorText.accessibilityLabel(governing: governing, remaining: rt?.remaining, appName: appName,
+                                                          ruleName: ruleName(governing), holderSummary: rt?.holderSummary,
+                                                          lidModeOn: lidOn)
         button.setAccessibilityLabel(label)
         button.toolTip = label
     }
 
-    /// 0.3.1 B1: the family's active glyph with a short bar under it, a template image at the item's 15 pt (no
-    /// family has a lid symbol of its own yet); visibly not N11's dot on the shared glyph.
+    /// 0.3.1 B1: the family's active glyph with a short bar under it (Kit's ratios of the glyph's height), a template
+    /// image at the item's 15 pt, for a family without a lid symbol; visibly not N11's dot on the shared glyph.
     private static func lidImage(_ base: NSImage) -> NSImage {
-        let bar: CGFloat = 1.5
-        let gap: CGFloat = 1.5
+        let bar = max(1, base.size.height * CGFloat(AwakeGlyphFamily.lidBarHeightRatio))
+        let gap = max(1, base.size.height * CGFloat(AwakeGlyphFamily.lidBarGapRatio))
         let size = NSSize(width: base.size.width, height: base.size.height + bar + gap)
         let image = NSImage(size: size, flipped: false) { rect in
             base.draw(in: NSRect(x: 0, y: bar + gap, width: base.size.width, height: base.size.height))

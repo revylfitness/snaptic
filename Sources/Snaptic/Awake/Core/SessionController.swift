@@ -48,6 +48,8 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
     private var holdLifetimes: [StableID: Lifetime] = [:]
     /// 0.3.1 B1: sessions that had lid-closed mode at some point (History's `lidClosed`); dropped after their end fired.
     private var lidSessions: Set<StableID> = []
+    /// 0.3.1 B1, N19: the manual session restore resumed (not started in this process: it takes the idle lid submenu).
+    private var resumedSessionID: StableID?
     private var holderNames: [StableID: String?] = [:]
 
     private var reminders = AwakeReminders()
@@ -352,8 +354,8 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
     func extend(by seconds: Int, source: AwakeSessionSource) -> Result<AwakeSession, AwakeRefusal> {
         guard let m = manual else { return .failure(.invalid) }
         // 0.3.1 B2: the command line can't lengthen a lid-closed session (it may still end it).
-        if source == .commandLine, m.lidRequested || context?.runtime.lidMode.isOn == true {
-            return .failure(.lidClosedSession)
+        if let refusal = AwakeStartRules.extendRefusal(source: source, lidModeOn: context?.runtime.lidMode.isOn == true) {
+            return .failure(refusal)
         }
         let now = AwakeModule.clockNow()
         guard let extended = AwakeClock.extended(m, by: seconds, now: now) else { return .failure(.invalid) }
@@ -385,6 +387,9 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
 
     /// History's `lidClosed`: the session had lid-closed mode at some point (asked while its end fires).
     func hadLidMode(_ sessionID: StableID) -> Bool { lidSessions.contains(sessionID) }
+
+    /// The running manual session was started in this process, not resumed by restore (`AwakeLidGate.addsToSession`).
+    func startedInProcess(_ sessionID: StableID) -> Bool { manual?.id == sessionID && sessionID != resumedSessionID }
 
     /// Mid-session display toggle: the governing manual session's option, or (for a rule session) an override that
     /// lasts until that rule session ends.
@@ -550,6 +555,7 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
                 if AwakeEndText.isInterruption(reason) { ctx.runtime.lastEnd = AwakeLastEnd(reason: reason, at: Date()) }
             } else {
                 manual = m
+                resumedSessionID = m.id
                 resumeSegment(.session(m), stored: stored, snapshot: snapshot, now: now)
                 reminders = snapshot.reminders
                 usesDefaultOptions = Self.followsDefaults(m, sessions: ctx.config.value.sessions,
@@ -1155,7 +1161,7 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
     /// copy that isn't translocated.
     func availability(of feature: AwakeFeature, context: AwakeContext) -> FeatureAvailability {
         guard feature == .lidClosed else { return .available }
-        if PermissionFlow.isTranslocated { return .unavailable(BundleCopyText.lidTranslocated) }
+        if PermissionFlow.isTranslocated { return .unavailable(AwakeLidText.translocated) }
         return LidSystem.hasLid() ? .available : .unavailable(L("No lid"))
     }
 

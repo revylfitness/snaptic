@@ -385,7 +385,7 @@ import SnapticKit
         var spoken = label
         if active {
             spoken += L(", keeping your Mac awake")
-            if lidClosed { spoken += L(", even with the lid closed") }
+            if lidClosed { spoken += AwakeLidText.statusSuffix }
         }
         button.setAccessibilityLabel(spoken)
         button.toolTip = spoken
@@ -563,8 +563,8 @@ import SnapticKit
     static func leftoverItems(host: ModuleHost) -> [NSMenuItem] {
         guard host.lidRecovery.showsRows else { return [] }
         return [
-            MenuKit.status(L("Sleep Is Turned Off"), control: ControlID("menu.snaptic.lidLeftover")),
-            MenuKit.action(L("Turn Sleep Back On…"), control: ControlID("menu.snaptic.lidRestore")) { [weak host] in
+            MenuKit.status(AwakeLidText.menuLeftover, control: ControlID("menu.snaptic.lidLeftover")),
+            MenuKit.action(AwakeLidText.turnSleepBackOn, control: ControlID("menu.snaptic.lidRestore")) { [weak host] in
                 host?.lidRecovery.turnSleepBackOn()
             },
         ]
