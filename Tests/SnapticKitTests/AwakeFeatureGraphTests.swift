@@ -120,3 +120,26 @@ final class AwakeFeatureGraphTests: XCTestCase {
         }
     }
 }
+
+// MARK: - 0.3.1 B5: lid-closed mode's feature (owner: T-lid-kit)
+
+extension AwakeFeatureGraphTests {
+    func testLidClosedFeature() {
+        let spec = AwakeFeatureGraph.spec(.lidClosed)
+        XCTAssertEqual(spec.requiresAll, [.sessions])
+        XCTAssertEqual(AwakeFeatureGraph.controller(of: .lidClosed), .sessions)
+        XCTAssertFalse(AwakeFeatureGraph.rawState(.lidClosed, in: [:]), "opt-in: off by default")
+        XCTAssertTrue(AwakeFeatureGraph.rawState(.lidClosed, in: [.lidClosed: true]))
+        XCTAssertFalse(AwakeFeatureGraph.unkillable.contains(.lidClosed), "Awake.disable.lidClosed forbids it")
+        XCTAssertTrue(AwakeFeatureGraph.safeModeRemoves.contains(.lidClosed))
+        let raw: [AwakeFeature: Bool] = [.lidClosed: true]
+        XCTAssertTrue(AwakeFeatureGraph.resolve(raw: raw, killSwitches: [], safeMode: false, unavailable: []).contains(.lidClosed))
+        XCTAssertFalse(AwakeFeatureGraph.resolve(raw: raw, killSwitches: [.lidClosed], safeMode: false, unavailable: [])
+            .contains(.lidClosed))
+        XCTAssertFalse(AwakeFeatureGraph.resolve(raw: raw, killSwitches: [], safeMode: true, unavailable: []).contains(.lidClosed))
+        XCTAssertFalse(AwakeFeatureGraph.resolve(raw: raw, killSwitches: [], safeMode: false, unavailable: [.lidClosed])
+            .contains(.lidClosed))
+        XCTAssertEqual(AwakeFeatureLock.of(.lidClosed, killSwitches: [.lidClosed], safeMode: true), .killSwitch)
+        XCTAssertEqual(AwakeFeatureLock.of(.lidClosed, killSwitches: [], safeMode: true), .safeMode)
+    }
+}

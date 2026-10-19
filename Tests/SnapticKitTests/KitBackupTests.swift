@@ -708,3 +708,43 @@ final class KitBackupTests: XCTestCase {
         XCTAssertLessThan(try XCTUnwrap(KitBackup.nestingDepth(doc, limit: KitBackup.maxDepth)), 16)
     }
 }
+
+// MARK: - 0.3.1 B5: lid-closed mode never leaves or enters through a backup (owner: T-lid-kit)
+
+extension KitBackupTests {
+    func testLidClosedIsNeverBackedUp() throws {
+        XCTAssertTrue(KitBackup.removedPaths.contains(["awake", "features", "lidClosed"]))
+        var config = AwakeConfig()
+        config.features[.lidClosed] = true
+        config.features[.history] = true
+        config = config.sanitized()
+        for includeTriggers in [false, true] {
+            let section = object(try XCTUnwrap(KitBackup.awakeSectionData(config, includeTriggers: includeTriggers)))
+            XCTAssertFalse(awakeText(section).contains("lidClosed"))
+            XCTAssertNotNil((section["features"] as? [String: Any])?["history"], "other feature choices still travel")
+        }
+        XCTAssertNil(config.exportable(includeTriggers: true).features[.lidClosed])
+    }
+
+    /// A file that turns lid-closed mode on (or off) changes nothing: the Mac's own choice stays.
+    func testLidClosedImportKeepsTheMacsChoice() throws {
+        for mine in [nil, false, true] as [Bool?] {
+            var current = AwakeConfig()
+            current.features[.lidClosed] = mine
+            current = current.sanitized()
+            for theirs in [false, true] {
+                var hostile = hostileAwake
+                var features = hostile["features"] as? [String: Any] ?? [:]
+                features["lidClosed"] = theirs
+                hostile["features"] = features
+                let file: [String: Any] = ["format": KitBackup.format, "version": 1, "sections": ["awake": hostile]]
+                let parsed = try KitBackup.parseDocument(json(file)).get()
+                XCTAssertFalse(awakeText(object(try XCTUnwrap(parsed["awake"]))).contains("lidClosed"), "stripped on read")
+                for imported in [try XCTUnwrap(parsed["awake"]), json(hostile)] {
+                    let result = try XCTUnwrap(KitBackup.importAwake(current: current, imported: imported))
+                    XCTAssertEqual(result.features[.lidClosed], current.features[.lidClosed], "mine \(String(describing: mine)), file \(theirs)")
+                }
+            }
+        }
+    }
+}

@@ -237,11 +237,17 @@ package enum AwakeLidPolicy {
         return min(end, cap)
     }
 
+    /// The cap ends before the session (or the session has no end): the header names the cap's clock, and the
+    /// 5-minute warning applies (B1).
+    package static func capEndsFirst(until: Double, sessionEnd: Double?) -> Bool {
+        guard let end = sessionEnd, end.isFinite else { return true }
+        return until < end
+    }
+
     /// The 5-minute cap warning is due now (B1): the cap ends before the session, and `now` is within the last five
     /// minutes before it. The app shows it once per turn-on.
     package static func capWarningDue(until: Double, sessionEnd: Double?, now: Double) -> Bool {
-        guard until.isFinite, now.isFinite else { return false }
-        if let end = sessionEnd, end.isFinite, end <= until { return false }
+        guard until.isFinite, now.isFinite, capEndsFirst(until: until, sessionEnd: sessionEnd) else { return false }
         return now >= until - capWarningSeconds && now < until
     }
 
