@@ -1,6 +1,20 @@
 #!/usr/bin/env python3
 """PLAN 0.3 §6.3 lints (lead): L1–L14 with the ratchet, L15 control-table pairing, L16, L17, and TEAMS rule 2
-(closures run by the main queue, a main-queue observer, a timer or KVO wrap `MainActor.assumeIsolated`).
+(closures run by the main queue, a main-queue observer, a timer or KVO wrap `MainActor.assumeIsolated`). PLAN 0.3.1
+(lead, step 0) adds:
+- L16's two lid clauses: `.lidRequested =` only in SessionController.swift and SnapticKit/AwakeSession.swift, and
+  `lidMode =` only in LidClosedController.swift (B2);
+- L18 (B6): the root command's words only in string literals of SnapticKit/LidWatchdog.swift (control tables' search
+  keywords excepted: B7 lists "disablesleep"), `AdminScript(` and
+  `ToolCommand(` only there, and `spawnAdminScript(` / `spawnTool(` called only from LidClosedController.swift and
+  LidRecovery.swift (their definitions in HelperSpawner.swift are exempt);
+- L19 (E6): `import Sparkle` and `SPU…`/`SU…` identifiers (outside string literals) only in Core/UpdaterController.swift,
+  `SU…` key strings only in SnapticKit/UpdatePolicy.swift (UpdateDefaultsKeys), and, once anything imports Sparkle,
+  exactly one Package.swift dependency (sparkle-project/Sparkle, `exact:`, under `#if os(macOS)`) with
+  Package.resolved committed;
+- workflow rules (E3, E6): no `pull_request_target`, `workflow_run` or `set -x`, no `actions/cache` in the `sign` or
+  `publish` jobs, and `gh release` only in the `publish` job (checked once a `publish` job exists: until T-update's
+  pipeline lands, the 0.3 `release` job still publishes).
 
 Run by scripts/lint.sh (which passes LINT_MODE=check|write and LINT_STRICT=0|1). Comments are stripped before
 matching (string literals are kept); counts are occurrences, not lines.
@@ -225,6 +239,77 @@ def self_check():
         got = {name for _, name in contributor_conformers([("SelfCheck.swift", source)])}
         if got != expected:
             problems.append(f"self-check: menu contributors found {sorted(got)} in {source!r}, expected {sorted(expected)}")
+    problems += self_check_031()
+    return problems
+
+
+def self_check_031():
+    """Pins the 0.3.1 rules (L16 lid clauses, L18, L19, workflows) on cases each must report or let pass."""
+    q = '"'
+    problems = []
+    app = "Sources/Snaptic/Awake/UI/SelfCheck.swift"
+    cases = [
+        (l16_lid_file, app, "s.lidRequested = true", True),
+        (l16_lid_file, app, "if s.lidRequested == true {}", False),
+        (l16_lid_file, "Sources/Snaptic/Awake/Core/SessionController.swift", "s.lidRequested = true", False),
+        (l16_lid_file, app, "runtime.lidMode = .off", True),
+        (l16_lid_file, app, "@Published var lidMode: AwakeLidMode = .off", False),
+        (l16_lid_file, "Sources/Snaptic/Awake/Core/LidClosedController.swift", "rt.lidMode = .off", False),
+        (l18_file, app, f"let p = {q}/usr/bin/osascript{q}", True),
+        (l18_file, app, f"let s = {q}do shell script x{q}", True),
+        (l18_file, app, "let p = LidWatchdog.osascriptPath", False),
+        (l18_file, "Sources/SnapticKit/Controls/SelfCheckControls.swift",
+         f"SearchSpec({q}Lid{q}, keywords: [{q}disablesleep{q}], root: r)", False),
+        (l18_file, "Sources/SnapticKit/Controls/SelfCheckControls.swift", f"let k = [{q}disablesleep{q}]", True),
+        (l18_file, app, "let c = ToolCommand(argv: [])", True),
+        (l18_file, LID_WATCHDOG, f"let c = ToolCommand(argv: [{q}/usr/bin/pmset{q}, {q}displaysleepnow{q}])", False),
+        (l18_file, app, "try await spawner.spawnTool(LidWatchdog.displaySleepArgv) { _ in }", True),
+        (l18_file, LID_SPAWN_CALLERS[0], "try await spawner.spawnTool(LidWatchdog.displaySleepArgv) { _ in }", False),
+        (l18_file, LID_SPAWNER, "func spawnTool(_ command: ToolCommand) {}", False),
+        (l18_file, LID_SPAWNER, "_ = spawnAdminScript(x)", True),
+    ]
+    for rule, path, source, flagged in cases:
+        if bool(rule(path, source)) != flagged:
+            problems.append(f"self-check: {rule.__name__} {'missed' if flagged else 'wrongly reported'} {source!r} in {path}")
+    l19_cases = [
+        (app, "import Sparkle", True),
+        (UPDATER, "import Sparkle", False),
+        (app, "let d: SPUStandardUserDriver? = nil", True),
+        (app, f"let s = {q}SUPPORT is here{q}", False),
+        (app, f"let k = {q}SUFeedURL{q}", True),
+        (UPDATE_KEYS, f"let k = {q}SUFeedURL{q}", False),
+        (UPDATER, f"let k = {q}SUFeedURL{q}", True),
+        (app, "let n = EXIT_SUCCESS", False),
+    ]
+    for path, source, flagged in l19_cases:
+        if bool(l19_file(path, source)[0]) != flagged:
+            problems.append(f"self-check: l19_file {'missed' if flagged else 'wrongly reported'} {source!r} in {path}")
+    sparkle = '.package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0")'
+    package_cases = [
+        ("let package = Package(name: \"x\")", False, False, False),
+        ("let package = Package(name: \"x\")", True, False, True),
+        (f"#if os(macOS)\ndeps = [{sparkle}]\n#endif\n", True, True, False),
+        (f"#if os(macOS)\ndeps = [{sparkle}]\n#endif\n", True, False, True),
+        (f"deps = [{sparkle}]\n", True, True, True),
+        ('#if os(macOS)\ndeps = [.package(url: "https://github.com/sparkle-project/Sparkle", from: "2.10.0")]\n#endif\n',
+         True, True, True),
+    ]
+    for manifest, imports, resolved, flagged in package_cases:
+        if bool(l19_package(manifest, imports, resolved)) != flagged:
+            problems.append(f"self-check: l19_package {'missed' if flagged else 'wrongly reported'} {manifest!r}")
+    wf = "on:\n  push:\njobs:\n  build:\n    steps:\n      - run: echo\n  release:\n    steps:\n      - run: gh release view x\n"
+    workflow_cases = [
+        (wf, False),
+        (wf + "  publish:\n    steps:\n      - run: gh release edit x\n", True),
+        (wf.replace("  release:", "  publish:"), False),
+        (wf.replace("push:", "pull_request_target:"), True),
+        (wf.replace("run: echo", "run: set -euxo pipefail"), True),
+        (wf.replace("run: echo", "run: echo set -e # not set -x"), False),
+        (wf + "  sign:\n    steps:\n      - uses: actions/cache@abc\n", True),
+    ]
+    for text, flagged in workflow_cases:
+        if bool(workflow_file("selfcheck.yml", text)) != flagged:
+            problems.append(f"self-check: workflow rules {'missed' if flagged else 'wrongly reported'} {text!r}")
     return problems
 
 
@@ -345,6 +430,7 @@ def unratcheted_problems():
                 problems.append(f"{p}: L16 {m.group(0)!r} is only allowed in Awake/Core/SessionController.swift")
         if p == "Sources/Snaptic/Core/CLIClient.swift" and re.search(r"\bshutdown\(", t):
             problems.append(f"{p}: L16 shutdown( is banned (the client never half-closes)")
+    problems += l16_lid()
     # L17 duplicate keys never trap in Awake.
     for p in SOURCES:
         base = os.path.basename(p)
@@ -353,11 +439,212 @@ def unratcheted_problems():
         if awake and "uniqueKeysWithValues" in TEXT[p]:
             problems.append(f"{p}: L17 uniqueKeysWithValues is banned in Awake (use uniquingKeysWith: {{ first, _ in first }})")
     problems += l15()
+    problems += l18()
+    problems += l19()
+    problems += workflows()
     problems += rule2()
     problems += menu_contributors()
     problems += old_terms()
     problems += straight_apostrophes()
     problems += popup_case()
+    return problems
+
+
+def l16_lid():
+    """PLAN 0.3.1 B2: only SessionController sets a session's `lidRequested`; only LidClosedController assigns the
+    runtime's `lidMode`."""
+    problems = []
+    for p in SOURCES:
+        problems += l16_lid_file(p, TEXT[p])
+    return problems
+
+
+def l16_lid_file(p, t):
+    problems = []
+    if p not in ("Sources/Snaptic/Awake/Core/SessionController.swift", "Sources/SnapticKit/AwakeSession.swift"):
+        for m in re.finditer(r"\.lidRequested\s*=(?!=)", t):
+            problems.append(f"{p}: L16 {m.group(0)!r} is only allowed in SessionController.swift and AwakeSession.swift")
+    if p != "Sources/Snaptic/Awake/Core/LidClosedController.swift":
+        for m in re.finditer(r"(?<![\w$])lidMode\s*=(?!=)", t):
+            problems.append(f"{p}: L16 {m.group(0)!r} is only allowed in Awake/Core/LidClosedController.swift")
+    return problems
+
+
+# PLAN 0.3.1 L18 (B6): what may run as root, and who may ask for it.
+LID_WATCHDOG = "Sources/SnapticKit/LidWatchdog.swift"
+LID_SPAWN_CALLERS = ("Sources/Snaptic/Awake/Core/LidClosedController.swift", "Sources/Snaptic/Core/LidRecovery.swift")
+LID_SPAWNER = "Sources/Snaptic/Core/HelperSpawner.swift"
+L18_WORDS = ("with administrator privileges", "do shell script", "disablesleep", "displaysleepnow", "sleepnow",
+             "/usr/bin/pmset", "osascript", "nohup")
+
+
+def l18():
+    problems = []
+    for p in SOURCES:
+        problems += l18_file(p, TEXT[p])
+    # The Objective-C shims hold no such string either (they have no comment stripper: whole text).
+    for dirpath, _, files in os.walk("Sources/SnapticShims"):
+        for f in sorted(files):
+            if f.endswith((".m", ".h")):
+                path = os.path.join(dirpath, f)
+                text = open(path, encoding="utf-8").read()
+                for word in L18_WORDS:
+                    if word in text:
+                        problems.append(f"{path}: L18 “{word}” is only allowed in {LID_WATCHDOG}")
+    return problems
+
+
+def without_search_specs(t):
+    """`t` with every `SearchSpec(…)` call removed: search keywords are data users type ("disablesleep", B7)."""
+    out, i = [], 0
+    for m in re.finditer(r"\bSearchSpec\(", t):
+        if m.start() < i:
+            continue
+        out.append(t[i:m.start()])
+        i = code_end(t, m.end())
+    out.append(t[i:])
+    return "".join(out)
+
+
+def l18_file(p, t):
+    problems = []
+    if p != LID_WATCHDOG:
+        scanned = without_search_specs(t) if p.startswith("Sources/SnapticKit/Controls/") else t
+        for text, nested, _ in literals_in(scanned):
+            for s in [text] + [n for n, _ in nested]:
+                for word in L18_WORDS:
+                    if word in s.lower():
+                        problems.append(f"{p}: L18 the string “{word}” is only allowed in {LID_WATCHDOG}")
+        for m in re.finditer(r"\b(?:AdminScript|ToolCommand)\(", t):
+            problems.append(f"{p}: L18 {m.group(0)!r} is only allowed in {LID_WATCHDOG}")
+    if p not in LID_SPAWN_CALLERS:
+        for m in re.finditer(r"\b(spawnAdminScript|spawnTool)\(", t):
+            if p == LID_SPAWNER and re.search(r"\bfunc\s+$", t[max(0, m.start() - 16):m.start()]):
+                continue
+            problems.append(f"{p}: L18 {m.group(1)}( may only be called from LidClosedController.swift and "
+                            "LidRecovery.swift")
+    return sorted(set(problems))
+
+
+# PLAN 0.3.1 L19 (E6): Sparkle stays behind one file.
+UPDATER = "Sources/Snaptic/Core/UpdaterController.swift"
+UPDATE_KEYS = "Sources/SnapticKit/UpdatePolicy.swift"
+
+
+def l19():
+    problems = []
+    imports = False
+    for p in SOURCES:
+        file_problems, imported = l19_file(p, TEXT[p])
+        problems += file_problems
+        imports = imports or imported
+    problems += l19_package(open("Package.swift", encoding="utf-8").read() if os.path.exists("Package.swift") else "",
+                            imports, os.path.exists("Package.resolved"))
+    return problems
+
+
+def l19_file(p, t):
+    """(problems, whether `p` imports Sparkle)."""
+    problems = []
+    imported = re.search(r"^\s*(?:@\w+\s+)*import\s+(?:\w+\s+)?Sparkle\b", t, re.M) is not None
+    if p != UPDATER:
+        if imported:
+            problems.append(f"{p}: L19 import Sparkle is only allowed in {UPDATER}")
+        for m in sorted(set(re.findall(r"\b(?:SPU|SU)[A-Z]\w*", without_string_text(t)))):
+            problems.append(f"{p}: L19 Sparkle identifier {m} is only allowed in {UPDATER}")
+    if p != UPDATE_KEYS:
+        for text, nested, _ in literals_in(t):
+            for s in [text] + [n for n, _ in nested]:
+                for m in re.findall(r"(?<![A-Za-z0-9_])SU[A-Z][a-z]\w*", s):   # SUFeedURL, not SUPPORT
+                    problems.append(f"{p}: L19 the Sparkle key “{m}” is only allowed in UpdateDefaultsKeys ({UPDATE_KEYS})")
+    return sorted(set(problems)), imported
+
+
+def l19_package(manifest, imports, resolved):
+    """Once Sparkle is imported (or any dependency declared): exactly one, Sparkle with `exact:`, under
+    `#if os(macOS)`, and Package.resolved committed."""
+    code = strip_comments(manifest)
+    deps = [m.start() for m in re.finditer(r"\.package\(", code)]
+    if not imports and not deps:
+        return []
+    problems = []
+    if len(deps) != 1:
+        problems.append(f"Package.swift: L19 declares {len(deps)} dependencies; exactly one (Sparkle) is allowed")
+    for at in deps:
+        call = code[at:code_end(code, at + len(".package("))]
+        if "sparkle-project/Sparkle" not in call or not re.search(r"\bexact:", call):
+            problems.append("Package.swift: L19 the dependency must be sparkle-project/Sparkle pinned with exact:")
+        inside = False
+        for m in re.finditer(r"^\s*#if\s+os\(macOS\)\s*$", code, re.M):
+            end = code.find("#endif", m.end())
+            if m.end() <= at and (end < 0 or at < end):
+                inside = True
+        if not inside:
+            problems.append("Package.swift: L19 the Sparkle dependency must be declared under #if os(macOS)")
+    if not resolved:
+        problems.append("Package.resolved: L19 must be committed with the Sparkle dependency")
+    return problems
+
+
+# PLAN 0.3.1 E3, E6: workflow hygiene.
+WORKFLOWS = ".github/workflows"
+
+
+def workflow_jobs(text):
+    """{job name: its lines} for a GitHub Actions workflow (jobs are the two-space keys under `jobs:`)."""
+    jobs, current, in_jobs = {}, None, False
+    for line in text.split("\n"):
+        if re.match(r"^jobs:\s*(?:#.*)?$", line):
+            in_jobs = True
+            continue
+        if in_jobs and re.match(r"^\S", line) and not line.startswith("#"):
+            in_jobs, current = False, None
+        if not in_jobs:
+            continue
+        m = re.match(r"^  ([A-Za-z0-9_-]+):\s*(?:#.*)?$", line)
+        if m:
+            current = m.group(1)
+            jobs[current] = []
+        elif current:
+            jobs[current].append(line)
+    return jobs
+
+
+def without_yaml_comment(line):
+    """The line without a trailing `# …` comment (a `#` at the start or after whitespace)."""
+    return re.sub(r"(?:^|\s)#.*$", "", line)
+
+
+def workflows():
+    problems = []
+    if not os.path.isdir(WORKFLOWS):
+        return problems
+    for f in sorted(os.listdir(WORKFLOWS)):
+        if f.endswith((".yml", ".yaml")):
+            path = os.path.join(WORKFLOWS, f)
+            problems += workflow_file(path, open(path, encoding="utf-8").read())
+    return problems
+
+
+def workflow_file(path, text):
+    problems = []
+    lines = [without_yaml_comment(l) for l in text.split("\n")]
+    for n, line in enumerate(lines, 1):
+        if re.search(r"\b(?:pull_request_target|workflow_run)\b", line):
+            problems.append(f"{path}:{n}: workflow trigger pull_request_target / workflow_run is forbidden (E3)")
+        if re.search(r"\bset\s+(?:-[A-Za-z]*x[A-Za-z]*|-o\s+xtrace)\b", line) or re.search(r"\b(?:ba)?sh\s+-[A-Za-z]*x", line):
+            problems.append(f"{path}:{n}: set -x (xtrace) is forbidden in workflows (E3: it prints secrets' derivations)")
+    jobs = workflow_jobs(text)
+    for name in ("sign", "publish"):
+        for line in jobs.get(name, []):
+            if re.search(r"\bactions/cache\b", without_yaml_comment(line)):
+                problems.append(f"{path}: job {name} must not use actions/cache (its output is signed or published)")
+    # "Only publish runs gh release": active once T-update's pipeline has a publish job (until then the 0.3 release
+    # job still publishes).
+    if "publish" in jobs:
+        for name, body in jobs.items():
+            if name != "publish" and any(re.search(r"\bgh\s+release\b", without_yaml_comment(l)) for l in body):
+                problems.append(f"{path}: job {name} runs gh release; only the publish job may (E3)")
     return problems
 
 
