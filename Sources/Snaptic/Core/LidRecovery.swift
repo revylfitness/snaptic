@@ -263,12 +263,6 @@ enum LidRecovery {
         pollTimer = timer
     }
 
-    /// Sleep was found still turned off after lid-closed mode ended (B3.3: the watchdog is gone but the kernel reads
-    /// 1, or the turn-off wait ran out). The journal stays.
-    func markLeftover() {
-        finishWait(restored: false)
-    }
-
     private func poll() {
         guard let until = waitUntil else { return }
         let sleepDisabled = LidSystem.kernelSleepDisabled()
@@ -279,7 +273,8 @@ enum LidRecovery {
         }
         let now = AwakeModule.clockNow().continuous
         guard now >= until else { return }
-        switch AwakeLidPolicy.recheck(sleepDisabled: sleepDisabled) {
+        // Without a Snaptic journal a 1 is someone else's setting (B3.4), never a leftover.
+        switch AwakeLidPolicy.recheck(sleepDisabled: sleepDisabled, journalExists: LidJournalStore.read() != nil) {
         case .clear, .nothing:
             LidJournalStore.remove(token: waitToken)
             finishWait(restored: true)
@@ -355,6 +350,7 @@ enum LidRecovery {
         }
         guard let spawner, let script = LidWatchdog.restoreScript(prompt: LidWatchdog.restorePromptText) else {
             EventLog.shared.record(AwakeLogEvent.lidFailed(.args))
+            toasts?.show(AwakeLidText.couldNotTurnSleepBackOn)
             return
         }
         restoring = true
@@ -369,6 +365,7 @@ enum LidRecovery {
             } catch {
                 EventLog.shared.record(AwakeLogEvent.lidFailed(.spawn))
                 self?.restoring = false
+                self?.toasts?.show(AwakeLidText.couldNotTurnSleepBackOn)
             }
         }
     }
@@ -377,7 +374,13 @@ enum LidRecovery {
         restoring = false
         let output = restoreOutput.map { String(decoding: $0, as: UTF8.self) } ?? ""
         restoreOutput = nil
-        if LidWatchdog.parseRestoreResult(output) == .canceled { return }
+        let outcome = LidWatchdog.parseRestoreResult(output)
+        if outcome == .canceled { return }
+        if AwakeLidPolicy.restoreFailed(outcome) {
+            // The rows stay; say why nothing changed (r1 C4).
+            EventLog.shared.record(AwakeLogEvent.lidFailed(.spawn))
+            toasts?.show(AwakeLidText.couldNotTurnSleepBackOn)
+        }
         // powerd applies the preference to the kernel asynchronously: wait a little for 0.
         watch(token: nil, seconds: 10)
     }

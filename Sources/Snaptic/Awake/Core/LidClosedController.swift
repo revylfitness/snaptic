@@ -127,6 +127,8 @@ final class LidBeacon: @unchecked Sendable {
         /// `.add`: the session the mode joins (gone = superseded).
         let sessionID: StableID?
         let floor: Int
+        /// How far it got: whether an exit keeps and watches the journal (`AwakeLidPolicy.abandonWatches`).
+        var stage: AwakeLidStage = .preflight
         /// Wall time of the spawn (the watchdog must have started after it), and its continuous time.
         var spawnWall: Double = 0
         var spawnContinuous: Double = 0
@@ -149,8 +151,9 @@ final class LidBeacon: @unchecked Sendable {
     private var stopPath: LidStopPath?
     private var emergency: EmergencyActions.Token?
     private var activity: NSObjectProtocol?
-    private var admin: HelperHandle?
-    private var adminOutput: Data?
+    /// osascript's handle and its first line, each keyed by its request's token (r1 A2).
+    private var admin = AwakeLidTokenSlot<HelperHandle>()
+    private var adminOutput = AwakeLidTokenSlot<Data>()
     /// The heartbeat's liveness rule (Kit): the watchdog gone, or SleepDisabled 0 twice in a row.
     private var liveness = AwakeLidLiveness()
     private var capWarned = false
@@ -206,7 +209,7 @@ final class LidBeacon: @unchecked Sendable {
     /// the host-level LidRecoveryState finishes the kernel check (this controller is going away).
     func stop(_ reason: AwakeLidEnd) {
         if let p = pending {
-            admin?.interrupt()
+            admin.value(for: p.token)?.interrupt()
             abandon(p.token, failure: nil, toast: nil)
         }
         if active != nil { end(reason) }
@@ -300,6 +303,8 @@ final class LidBeacon: @unchecked Sendable {
         let journal = AwakeLidJournal(token: token, bootSessionUUID: now.bootSession, startedAtWall: now.wall,
                                       startedAtContinuous: now.continuous, floor: p.floor)
         guard LidJournalStore.write(journal) else { return abandon(token, failure: .beacon, toast: AwakeLidText.couldNotTurnOn) }
+        p.stage = .journaled
+        pending = p
         // 3. The beacon directory, the beacon and the heartbeat (it runs while the dialog waits, too).
         guard let dir = LidSystem.beaconDirectory(), LidSystem.prepareBeaconDirectory(dir) else {
             return abandon(token, failure: .beacon, toast: AwakeLidText.couldNotTurnOn)
@@ -326,47 +331,49 @@ final class LidBeacon: @unchecked Sendable {
         }
         p.spawnWall = Date().timeIntervalSince1970
         p.spawnContinuous = AwakeModule.clockNow().continuous
+        p.stage = .spawned
         pending = p
-        adminOutput = nil
         let handle: HelperHandle
         do {
             handle = try await ctx.host.spawner.spawnAdminScript(script, onLine: { [weak self] line in
-                guard let self, self.pending?.token == token, self.adminOutput == nil else { return }
-                self.adminOutput = line
+                guard let self, self.pending?.token == token, self.adminOutput.value(for: token) == nil else { return }
+                self.adminOutput.put(line, for: token)
             }, onExit: { [weak self] status in
                 self?.adminExited(token, status: status)
             })
         } catch {
+            // The spawner throws only before SIGCONT: osascript never ran.
+            if pending?.token == token { pending?.stage = .journaled }
             return abandon(token, failure: .spawn, toast: AwakeLidText.couldNotTurnOn)
         }
         guard pending?.token == token else {
             handle.interrupt()   // superseded while osascript was being checked
             return
         }
-        if !handle.isReaped { admin = handle }
+        if !handle.isReaped { admin.put(handle, for: token) }
     }
 
     /// 5. osascript's result.
     private func adminExited(_ token: String, status: Int32) {
-        let timedOut = admin?.timedOut ?? false
-        admin = nil
-        let output = adminOutput.map { String(decoding: $0, as: UTF8.self) } ?? ""
-        adminOutput = nil
+        // Only this request's handle and line: a superseded request's late exit leaves the next one's alone (r1 A2).
+        let timedOut = admin.take(token)?.timedOut ?? false
+        let output = adminOutput.take(token).map { String(decoding: $0, as: UTF8.self) } ?? ""
         guard let p = pending, p.token == token, case .authorizing = mode else { return }
         let elapsed = AwakeModule.clockNow().continuous - p.spawnContinuous
         if timedOut || elapsed >= AwakeLidPolicy.osascriptTimeoutSeconds {
             return abandon(token, failure: .timeout, toast: AwakeLidText.couldNotTurnOn)
         }
-        switch AwakeLidPolicy.launchStep(LidWatchdog.parseResult(output)) {
+        let outcome = LidWatchdog.parseResult(output)
+        switch AwakeLidPolicy.launchStep(outcome) {
         case .verify(let pid):
             Task { @MainActor [weak self] in await self?.verify(token, pid: pid) }
         case .canceled:
-            abandon(token, failure: nil, toast: nil)
+            abandon(token, failure: nil, toast: nil, outcome: outcome)
         case .alreadyOff:
-            abandon(token, failure: nil, toast: AwakeLidText.alreadyOff)
+            abandon(token, failure: nil, toast: AwakeLidText.alreadyOff, outcome: outcome)
             startWithoutMode(p)
         case .failed(let stage):
-            abandon(token, failure: stage, toast: AwakeLidText.couldNotTurnOn)
+            abandon(token, failure: stage, toast: AwakeLidText.couldNotTurnOn, outcome: outcome)
         }
     }
 
@@ -460,17 +467,24 @@ final class LidBeacon: @unchecked Sendable {
         }
     }
 
-    /// Every exit from `authorizing` or `verifying` other than into `on` (B3.0): the stop file, the heartbeat stopped,
-    /// the journal kept until the kernel reads 0 (still 1 after 30 s: the leftover rows); one toast at most.
-    private func abandon(_ token: String, failure: AwakeLidFailStage?, toast: String?) {
+    /// Every exit from `authorizing` or `verifying` other than into `on` (B3.0): the stop file, the heartbeat stopped;
+    /// when a watchdog may have run, the journal kept until the kernel reads 0 (still 1 after 30 s: the leftover rows),
+    /// otherwise the journal goes at once and a `SleepDisabled` of 1 stays someone else's (B3.1, B3.4); one toast at
+    /// most. `outcome`: osascript's answer, when there was one.
+    private func abandon(_ token: String, failure: AwakeLidFailStage?, toast: String?,
+                         outcome: LidWatchdog.Outcome? = nil) {
         guard let p = pending, p.token == token else { return }
         pending = nil
         // A stop file only matters once osascript may run, which needs the beacon first.
         if let dir = beacon?.directory { LidSystem.requestStop(dir: dir, token: token) }
         tearDown()
-        if let recovery = context?.host.lidRecovery {
-            recovery.watch(token: token, seconds: AwakeLidPolicy.failedExitPollSeconds)
-        } else if LidSystem.kernelSleepDisabled() == false {
+        if AwakeLidPolicy.abandonWatches(stage: p.stage, outcome: outcome) {
+            if let recovery = context?.host.lidRecovery {
+                recovery.watch(token: token, seconds: AwakeLidPolicy.failedExitPollSeconds)
+            } else if LidSystem.kernelSleepDisabled() == false {
+                LidJournalStore.remove(token: token)
+            }
+        } else if p.stage != .preflight {
             LidJournalStore.remove(token: token)
         }
         if let failure {
@@ -484,7 +498,7 @@ final class LidBeacon: @unchecked Sendable {
     /// A manual start or Turn Off while an idle start is pending supersedes it, silently (B3.0).
     private func supersede() {
         guard let p = pending else { return }
-        admin?.interrupt()
+        admin.value(for: p.token)?.interrupt()
         abandon(p.token, failure: nil, toast: nil)
     }
 
@@ -493,9 +507,6 @@ final class LidBeacon: @unchecked Sendable {
     private func tick(_ token: String, _ t: LidTick) {
         guard let a = active, a.token == token else { return }
         switch liveness.tick(watchdogAlive: t.watchdogGone != true, sleepDisabled: t.sleepDisabled) {
-        case .watchdogLost?:
-            // Gone with sleep still off (or unreadable): nobody will turn it back on.
-            return end(.watchdogLost, leftover: t.sleepDisabled != false)
         case let reason?:
             return end(reason)
         case nil:
@@ -652,7 +663,7 @@ final class LidBeacon: @unchecked Sendable {
 
     // MARK: Ending (B3.3 "Turning off")
 
-    private func end(_ reason: AwakeLidEnd, leftover: Bool = false) {
+    private func end(_ reason: AwakeLidEnd) {
         guard let a = active, let ctx = context else { return }
         active = nil
         let rt = ctx.runtime
@@ -685,15 +696,14 @@ final class LidBeacon: @unchecked Sendable {
         }
         let token = a.token
         guard let recovery = ctx.host.lidRecovery else { return set(.off) }
-        if leftover {
-            // The watchdog is gone and sleep is still off: nobody will turn it back on.
-            recovery.markLeftover()
-            set(.off)
-        } else if quitting {
-            recovery.watch(token: token, seconds: AwakeLidPolicy.failedExitPollSeconds)
+        // A lost watchdog waits too: powerd applies its restore a moment after it exits (r1 A3); still 1 after the
+        // wait shows the leftover rows.
+        let seconds = AwakeLidPolicy.endPollSeconds(reason)
+        if quitting {
+            recovery.watch(token: token, seconds: seconds)
             set(.off)
         } else {
-            recovery.watch(token: token, seconds: AwakeLidPolicy.stopPollSeconds) { [weak self] _ in
+            recovery.watch(token: token, seconds: seconds) { [weak self] _ in
                 guard let self, self.mode.token == token else { return }
                 self.set(.off)
             }

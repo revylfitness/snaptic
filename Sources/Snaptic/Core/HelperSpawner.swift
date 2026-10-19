@@ -356,12 +356,22 @@ final class HelperHandle: @unchecked Sendable {
         let handle = try await spawnLid(.adminScript, path: LidWatchdog.osascriptPath, arguments: ["-e", script.source],
                                         requirement: requirement, onLine: onLine, onExit: onExit)
         // Only osascript is signalled: the watchdog it may have started is detached, and Snaptic never signals it.
-        // osascript gets SIGTERM (its pid only) once nobody answered the password dialog in time (B3.1 step 4).
+        // osascript gets SIGTERM (its pid only) once nobody answered the password dialog in time (B3.1 step 4), then
+        // SIGKILL if it hasn't exited after the grace: one that ignores SIGTERM can't hold `.adminScript`'s single
+        // flight, and with it Turn Sleep Back On…, for the rest of the run (r1 S5). The stop file makes a late
+        // password harmless.
         DispatchQueue.main.asyncAfter(deadline: .now() + AwakeLidPolicy.osascriptTimeoutSeconds) { [weak handle] in
             MainActor.assumeIsolated {
                 guard let handle, !handle.isReaped else { return }
                 handle.markTimedOut()
                 handle.signalProcess(SIGTERM)
+                let grace = AwakeLidPolicy.osascriptKillGraceSeconds
+                DispatchQueue.main.asyncAfter(deadline: .now() + grace) { [weak handle] in
+                    MainActor.assumeIsolated {
+                        guard let handle, !handle.isReaped else { return }
+                        handle.signalProcess(SIGKILL)
+                    }
+                }
             }
         }
         return handle
@@ -403,8 +413,12 @@ final class HelperHandle: @unchecked Sendable {
         let reply = pipe
         var pid: pid_t = 0
         do {
+            // Its own process group (r1 S4): when Snaptic runs from a terminal, the terminal's ^Z, ^\ and ^C go to
+            // the foreground group only, so they never reach osascript or the root shell and watchdog it starts
+            // (they inherit the group; stock macOS has no setsid(1) for the script to leave it itself).
             try SNSpawn.spawnSuspended(path: path, arguments: arguments, environment: Self.lidEnvironment,
-                                       stdinFD: -1, stdoutFD: reply?.write ?? -1, options: [.disclaim], pid: &pid)
+                                       stdinFD: -1, stdoutFD: reply?.write ?? -1,
+                                       options: [.disclaim, .ownProcessGroup], pid: &pid)
         } catch {
             if let reply { close(reply.read); close(reply.write) }
             EventLog.shared.record(.modules, "Helper \(kind.rawValue) failed to spawn")
