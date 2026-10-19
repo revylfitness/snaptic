@@ -125,3 +125,15 @@ workflow rules, each pinned by self-check cases in `self_check_031()`. Workflow 
 only in `publish` (once it exists).
 
 `.github/CODEOWNERS`: `* @frasurebuilds`.
+
+## Lead decisions after step 0 (answers to the step-0 open questions)
+
+1. **API ownership.** A team may change any API in a file it owns. A change to a cross-team shape (`UpdaterControlling`,
+   `LidRecoveryState`, `StatusMenu.leftoverItems` / `updateItems`, `CustomItemRow` flags, `menuSection(tabbed:)`,
+   `menuAttention`, `AwakeMenuStyle`, the Kit lid APIs T-lid-app calls) must stay source-compatible with the step-0
+   signature (add, don't rename or remove), and is listed in the team's final report. The lead reconciles at merge.
+2. **Leftover rows on the Awake page: B3.4 wins.** The rows show even while Awake is turned off (parity m5). T-lid-app
+   makes the view do that; the B7 `when:` on the spec stays as written (the spec doesn't gate the view).
+3. **Update changes reach StatusMenu through `ModuleHost.updaterChanged`** (a `PassthroughSubject<Void, Never>`, added
+   here). T-update sends it on main after every change to `availableUpdate` or `hasPendingQuitInstall`; T-menu
+   subscribes in StatusMenu's init and calls `requestRebuild()`, as for `lidRecovery.objectWillChange`.

@@ -53,6 +53,10 @@ import SnapticKit
     /// 0.3.1 E4: Sparkle's updater, nil when this build doesn't carry Sparkle (ad hoc, from source) or before
     /// `startUpdater()`. Nothing else calls into Sparkle.
     private(set) var updater: (any UpdaterControlling)?
+    /// Fires on main whenever `updater?.availableUpdate` or `hasPendingQuitInstall` changes. It exists before the
+    /// updater starts, so StatusMenu subscribes once at init (as it does for `lidRecovery.objectWillChange`) and only
+    /// marks menus dirty. T-update sends it; T-menu listens.
+    let updaterChanged = PassthroughSubject<Void, Never>()
 
     /// This is the first launch ever (no earlier Snaptic ran for this user).
     let isFirstLaunch: Bool
