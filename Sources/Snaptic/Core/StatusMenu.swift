@@ -15,6 +15,10 @@ import SnapticKit
 ///   them reliably). Each item has a plain `NSMenu` and a stable autosave name, so the system and the user can
 ///   place and hide items independently; everything is also reachable from Settings, shortcuts and the CLI, and
 ///   opening Snaptic again shows Settings (§5.5).
+/// - 0.3.1 Part A: with two or more modules the Snaptic item shows a tab bar and only the selected module's section
+///   (`MenuTabs` decides; the choice is remembered). A tab click swaps exactly that section in the open menu, in the
+///   control's action; everything else still waits for the next open. Host-level rows (Safe Mode, the B3.4 leftover
+///   rows) head every menu above the tabs; the E1 update row sits in the footer above Snaptic Settings….
 @MainActor final class StatusMenu: NSObject, NSMenuDelegate, ControlDeclaring {
     typealias Controls = StatusMenuControls
 
@@ -43,8 +47,29 @@ import SnapticKit
     private var sinks: [AnyCancellable] = []
     /// The plan last applied (nil before `install`).
     private(set) var plan: StatusItemPlan?
-    /// What the providers were last told about Recent Notices.
-    private var providerNotices = false
+    /// What the providers were last told (Recent Notices, the leftover rows, the update row).
+    private var providerFacts = ProviderFacts()
+    /// The Snaptic item's menu is open (a ⌘n item's action may run while it still is: A3, HW-26).
+    private var sharedMenuOpen = false
+
+    // 0.3.1 A2: the tabbed Snaptic menu as built at its last open; empty or nil without tabs.
+    /// The tabs, in `plan.shared` order.
+    private var tabs: [ModuleID] = []
+    /// The tab shown (the stored choice, or the first tab when that module isn't a tab now).
+    private var selectedTab: ModuleID?
+    private var tabBarItem: NSMenuItem?
+    /// Exactly the items inserted for the selected section (a tab switch removes these and nothing else).
+    private var sectionItems: [NSMenuItem] = []
+    /// The separator above the footer: a switch inserts the new section before it.
+    private var footerSeparator: NSMenuItem?
+    /// The footer's Show … Tab items, in tab order (⌘1…⌘n).
+    private var showTabItems: [NSMenuItem] = []
+
+    private struct ProviderFacts: Equatable {
+        var notices = false
+        var leftover = false
+        var update = false
+    }
 
     init(host: ModuleHost) {
         self.host = host
@@ -114,6 +139,25 @@ import SnapticKit
                 .dropFirst()
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _ in MainActor.assumeIsolated { self?.requestRebuild() } }
+                .store(in: &sinks)
+            // 0.3.1: the host-level rows. B3.4's leftover rows (LidRecovery) and E1's update row (the updater; lead
+            // decision 3) are read when a menu is built, so a change marks every menu dirty and re-tells the providers.
+            // The main-queue hop also lets `objectWillChange` land before the rows are read.
+            host.lidRecovery.objectWillChange
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in MainActor.assumeIsolated { self?.requestRebuild() } }
+                .store(in: &sinks)
+            host.updaterChanged
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in MainActor.assumeIsolated { self?.requestRebuild() } }
+                .store(in: &sinks)
+            // B1: the Snaptic glyph's N11 label says ", even with the lid closed" while lid-closed mode is on.
+            host.awake.runtime.$lidMode
+                .map(\.isOn)
+                .removeDuplicates()
+                .dropFirst()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in MainActor.assumeIsolated { self?.applyPlan() } }
                 .store(in: &sinks)
         }
         applyAwakePresenceFallback()
@@ -198,7 +242,7 @@ import SnapticKit
             shared = slot
             let ownIcons = plan.ownIcon.map { host.module($0) }
             setIcon(slot, symbol: MenuPlacement.sharedSymbol(in: config, ownIcons: ownIcons), label: L("Snaptic"),
-                    active: plan.sharedActiveGlyph)
+                    active: plan.sharedActiveGlyph, lidClosed: host.awake.lidModeOn)
         } else if let slot = shared {
             NSStatusBar.system.removeStatusItem(slot.item)
             shared = nil
@@ -221,23 +265,33 @@ import SnapticKit
 
     /// Every provider learns what its item should be (also modules that don't run: their item goes away).
     private func applyProviderRows(_ plan: StatusItemPlan, config: ModulesConfig, host: ModuleHost) {
-        let notices = !host.toasts.recent.isEmpty
-        providerNotices = notices
+        let facts = providerFacts(plan, host: host)
+        providerFacts = facts
         for module in host.modules {
             guard let provider = module as? StatusItemProvider else { continue }
-            provider.applyStatusItem(CustomItemRow(exists: plan.custom.contains(module.id),
-                                                   presence: config.presence(module.id),
-                                                   footer: plan.sharedFooterInOwnMenus, recentNotices: notices))
+            var row = CustomItemRow(exists: plan.custom.contains(module.id), presence: config.presence(module.id),
+                                    footer: plan.sharedFooterInOwnMenus, recentNotices: facts.notices)
+            row.leftover = facts.leftover
+            row.updateAvailable = facts.update
+            provider.applyStatusItem(row)
         }
     }
 
-    /// Marks every menu dirty; each rebuilds when it next opens. Providers whose footer shows Recent Notices hear
-    /// about notices appearing or going away.
+    /// What a provider's menu adds from the host: Recent Notices and the update row only with the shared footer
+    /// (E1: own and Awake menus carry the update row only where they carry that footer); the leftover rows always.
+    private func providerFacts(_ plan: StatusItemPlan, host: ModuleHost) -> ProviderFacts {
+        ProviderFacts(notices: !host.toasts.recent.isEmpty,
+                      leftover: host.lidRecovery.showsRows,
+                      update: plan.sharedFooterInOwnMenus && host.updater?.availableUpdate != nil)
+    }
+
+    /// Marks every menu dirty; each rebuilds when it next opens. Providers hear about Recent Notices, the leftover
+    /// rows or the update row appearing or going away.
     func requestRebuild() {
         shared?.dirty = true
         for slot in own.values { slot.dirty = true }
         guard let host, let plan, openMenus == 0, !planPending,
-              (!host.toasts.recent.isEmpty) != providerNotices else { return }
+              providerFacts(plan, host: host) != providerFacts else { return }
         applyProviderRows(plan, config: host.modulesStore.value, host: host)
     }
 
@@ -250,23 +304,31 @@ import SnapticKit
         if let screenToken { NotificationCenter.default.removeObserver(screenToken) }
         screenToken = nil
         plan = nil
+        resetTabs()
     }
 
     // MARK: NSMenuDelegate
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         host?.permissions.refresh()
-        guard let slot = slot(for: menu), slot.dirty else { return }
-        build(slot)
-        slot.dirty = false
+        guard let slot = slot(for: menu) else { return }
+        if slot.dirty {
+            build(slot)
+            slot.dirty = false
+        }
+        // A3: Full Keyboard Access posts no change notification, so the Show … Tab items are re-checked on every
+        // open; a property change, not a rebuild.
+        if slot.module == nil { updateShowTabItems() }
     }
 
     func menuWillOpen(_ menu: NSMenu) {
         openMenus += 1
+        if menu === shared?.menu { sharedMenuOpen = true }
     }
 
     func menuDidClose(_ menu: NSMenu) {
         openMenus = max(0, openMenus - 1)
+        if menu === shared?.menu { sharedMenuOpen = false }
         // Nothing structural here: the chosen item's action hasn't run yet (R3C §5.6).
         if planPending && openMenus == 0 {
             DispatchQueue.main.async { [weak self] in
@@ -279,9 +341,19 @@ import SnapticKit
         MenuKit.menu(menu, willHighlight: item)
     }
 
+    /// A3: ⌘1…⌘n in the open Snaptic menu answer with that position's Show … Tab item. Everything else is false, as
+    /// in 0.3: AppKit's key-equivalent scans must not trigger rebuilds (R4C §4.6), and this never builds anything.
     func menuHasKeyEquivalent(_ menu: NSMenu, for event: NSEvent, target: AutoreleasingUnsafeMutablePointer<AnyObject?>,
                               action: UnsafeMutablePointer<Selector?>) -> Bool {
-        false   // AppKit's key-equivalent scans must not trigger rebuilds
+        guard openMenus > 0, menu === shared?.menu, !showTabItems.isEmpty, event.type == .keyDown else { return false }
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        guard let n = MenuTabs.keyIndex(characters: event.charactersIgnoringModifiers, keyCode: event.keyCode,
+                                        commandOnly: modifiers == .command, tabCount: showTabItems.count),
+              showTabItems.indices.contains(n - 1) else { return false }
+        let item = showTabItems[n - 1]
+        target.pointee = item.target
+        action.pointee = item.action
+        return true
     }
 
     // MARK: Items
@@ -299,8 +371,8 @@ import SnapticKit
     }
 
     /// The template glyph; `active` (N11: Awake governs) uses the `.fill` variant, or the glyph with a dot, and
-    /// says so in the accessibility label.
-    private func setIcon(_ slot: Slot, symbol: String, label: String, active: Bool) {
+    /// says so in the accessibility label, with ", even with the lid closed" while lid-closed mode is on (B1).
+    private func setIcon(_ slot: Slot, symbol: String, label: String, active: Bool, lidClosed: Bool = false) {
         guard let button = slot.item.button else { return }
         let base = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
             ?? NSImage(systemSymbolName: MenuPlacement.defaultSharedSymbol, accessibilityDescription: label)
@@ -310,7 +382,11 @@ import SnapticKit
         }
         image?.isTemplate = true
         button.image = image
-        let spoken = active ? label + L(", keeping your Mac awake") : label
+        var spoken = label
+        if active {
+            spoken += L(", keeping your Mac awake")
+            if lidClosed { spoken += L(", even with the lid closed") }
+        }
         button.setAccessibilityLabel(spoken)
         button.toolTip = spoken
     }
@@ -345,31 +421,64 @@ import SnapticKit
     private func build(_ slot: Slot) {
         let menu = slot.menu
         menu.removeAllItems()
+        if slot.module == nil { resetTabs() }
         guard let host else { return }
         let config = host.modulesStore.value
         let plan = self.plan ?? currentPlan(host)
 
         var groups: [[NSMenuItem]] = []
-        if host.safeMode.isActive { groups.append(safeModeRows(host)) }
+        // The host safety group heads every menu, above any tabs (A1, B3.4).
+        groups.append(hostSafetyRows(host))
+        var minimumWidth: CGFloat?
+        let tabs = slot.module == nil ? MenuTabs.tabs(plan: plan) : []
         if let id = slot.module {
             groups.append(section(id, host: host, header: false))
             groups.append(ownFooter(id, host: host, config: config, plan: plan))
+        } else if !tabs.isEmpty {
+            let stored = UserDefaults.standard.string(forKey: MenuTabs.defaultsKey)
+            let selected = MenuTabs.selected(stored: stored, tabs: tabs) ?? tabs[0]
+            // A2 width: the widest tab sets the minimum, so a switch never widens the open menu and the segment
+            // never moves under the pointer.
+            let width = max(MenuKit.width, widestSection(tabs, host: host))
+            minimumWidth = width
+            let bar = tabBar(tabs, selected: selected, host: host, width: width)
+            let items = tabSection(selected, host: host)
+            showTabItems = makeShowTabItems(tabs, selected: selected, host: host)
+            self.tabs = tabs
+            selectedTab = selected
+            tabBarItem = bar
+            sectionItems = items
+            groups.append([bar])
+            groups.append(items)
+            groups.append(sharedFooter(host: host, config: config, plan: plan, showTabItems: showTabItems))
         } else {
             if plan.noModulesEnabled {
                 groups.append([MenuKit.status(L("No Modules Are On"), control: ControlID("menu.snaptic.noModules"))])
             }
             for id in plan.shared {
-                // The compact Awake section has no header (§5.4).
+                // One module: its 0.3 section, with its header; the compact Awake section has none (§5.4).
                 groups.append(section(id, host: host, header: id != .awake, compact: id == .awake))
             }
-            groups.append(sharedFooter(host: host, config: config, plan: plan))
+            groups.append(sharedFooter(host: host, config: config, plan: plan, showTabItems: []))
         }
 
-        for group in groups where !group.isEmpty {
-            if !menu.items.isEmpty { menu.addItem(MenuKit.separator()) }
+        let nonEmpty = groups.filter { !$0.isEmpty }
+        for (index, group) in nonEmpty.enumerated() {
+            if !menu.items.isEmpty {
+                let separator = MenuKit.separator()
+                menu.addItem(separator)
+                // The footer is always the last group: a tab switch inserts the new section above this separator.
+                if index == nonEmpty.count - 1, !tabs.isEmpty { footerSeparator = separator }
+            }
             for item in group { menu.addItem(item) }
         }
-        menu.minimumWidth = MenuKit.hasCustomRows(menu) ? MenuKit.width : 0
+        menu.minimumWidth = minimumWidth ?? (MenuKit.hasCustomRows(menu) ? MenuKit.width : 0)
+        if slot.module == nil { updateShowTabItems() }
+    }
+
+    /// Safe Mode's rows, then the B3.4 leftover rows: one group, first in every menu and above the tabs.
+    private func hostSafetyRows(_ host: ModuleHost) -> [NSMenuItem] {
+        (host.safeMode.isActive ? safeModeRows(host) : []) + Self.leftoverItems(host: host)
     }
 
     private func safeModeRows(_ host: ModuleHost) -> [NSMenuItem] {
@@ -385,11 +494,13 @@ import SnapticKit
 
     /// A module's section without leading, trailing or doubled separators; empty when it has nothing to show. The
     /// compact Awake section in the Snaptic item has no internal separators either (§5.4: the switch header's height
-    /// sets the group apart).
-    private func section(_ id: ModuleID, host: ModuleHost, header: Bool, compact: Bool = false) -> [NSMenuItem] {
+    /// sets the group apart). `tabbed`: the section for a tab (A4; Awake's full rows, style `tab`).
+    private func section(_ id: ModuleID, host: ModuleHost, header: Bool, compact: Bool = false,
+                         tabbed: Bool = false) -> [NSMenuItem] {
         let module = host.module(id)
         var items: [NSMenuItem] = []
-        for item in module.menuSection() where !(item.isSeparatorItem && (compact || (items.last?.isSeparatorItem ?? true))) {
+        for item in module.menuSection(tabbed: tabbed)
+        where !(item.isSeparatorItem && (compact || (items.last?.isSeparatorItem ?? true))) {
             item.menu?.removeItem(item)
             items.append(item)
         }
@@ -399,11 +510,16 @@ import SnapticKit
         return [MenuKit.header(module.title, control: ControlID("menu.snaptic.sectionHeader"))] + items
     }
 
-    /// Snaptic item footer: the upgrade item, Recent Notices ›, Snaptic Settings…, Quit Snaptic.
-    private func sharedFooter(host: ModuleHost, config: ModulesConfig, plan: StatusItemPlan) -> [NSMenuItem] {
+    /// Snaptic item footer: the upgrade item, Recent Notices ›, the Show … Tab items (A3; hidden unless an assistive
+    /// input is in use), the update row (E1, directly above Settings whenever the tab items are hidden), Snaptic
+    /// Settings…, Quit Snaptic.
+    private func sharedFooter(host: ModuleHost, config: ModulesConfig, plan: StatusItemPlan,
+                              showTabItems: [NSMenuItem]) -> [NSMenuItem] {
         var items: [NSMenuItem] = []
         if let upgrade = upgradeItem(host: host, config: config) { items.append(upgrade) }
         if let notices = recentNotices(host) { items.append(notices) }
+        items += showTabItems
+        items += Self.updateItems(host: host)
         let page = plan.noModulesEnabled ? SettingsRootID.general : nil
         items.append(MenuKit.settings(L("Snaptic Settings…"), control: ControlID("menu.snaptic.settings")) { [weak host] in
             host?.openSettings(page: page)
@@ -412,8 +528,8 @@ import SnapticKit
         return items
     }
 
-    /// Own-icon footer: "<Module> Settings…", then (Snaptic item absent) the upgrade item, Recent Notices › and
-    /// Quit Snaptic (§5.2).
+    /// Own-icon footer: "<Module> Settings…", then (Snaptic item absent) the upgrade item, Recent Notices ›, the
+    /// update row (E1: only where the shared footer is) and Quit Snaptic (§5.2).
     private func ownFooter(_ id: ModuleID, host: ModuleHost, config: ModulesConfig, plan: StatusItemPlan) -> [NSMenuItem] {
         let module = host.module(id)
         // The module's sidebar root (its id): "Displays Settings…" opens Settings › Displays.
@@ -424,6 +540,7 @@ import SnapticKit
         guard plan.sharedFooterInOwnMenus else { return items }
         if let upgrade = upgradeItem(host: host, config: config) { items.append(upgrade) }
         if let notices = recentNotices(host) { items.append(notices) }
+        items += Self.updateItems(host: host)
         items.append(MenuKit.quit(control: ControlID("menu.snaptic.quit")))
         return items
     }
@@ -458,14 +575,129 @@ import SnapticKit
     static func updateItems(host: ModuleHost) -> [NSMenuItem] {
         guard let updater = host.updater, let offer = updater.availableUpdate else { return [] }
         let title = offer.readyToRestart ? L("Restart to Update Snaptic…")
-            : L("Update Available: Snaptic ") + offer.version + "…"
+            : L("Update Available: Snaptic \(offer.version)…")
         return [MenuKit.action(title, control: ControlID("menu.snaptic.updateAvailable")) { [weak updater] in
             updater?.installUpdate()
         }]
     }
 
-    /// A6: the tab bar and the Show … Tab items. Step 0 stub: T-menu builds them in step 1 (and deletes this list).
-    private static let step0Controls = [ControlID("menu.snaptic.tabs"), ControlID("menu.snaptic.showTab")]
+    // MARK: Tabs (0.3.1 A1–A5)
+
+    private func resetTabs() {
+        tabs = []
+        selectedTab = nil
+        tabBarItem = nil
+        sectionItems = []
+        footerSeparator = nil
+        showTabItems = []
+    }
+
+    /// The section a tab shows: `menuSection(tabbed: true)` without a header (the tab names it), or "Nothing to Show"
+    /// when the module has nothing (it stopped while the menu was open), so the groups stay single-separated.
+    private func tabSection(_ id: ModuleID, host: ModuleHost) -> [NSMenuItem] {
+        let items = section(id, host: host, header: false, tabbed: true)
+        return items.isEmpty ? [MenuKit.status(MenuTabs.emptySection)] : items
+    }
+
+    /// A2: the widest tab section, measured in a scratch menu. Its items are removed right after, so nothing keeps
+    /// refreshing them (Awake prunes its live headers by `menu == nil`; sliders' sinks die with their rows). Every tab's
+    /// `menuSection(tabbed:)` is cheap and free of side effects (A2), so the selected one is built again to show it.
+    private func widestSection(_ tabs: [ModuleID], host: ModuleHost) -> CGFloat {
+        let scratch = NSMenu()
+        scratch.autoenablesItems = false
+        var widest: CGFloat = 0
+        for id in tabs {
+            for item in tabSection(id, host: host) { scratch.addItem(item) }
+            widest = max(widest, scratch.size.width)
+            scratch.removeAllItems()
+        }
+        return widest
+    }
+
+    /// The tab bar: module titles (short ones when they don't fit), the attention marks (`menuAttention`), and
+    /// ", on" for Awake while it governs (no active image: N11's glyph already shows it).
+    private func tabBar(_ tabs: [ModuleID], selected: ModuleID, host: ModuleHost, width: CGFloat) -> NSMenuItem {
+        let modules = tabs.map { host.module($0) }
+        let flags = Dictionary(modules.map { ($0.id, $0.menuAttention) }, uniquingKeysWith: { $0 || $1 })
+        let marked = MenuTabs.attention(flags, tabs: tabs)
+        let governing = host.awake.runtime.governing != .inactive
+        return MenuKit.tabBar(labels: modules.map { MenuTabLabel(title: $0.title, shortTitle: $0.id.shortTitle) },
+                              selected: tabs.firstIndex(of: selected) ?? 0,
+                              attention: Set(tabs.indices.filter { marked.contains(tabs[$0]) }),
+                              active: governing ? tabs.firstIndex(of: .awake) : nil,
+                              width: width, control: ControlID("menu.snaptic.tabs")) { [weak self] index in
+            self?.tabClicked(index)
+        }
+    }
+
+    /// A3: the native twin of each tab, "Show Displays Tab" with ⌘n by position; the shown tab is checked.
+    private func makeShowTabItems(_ tabs: [ModuleID], selected: ModuleID, host: ModuleHost) -> [NSMenuItem] {
+        tabs.prefix(MenuTabs.maxKeyIndex).enumerated().map { index, id in
+            let item = MenuKit.action(MenuTabs.showTabTitle(host.module(id).title), key: String(index + 1),
+                                      control: ControlID("menu.snaptic.showTab")) { [weak self] in
+                self?.showTabChosen(id)
+            }
+            item.allowsKeyEquivalentWhenHidden = true
+            item.state = id == selected ? .on : .off
+            return item
+        }
+    }
+
+    /// A3: the Show … Tab items show only while VoiceOver, Switch Control or Full Keyboard Access is in use; hidden,
+    /// their ⌘n still works.
+    private func updateShowTabItems() {
+        let workspace = NSWorkspace.shared
+        let assistive = workspace.isVoiceOverEnabled || workspace.isSwitchControlEnabled
+            || NSApp.isFullKeyboardAccessEnabled
+        for item in showTabItems { item.isHidden = !assistive }
+    }
+
+    /// A5: the choice is remembered across opens and relaunches.
+    private static func storeTab(_ id: ModuleID) {
+        UserDefaults.standard.set(id.rawValue, forKey: MenuTabs.defaultsKey)
+    }
+
+    /// A segment was chosen (mouse or VoiceOver), in the control's action: remember it and switch in place.
+    private func tabClicked(_ index: Int) {
+        guard tabs.indices.contains(index) else { return }
+        let id = tabs[index]
+        Self.storeTab(id)
+        showTab(id)
+    }
+
+    /// A Show … Tab item or ⌘n: remember the choice and show it at the next open. AppKit normally closes the menu
+    /// before an item's action runs; if the Snaptic menu is still open (HW-26: tracking continued after ⌘n), the tab
+    /// switches in place instead.
+    private func showTabChosen(_ id: ModuleID) {
+        Self.storeTab(id)
+        shared?.dirty = true
+        if sharedMenuOpen { showTab(id) }
+    }
+
+    /// A2: switches the open Snaptic menu to `id`. Only `sectionItems` are removed, and the new section goes above
+    /// the footer's separator; no `cancelTracking()` (it would end all menu tracking; removing an item closes its
+    /// open submenu: HW-24), no timers and no run-loop perform (N15). Rows that are removed are never under the
+    /// pointer (the pointer is on the tab bar), so R2C c12 doesn't apply.
+    private func showTab(_ id: ModuleID) {
+        guard let host, let menu = shared?.menu, id != selectedTab, let index = tabs.firstIndex(of: id),
+              let tabBarItem, tabBarItem.menu === menu,
+              let footerSeparator, footerSeparator.menu === menu else { return }
+        for item in sectionItems where item.menu === menu { menu.removeItem(item) }
+        let items = tabSection(id, host: host)
+        var at = menu.index(of: footerSeparator)
+        for item in items {
+            menu.insertItem(item, at: at)
+            at += 1
+        }
+        sectionItems = items
+        selectedTab = id
+        for (position, item) in showTabItems.enumerated() { item.state = position == index ? .on : .off }
+        if let view = tabBarItem.view as? MenuTabBarView {
+            if view.selectedIndex != index { view.select(index) }
+            // NSMenu has no public window accessor; the bar's window is the menu's.
+            NSAccessibility.post(element: view.window ?? view, notification: .layoutChanged)
+        }
+    }
 
     private func recentNotices(_ host: ModuleHost) -> NSMenuItem? {
         let recent = host.toasts.recent
