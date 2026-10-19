@@ -166,10 +166,7 @@ final class SettingsHelpAnchorsTests: XCTestCase {
 
     /// Headings the README doesn't have yet: the docs step (lead, step 5) adds them, then removes them here. Once a
     /// heading exists this test fails until it is removed from the list, so the list only shrinks.
-    private static let awaitingREADME: Set<String> = [
-        "General", "Menu Bar", "Brightness and Dimming", "Hardware Controls", "Color", "Keyboard",
-        "Display Information", "Awake",
-    ]
+    private static let awaitingREADME: Set<String> = []
 
     /// Review round 2 ux N4: every (?) anchor is a real heading of README.md (no "#anchor" that lands on the top).
     func testEveryAnchorIsAReadmeHeading() throws {
