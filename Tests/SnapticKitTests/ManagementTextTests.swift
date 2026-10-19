@@ -5,15 +5,17 @@ import XCTest
 /// labels, toasts, Display Information sections, new virtual display names) use the 0.3 words, not 0.2's.
 final class ManagementTextTests: XCTestCase {
     private var userTexts: [String] {
-        let toggles: [String] = DisplaysToggleText.withMenuItems.map { $0.title }
-        return toggles + ManagementText.all
-            + RecipeKind.allCases.flatMap { [$0.title, $0.summary] }
-            + VirtualHostFailure.allCases.map(\.message)
-            + [VirtualHostSpawnFailure.helpersStarting, .helpersUnavailable(""), .appChanged, .checkFailed,
-               .launchFailed].map(\.message)
-            + [Recipes.spec(for: .headless).name, VirtualScreenSpec(id: StableID(), name: " ", aspectWidth: 16,
-                                                                    aspectHeight: 9, sizeInches: 27, hiDPI: true,
-                                                                    modes: []).sanitized().name]
+        var texts: [String] = ManagementText.all
+        texts += DisplaysToggleText.withMenuItems.map { $0.title }
+        texts += RecipeKind.allCases.flatMap { [$0.title, $0.summary] }
+        texts += VirtualHostFailure.allCases.map(\.message)
+        let spawn: [VirtualHostSpawnFailure] = [.helpersStarting, .helpersUnavailable(""), .appChanged, .checkFailed,
+                                                .launchFailed]
+        texts += spawn.map(\.message)
+        texts.append(Recipes.spec(for: .headless).name)
+        texts.append(VirtualScreenSpec(id: StableID(), name: " ", aspectWidth: 16, aspectHeight: 9, sizeInches: 27,
+                                       hiDPI: true, modes: []).sanitized().name)
+        return texts
     }
 
     func testNoRetiredWords() {
