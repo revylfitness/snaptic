@@ -175,7 +175,8 @@ struct CustomSessionPanel: View, ControlDeclaring {
                 self.close()
             },
             onCancel: { [weak self] in self?.close() })
-        view.lidAvailable = mode == .start && ctx.runtime.isEffective(.lidClosed)
+        view.lidAvailable = mode == .start
+            && AwakeLidPolicy.customToggleShown(effective: ctx.runtime.isEffective(.lidClosed), mode: ctx.lid.mode)
         view.initialLidClosed = lidClosed
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 220),
                             styleMask: [.titled, .closable], backing: .buffered, defer: true)
@@ -206,11 +207,17 @@ struct CustomSessionPanel: View, ControlDeclaring {
         var options = ctx.config.value.sessions.effectiveOptions(for: kind, preset: nil,
                                                                   effective: ctx.runtime.effectiveFeatures)
         options.display = keepDisplayOn ? (options.display == .maySleep ? .keepOn : options.display) : .maySleep
-        if lid {
+        // The mode may have changed while the panel was open: never close it without starting or saying why (r1 A4).
+        switch AwakeLidPolicy.customStart(lidToggle: lid, mode: ctx.lid.mode) {
+        case .request:
             // B3.1: the password first; the session starts once the mode is verified on (Cancel starts nothing).
             ctx.lid.request(.custom(kind, options), source: source)
-        } else {
+        case .plain:
+            // With the mode on, this menu or Settings start replaces the session and the mode carries over (B2).
             _ = ctx.sessions.start(kind, options: options, presetID: nil, source: source, overrideGuards: false)
+        case .pending(let state):
+            ctx.host.toasts.show(AwakeLidText.rowTitle(state))
+            return
         }
         close()
     }

@@ -46,8 +46,8 @@ import SnapticKit
         items(style: compact ? .compact : .own, footer: footer)
     }
 
-    /// The rows in `style` (0.3.1 A4). `footerExtras` (the shared footer's Update Available row, E1) open the own
-    /// menu's footer group.
+    /// The rows in `style` (0.3.1 A4). `footerExtras` (the shared footer's Update Available row, E1) go between the
+    /// own menu's Recent Notices › and Quit Snaptic.
     func items(style: AwakeMenuStyle, footer: Bool = false, footerExtras: [NSMenuItem] = []) -> [NSMenuItem] {
         headers.removeAll { $0.item.menu == nil }
         guard let ctx = context else { return [] }
@@ -291,10 +291,10 @@ import SnapticKit
                                        waitingName: name(rt.waitingTriggerIDs.first))
     }
 
-    /// Own menu without the Snaptic item (§5.2): Recent Notices › (when there are some) and Quit Snaptic, after
-    /// `extras` (0.3.1 E1: the Update Available row the shared footer carries).
+    /// Own menu without the Snaptic item (§5.2): Recent Notices › (when there are some), `extras` (0.3.1 E1: the
+    /// Update Available row the shared footer carries) and Quit Snaptic, in `StatusMenu.ownFooter`'s order (r1 U4).
     private func footerItems(_ ctx: AwakeContext, extras: [NSMenuItem]) -> [NSMenuItem] {
-        var out: [NSMenuItem] = extras
+        var out: [NSMenuItem] = []
         let recent = ctx.host.toasts.recent
         if !recent.isEmpty {
             var rows = recent.reversed().map { MenuKit.status($0, control: ControlID("menu.awake.notice")) }
@@ -304,6 +304,7 @@ import SnapticKit
             })
             out.append(MenuKit.submenu(L("Recent Notices"), control: ControlID("menu.awake.recentNotices"), rows))
         }
+        out += extras
         out.append(MenuKit.quit(control: ControlID("menu.awake.quit")))
         return out
     }

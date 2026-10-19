@@ -840,7 +840,8 @@ package enum AwakeLidRoute: String, CaseIterable, Sendable {
     case featureOff
     /// On and available: choose it in the Awake menu.
     case available
-    /// Translocated, no lid (or no battery): the 0.3 text.
+    /// Translocated, no lid, no battery, the kill switch, or Safe Mode (the Advanced toggle is missing or locked):
+    /// the 0.3 text.
     case unavailable
 }
 
@@ -963,6 +964,14 @@ package enum AwakeLidText {
     package static let keepSleepOff = L("Keep Sleep Off")
     package static let notNow = L("Not Now")
     package static let openAwakeSettings = L("Open Awake Settings…")
+    /// Turn Sleep Back On… couldn't run or its script failed (r1 C4); Cancel is silent.
+    package static let couldNotTurnSleepBackOn = L("Snaptic couldn’t turn sleep back on. Try again.")
+
+    /// The menus' Turn Sleep Back On… row (r1 U7): while a restore waits for its password it shows the B0 pending
+    /// text and is disabled, like the Awake page's buttons.
+    package static func restoreRow(restoring: Bool) -> (title: String, enabled: Bool) {
+        restoring ? (rowTitle(.authorizing), false) : (turnSleepBackOn, true)
+    }
 
     // MARK: History (B1)
 

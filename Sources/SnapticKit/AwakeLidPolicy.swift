@@ -168,6 +168,52 @@ package enum AwakeLidLaunchStep: Equatable, Sendable {
     case failed(AwakeLidFailStage)
 }
 
+/// How far a turn-on request got before it ended other than in `on` (B3.0, B3.1): it decides whether the journal is
+/// kept and watched (`AwakeLidPolicy.abandonWatches`).
+package enum AwakeLidStage: Equatable, Sendable {
+    /// The preflight: no journal yet.
+    case preflight
+    /// The journal is written; osascript hasn't been started (or never ran).
+    case journaled
+    /// osascript was started: the password may have been entered.
+    case spawned
+}
+
+/// What the Custom… panel's Start… does with "Keep awake with the lid closed" (B1, B2, B3.0).
+package enum AwakeLidCustomStart: Equatable, Sendable {
+    /// Ask for the password; the session starts once the mode is on.
+    case request
+    /// Start the session as usual: the toggle is off, or the mode is on and carries over (B2 "keep").
+    case plain
+    /// Another lid request is under way: its B0 text as a toast, and the panel stays open.
+    case pending(LidRowState)
+}
+
+/// A value that belongs to one turn-on request: a superseded request's late callback can't read or clear the next
+/// request's (r1 A2: osascript's handle and its first line).
+package struct AwakeLidTokenSlot<Value> {
+    package private(set) var token: String?
+    private var value: Value?
+
+    package init() {}
+
+    /// `token`'s value, replacing whatever the slot held.
+    package mutating func put(_ value: Value, for token: String) {
+        self.token = token
+        self.value = value
+    }
+
+    /// The value while the slot is `token`'s.
+    package func value(for token: String) -> Value? { self.token == token ? value : nil }
+
+    /// The value, and the slot emptied, only while it is `token`'s; another token's value stays.
+    package mutating func take(_ token: String) -> Value? {
+        guard self.token == token else { return nil }
+        defer { self.token = nil; value = nil }
+        return value
+    }
+}
+
 /// The heartbeat's liveness rule (B3.1 step 7, B3.3): the watchdog gone ends the mode at once; `SleepDisabled` read as
 /// 0 twice in a row ends it as another app's doing. An unreadable value changes nothing (the watchdog itself restores
 /// after two).
@@ -192,6 +238,9 @@ package enum AwakeLidPolicy {
     // Timings (B3.0–B3.4), in seconds unless named otherwise.
     /// osascript gets this long for the password before SIGTERM (a timeout).
     package static let osascriptTimeoutSeconds: Double = 120
+    /// After that SIGTERM, osascript gets this long to exit before SIGKILL, so a stuck one can't hold the admin
+    /// spawn's single flight (and Turn Sleep Back On…) for the rest of the run (r1 S5).
+    package static let osascriptKillGraceSeconds: Double = 5
     /// The "Turning on lid-closed mode…" toast shows once verifying takes longer than this.
     package static let verifyToastSeconds: Double = 2
     /// Verify polls `SleepDisabled` this often, for at most this long.
@@ -315,6 +364,58 @@ package enum AwakeLidPolicy {
         }
     }
 
+    /// The same look at the end of a wait (`LidRecoveryState.watch`), with B3.4's first row: without a Snaptic
+    /// journal a 1 is someone else's setting (`nothing`), never a leftover.
+    package static func recheck(sleepDisabled: Bool?, journalExists: Bool) -> AwakeLidRecovery {
+        journalExists ? recheck(sleepDisabled: sleepDisabled) : .nothing
+    }
+
+    /// Whether a request that ended other than in `on` keeps its journal until `SleepDisabled` reads 0 (B3.0): only
+    /// when a watchdog may have run, that is osascript was started and its answer (nil: none, a timeout, superseded)
+    /// is anything but Cancel (no password), `check`'s 3 (sleep already off) or its 64 (`run` never executes after
+    /// those). Otherwise root changed nothing: a journal goes at once, and a `SleepDisabled` of 1 is someone else's
+    /// (B3.1 step 1, B3.4: never Snaptic's leftover).
+    package static func abandonWatches(stage: AwakeLidStage, outcome: LidWatchdog.Outcome?) -> Bool {
+        guard stage == .spawned else { return false }
+        switch outcome {
+        case .canceled?, .failed(3)?, .failed(64)?: return false
+        case .launched?, .failed?, nil: return true
+        }
+    }
+
+    /// How long turning off waits for `SleepDisabled` to read 0 before the leftover rows show (B3.3): quitting, Safe
+    /// Mode and the module stopping hand the wait to the host for longer; every other end, a lost watchdog included
+    /// (powerd may not have applied its restore yet), waits `stopPollSeconds`.
+    package static func endPollSeconds(_ reason: AwakeLidEnd) -> Double {
+        switch reason {
+        case .quit, .moduleStopped, .safeMode: return failedExitPollSeconds
+        case .user, .sessionEnded, .replaced, .cap, .battery, .heat, .otherApp, .watchdogLost, .featureOff:
+            return stopPollSeconds
+        }
+    }
+
+    /// The Custom… panel offers the lid toggle only while the feature is effective and the mode is off: while it is
+    /// on, a start from the panel keeps it anyway (B2), and while a request is under way every lid entry point is
+    /// disabled (B3.0).
+    package static func customToggleShown(effective: Bool, mode: AwakeLidMode) -> Bool {
+        effective && !mode.isOn && !mode.isPending
+    }
+
+    /// The Custom… panel's Start… (r1 A4): never a silent no-op.
+    package static func customStart(lidToggle: Bool, mode: AwakeLidMode) -> AwakeLidCustomStart {
+        guard lidToggle else { return .plain }
+        if mode.isOn { return .plain }
+        if mode.isPending { return .pending(mode.rowState) }
+        return .request
+    }
+
+    /// Turn Sleep Back On… failed in a way the user should hear about (r1 C4): its script reported an error. Cancel
+    /// is silent, and `ok` is followed by the kernel check.
+    package static func restoreFailed(_ outcome: LidWatchdog.RestoreOutcome) -> Bool {
+        if case .failed = outcome { return true }
+        return false
+    }
+
     /// The first B2 refusal that applies, or nil, most fundamental first: translocated, a leftover, a pending
     /// journal, a Start Anyway session, heat, then the battery (discharging below `floor + 5`, or discharging at an
     /// unknown level). `batteryPercent` is nil when unknown or on power.
@@ -346,9 +447,9 @@ package enum AwakeLidPolicy {
     }
 
     /// The watchdog's identity at verify (B3.1 step 6): real uid 0 and started after the spawn (both from
-    /// `sysctl(KERN_PROC_PID)`; nil when unreadable; `spawnedAt` is the wall time taken just before the spawn, and
-    /// the kernel keeps start times to the microsecond, so one second of slack covers rounding only). Anything else
-    /// fails with stage `verify`.
+    /// `sysctl(KERN_PROC_PID)`; nil when unreadable; `spawnedAt` is the wall time taken just before the spawn). Both
+    /// times come from the wall clock to the microsecond, so the one second of slack covers a small clock step
+    /// during the dialog, not rounding. Anything else fails with stage `verify`.
     package static func watchdogVerified(realUID: UInt32?, startTime: Double?, spawnedAt: Double) -> Bool {
         guard realUID == 0, let t = startTime, t.isFinite, spawnedAt.isFinite else { return false }
         return t >= spawnedAt - 1

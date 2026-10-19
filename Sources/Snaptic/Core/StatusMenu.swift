@@ -563,9 +563,12 @@ import SnapticKit
     /// menu from it too (`CustomItemRow.leftover`). No Keep Sleep Off here: it has no undo but Terminal.
     static func leftoverItems(host: ModuleHost) -> [NSMenuItem] {
         guard host.lidRecovery.showsRows else { return [] }
+        // Disabled, with the B0 pending text, while a restore waits for its password (as the Awake page's buttons).
+        let restore = AwakeLidText.restoreRow(restoring: host.lidRecovery.restoring)
         return [
             MenuKit.status(AwakeLidText.menuLeftover, control: ControlID("menu.snaptic.lidLeftover")),
-            MenuKit.action(AwakeLidText.turnSleepBackOn, control: ControlID("menu.snaptic.lidRestore")) { [weak host] in
+            MenuKit.action(restore.title, enabled: restore.enabled,
+                           control: ControlID("menu.snaptic.lidRestore")) { [weak host] in
                 host?.lidRecovery.turnSleepBackOn()
             },
         ]

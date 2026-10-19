@@ -142,7 +142,7 @@ final class AwakeLidPolicyTests: XCTestCase {
 
     func testWatchdogVerified() {
         XCTAssertTrue(AwakeLidPolicy.watchdogVerified(realUID: 0, startTime: 1_000.5, spawnedAt: 1_000))
-        XCTAssertTrue(AwakeLidPolicy.watchdogVerified(realUID: 0, startTime: 999.5, spawnedAt: 1_000), "rounding")
+        XCTAssertTrue(AwakeLidPolicy.watchdogVerified(realUID: 0, startTime: 999.5, spawnedAt: 1_000), "a small clock step")
         XCTAssertFalse(AwakeLidPolicy.watchdogVerified(realUID: 0, startTime: 990, spawnedAt: 1_000), "an older process")
         XCTAssertFalse(AwakeLidPolicy.watchdogVerified(realUID: 501, startTime: 1_001, spawnedAt: 1_000), "not root")
         XCTAssertFalse(AwakeLidPolicy.watchdogVerified(realUID: nil, startTime: 1_001, spawnedAt: 1_000))
@@ -252,8 +252,100 @@ final class AwakeLidPolicyTests: XCTestCase {
         XCTAssertEqual(AwakeLidPolicy.recheck(sleepDisabled: nil), .pending)
     }
 
+    /// r1 S1: only an exit after which a watchdog may have run keeps and watches the journal. "Already off" (the
+    /// preflight, `check`'s 3), `check`'s 64, Cancel and every failure before osascript ran never do, so another
+    /// app's `SleepDisabled` never becomes Snaptic's leftover.
+    func testAbandonWatchesOnlyWhenAWatchdogMayHaveRun() {
+        let table: [(AwakeLidStage, LidWatchdog.Outcome?, Bool, String)] = [
+            (.preflight, nil, false, "preflight: already off, or the kernel unreadable"),
+            (.preflight, .failed(3), false, "preflight"),
+            (.journaled, nil, false, "beacon, args or spawn failure: osascript never ran"),
+            (.journaled, .launched(pid: 4_242), false, "never started"),
+            (.spawned, .canceled, false, "Cancel: no password, nothing ran"),
+            (.spawned, .failed(3), false, "check exit 3: sleep already off, run never executes"),
+            (.spawned, .failed(64), false, "check exit 64: run never executes"),
+            (.spawned, .launched(pid: 4_242), true, "verify failed or timed out"),
+            (.spawned, .failed(1), true, "an error after check passed"),
+            (.spawned, .failed(-1), true, "unparsable answer"),
+            (.spawned, nil, true, "timeout, superseded or stopped while osascript may run"),
+        ]
+        for (stage, outcome, expected, label) in table {
+            XCTAssertEqual(AwakeLidPolicy.abandonWatches(stage: stage, outcome: outcome), expected, label)
+        }
+        // The whole chain from osascript's text.
+        XCTAssertFalse(AwakeLidPolicy.abandonWatches(stage: .spawned, outcome: LidWatchdog.parseResult("err 3\n")))
+        XCTAssertFalse(AwakeLidPolicy.abandonWatches(stage: .spawned, outcome: LidWatchdog.parseResult("err -128\n")))
+        XCTAssertTrue(AwakeLidPolicy.abandonWatches(stage: .spawned, outcome: LidWatchdog.parseResult("err 1\n")))
+    }
+
+    /// B3.4's first row at the end of a wait: no Snaptic journal, no leftover (r1 S1/C1).
+    func testRecheckWithoutAJournalIsNothing() {
+        XCTAssertEqual(AwakeLidPolicy.recheck(sleepDisabled: true, journalExists: false), .nothing)
+        XCTAssertEqual(AwakeLidPolicy.recheck(sleepDisabled: nil, journalExists: false), .nothing)
+        XCTAssertEqual(AwakeLidPolicy.recheck(sleepDisabled: false, journalExists: false), .nothing)
+        XCTAssertEqual(AwakeLidPolicy.recheck(sleepDisabled: true, journalExists: true), .leftover)
+        XCTAssertEqual(AwakeLidPolicy.recheck(sleepDisabled: nil, journalExists: true), .pending)
+        XCTAssertEqual(AwakeLidPolicy.recheck(sleepDisabled: false, journalExists: true), .clear)
+    }
+
+    /// r1 A3: a lost watchdog waits like any other end before the leftover rows; quitting hands the host longer.
+    func testEndPollSeconds() {
+        XCTAssertEqual(AwakeLidPolicy.endPollSeconds(.watchdogLost), 15)
+        for reason in [AwakeLidEnd.user, .sessionEnded, .replaced, .cap, .battery, .heat, .otherApp, .featureOff] {
+            XCTAssertEqual(AwakeLidPolicy.endPollSeconds(reason), 15, "\(reason)")
+        }
+        for reason in [AwakeLidEnd.quit, .moduleStopped, .safeMode] {
+            XCTAssertEqual(AwakeLidPolicy.endPollSeconds(reason), 30, "\(reason)")
+        }
+    }
+
+    /// r1 A4: the Custom… panel never closes without starting something or saying why.
+    func testCustomPanel() {
+        let modes: [AwakeLidMode] = [.off, .failed(.verify), .authorizing(token: token), .verifying(token: token, pid: 5),
+                                     .on(token: token, pid: 5, until: 9), .stopping(token: token)]
+        XCTAssertEqual(modes.map { AwakeLidPolicy.customToggleShown(effective: true, mode: $0) },
+                       [true, true, false, false, false, false])
+        XCTAssertEqual(modes.map { AwakeLidPolicy.customToggleShown(effective: false, mode: $0) },
+                       [false, false, false, false, false, false])
+        XCTAssertEqual(modes.map { AwakeLidPolicy.customStart(lidToggle: true, mode: $0) },
+                       [.request, .request, .pending(.authorizing), .pending(.verifying), .plain, .pending(.stopping)])
+        XCTAssertEqual(modes.map { AwakeLidPolicy.customStart(lidToggle: false, mode: $0) },
+                       [.plain, .plain, .plain, .plain, .plain, .plain])
+        XCTAssertEqual(AwakeLidText.rowTitle(.authorizing), "Waiting for Password…")
+    }
+
+    /// r1 C4 and U7: Turn Sleep Back On… says when it failed, and the menus' row waits like the Awake page's.
+    func testTurnSleepBackOnFeedback() {
+        XCTAssertTrue(AwakeLidPolicy.restoreFailed(.failed(1)))
+        XCTAssertTrue(AwakeLidPolicy.restoreFailed(.failed(-1)))
+        XCTAssertFalse(AwakeLidPolicy.restoreFailed(.canceled))
+        XCTAssertFalse(AwakeLidPolicy.restoreFailed(.restored))
+        XCTAssertTrue(AwakeLidPolicy.restoreFailed(LidWatchdog.parseRestoreResult("garbage")))
+        XCTAssertEqual(AwakeLidText.couldNotTurnSleepBackOn, "Snaptic couldn’t turn sleep back on. Try again.")
+        XCTAssertEqual(AwakeLidText.restoreRow(restoring: false).title, "Turn Sleep Back On…")
+        XCTAssertTrue(AwakeLidText.restoreRow(restoring: false).enabled)
+        XCTAssertEqual(AwakeLidText.restoreRow(restoring: true).title, "Waiting for Password…")
+        XCTAssertFalse(AwakeLidText.restoreRow(restoring: true).enabled)
+    }
+
+    /// r1 A2: a superseded request's late exit can't read or clear the next request's handle or line.
+    func testTokenSlot() {
+        let a = "a" + String(token.dropFirst()), b = "b" + String(token.dropFirst())
+        var slot = AwakeLidTokenSlot<Int>()
+        XCTAssertNil(slot.take(a))
+        slot.put(1, for: a)
+        slot.put(2, for: b)              // the next request
+        XCTAssertNil(slot.value(for: a))
+        XCTAssertNil(slot.take(a), "A's late exit")
+        XCTAssertEqual(slot.value(for: b), 2, "B's is untouched")
+        XCTAssertEqual(slot.take(b), 2)
+        XCTAssertNil(slot.value(for: b), "taken once")
+        XCTAssertNil(slot.token)
+    }
+
     func testTimings() {
         XCTAssertEqual(AwakeLidPolicy.osascriptTimeoutSeconds, 120)
+        XCTAssertEqual(AwakeLidPolicy.osascriptKillGraceSeconds, 5)
         XCTAssertEqual(AwakeLidPolicy.verifyLimitSeconds, 10)
         XCTAssertEqual(AwakeLidPolicy.verifyPollSeconds, 0.5)
         XCTAssertEqual(AwakeLidPolicy.heartbeatSeconds, 5)

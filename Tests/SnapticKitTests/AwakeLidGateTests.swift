@@ -15,31 +15,42 @@ final class AwakeLidGateTests: XCTestCase {
         AwakeLidGate.decide(source: s, mayStart: mayStart, event: e)
     }
 
-    /// Every (source, mayStart, event): allowed only for a menu click or a Settings action Settings allows, on an
-    /// idle Mac or in a menu or Settings session; kept only across such a replacement; ended otherwise.
+    /// Every (source, mayStart, event) against a hand-written table (r1 C9: nothing here recomputes the rule). The
+    /// only rows that aren't `.end` are listed; everything else must end.
     func testExhaustiveTable() {
-        var counts: [AwakeLidGate.Decision: Int] = [:]
+        let notEnd: [(AwakeSessionSource, Bool, AwakeLidGate.Event, AwakeLidGate.Decision)] = [
+            // A menu click, with or without Settings' focus guard: idle, or in a menu or Settings session.
+            (.menu, false, .request(running: nil), .allowed),
+            (.menu, false, .request(running: .menu), .allowed),
+            (.menu, false, .request(running: .settings), .allowed),
+            (.menu, true, .request(running: nil), .allowed),
+            (.menu, true, .request(running: .menu), .allowed),
+            (.menu, true, .request(running: .settings), .allowed),
+            // A Settings action only while Settings may start sessions.
+            (.settings, true, .request(running: nil), .allowed),
+            (.settings, true, .request(running: .menu), .allowed),
+            (.settings, true, .request(running: .settings), .allowed),
+            // Kept across a replacement by such a start from the same place.
+            (.menu, false, .replaced(by: .menu), .keep),
+            (.menu, true, .replaced(by: .menu), .keep),
+            (.settings, true, .replaced(by: .settings), .keep),
+        ]
+        var checked = 0
         for source in sources {
             for mayStart in [false, true] {
-                let direct = source == .menu || (source == .settings && mayStart)
                 for event in events {
-                    let expected: AwakeLidGate.Decision
-                    switch event {
-                    case .request(let running):
-                        let sessionOK = running == nil || running == .menu || running == .settings
-                        expected = direct && sessionOK ? .allowed : .end
-                    case .replaced(let by):
-                        expected = by == source && direct ? .keep : .end
-                    case .sessionEnded, .triggerOrHold, .moduleStopped, .safeMode, .featureOff, .restore:
-                        expected = .end
-                    }
-                    XCTAssertEqual(decide(source, mayStart, event), expected, "\(source) mayStart=\(mayStart) \(event)")
-                    counts[expected, default: 0] += 1
+                    let row = notEnd.first { $0.0 == source && $0.1 == mayStart && $0.2 == event }
+                    XCTAssertEqual(decide(source, mayStart, event), row?.3 ?? .end,
+                                   "\(source) mayStart=\(mayStart) \(event)")
+                    checked += 1
                 }
             }
         }
-        XCTAssertEqual(counts[.allowed], 3 * 3, "menu, Settings: idle, menu session, Settings session")
-        XCTAssertEqual(counts[.keep], 3, "menu (either mayStart) and Settings with mayStart")
+        XCTAssertEqual(checked, 6 * 2 * 19, "every source, both guard states, every event")
+        // Every listed row is one the loop reached.
+        for row in notEnd {
+            XCTAssertTrue(sources.contains(row.0) && events.contains(row.2), "\(row)")
+        }
     }
 
     func testNamedRows() {

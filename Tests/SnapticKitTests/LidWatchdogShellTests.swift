@@ -114,11 +114,23 @@ final class LidWatchdogShellTests: XCTestCase {
                      act: { _, p in p.terminate() }),
             Scenario(name: "INT", setup: { e in e.ctl("clamshell", "Yes") }, act: { _, p in p.interrupt() },
                      sleepnow: true),
+            Scenario(name: "QUIT", setup: { e in e.ctl("clamshell", "Yes") },
+                     act: { _, p in _ = kill(p.processIdentifier, SIGQUIT) }, sleepnow: true),
+            // A terminal's ^Z can't stop it (r1 S4): still answers the stop file.
+            Scenario(name: "TSTP ignored", act: { e, p in
+                _ = kill(p.processIdentifier, SIGTSTP)
+                Thread.sleep(forTimeInterval: 0.5)
+                e.touch(e.stopFile)
+            }),
             Scenario(name: "cap", act: { e, _ in e.ctl("date_jump", "200000") }),
             Scenario(name: "Snaptic gone", act: { e, _ in e.ctl("alive", nil) }),
             Scenario(name: "battery at the floor", act: { e, _ in e.ctl("batt", Self.discharging20) }),
             Scenario(name: "battery unreadable twice", act: { e, _ in e.ctl("batt", Self.dischargingUnreadable) }),
             Scenario(name: "heat", act: { e, _ in e.ctl("thermal", "2") }),
+            // Fails safe like the battery (r1 S3): an unreadable heat level twice in a row restores.
+            Scenario(name: "heat unreadable twice", act: { e, _ in e.ctl("thermal", "x") }),
+            // A beacon lookup that never returns (a stalled mount) holds only the checking child (r1 S3).
+            Scenario(name: "beacon check hangs", act: { e, _ in e.ctl("stat_hang", "") }),
             Scenario(name: "kernel disagrees", act: { e, _ in e.ctl("kernel", "0") }),
             Scenario(name: "kernel unreadable", act: { e, _ in e.ctl("kernel", "none") }),
             Scenario(name: "preference unreadable", act: { e, _ in e.ctl("pref_fail", "") }),
@@ -143,6 +155,13 @@ final class LidWatchdogShellTests: XCTestCase {
             Scenario(name: "already turned off", setup: { e in e.ctl("pref", "1") }, act: { _, _ in }, sets: false),
             Scenario(name: "preference odd", setup: { e in e.ctl("pref", "2") }, act: { _, _ in }, sets: false),
             Scenario(name: "no root domain", setup: { e in e.ctl("kernel", "none") }, act: { _, _ in }, sets: false),
+            // D is entered once, and only as U's own 0700 directory on /var/folders's volume (r1 S3).
+            Scenario(name: "beacon directory on another volume", setup: { e in e.ctl("dir_dev", "2") },
+                     act: { _, _ in }, sets: false),
+            Scenario(name: "beacon directory someone else's", setup: { e in e.ctl("dir_owner", "4242") },
+                     act: { _, _ in }, sets: false),
+            Scenario(name: "beacon directory not 0700", setup: { e in e.ctl("dir_mode", "755") },
+                     act: { _, _ in }, sets: false),
             // The post-set check: set, but the kernel never follows → restore.
             Scenario(name: "kernel never sets", setup: { e in e.ctl("kernel", "absent") }, act: { _, _ in }),
         ]
@@ -165,7 +184,9 @@ final class LidWatchdogShellTests: XCTestCase {
             for r in running { r.scenario.act(r.env, r.process) }
             for r in running {
                 let label = "\(shell) – \(r.scenario.name)"
-                XCTAssertNotNil(r.env.waitExit(r.process, seconds: 20), "\(label): exits")
+                // By pid, not `Process.isRunning`: on Linux Foundation sees an exit through a descriptor the children
+                // inherit, and a hanging stub (the "beacon check hangs" scenario) keeps it open after the watchdog exits.
+                XCTAssertTrue(r.env.waitGone(r.process.processIdentifier, seconds: 20), "\(label): exits")
                 let sets = r.env.sets.map(\.value)
                 if r.scenario.sets {
                     XCTAssertEqual(sets.first, "1", "\(label): \(sets)")
@@ -349,6 +370,7 @@ private final class StubEnv {
         script = LidWatchdog.script(tools: tools, period: 0.2, stale: 20, tempRoot: root)
         try writeStubs()
         for (k, v) in ["pref": "0", "kernel": "follow", "clamshell": "No", "causes": "Yes", "owner": String(getuid()),
+                       "dir_owner": String(getuid()), "dir_mode": "700", "dir_dev": "1",
                        "date_jump": "0", "alive": "", "thermal": "0",
                        "batt": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=1234)\t80%; charged; 0:00 remaining present: true\n"] {
             ctl(k, v)
@@ -398,11 +420,20 @@ private final class StubEnv {
         """#)
         try stub("awk", "echo awk >> \"$S/log\"\nexec " + (t["awk"] ?? "/usr/bin/awk") + " \"$@\"")
         try stub("sed", "echo sed >> \"$S/log\"\nexec " + (t["sed"] ?? "/usr/bin/sed") + " \"$@\"")
+        // BSD stat without -L (lstat), run from inside D: names are relative. The type is real, owners, modes and
+        // devices come from ctl; `stat_hang` makes a beacon lookup never return.
         try stub("stat", #"""
         echo "stat $*" >> "$S/log"
         [ "$1" = -f ] || exit 1
         case "$2" in
-        %u) cat "$S/ctl/owner";;
+        '%HT %u')
+          case "$3" in beat-*) [ -f "$S/ctl/stat_hang" ] && { echo $$ >> "$S/hung"; exec \#(t["sleep"] ?? "/bin/sleep") 60; };; esac
+          if [ -L "$3" ]; then y='Symbolic Link'; elif [ -f "$3" ]; then y='Regular File'; elif [ -d "$3" ]; then y=Directory; else exit 1; fi
+          echo "$y $(cat "$S/ctl/owner")";;
+        '%HT %u %Lp %d')
+          [ -d "$3" ] && [ ! -L "$3" ] || exit 1
+          echo "Directory $(cat "$S/ctl/dir_owner") $(cat "$S/ctl/dir_mode") $(cat "$S/ctl/dir_dev")";;
+        %d) echo 1;;
         %m) if [ -f "$S/ctl/mtime" ]; then cat "$S/ctl/mtime"; else echo \#(now); fi;;
         *) exit 1;;
         esac
@@ -578,8 +609,9 @@ private final class StubEnv {
     func cleanup() {
         guard !cleaned else { return }
         cleaned = true
-        // The shells this environment started and the watchdogs they ran (their 0.2 s sleeps end on their own).
-        let pids = watched + sets.compactMap(\.parent)
+        // The shells this environment started, the watchdogs they ran (their 0.2 s sleeps end on their own) and any
+        // beacon lookup a stub keeps hanging.
+        let pids = watched + sets.compactMap(\.parent) + lines("hung").compactMap { Int32($0) }
         for pid in Set(pids) where pid > 1 && pid != getpid() && !Self.isGone(pid) { kill(pid, SIGKILL) }
         try? FileManager.default.removeItem(atPath: dir)
     }
