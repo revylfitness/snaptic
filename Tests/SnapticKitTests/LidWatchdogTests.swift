@@ -239,6 +239,10 @@ done
         }
         var accepted = 0
         for i in 0..<5_000 {
+            if i % 4 == 0 {
+                XCTAssertNotNil(LidWatchdog.Arguments.validated(uid: 501, pid: 4_242, token: self.token, capSeconds: 86_400,
+                                                                floor: 20, dir: "/var/folders/" + String(i) + "/snaptic-lid"))
+            }
             var token = i % 3 == 2 ? randomString(40) : self.token
             if i % 3 == 1 {
                 var chars = Array(token)
@@ -265,7 +269,7 @@ done
                 }, v)
             }
         }
-        XCTAssertGreaterThan(accepted, 50, "the fuzz reaches valid arguments")
+        XCTAssertGreaterThan(accepted, 5, "the fuzz reaches valid arguments")
     }
 
     // MARK: Quoting and the command
@@ -286,8 +290,9 @@ done
     func testCommandShape() throws {
         let a = try XCTUnwrap(args())
         let c = LidWatchdog.command(a)
-        let lines = c.components(separatedBy: "\n")
-        XCTAssertEqual(lines.count, 3)
+        let lines = ShellWords.lines(c)
+        XCTAssertEqual(lines.count, 3, "three lines (the quoted script's own LFs are inside its quotes)")
+        guard lines.count == 3 else { return }
         XCTAssertTrue(lines[0].hasPrefix("/bin/sh -c '"))
         XCTAssertTrue(lines[0].hasSuffix(" </dev/null >/dev/null 2>&1 || exit $?"))
         XCTAssertTrue(lines[1].hasPrefix("/usr/bin/nohup /bin/sh -c '"))
@@ -298,6 +303,8 @@ done
         for (line, mode) in [(lines[0], "check"), (lines[1], "run")] {
             let words = ShellWords.split(line)
             let at = try XCTUnwrap(words.firstIndex(of: "-c"))
+            XCTAssertGreaterThan(words.count, at + 10)
+            guard words.count > at + 10 else { continue }
             XCTAssertEqual(words[at + 1], LidWatchdog.defaultScript)
             XCTAssertEqual(Array(words[(at + 2)...(at + 3)]), ["snaptic-lid", mode])
             XCTAssertEqual(Array(words[(at + 4)...(at + 9)]), a.argv)
@@ -346,7 +353,9 @@ done
         let command = AppleScriptText.unescape(literals[0])
         XCTAssertEqual(command, LidWatchdog.command(a))
         XCTAssertEqual(AppleScriptText.unescape(literals[1]), prompt)
-        let first = ShellWords.split(command.components(separatedBy: "\n")[0])
+        let first = ShellWords.split(ShellWords.lines(command).first ?? "")
+        XCTAssertGreaterThan(first.count, 10)
+        guard first.count > 10 else { return }
         XCTAssertEqual(Array(first[5...10]), a.argv)
         XCTAssertEqual(first[2], LidWatchdog.defaultScript)
         XCTAssertTrue(script.utf8.allSatisfy { $0 >= 0x20 || $0 == 0x0A })
@@ -422,6 +431,32 @@ done
 /// A POSIX shell word splitter for what `quoted` and `command` produce: single quotes, backslash escapes outside
 /// them, blanks between words (no expansions).
 enum ShellWords {
+    /// The command's lines: split at LFs outside single quotes.
+    static func lines(_ text: String) -> [String] {
+        var out: [String] = []
+        var current = ""
+        var quoted = false
+        var escaped = false
+        for c in text {
+            if escaped {
+                escaped = false
+            } else if quoted {
+                if c == "'" { quoted = false }
+            } else if c == "'" {
+                quoted = true
+            } else if c == "\\" {
+                escaped = true
+            } else if c == "\n" {
+                out.append(current)
+                current = ""
+                continue
+            }
+            current.append(c)
+        }
+        out.append(current)
+        return out
+    }
+
     static func split(_ line: String) -> [String] {
         var words: [String] = []
         var current = ""

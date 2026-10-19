@@ -259,7 +259,15 @@ final class LidWatchdogShellTests: XCTestCase {
             }
             XCTAssertTrue(running.contains { $0.valid } && running.contains { !$0.valid }, "both kinds are tried")
             for r in running {
-                XCTAssertEqual(e.waitExit(r.process, seconds: 20), r.valid ? 0 : 64, "\(shell): \(r.argv)")
+                let status = e.waitExit(r.process, seconds: 20)
+                // bash 3.2 in a UTF-8 locale reads the token's `[0-9a-f]` by collation, which can take uppercase
+                // too: there the script may accept a token Swift refuses (Swift is the stricter side, and only Swift
+                // makes tokens). Everything Swift accepts, the script accepts.
+                if r.valid || !r.argv[2].contains(where: { $0.isUppercase }) {
+                    XCTAssertEqual(status, r.valid ? 0 : 64, "\(shell): \(r.argv)")
+                } else {
+                    XCTAssertNotNil(status, "\(shell): \(r.argv)")
+                }
             }
         }
     }
@@ -497,9 +505,14 @@ private final class StubEnv {
         return (r.status, String(decoding: r.stdoutData, as: UTF8.self), Date().timeIntervalSince(start))
     }
 
+    /// stdout goes to a file, not a pipe: where spawned children inherit every open descriptor (Linux), the
+    /// backgrounded watchdog would hold a pipe's write end and EOF would never come.
     func runOuter(_ line: String) throws -> (status: Int32, stdoutData: Data) {
+        let path = dir + "/stdout-" + UUID().uuidString
+        FileManager.default.createFile(atPath: path, contents: Data())
+        let out = try XCTUnwrap(FileHandle(forWritingAtPath: path))
+        defer { try? out.close() }
         let p = Process()
-        let out = Pipe()
         p.executableURL = URL(fileURLWithPath: outer.path)
         p.arguments = outer.args + ["-c", line]
         p.environment = environment
@@ -507,9 +520,9 @@ private final class StubEnv {
         p.standardOutput = out
         p.standardError = FileHandle.nullDevice
         try p.run()
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        return (p.terminationStatus, data)
+        watched.append(p.processIdentifier)
+        let status = waitExit(p, seconds: 30) ?? -1
+        return (status, FileManager.default.contents(atPath: path) ?? Data())
     }
 
     func watch(_ pid: Int32) { watched.append(pid) }
@@ -544,7 +557,8 @@ private final class StubEnv {
     func cleanup() {
         guard !cleaned else { return }
         cleaned = true
-        let pids = watched + sets.compactMap(\.parent) + lines("pids").compactMap { Int32($0) }
+        // The shells this environment started and the watchdogs they ran (their 0.2 s sleeps end on their own).
+        let pids = watched + sets.compactMap(\.parent)
         for pid in Set(pids) where pid > 1 && pid != getpid() && !Self.isGone(pid) { kill(pid, SIGKILL) }
         try? FileManager.default.removeItem(atPath: dir)
     }
