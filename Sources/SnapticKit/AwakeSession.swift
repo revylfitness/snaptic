@@ -654,7 +654,7 @@ package enum AwakeRefusal: Error, Equatable, Sendable {
             case .turnedOffByDefaults: return DefaultsLock.text
             }
         case .invalid:
-            return L("That session can’t start. Check the duration, the app or the process.")
+            return L("That session can’t start. Check the duration, the app, or the process.")
         case .notAllowedFromCLI:
             return L("Sessions without an end can’t start from the command line. Use the menu or “snaptic awake hold”.")
         case .uiSessionRunning:

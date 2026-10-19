@@ -58,7 +58,7 @@ struct AwakeAdvancedSheet: View, ControlDeclaring {
             }
             if appearActive {
                 ToggleSetting(L("Move the pointer slightly"),
-                              help: L("Moves the pointer 1 point and back. Only for sessions you start in Snaptic. Needs Accessibility."),
+                              help: L("Moves the pointer 1 point and back, only in sessions you start. Needs Accessibility."),
                               isOn: Binding(get: { nudge }, set: { on in setPointerNudge(on) }),
                               subordinate: true, anchor: ControlID("awake.advanced.pointerNudge"), badge: .experimental,
                               disabledReason: activityLock == nil && nudgeLock?.lock == .safeMode ? nudgeLock?.lock.text : nil)

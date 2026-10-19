@@ -184,11 +184,11 @@ private struct VirtualDisplayDetailsContent: View {
         .onDisappear { save() }
     }
 
-    /// The sheet's leading footer button: Delete… with its confirmation.
+    /// The sheet's leading footer button: Delete Virtual Display… with its confirmation.
     private var deleteButton: RestoreDefaults? {
         guard let stored, let controller else { return nil }
         let id = id
-        return RestoreDefaults(title: L("Delete…"), question: L("Delete “\(stored.name)”?"),
+        return RestoreDefaults(title: L("Delete Virtual Display…"), question: L("Delete “\(stored.name)”?"),
                                message: L("It disconnects, and its sizes and linked displays are deleted."),
                                button: L("Delete"), destructive: true) {
             controller.remove(id)
@@ -364,9 +364,9 @@ private struct VirtualDisplayDetailsContent: View {
         PickerSetting(L("Connect"),
                       selection: linkField(index, \.autoConnect, fallback: VirtualAutoConnect.never),
                       options: [
-                          PickerOption(VirtualAutoConnect.never, L("Only when I choose")),
-                          PickerOption(VirtualAutoConnect.whilePresent, L("While \(name) is connected")),
-                          PickerOption(VirtualAutoConnect.whileAbsent, L("While \(name) isn’t connected")),
+                          PickerOption(VirtualAutoConnect.never, L("Only When I Choose")),
+                          PickerOption(VirtualAutoConnect.whilePresent, L("While “\(name)” Is Connected")),
+                          PickerOption(VirtualAutoConnect.whileAbsent, L("While “\(name)” Isn’t Connected")),
                       ],
                       style: .popUp, defaultValue: nil, subordinate: true)
         PickerSetting(L("Show it on \(name)"),

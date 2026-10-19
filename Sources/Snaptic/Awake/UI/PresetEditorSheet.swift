@@ -29,7 +29,7 @@ struct PresetEditorSheet: View, ControlDeclaring {
             Button(L("Delete"), role: .destructive) { confirmDelete() }
             Button(L("Cancel"), role: .cancel) { deleting = nil }
         } message: {
-            Text(L("It’s removed from Keep Awake, the Awake menu and its shortcut."))
+            Text(L("It’s removed from Keep Awake, the Awake menu, and its shortcut."))
         }
     }
 
@@ -109,7 +109,7 @@ struct PresetEditorSheet: View, ControlDeclaring {
         let config = env.config
         return RestoreDefaults(title: L("Restore Default Sessions…"), question: L("Restore the default sessions?"),
                                message: L("Your own sessions are removed, and the default session is Until Turned Off again."),
-                               button: L("Restore"), destructive: true) {
+                               button: L("Restore Defaults"), destructive: true) {
             let next = config.value.sessions.restoringDefaultPresets()
             if next != config.value.sessions { config.value.sessions = next }
         }

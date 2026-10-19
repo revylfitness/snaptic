@@ -46,7 +46,7 @@ private struct CustomizeMenuContent: View {
                       restoreDefaults: RestoreDefaults(
                           title: L("Restore Displays Menu Defaults…"),
                           question: L("Restore the Displays menu to its defaults?"),
-                          message: L("Display order, visibility and every item’s place go back to their defaults. Your other Snaptic settings stay as they are."),
+                          message: L("Display order, visibility, and every item’s place go back to their defaults. Your other Snaptic settings stay as they are."),
                           button: L("Restore Defaults"), destructive: false) {
                           displays.value.menu = displays.value.menu.restoringDefaults(scope: .displaysMenu)
                       }) {
@@ -287,7 +287,7 @@ private struct CustomizeMenuContent: View {
                             .modifier(SettingsAnchor(ControlID("menubar.customize.needFeatures")))
                     } label: {
                         Text(info.title)
-                        if let feature = info.feature { Text(L("Needs \(DisplaysUIText.title(feature))")) }
+                        if let feature = info.feature { Text(DisplaysUIText.needs(feature)) }
                     }
                     .modifier(OptionalSettingsAnchor(Self.control(for: info.id)))
                 }

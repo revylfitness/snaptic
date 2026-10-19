@@ -23,7 +23,7 @@ package enum CubeLUTError: Error, Equatable, Sendable {
         switch self {
         case .pathTooLong: return L("The file path is too long.")
         case .unreadable: return L("The file couldn’t be opened.")
-        case .notRegularFile: return L("Choose a regular file (not a folder, alias or device).")
+        case .notRegularFile: return L("Choose a regular file (not a folder, alias, or device).")
         case .fileTooLarge: return L("The file is too large for a LUT.")
         case .notText: return L("This isn’t a text .cube file.")
         case .lineTooLong(let n): return L("Line \(n) is too long.")

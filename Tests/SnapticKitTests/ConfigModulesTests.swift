@@ -174,6 +174,25 @@ final class ConfigModulesTests: XCTestCase {
         XCTAssertTrue(plan.ownIcon.isEmpty)
     }
 
+    /// Review6 ux nit 7: the Menu Bar page's Snaptic icon tiles are live only while a Snaptic item exists.
+    func testHasSnapticItem() {
+        let all = Set(ModuleID.allCases)
+        var c = ModulesConfig()
+        XCTAssertTrue(c.hasSnapticItem(running: all), "defaults: every module in the Snaptic menu")
+        for id in [ModuleID.windowSwitcher, .displays] { c.setPresence(.ownIcon, for: id) }
+        c.setPresence(.ownIcon, for: .awake)
+        XCTAssertFalse(c.hasSnapticItem(running: all), "every module Always Show: no Snaptic item")
+        c.setPresence(.ownIconWhenActive, for: .awake)
+        XCTAssertTrue(c.hasSnapticItem(running: all), "Awake's compact rows live in the Snaptic item at rest")
+        c.setPresence(.hidden, for: .awake)
+        XCTAssertFalse(c.hasSnapticItem(running: all))
+        c.setPresence(.inSnapticMenu, for: .windowSwitcher)
+        XCTAssertTrue(c.hasSnapticItem(running: all))
+        XCTAssertFalse(c.hasSnapticItem(running: [.displays, .awake]), "a stopped module shows nothing")
+        for id in ModuleID.allCases { c.setEnabled(false, for: id) }
+        XCTAssertTrue(c.hasSnapticItem(running: []), "No Modules Are On is the Snaptic item")
+    }
+
     func testDisabledModulesDontAppearEvenIfStillRunning() {
         var c = ModulesConfig()
         c.setEnabled(false, for: .displays)

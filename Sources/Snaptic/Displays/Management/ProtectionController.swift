@@ -36,7 +36,7 @@ import SnapticKit
         context.menus.register(items, lifetime: lifetime)
         context.diagnostics.register(self, section: L("Protection"), lifetime: lifetime)
         context.connectPlanner.attach(self, lifetime: lifetime)
-        context.actions.register(Action(id: .dProtectionToggle, title: L("Protect Arrangement"), feature: .protection,
+        context.actions.register(Action(id: .dProtectionToggle, title: DisplaysToggleText.protectArrangement, feature: .protection,
                                         cliAllowed: false) { [weak self] _ in self?.toggleCurrent() }, lifetime: lifetime)
         context.commands.register("protect", policy: .low, offOnly: true, cliAllowed: true,
                                   summary: L("protect off: stop configuration protection"), lifetime: lifetime) { [weak self] req, _ in

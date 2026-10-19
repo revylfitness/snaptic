@@ -23,7 +23,7 @@ final class AwakePresentationTests: XCTestCase {
         XCTAssertEqual(AwakeHolderText.summary(["Terminal", "Terminal"]), "Held by Terminal (2)")
         XCTAssertEqual(AwakeHolderText.summary(["Terminal", "Xcode"]), "Held by Terminal and Xcode")
         XCTAssertEqual(AwakeHolderText.summary(["Terminal", nil, "Xcode", "Terminal"]),
-                       "Held by Terminal (2), the command line and Xcode")
+                       "Held by Terminal (2), the command line, and Xcode")
         XCTAssertEqual(AwakeHolderText.summary([nil, ""]), "Held by the command line (2)")
         XCTAssertEqual(AwakeHolderText.stillKeeping(["Terminal", "Terminal"]), "Terminal is still keeping your Mac awake.")
         XCTAssertEqual(AwakeHolderText.stillKeeping(["Terminal", "Xcode"]),

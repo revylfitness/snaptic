@@ -2,7 +2,7 @@ import SwiftUI
 import SnapticKit
 
 /// Awake › Keyboard Shortcuts… (owner: G; PLAN 0.3 §4.3 "Keyboard", design m2, R5-12): Keep Awake, Keep Display On,
-/// Start “<preset>” for the first four sessions, and Pause Rules (where migration M1 puts the 0.2 display-sleep
+/// Start “<preset>” for the first four sessions, and Pause or Resume Rules (where migration M1 puts the 0.2 display-sleep
 /// shortcut). All unbound by default; AwakeAutomation registers them under the owner name "Awake".
 struct AwakeShortcutsSheet: View, ControlDeclaring {
     typealias Controls = AwakePageControls
@@ -45,7 +45,7 @@ struct AwakeShortcutsSheet: View, ControlDeclaring {
                 Text(L("The first four sessions in Sessions in the menu, in that order."))
             }
             Section {
-                ShortcutSetting(L("Pause Rules"), help: L("Pauses rules for 1 hour, or resumes them."),
+                ShortcutSetting(L("Pause or Resume Rules"), help: L("Pauses rules for 1 hour, or resumes them."),
                                 combo: combo(.pauseAutomatic), owner: owner,
                                 anchor: ControlID("awake.page.shortcut.pauseRules"))
             } footer: {

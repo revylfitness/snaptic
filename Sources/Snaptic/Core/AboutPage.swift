@@ -203,7 +203,7 @@ private struct DiagnosticsReportSheet: View {
             .background(Color(nsColor: .textBackgroundColor))
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color(nsColor: .separatorColor)))
             .padding(.horizontal, 16)
-            Text(L("The report has no names, window titles or serial numbers. Read it before you share it."))
+            Text(L("The report has no names, window titles, or serial numbers. Read it before you share it."))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16)

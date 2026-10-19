@@ -107,7 +107,7 @@ struct CDisplaysOffSection: View {
     }
 }
 
-/// "<Feature> is off." with Turn On, for settings whose feature switch lives on Displays › Advanced; the reason
+/// "<Feature> is off." (or "are off.") with Turn On, for settings whose feature switch lives on Displays › Advanced; the reason
 /// instead when the feature can't run on this Mac, or is on but paused (another app, Safe Mode).
 struct CFeatureOffSection: View {
     let title: String
@@ -122,10 +122,10 @@ struct CFeatureOffSection: View {
             if let reason = switcher.unavailableReason([feature]) {
                 StatusRow(reason, style: .info)
             } else if isOn {
-                StatusRow(context?.otherApps.pauseReason(for: feature) ?? L("\(title) isn’t available right now."),
+                StatusRow(context?.otherApps.pauseReason(for: feature) ?? DisplaysUIText.notAvailableNow(feature),
                           symbol: "pause.circle")
             } else {
-                StatusRow(L("\(title) is off."), actions: [
+                StatusRow(DisplaysUIText.isOff(feature), actions: [
                     StatusAction(title: L("Turn On")) {
                         switcher.binding([feature], title: title).wrappedValue = true
                     },

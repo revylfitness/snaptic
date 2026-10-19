@@ -222,11 +222,11 @@ import SnapticKit
                 }, lifetime: lifetime)
             }
         }
-        ctx.actions.register(Action(id: DisplayActionID(rawValue: "c.invert"), title: L("Invert Colors"), feature: .color,
+        ctx.actions.register(Action(id: DisplayActionID(rawValue: "c.invert"), title: DisplaysToggleText.invertColors, feature: .color,
                                     cliAllowed: true) { [weak self] t in self?.toggleInvert(t) }, lifetime: lifetime)
         ctx.actions.register(Action(id: DisplayActionID(rawValue: "c.colorReset"), title: L("Reset Color Adjustments"),
                                     feature: .color, cliAllowed: true) { [weak self] t in self?.reset(t) }, lifetime: lifetime)
-        ctx.actions.register(Action(id: DisplayActionID(rawValue: "c.colorSuspend"), title: L("Adjust Colors On or Off"),
+        ctx.actions.register(Action(id: DisplayActionID(rawValue: "c.colorSuspend"), title: DisplaysToggleText.adjustColors,
                                     feature: .color, cliAllowed: true) { [weak self] t in self?.toggleSuspend(t) }, lifetime: lifetime)
     }
 

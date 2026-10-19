@@ -47,13 +47,7 @@ package enum GeneralCardRules {
 package enum SettingsText {
     /// "A", "A and B", "A, B, and C". Empty names are skipped.
     package static func list(_ items: [String]) -> String {
-        let names = items.filter { !$0.isEmpty }
-        switch names.count {
-        case 0: return ""
-        case 1: return names[0]
-        case 2: return names[0] + L(" and ") + names[1]
-        default: return names.dropLast().joined(separator: ", ") + L(", and ") + names[names.count - 1]
-        }
+        SentenceText.list(items.filter { !$0.isEmpty })
     }
 
     /// The Permissions page's "Needed by …" line.

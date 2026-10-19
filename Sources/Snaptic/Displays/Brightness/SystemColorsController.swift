@@ -143,7 +143,7 @@ import SnapticShims
     }
 
     private func registerNightShift(_ ctx: DisplaysContext, lifetime: Lifetime) {
-        ctx.actions.register(Action(id: Self.nightShiftAction, title: L("Night Shift On or Off"), feature: .nightShift,
+        ctx.actions.register(Action(id: Self.nightShiftAction, title: DisplaysToggleText.nightShift, feature: .nightShift,
                                     cliAllowed: true) { [weak self] _ in _ = self?.toggleNightShift() }, lifetime: lifetime)
         ctx.actions.register(Action(id: Self.nightShiftUpAction, title: L("Night Shift Warmer"), feature: .nightShift,
                                     cliAllowed: true) { [weak self] _ in self?.stepNightShift(1) }, lifetime: lifetime)

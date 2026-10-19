@@ -287,7 +287,7 @@ import SnapticKit
         guard !lifetime.isEnded, context === ctx else { return outcome }
         ctx.osd.show(.layout, text: l.name, on: ctx.registry.displays.first(where: \.isMain)?.desktopID ?? 0)
         if !p.skipped.isEmpty {
-            ctx.toasts.show(L("Applied “\(l.name)”; skipped \(p.skipped.joined(separator: ", ")) (feature off)"), lifetime: lifetime)
+            ctx.toasts.show(L("Applied “\(l.name)”; skipped \(SentenceText.list(p.skipped)) (feature off)"), lifetime: lifetime)
         }
         if pendingMatch == id { pendingMatch = nil }
         if !trusted { offerTrust(id) }

@@ -36,7 +36,7 @@ import SnapticKit
         let items = ColorMenuItems(context: context, part: .menuBarOverlays, owner: self)
         menuItems = items
         context.menus.register(items, lifetime: lifetime)
-        context.actions.register(Action(id: Self.stripAction, title: L("Black Menu Bar Background On or Off"), feature: .menuBarOverlays,
+        context.actions.register(Action(id: Self.stripAction, title: DisplaysToggleText.blackMenuBarBackground, feature: .menuBarOverlays,
                                         cliAllowed: false) { [weak self] target in self?.toggleStrip(target) }, lifetime: lifetime)
         context.registry.changes
             .receive(on: DispatchQueue.main)

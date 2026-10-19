@@ -2,6 +2,40 @@ import XCTest
 @testable import SnapticKit
 
 final class KitModulesTests: XCTestCase {
+    /// Review6 ux R3-3: names inside sentences and joined lists (design-spec §4.1).
+    func testSentenceTextInSentence() {
+        XCTAssertEqual(SentenceText.inSentence("Virtual displays"), "virtual displays")
+        XCTAssertEqual(SentenceText.inSentence("Keyboard shortcuts"), "keyboard shortcuts")
+        XCTAssertEqual(SentenceText.inSentence("Picture in Picture filters"), "Picture in Picture filters")
+        XCTAssertEqual(SentenceText.inSentence("Night Shift controls"), "Night Shift controls")
+        XCTAssertEqual(SentenceText.inSentence("High Dynamic Range switch"), "High Dynamic Range switch")
+        XCTAssertEqual(SentenceText.inSentence("HDR virtual modes"), "HDR virtual modes")
+        XCTAssertEqual(SentenceText.inSentence("HiDPI sizes"), "HiDPI sizes")
+        XCTAssertEqual(SentenceText.inSentence("USB-C input"), "USB-C input")
+        XCTAssertEqual(SentenceText.inSentence("Apple native brightness"), "Apple native brightness")
+        XCTAssertEqual(SentenceText.inSentence("Machine names"), "machine names", "a proper name is a whole word")
+        XCTAssertEqual(SentenceText.inSentence("macOS updates"), "macOS updates")
+        XCTAssertEqual(SentenceText.inSentence(""), "")
+    }
+
+    func testSentenceTextListUsesTheSerialComma() {
+        XCTAssertEqual(SentenceText.list([]), "")
+        XCTAssertEqual(SentenceText.list(["sharper text"]), "sharper text")
+        XCTAssertEqual(SentenceText.list(["sharper text", "HDR virtual modes"]), "sharper text and HDR virtual modes")
+        XCTAssertEqual(SentenceText.list(["a", "b", "c"]), "a, b, and c")
+        XCTAssertEqual(SentenceText.list(["a", "b", "c", "d"]), "a, b, c, and d")
+        // Seeded: every list of n ≥ 3 has n − 1 commas and one ", and " before the last item.
+        var rng = SeededGenerator(seed: 20261018)
+        for _ in 0..<500 {
+            let n = Int(rng.next() % 9)
+            let items = (0..<n).map { "item\($0)" }
+            let text = SentenceText.list(items)
+            XCTAssertEqual(text.filter { $0 == "," }.count, n >= 3 ? n - 1 : 0, text)
+            if n >= 2 { XCTAssertTrue(text.hasSuffix((n >= 3 ? ", and " : " and ") + items[n - 1]), text) }
+            XCTAssertEqual(text.components(separatedBy: " and ").count, n >= 2 ? 2 : 1, text)
+        }
+    }
+
     func testModuleStartOrder() {
         XCTAssertEqual(ModuleID.allCases, [.windowSwitcher, .displays, .awake])
         XCTAssertEqual(ModuleID.awake.rawValue, "awake")

@@ -60,7 +60,7 @@ struct HookEditorSheet: View, ControlDeclaring {
 
     /// Any display, the connected displays, and the stored display while it isn't connected.
     private func displayOptions(_ stored: DisplayKey?) -> [PickerOption<DisplayKey?>] {
-        var options = [PickerOption<DisplayKey?>(nil, L("Any display"))]
+        var options = [PickerOption<DisplayKey?>(nil, L("Any Display"))]
         options += runtime.displays.map { PickerOption(Optional($0.key), $0.name) }
         if let stored, !runtime.displays.contains(where: { $0.key == stored }) {
             let name = AutomationText.displayName(stored, env: env) ?? L("A display that isn’t connected")

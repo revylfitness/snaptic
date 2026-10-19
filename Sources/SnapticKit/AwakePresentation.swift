@@ -21,7 +21,7 @@ package enum AwakeHolderText {
         return order.map { ($0, counts[$0] ?? 0) }
     }
 
-    /// "Held by Terminal", "Held by Terminal (2)", "Held by Terminal and Xcode", "Held by Terminal, Xcode and iTerm";
+    /// "Held by Terminal", "Held by Terminal (2)", "Held by Terminal and Xcode", "Held by Terminal, Xcode, and iTerm";
     /// nil without holders.
     package static func summary(_ names: [String?]) -> String? {
         let g = groups(names)
@@ -39,14 +39,8 @@ package enum AwakeHolderText {
         return subject + (plural ? L(" are still keeping your Mac awake.") : L(" is still keeping your Mac awake."))
     }
 
-    /// "A", "A and B", "A, B and C".
-    package static func list(_ parts: [String]) -> String {
-        switch parts.count {
-        case 0: return ""
-        case 1: return parts[0]
-        default: return parts.dropLast().joined(separator: ", ") + L(" and ") + parts[parts.count - 1]
-        }
-    }
+    /// "A", "A and B", "A, B, and C" (serial comma).
+    package static func list(_ parts: [String]) -> String { SentenceText.list(parts) }
 
     private static func capitalizedFirst(_ s: String) -> String {
         guard let first = s.first else { return s }

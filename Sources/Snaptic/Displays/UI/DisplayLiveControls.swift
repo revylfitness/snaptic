@@ -429,8 +429,8 @@ struct DisplaysPanelContent: View, ControlDeclaring {
                 StatusAction(title: L("Resume"), control: ControlID("displays.panel.resume")) { actions.resume() },
             ])
         }
-        if DisplaysLive.unprotectedReason(context) != nil {
-            StatusRow(L("The safety helper stopped."), style: .warning)
+        if let unprotected = DisplaysLive.unprotectedReason(context) {
+            StatusRow(unprotected, style: .warning)
         }
     }
 }

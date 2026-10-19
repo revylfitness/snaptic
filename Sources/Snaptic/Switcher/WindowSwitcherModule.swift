@@ -11,7 +11,7 @@ import SnapticKit
     let id: ModuleID = .windowSwitcher
     let title = L("Window Switcher")
     let symbolName = "rectangle.on.rectangle"
-    let summary = L("Switch between windows with ⌥⇥, with thumbnails, search and window actions.")
+    let summary = L("Switch between windows with ⌥⇥, with thumbnails, search, and window actions.")
     private(set) var state: ModuleState = .stopped
 
     let settings = AppSettings.shared
@@ -107,7 +107,7 @@ import SnapticKit
         guard let context else { return [] }
         var items: [NSMenuItem] = []
         if !tapIsRunning {
-            items.append(MenuKit.action(L("Grant Accessibility Access…"),
+            items.append(MenuKit.action(L("Allow \(PermissionFlow.paneName(.accessibility))…"),
                                         control: ControlID("menu.switcher.grantAccessibility")) {
                 context.permissions.presentGuide(.accessibility, reason: L("The window switcher needs it to see its shortcuts."))
             })
@@ -269,7 +269,7 @@ import SnapticKit
         let life = lifetime.child()
         gatherLifetime = life
         do {
-            _ = try context.hotkeys.register(combo, owner: L("Gather windows"), lifetime: life) { [weak self] in
+            _ = try context.hotkeys.register(combo, owner: L("Gather Windows on This Display"), lifetime: life) { [weak self] in
                 guard let self, let life = self.lifetime else { return }
                 // Triggered by a shortcut: confirm first (R5.7).
                 self.gatherer?.gather(onto: WindowGatherer.pointerScreen, confirm: true, lifetime: life)

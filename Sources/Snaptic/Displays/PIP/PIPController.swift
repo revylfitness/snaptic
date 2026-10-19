@@ -1027,7 +1027,7 @@ fileprivate extension DisplayActionID {
             guard let self else { return }
             self.setAllPaused(!self.allPaused)
         }, lifetime: lifetime)
-        ctx.actions.register(Action(id: .pipToggleDisplay, title: L("Picture in Picture of This Display"), feature: .pip, cliAllowed: false) {
+        ctx.actions.register(Action(id: .pipToggleDisplay, title: DisplaysToggleText.showInPictureInPicture, feature: .pip, cliAllowed: false) {
             [weak self] target in
             guard let self else { return }
             for display in self.displays(for: target) { self.toggleDisplay(display.key) }

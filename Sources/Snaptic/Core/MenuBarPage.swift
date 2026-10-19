@@ -86,6 +86,7 @@ private struct MenuBarPageContent: View {
                     Text(L("Turn on Displays to choose how its menu looks."))
                 }
             }
+            let hasSnapticItem = modules.value.hasSnapticItem(running: host.runningModules)
             Section {
                 GlyphTilePicker(L("Snaptic icon"),
                                 symbols: MenuLayout.snapticSymbolChoices(stored: modules.value.sharedSymbol,
@@ -93,6 +94,11 @@ private struct MenuBarPageContent: View {
                                     .filter(ModulesConfig.isCuratedSymbol),
                                 labels: Self.symbolLabels, selection: snapticSymbol,
                                 anchor: ControlID("menubar.page.snapticIcon"))
+                    .disabled(!hasSnapticItem)
+            } footer: {
+                if !hasSnapticItem {
+                    Text(L("The Snaptic icon appears when a module is set to Show in Snaptic Menu."))
+                }
             }
             PageFooterButtons(advanced: nil, help: SettingsRoute(SettingsRootID.menuBar),
                               restoreDefaults: RestoreDefaults(

@@ -559,7 +559,7 @@ import SnapticKit
     func resetAllSettings() {
         let alert = NSAlert()
         alert.messageText = L("Reset all Snaptic settings?")
-        alert.informativeText = L("Every module, shortcut, menu and display setting goes back to its default. Snaptic then restarts.")
+        alert.informativeText = L("Every module, shortcut, menu, and display setting goes back to its default. Snaptic then restarts.")
         alert.addButton(withTitle: L("Reset"))
         alert.addButton(withTitle: L("Cancel"))
         alert.alertStyle = .warning

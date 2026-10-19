@@ -159,7 +159,7 @@ import UniformTypeIdentifiers
             let more = other.count > 15 ? "\n" + L("…and ") + String(other.count - 15) + L(" more") : ""
             text += (safety.isEmpty ? L("These settings change:") : L("Other changes:")) + "\n" + shown + more + "\n\n"
         }
-        text += L("Hooks, actions, command-line settings, auto-disconnect exceptions and \"allow\" switches are never imported. Protected apps are only ever added.")
+        text += L("Hooks, actions, command-line settings, auto-disconnect exceptions, and “allow” switches are never imported. Protected apps are only ever added.")
         if newAwake != nil {
             text += "\n\n" + L("Awake’s Drive Alive disks, pointer movement, recent apps and launch session are never imported, and its battery and power limits only get stricter.")
         }

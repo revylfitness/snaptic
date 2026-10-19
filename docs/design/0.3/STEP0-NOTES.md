@@ -77,9 +77,16 @@ Fail-safe stub values chosen so nothing acts before its owner lands: `PowerFacts
   `menuItemIDs` must cover every frozen `l.menu.*` id that `ControlRemovals` doesn't remove, once each, and declare no
   removed id (Kit `ControlLegacy.menuCoverageProblems`). Families (`a.custom.*`) are per instance and skipped.
   lint03 checks every `DisplayMenuContributor` conformer is in `DisplaysModule.menuContributorTypes`.
-- **TEAMS rule 2 lint limits (review5 code N4).** Not seen: a main-actor member used without `self.` outside the
-  wrap (implicit self after `guard let self`), a queue passed in from another file, and Combine `publisher(for:)`
-  sinks outside Awake (L10 checks those in Awake, for `receive(on:)` only).
-- **Pending lists the lead keeps.** `HelpAnchorsReadmeTests.pendingReadmeAnchors`: README headings step 5 adds (the
-  test skips until then, and fails once a listed heading exists). `lint03.OLD_TERMS_PENDING`: 0.2 names still in
-  D's and C's `L()` text (review5 ux N1); counts only go down, a lower count prints a warning to lower the entry.
+- **TEAMS rule 2 lint limits (review5 code N4, review6 code N5).** Seen since review6: a queue bound to a name the
+  file declares (`main` included), `Timer.init(…)`, and `self` in a string literal's text is not counted as a use.
+  Not seen: a main-actor member used without `self.` outside the wrap (implicit self after `guard let self`), a
+  queue passed in from another file or reached through a computed property, and Combine `publisher(for:)` sinks
+  outside Awake (L10 checks those in Awake, for `receive(on:)` only). The list is above `RULE2_CALL` in lint03.
+- **Copy lints (review6 ux R3-1, R3-4, code N5).** lint03 checks `L(…)` text in the app and Kit, in every literal
+  form (triple-quoted, raw, inside an interpolation, concatenated): no 0.2 names (`OLD_TERMS`), no straight
+  apostrophes, and pop-up, segmented and pull-down options in title case (radio groups and Apple's "Use as" words
+  exempt). The menu-contributor check reads declarations only (a generic parameter or a `where` constraint isn't a
+  conformance) and follows protocols that refine `DisplayMenuContributor`. Each check has self-check cases.
+- **Pending list the lead keeps.** `SettingsShellRulesTests.awaitingREADME`: README headings step 5 adds (the test
+  skips until then, and fails once a listed heading exists). The 0.2-names lint has no allowances left, so its
+  pending list was removed.

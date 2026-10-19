@@ -152,7 +152,7 @@ private struct MatchTextSizeRows: View {
         PickerSetting(L("Reference display"),
                       help: L("The display whose text size the others match."),
                       selection: SettingsBinding.store(env.config, \.resolution.scaleMatchReference),
-                      options: [PickerOption(DisplayKey?.none, L("Main display"))]
+                      options: [PickerOption(DisplayKey?.none, L("Main Display"))]
                           + active.map { PickerOption(Optional($0.key), $0.name) },
                       style: .popUp, defaultValue: DisplayKey?.none,
                       anchor: ControlID("displays.matchTextSize.reference"))

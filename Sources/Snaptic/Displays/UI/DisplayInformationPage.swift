@@ -147,15 +147,13 @@ private struct DisplayInformationContent: View {
     @ViewBuilder private func safetySection(_ ctx: DisplaysContext) -> some View {
         Section {
             LabeledContent(L("Status"), value: guardStatus(ctx))
-            if DisplaysLive.unprotectedReason(ctx) != nil {
-                StatusRow(L("The safety helper stopped."), style: .warning, actions: [
+            if let unprotected = DisplaysLive.unprotectedReason(ctx) {
+                // The real reason (it names `helpers.unavailable` when the helpers can't run; review6 ux nit 6).
+                StatusRow(unprotected, style: .warning, actions: [
                     StatusAction(title: L("Restart Snaptic"), control: ControlID("displays.info.restartHelper")) {
                         ctx.relauncher.relaunch(reason: L("Restart the safety helper"))
                     },
                 ])
-            }
-            if let reason = ctx.helpers.unavailable {
-                StatusRow(reason, style: .warning)
             }
             LabeledContent(L("Can revert rotation and HDR"), value: ctx.guardClient.canMonitorPanel ? L("Yes") : L("No"))
             LabeledContent(L("Change awaiting confirmation"),

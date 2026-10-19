@@ -65,7 +65,7 @@ private struct ResolutionFiltersContent: View {
                           selection: SettingsBinding.store(env.config, \.resolution.sliderLabel),
                           options: [
                               PickerOption(SliderLabelStyle.size, L("Size")),
-                              PickerOption(SliderLabelStyle.percent, L("Percent of default")),
+                              PickerOption(SliderLabelStyle.percent, L("Percent of Default")),
                           ],
                           style: .popUp, defaultValue: defaults.sliderLabel,
                           anchor: ControlID("displays.resolution.filters.valueStyle"))
@@ -119,9 +119,9 @@ private struct ResolutionDisplayFilters: View {
         PickerSetting(L("Show"),
                       selection: binding(\.dpiFilter),
                       options: [
-                          PickerOption(ModeDPIFilter.all, L("HiDPI and standard sizes")),
-                          PickerOption(ModeDPIFilter.hiDPIOnly, L("HiDPI sizes only")),
-                          PickerOption(ModeDPIFilter.loDPIOnly, L("Standard sizes only")),
+                          PickerOption(ModeDPIFilter.all, L("HiDPI and Standard Sizes")),
+                          PickerOption(ModeDPIFilter.hiDPIOnly, L("HiDPI Sizes Only")),
+                          PickerOption(ModeDPIFilter.loDPIOnly, L("Standard Sizes Only")),
                       ],
                       style: .popUp, defaultValue: ModeDPIFilter.all,
                       anchor: ControlID("displays.resolution.filters.dpi"))
@@ -156,7 +156,7 @@ private struct ResolutionDisplayFilters: View {
         if rates.count > 1 {
             PickerSetting(L("Refresh rate"),
                           selection: binding(\.refreshFilter),
-                          options: [PickerOption(Int?.none, L("All rates"))]
+                          options: [PickerOption(Int?.none, L("All Rates"))]
                               + rates.map { PickerOption(Optional($0), L("\($0 / 1000) Hz")) },
                           style: .popUp, defaultValue: Int?.none,
                           anchor: ControlID("displays.resolution.filters.refresh"))

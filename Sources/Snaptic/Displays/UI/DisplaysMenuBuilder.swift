@@ -65,7 +65,7 @@ import SnapticKit
             items.append(item)
         }
         if let reason = DisplaysLive.unprotectedReason(ctx) {
-            // The page's words in menu Title Case ("The safety helper stopped."; ux nit 6).
+            // The two cases of the pages' reason row, in menu Title Case (ux nit 6); the full reason is the tooltip.
             let title = ctx.helpers.unavailable != nil ? L("Snaptic’s Helpers Can’t Run") : L("Safety Helper Stopped")
             let item = MenuKit.status(title, symbol: "exclamationmark.shield", control: ControlID("menu.displays.status"))
             item.toolTip = reason

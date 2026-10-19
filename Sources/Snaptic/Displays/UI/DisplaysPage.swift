@@ -188,8 +188,9 @@ private struct DisplaysRootContent: View {
                         },
                     ])
                 }
-                if unprotected != nil {
-                    StatusRow(L("The safety helper stopped."), style: .warning, actions: [
+                if let unprotected {
+                    // The real reason: the helper stopped, or the helpers can't run (review6 ux nit 6).
+                    StatusRow(unprotected, style: .warning, actions: [
                         StatusAction(title: L("Restart Snaptic"), control: ControlID("displays.root.status.restartHelper")) {
                             ctx.relauncher.relaunch(reason: L("Restart the safety helper"))
                         },

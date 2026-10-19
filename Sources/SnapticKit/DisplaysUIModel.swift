@@ -63,6 +63,47 @@ package enum DisplaysUIText {
         }
     }
 
+    /// The feature's name inside running text ("Needs saved layouts.", "Turn off virtual displays?").
+    package static func inSentence(_ feature: DisplayFeature) -> String { SentenceText.inSentence(title(feature)) }
+
+    /// Names joined for a sentence, each lowercased as `inSentence` does: "sharper text and HDR virtual modes".
+    package static func list(_ features: [DisplayFeature]) -> String { SentenceText.list(features.map(inSentence)) }
+
+    /// Whether the feature's name takes a plural verb ("Keyboard shortcuts are off.").
+    package static func isPlural(_ feature: DisplayFeature) -> Bool {
+        switch feature {
+        case .overview, .color, .colorProfiles, .nightShift, .applePresets, .ddcControls, .ddcCustom, .brightnessKeys,
+             .volumeKeys, .shortcuts, .layouts, .virtualScreens, .hdrVirtual, .pipFilters, .menuBarOverlays, .hooks,
+             .customActions:
+            return true
+        case .diagnostics, .resolution, .hiddenModes, .scaleMatch, .brightness, .brightnessApple, .brightnessDDC,
+             .brightnessGamma, .brightnessOverlay, .brightnessRestore, .dimToBlack, .dimOnLock, .nits, .xdr, .sync,
+             .autoBrightness, .ddcInput, .ddcPower, .osd, .osdBroadcast, .mainDisplay, .arrangement, .mirroring,
+             .rotation, .underscan, .hdrToggle, .disconnect, .autoDisconnectBuiltin, .protection, .smartHiDPI, .pip:
+            return false
+        }
+    }
+
+    /// "Keyboard shortcuts are off." / "Brightness control is off."
+    package static func isOff(_ feature: DisplayFeature) -> String {
+        isPlural(feature) ? L("\(title(feature)) are off.") : L("\(title(feature)) is off.")
+    }
+
+    /// "Hardware controls aren’t available right now." / "Brightness control isn’t available right now."
+    package static func notAvailableNow(_ feature: DisplayFeature) -> String {
+        isPlural(feature) ? L("\(title(feature)) aren’t available right now.")
+            : L("\(title(feature)) isn’t available right now.")
+    }
+
+    /// "Skipped while saved layouts are off."
+    package static func skippedWhileOff(_ feature: DisplayFeature) -> String {
+        isPlural(feature) ? L("Skipped while \(inSentence(feature)) are off.")
+            : L("Skipped while \(inSentence(feature)) is off.")
+    }
+
+    /// "Needs hardware controls."
+    package static func needs(_ feature: DisplayFeature) -> String { L("Needs \(inSentence(feature)).") }
+
     /// The permission's name as System Settings shows it on this macOS version
     /// (macOS 27 renamed the Accessibility pane, macos27.md §1a).
     package static func permissionName(_ permission: Permission, osMajor: Int) -> String {
@@ -234,7 +275,7 @@ package enum DisplaysOnboardingPlan {
         if names.count == 1, let name = names.first {
             return L("\(name) has no sharp mode at a usable size. Sharper text draws at twice the resolution and scales down. It turns off HDR on that display and uses more graphics memory.")
         }
-        return L("\(names.joined(separator: ", ")) have no sharp mode at a usable size. Sharper text draws at twice the resolution and scales down. It turns off HDR on those displays and uses more graphics memory.")
+        return L("\(SentenceText.list(names)) have no sharp mode at a usable size. Sharper text draws at twice the resolution and scales down. It turns off HDR on those displays and uses more graphics memory.")
     }
 
     /// "Extra brightness" is only offered when some display has EDR headroom.
@@ -895,7 +936,7 @@ package enum DisplaySettingsCopy {
 
     /// The "Copy settings from" row's help: what is replaced.
     package static var help: String {
-        L("Replaces this display’s brightness, color, resolution, hardware control tuning, keys and connection settings with a remembered display’s.")
+        L("Replaces this display’s brightness, color, resolution, hardware control tuning, keys, and connection settings with a remembered display’s.")
     }
 
     /// The confirmation's title, naming the remembered display.
