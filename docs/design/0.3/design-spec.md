@@ -606,7 +606,9 @@ final class HostingMenuItem<Content: View>: NSMenuItem {
      on, to, up, via, with, from, into, over, than). Text in parentheses or quotes keeps its own case.
    - **Exceptions.** Apple's own wording stays as Apple writes it: the Arrange sheet's "Use as" pop-up ("Main
      display", "Extended display", "Mirror for “…”"), as in System Settings. Event-hook "When" clauses ("A display
-     connects") are sentence fragments and stay sentence case.
+     connects") and Awake rule-condition pop-ups ("Safari" "is not" "open", "on battery") are sentence fragments and
+     stay sentence case. `lint03.py` checks `PickerSetting` options and native `Picker` `Text(L(…))` options; its
+     comment lists what it can't see.
    - **Names inside sentences.** A feature's label is sentence case ("Virtual displays"), so mid-sentence its first
      letter is lowercased: "Turn off virtual displays?", "Needs saved layouts." Proper names and acronyms keep their
      case ("Picture in Picture", "Night Shift controls", "HDR virtual modes"). Use Kit `SentenceText.inSentence`

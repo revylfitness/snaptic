@@ -12,7 +12,7 @@ Snaptic 0.3 adds **Awake**, a free keep-awake module that replaces Amphetamine a
 - **Drive Alive:** keeps the external drives you choose from spinning down.
 - **History:** today’s and the last 7 days’ time kept awake, past sessions, and Start Again, kept on your Mac for 90 days.
 - **Menu bar:** Awake’s own icon (cup, eye, or light bulb) appears while your Mac is kept awake, optionally with the time remaining or the end time. The Awake menu and the compact section in the Snaptic menu show what’s keeping your Mac awake.
-- **Keyboard shortcuts:** Keep Awake, Keep Display On, the first four sessions, and Pause Rules.
+- **Keyboard shortcuts:** Keep Awake, Keep Display On, the first four sessions, and Pause or Resume Rules.
 - **Command line:** `snaptic awake status|start|hold|preset|extend|stop|pause`. `snaptic awake hold` keeps your Mac awake while a command or a process runs, up to 8 holds beside your own session.
 - **Other apps keeping your Mac awake:** Awake › Advanced… lists other apps’ power assertions and warns when another tool left system sleep turned off.
 - **For organizations:** hidden kill switches `Modules.disable.awake` and `Awake.disable.<feature>`, deployable with a configuration profile.
@@ -30,7 +30,7 @@ Snaptic 0.3 adds **Awake**, a free keep-awake module that replaces Amphetamine a
 
 ## Removed, and what replaces it
 
-- **Displays’ display sleep prevention moved to Awake.** If you used it in 0.2, 0.3 turns Awake on with a rule “While a display is connected” for the same displays, keeping the display on, and tells you once. Its shortcut moves to Awake’s Pause Rules when it can; otherwise it’s removed, with a note in Recent Notices.
+- **Displays’ display sleep prevention moved to Awake.** If you used it in 0.2, 0.3 turns Awake on with a rule “While a display is connected” for the same displays, keeping the display on, and tells you once. Its shortcut moves to Awake’s Pause or Resume Rules when it can; otherwise it’s removed, with a note in Recent Notices.
 - **`snaptic prevent-sleep` is retired.** It answers “Moved to Awake: use “snaptic awake …”.” with exit code 2, isn’t listed in help, and will be removed in 0.4. Use `snaptic awake start`, `snaptic awake hold`, or a rule.
 - Settings that appeared in two places in 0.2 now appear in one.
 

@@ -92,7 +92,7 @@ Grouped like the Displays page and its sub-pages. **On** = on by default once Di
 - **Disconnect displays (Opt-in, Beta; Experimental on Intel):** turn a display off without unplugging it. Turning the built-in display off automatically (Opt-in) when an external one connects is refused unless the external display answers DDC with power on (or is an Apple display), and isn’t available on iMacs and some base M3 models.
 - **Match Text Size (Opt-in):** makes text the same size on two displays (preview, then confirm).
 - **Display Tools:** Identify Displays, Redetect Displays, Connect All Displays, Disconnect All But Main, Match Text Size…, Show Displays Panel (with an optional shortcut; it opens the same controls at the pointer, even when the menu bar icon is hidden in the overflow), and Restore All Displays.
-- **Sub-pages:** [Brightness and Dimming](#brightness-and-dimming), [Color](#color), [Hardware Controls](#hardware-controls), [Keyboard](#keyboard), Saved Layouts, Virtual Displays, Picture in Picture, Automations, and [Display Information](#display-information).
+- **Sub-pages:** [Brightness and Dimming](#brightness-and-dimming), [Color](#color), [Hardware Controls](#hardware-controls), [Keyboard](#keyboard), [Saved Layouts](#saved-layouts), [Virtual Displays](#virtual-displays), [Picture in Picture](#picture-in-picture), [Automations](#automations), and [Display Information](#display-information).
 
 ### Brightness and Dimming
 
@@ -123,29 +123,38 @@ Adjustments show in screenshots and don’t reach AirPlay, DisplayLink, or Sidec
 - **Keyboard Shortcuts… (On):** global shortcuts for any display action, including input slots and the Restore All Displays shortcut. They work without Accessibility, also in password fields.
 - **Brightness broadcast (Opt-in, in Displays › Advanced…):** lets other apps draw their own indicator from Snaptic’s changes (see [Privacy and security](#privacy-and-security)).
 
-### Saved Layouts, Virtual Displays, Picture in Picture, and Automations
+### Saved Layouts
 
 - **Saved layouts (Opt-in):** save and apply layouts, optionally automatically when the same displays connect. **Protect arrangement (Opt-in)** puts the arrangement back when something else changes it (for example the macOS 27.2 arrangement-restore bug).
+
+### Virtual Displays
+
 - **Virtual displays (Opt-in, Beta):** displays that exist only in software, with templates (Headless, Recording 16:9, Teleprompter, Portrait) and associations with real displays. Sharper text (Smart HiDPI, Opt-in, Beta) gives sharp text at any size on external displays; HDR virtual modes are Experimental.
+
+### Picture in Picture
+
 - **Picture in Picture (Opt-in, needs Screen Recording):** a live copy of a display or a window in a floating window (crop, click-through, orientation), or a display streamed full screen onto another. Filters (Opt-in): built-in Core Image filters and imported 3D `.cube` LUTs.
+
+### Automations
+
 - **Automations:** event hooks (Opt-in) run a program when a display connects or disconnects, or when the Mac sleeps or wakes; custom actions (Opt-in) put your own programs in the menu, on shortcuts, and (if you mark them) on the command line.
 
 ### Display Information
 
-- **Report:** a live report about your displays, with **Copy Report** and **Export Report…**. It has no display names, serial numbers, window titles, or app names, and identifiers are masked. It lists private-API availability, kill switches, helpers, and recent events.
-- **Safety helper** and **undo journal** status, with **Restart the safety helper** when it stopped.
+- **Report:** a live report about your displays, with **Copy Report** and **Export…**. It has no display names, serial numbers, window titles, or app names, and identifiers are masked. It lists private-API availability, kill switches, helpers, and recent events.
+- **Safety helper** and **undo journal** status, with **Restart Snaptic** (which restarts the helper) when it stopped.
 - **EDID:** export the data a display reports about itself (Export EDID…).
 - **Remembered displays** (forget one, or all that aren’t connected) and **remembered resolutions**.
 
 ### Displays Advanced Settings
 
-**Use Snaptic for** turns whole areas on or off: brightness control, resolution control, arrangement and mirroring, rotation, keyboard shortcuts for displays, the brightness indicator, disconnecting displays, the HDR switch, underscan, built-in auto-brightness, brightness broadcast, and showing all resolutions. The sheet also has **Confirm display changes** (see [Safety](#safety)) and **Other display apps**: if BetterDisplay, MonitorControl, or Lunar is running, Snaptic pauses its overlapping features by default (“Paused while MonitorControl runs”) or runs both if you choose.
+**Use Snaptic for** turns whole areas on or off: brightness control, resolution control, arrangement and mirroring, rotation, keyboard shortcuts for displays, the brightness indicator, and disconnecting displays. **Experimental** has the High Dynamic Range switch, underscan, built-in auto-brightness, brightness broadcast, and showing all resolutions. The sheet also has **Confirm display changes** (see [Safety](#safety)) and **Other display apps**: if BetterDisplay, MonitorControl, or Lunar is running, Snaptic pauses its overlapping features by default (“Paused while MonitorControl runs”) or runs both if you choose. **Resolution filters** choose which modes the Resolution pop-up, the menu, and the slider offer (HiDPI or standard sizes, widths, refresh rate).
 
 ## Awake
 
 Awake keeps your Mac from going to sleep while you want it awake, with the same public macOS power assertion `caffeinate` uses. It needs no administrator password, installs nothing, and leaves nothing behind: if Snaptic quits or crashes, macOS releases the assertion at once and your Mac sleeps normally again.
 
-Turn it on with **Use Awake** at the top of the Awake page. The page has a status row (**Keep Awake ▾** while nothing runs; **Options ▾**, **Turn Off**, and **Pause Rules ▾** while something does), Sessions, End sessions automatically, Start automatically, Keyboard, Drives ›, History ›, and **Advanced…**.
+Turn it on with **Use Awake** at the top of the Awake page. The page has a status row (**Keep Awake ▾** while nothing runs, **Options ▾** and **Turn Off** while a session or rule runs, **Keep Awake ▾** and **Turn Off** while only command-line holds run, and **Pause Rules ▾** or **Resume** whenever you have rules), Sessions, End sessions automatically, Start automatically, Keyboard, Drives ›, History ›, and **Advanced…**.
 
 ### Sessions
 
@@ -187,7 +196,7 @@ A session keeps your Mac awake until it ends. Start one from the Awake menu (**K
 | **Network activity** | Network traffic is at least a number of KB/s. |
 | **Bluetooth audio** (Beta) | A Bluetooth audio device, or a Bluetooth keyboard, mouse, or trackpad you saved, is connected. |
 
-None of these needs a permission. **Pause Rules** (for 1 hour or until tomorrow) is in the Awake menu’s **Rules ›**, the status row, a shortcut, and `snaptic awake pause`. A session you start yourself always takes precedence over rules, and command-line holds come last.
+None of these needs a permission. **Pause Rules** (for 1 hour or until tomorrow) is in the Awake menu’s **Rules ›**, the status row, the **Pause or Resume Rules** shortcut, and `snaptic awake pause`. A session you start yourself always takes precedence over rules, and command-line holds come last.
 
 ### Guards
 
@@ -197,7 +206,7 @@ Guards end sessions so Awake never drains your battery or keeps a hot Mac runnin
 - **When the battery is low** (laptops; default on at 20%, 5–50%): ends sessions below your level. Rules don’t start again until the battery is 5% above the level or charging.
 - **When the power adapter is disconnected** (laptops; off by default).
 - **When Low Power Mode turns on** (Advanced; off by default). Otherwise Awake keeps running and says so once.
-- **Heat:** when your Mac gets very hot (critical thermal state), every session and hold ends, Drive Alive stops, and rules pause for 10 minutes. This can’t be turned off. A serious (lower) thermal state shows a one-time notice.
+- **Heat:** when your Mac gets very hot (critical thermal state), every session and hold ends, Drive Alive stops, and rules stay paused while it’s hot and for 10 minutes after it cools down. This can’t be turned off. A serious (lower) thermal state shows a one-time notice.
 - **Unreadable battery:** if a laptop’s battery can’t be read twice in a row, Awake stops appearing active and keeping drives awake (it treats the battery as empty) but keeps the session, and says so.
 - **Start Anyway:** when the low-battery guard or Low Power Mode refuses a session you started in Snaptic, the notice offers **Start Anyway** for that one session. It never overrides the 5% floor or heat, and never applies to the command line.
 - **Advanced…** also has: end sessions when your Mac sleeps (when you choose Sleep or close the lid), when you switch users (immediately, after 1 hour, or never), and after the screen has been locked for 1, 4, or 12 hours; keep the display on while locked (off: the display may sleep on the lock screen while your Mac stays awake).
@@ -223,7 +232,7 @@ Accessibility is asked for only when you turn pointer movement on. To revoke it,
 
 - Drives stay awake only during sessions you started in Snaptic or that rules started, unless you turn on **Also when no session is running**. Command-line sessions and holds never keep drives awake.
 - Only external, local, writable drives qualify: never the startup disk, disk images, network volumes, Time Machine, or read-only drives. At most 16.
-- The 5% battery floor and the heat guard stop Drive Alive in every mode.
+- The 5% battery floor, the low-battery guard (when it’s on), a battery that can’t be read twice in a row, and the heat guard stop Drive Alive in every mode.
 - macOS asks once for access to removable volumes, the first time Snaptic writes to a drive.
 
 ### History
@@ -236,7 +245,7 @@ By default Awake’s icon appears only while your Mac is being kept awake (Show 
 
 ### Keyboard shortcuts
 
-**Awake › Keyboard Shortcuts…** has, all unbound by default: **Keep Awake** (starts your default session, or turns Keep Awake off), **Keep Display On**, **Start “…”** for the first four sessions in Sessions in the menu, and **Pause Rules** (for 1 hour, or resume). Shortcuts work in any app while Awake is on.
+**Awake › Keyboard Shortcuts…** has, all unbound by default: **Keep Awake** (starts your default session, or turns Keep Awake off), **Keep Display On**, **Start “…”** for the first four sessions in Sessions in the menu, and **Pause or Resume Rules** (pauses rules for 1 hour, or resumes them). Shortcuts work in any app while Awake is on.
 
 ### Other apps keeping your Mac awake
 
@@ -608,7 +617,7 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
 **0.2 → 0.3.** No setting is lost; every 0.2 setting, button, and menu item has a home in 0.3, and Settings search finds it.
 
 - **Display sleep prevention moved to Awake.** If it was on in 0.2 (Displays on, the feature on, and at least one display set to prevent sleep), 0.3 turns Awake on with a rule “While a display is connected” for those displays (up to 8 per rule), keeping the display on. General shows “Your display sleep setting moved to Awake.”, and the first time the rule applies, a one-time notice says so. If it wasn’t in use, Awake starts off with a “New: Awake” card.
-- **Its shortcut** moves to Awake’s **Pause Rules** if a rule was created and Pause Rules has no shortcut yet; otherwise it’s removed, and Recent Notices says “Your display sleep shortcut was removed. Set Awake shortcuts in Settings › Awake › Keyboard Shortcuts.”
+- **Its shortcut** moves to Awake’s **Pause or Resume Rules** if a rule was created and that shortcut isn’t set yet; otherwise it’s removed, and Recent Notices says “Your display sleep shortcut was removed. Set Awake shortcuts in Settings › Awake › Keyboard Shortcuts.”
 - **Menu bar placement** (shared, own icon, hidden, and Displays’ “hide when no external display is connected”) becomes the new per-module pop-up on the Menu Bar page.
 - **`snaptic prevent-sleep`** is retired; see [Command line](#command-line).
 - Each upgrade step runs once and records that it ran, so a later change you make isn’t undone at the next launch.
@@ -706,7 +715,7 @@ Snaptic uses private macOS functions where no public one exists. Every one is lo
 
 - **Switcher:** `_AXUIElementGetWindow`, `_SLPSSetFrontProcessWithOptions` and `SLPSPostEventRecordTo`, `SLSMainConnectionID` and `SLSCopySpacesForWindows`, `SLSSetSymbolicHotKeyEnabled` and `SLSIsSymbolicHotKeyEnabled`, and the deprecated `GetProcessForPID`. The focusing technique follows public reverse-engineering documented by [yabai](https://github.com/koekeishiya/yabai) (MIT).
 - **Displays:** DisplayServices (Apple brightness, auto-brightness), CoreBrightness (Night Shift), MonitorPanel (rotation, underscan, HDR, Apple presets), CoreGraphics `CGS…` calls (hidden modes, disconnect, HDR state), `CGVirtualDisplay` (virtual displays), `IOAVService` (DDC on Apple silicon), CoreDisplay (display info), the OSD framework, and libsystem’s process-responsibility calls for helpers.
-- **Awake:** no private functions. It reads one undocumented key, `CGSSessionScreenIsLocked`, from the public `CGSessionCopyCurrentDictionary` to know whether the screen is locked.
+- **Awake:** no private functions. It reads two undocumented keys with public calls, and only reads them: `CGSSessionScreenIsLocked` from `CGSessionCopyCurrentDictionary`, to know whether the screen is locked, and the `SleepDisabled` power setting (`SystemPowerSettings` in the `com.apple.PowerManagement` preferences, through `CFPreferencesCopyValue`), to tell you when something else has turned sleep off.
 
 ## License
 
