@@ -53,8 +53,8 @@ final class LidWatchdogShellTests: XCTestCase {
             XCTAssertEqual(r2.stdout, "", "\(shell)")
 
             Thread.sleep(forTimeInterval: 0.3)
-            XCTAssertEqual(held.sets, [], "\(shell): nothing set")
-            XCTAssertEqual(invalid.sets, [], "\(shell): nothing set")
+            XCTAssertTrue(held.sets.isEmpty, "\(shell): nothing set")
+            XCTAssertTrue(invalid.sets.isEmpty, "\(shell): nothing set")
             XCTAssertFalse(held.log.contains { $0.hasPrefix("nohup") }, "\(shell): run never started")
         }
     }
