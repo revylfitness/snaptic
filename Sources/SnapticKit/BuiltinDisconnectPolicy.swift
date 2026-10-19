@@ -64,10 +64,10 @@ package enum BuiltinDisconnectPolicy {
         case .on: return .allowed
         case .off: return .refused(L("The external display reports standby"))
         case .unknown:
-            return .refused(L("The external display's power state couldn't be read; try again in a moment"))
+            return .refused(L("The external display’s power state couldn’t be read; try again in a moment"))
         case .notReadable:
             return userSaysNoDDC ? .allowed
-                : .refused(L("The external display's power state can't be read over DDC"))
+                : .refused(L("The external display’s power state can’t be read over DDC"))
         }
     }
 }

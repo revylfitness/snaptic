@@ -64,8 +64,6 @@ extension PrivateSymbol {
                                                           framework: coreGraphicsPath, features: [.hiddenModes])
     static let cgsGetDisplayModeDescription = PrivateSymbol(function: "CGSGetDisplayModeDescriptionOfLength",
                                                             framework: coreGraphicsPath, features: [.hiddenModes])
-    static let cgsGetCurrentDisplayMode = PrivateSymbol(function: "CGSGetCurrentDisplayMode",
-                                                        framework: coreGraphicsPath, features: [.hiddenModes])
     static let cgsConfigureDisplayMode = PrivateSymbol(function: "CGSConfigureDisplayMode",
                                                        framework: coreGraphicsPath, features: [.hiddenModes])
     static let coreDisplayInfo = PrivateSymbol(function: "CoreDisplay_DisplayCreateInfoDictionary",
@@ -204,7 +202,7 @@ enum PrivateSymbolResolver {
         switch state(of: symbol) {
         case .available: return .available
         case .missing: return .unavailable(L("Not supported on this Mac or macOS version"))
-        case .killed: return .unavailable(L("Turned off by a defaults setting"))
+        case .killed: return .unavailable(DefaultsLock.text)
         case .encodingMismatch: return .unavailable(L("This macOS version changed a system interface Snaptic needs"))
         }
     }

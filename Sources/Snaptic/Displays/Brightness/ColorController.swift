@@ -7,12 +7,11 @@ import SnapticKit
 /// service. Actions for ±, invert, reset and suspend; CLI `set gamma`, `set temperature`,
 /// `set software-contrast`, `color reset|invert|suspend`; a Color submenu per display.
 /// Panic restores ColorSync; adjustments come back on the next change or after Resume.
-@MainActor final class ColorController: DisplayFeatureController, PanicParticipant, DiagnosticsContributor,
-    DisplayMenuContributor {
+@MainActor final class ColorController: DisplayFeatureController, PanicParticipant, DiagnosticsContributor {
     static var id: DisplayControllerID { .color }
     static var privateSymbols: [PrivateSymbol] { [] }
 
-    static let colorItem = DisplayMenuItemID(rawValue: "c.color.submenu")
+    static var observedSections: Set<DisplaysConfigSection> { [.color, .perDisplayColor] }
 
     enum Control: String, CaseIterable {
         case gamma, contrast, temperature
@@ -34,6 +33,7 @@ import SnapticKit
     private var heldByPanic = false
     /// Restore "off" or Safe Mode: saved adjustments wait for the user's next change.
     private var heldAtLaunch = false
+    private var menuItems: ColorMenuItems?
 
     init() {}
 
@@ -50,7 +50,9 @@ import SnapticKit
         context.registerPanic(self, lifetime: lifetime)
         context.gamma.colorController = self
         context.diagnostics.register(self, section: L("Color adjustments"), lifetime: lifetime)
-        context.menus.register(self, lifetime: lifetime)
+        let items = ColorMenuItems(context: context, part: .color, owner: self)
+        menuItems = items
+        context.menus.register(items, lifetime: lifetime)
         registerActions(context, lifetime: lifetime)
         registerCommands(context, lifetime: lifetime)
         let restore = context.config.value.brightness.restoreMode
@@ -93,6 +95,7 @@ import SnapticKit
         if let context {
             for d in context.registry.displays { context.gamma.setAdjustments(ColorAdjustments(), for: d.key) }
         }
+        menuItems = nil
         lifetime = nil
         context = nil
     }
@@ -102,6 +105,7 @@ import SnapticKit
         guard let context else { return }
         for d in context.registry.displays { context.gamma.setAdjustments(ColorAdjustments(), for: d.key) }
         context.colorSync.restoreAll()
+        context.runtime.revision(.color).bump()
     }
 
     // MARK: Applying
@@ -118,13 +122,15 @@ import SnapticKit
         if context.gamma.blockedByCustomProfile { return L("A custom color profile is active (see the safeguard below).") }
         if display.mirrorOf != nil { return L("Mirrored displays follow their source.") }
         if !(display.isBuiltin || display.transport == .wired || display.isSmartHiDPIPair) {
-            return L("Color tables don't apply to this connection.")
+            return L("Color tables don’t apply to this connection.")
         }
-        if context.gamma.hasGivenUp(display.key) { return L("Another app keeps changing this display's colors.") }
+        if context.gamma.hasGivenUp(display.key) { return L("Another app keeps changing this display’s colors.") }
         return nil
     }
 
     private func applyAll() {
+        // Pages show whether adjustments apply now (held, safeguard, give-up), so they refresh on every pass.
+        context?.runtime.revision(.color).bump()
         guard let context, !heldByPanic, !heldAtLaunch else { return }
         let config = context.config.value
         for display in context.registry.displays where display.isOnline {
@@ -216,11 +222,11 @@ import SnapticKit
                 }, lifetime: lifetime)
             }
         }
-        ctx.actions.register(Action(id: DisplayActionID(rawValue: "c.invert"), title: L("Invert Colors"), feature: .color,
+        ctx.actions.register(Action(id: DisplayActionID(rawValue: "c.invert"), title: DisplaysToggleText.invertColors, feature: .color,
                                     cliAllowed: true) { [weak self] t in self?.toggleInvert(t) }, lifetime: lifetime)
         ctx.actions.register(Action(id: DisplayActionID(rawValue: "c.colorReset"), title: L("Reset Color Adjustments"),
                                     feature: .color, cliAllowed: true) { [weak self] t in self?.reset(t) }, lifetime: lifetime)
-        ctx.actions.register(Action(id: DisplayActionID(rawValue: "c.colorSuspend"), title: L("Suspend Color Adjustments"),
+        ctx.actions.register(Action(id: DisplayActionID(rawValue: "c.colorSuspend"), title: DisplaysToggleText.adjustColors,
                                     feature: .color, cliAllowed: true) { [weak self] t in self?.toggleSuspend(t) }, lifetime: lifetime)
     }
 
@@ -234,7 +240,7 @@ import SnapticKit
         ]
         for (verb, summary, range, path) in setters {
             ctx.commands.register(verb, policy: .low, offOnly: false, cliAllowed: true, summary: summary,
-                                  lifetime: lifetime) { [weak self] request in
+                                  lifetime: lifetime) { [weak self] request, _ in
                 guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
                 let usage = L("Usage: ") + summary
                 let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 1, usage: usage, ctx)
@@ -254,7 +260,7 @@ import SnapticKit
             }
         }
         ctx.commands.register("color", policy: .low, offOnly: false, cliAllowed: true,
-                              summary: L("color reset|invert|suspend [display]"), lifetime: lifetime) { [weak self] request in
+                              summary: L("color reset|invert|suspend [display]"), lifetime: lifetime) { [weak self] request, _ in
             guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
             let usage = L("Usage: color reset|invert|suspend [display]")
             let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 1, usage: usage, ctx)
@@ -275,27 +281,6 @@ import SnapticKit
 
     // MARK: Menu
 
-    var descriptors: [DisplayMenuItemDescriptor] {
-        [DisplayMenuItemDescriptor(id: Self.colorItem, title: L("Color adjustments"), slot: .display, defaultVisibility: .inSubmenu)]
-    }
-
-    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] {
-        guard let context, canAdjust(display) else { return [] }
-        let key = display.key
-        let per = context.config.value.perDisplay[key]?.color ?? PerDisplayColor()
-        let items: [NSMenuItem] = [
-            CMenu.item(L("Invert Colors"), on: per.adjustments.inverted) { [weak self] in self?.toggleInvert(.display(key)) },
-            CMenu.item(L("Suspend Adjustments"), on: per.suspended) { [weak self] in self?.toggleSuspend(.display(key)) },
-            CMenu.item(L("Reset Adjustments"), enabled: !per.adjustments.suspended.isIdentity || !per.adjustments.isIdentity) {
-                [weak self] in self?.reset(.display(key))
-            },
-            .separator(),
-            CMenu.item(L("Color Settings…")) { [weak self] in self?.context?.openSettings("displays.color") },
-        ]
-        return [(Self.colorItem, CMenu.submenu(L("Color"), items))]
-    }
-
-    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
 
     func diagnostics() -> [(String, String)] {
         guard let context else { return [] }

@@ -9,7 +9,7 @@ enum PermissionStatus: Equatable { case granted, denied, unknown }
 /// 1. the system prompt once per flow; 2. the Privacy pane always opened too; 3. the exact
 /// app path with "Show Snaptic in Finder" and "Click +"; 4. polling at 1.5 s while needed,
 /// resumed on app activation, stopped on grant, when every requester's lifetime ends, or
-/// after 10 minutes ("Check again"); 5. "Relaunch Snaptic" as soon as the pane was opened.
+/// after 10 minutes ("Check Again"); 5. "Relaunch Snaptic" as soon as the pane was opened.
 /// Callers coalesce; the guide window opens by itself at most once per launch.
 @MainActor final class PermissionFlow: ObservableObject {
     static let pollInterval: TimeInterval = 1.5
@@ -273,7 +273,7 @@ enum PermissionStatus: Equatable { case granted, denied, unknown }
         case .accessibility:
             return L("Lets Snaptic see its shortcuts, list and switch windows, and read display keys.")
         case .screenRecording:
-            return L("Lets Snaptic show window thumbnails and previews, and picture in picture.")
+            return L("Lets Snaptic show window thumbnails and previews, and Picture in Picture.")
         }
     }
 
@@ -401,9 +401,9 @@ private struct PermissionGuideView: View {
                         step(1, L("Open System Settings → Privacy & Security → ") + pane + ".")
                         Button(L("Open System Settings")) { model.onOpenPane?() }
                         Text(L("If System Settings was already open, the link may not switch panes. Quit System Settings and click the button again."))
-                            .font(.caption)
+                            .font(.callout)
                             .foregroundStyle(.secondary)
-                        step(2, L("If Snaptic isn't listed, click +, then choose this copy of Snaptic:"))
+                        step(2, L("If Snaptic isn’t listed, click +, then choose this copy of Snaptic:"))
                         Text(model.path)
                             .font(.system(.caption, design: .monospaced))
                             .textSelection(.enabled)
@@ -421,7 +421,7 @@ private struct PermissionGuideView: View {
                 } label: {
                     Text(L("Signed by"))
                 }
-                .font(.caption)
+                .font(.callout)
                 if model.userWritable {
                     warning(L("Snaptic is in a folder your account can change, so another program could replace it and inherit this permission. Prefer a signed release, or install with INSTALL=1 (owned by root)."))
                 }
@@ -433,17 +433,17 @@ private struct PermissionGuideView: View {
 
                 HStack {
                     if model.paneOpenedAt != nil || model.granted {
-                        Button(L("I turned it on — Relaunch Snaptic")) { model.onRelaunch?() }
+                        Button(L("Relaunch Snaptic")) { model.onRelaunch?() }
                             .keyboardShortcut(.defaultAction)
                     }
                     if model.timedOut {
-                        Button(L("Check again")) { model.onCheckAgain?() }
+                        Button(L("Check Again")) { model.onCheckAgain?() }
                     }
                     Spacer()
                 }
                 if PermissionFlow.isMacOS27OrLater && model.permission == .accessibility {
                     Text(L("On macOS 27 the change often only takes effect after Snaptic relaunches."))
-                        .font(.caption)
+                        .font(.callout)
                         .foregroundStyle(.secondary)
                 }
             }

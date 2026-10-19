@@ -168,6 +168,11 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
     private var pressMonitors: [Any] = []
     /// Once per launch: the controller outlives module restarts.
     private var untrustedNotice = UntrustedKeyNotice()
+    /// Tap and permission state last shown, so pages refresh when it changes (0.3 §4.5).
+    private var shownState: (tap: Bool, trusted: Bool)?
+
+    /// Keys, per-display key settings, and per-display XDR (the key decision snapshot reads it).
+    static var observedSections: Set<DisplaysConfigSection> { [.keys, .perDisplayKeys, .perDisplayBrightness] }
 
     init() {}
 
@@ -197,6 +202,7 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
             MainActor.assumeIsolated {
                 self?.refreshAudio()
                 self?.refreshSnapshot()
+                self?.bumpIfStateChanged()
             }
         }
         poll.tolerance = 0.5
@@ -217,7 +223,18 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
         if old.keys != new.keys || old.perDisplay.values.mapValues(\.keys) != new.perDisplay.values.mapValues(\.keys) {
             refreshSnapshot()
             if old.keys.shortcuts != new.keys.shortcuts || old.keys.alternateKeys != new.keys.alternateKeys { registerHotkeys() }
+        } else if old.perDisplay.values.mapValues(\.brightness.xdrEnabled) != new.perDisplay.values.mapValues(\.brightness.xdrEnabled) {
+            refreshSnapshot()
         }
+    }
+
+    /// Pages show the tap, the permission and shortcut problems: refresh them when any changed.
+    private func bumpIfStateChanged(force: Bool = false) {
+        guard let context else { return }
+        let state = (tap: tapRunning, trusted: context.mediaKeys.isTrusted)
+        guard force || shownState?.tap != state.tap || shownState?.trusted != state.trusted else { return }
+        shownState = state
+        context.runtime.revision(.keys).bump()
     }
 
     func stop() {
@@ -228,6 +245,7 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
         hotkeyLifetime?.end()
         hotkeyLifetime = nil
         hotkeyProblems = [:]
+        shownState = nil
         if let context {
             if context.mediaKeys.keysController === self { context.mediaKeys.keysController = nil }
             context.mediaKeys.stop()
@@ -252,6 +270,7 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
         guard wanted else {
             context.mediaKeys.stop()
             removePressMonitors()
+            bumpIfStateChanged()
             return
         }
         let snap = snapshot
@@ -262,9 +281,11 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
             guard let self, let ctx = self.context else { return }
             ctx.toasts.show(L("Brightness and volume keys stopped: Snaptic lost the Accessibility permission."),
                             lifetime: self.lifetime)
+            self.bumpIfStateChanged()
         }
         if !context.mediaKeys.isRunning { context.mediaKeys.start() }
         updatePressMonitor()
+        bumpIfStateChanged()
     }
 
     /// Accessibility changed (PermissionFlow): start the tap on a grant; on a revoke the tap
@@ -278,6 +299,7 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
         } else {
             updatePressMonitor()
         }
+        bumpIfStateChanged()
     }
 
     /// While the keys are wanted but the tap can't run, watch presses (NSEvent monitors
@@ -453,12 +475,14 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
         let config = context.config.value.keys
         if effective.contains(.shortcuts) {
             for (id, combo) in config.shortcuts.values.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
+                // A retired 0.2 action's combo is kept for downgrades only (M1 moved it to Awake, R5-12).
+                if DisplayActionID.retiredActions.contains(id) { continue }
                 let title = context.actions.action(id)?.title ?? id.rawValue
                 if let problem = PerDisplayEdit.registerHotkey(context, combo, owner: title, lifetime: life, action: { [weak self] in
                     guard let ctx = self?.context else { return }
                     // A registered action whose feature is off: the registry refuses it and shows its own toast.
                     guard ctx.actions.action(id) != nil else {
-                        ctx.toasts.show(L("“\(title)” isn't available right now."), lifetime: self?.lifetime)
+                        ctx.toasts.show(L("“\(title)” isn’t available right now."), lifetime: self?.lifetime)
                         return
                     }
                     ctx.actions.perform(id, on: DisplayTargets.keyTarget(ctx))
@@ -468,6 +492,7 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
                 }
             }
         }
+        bumpIfStateChanged(force: true)
         if effective.contains(.brightnessKeys), config.alternateKeys {
             // F14 / F15 as brightness down / up (Carbon hotkeys, never the tap).
             for (code, up) in [(UInt32(107), false), (UInt32(113), true)] {
@@ -529,7 +554,8 @@ final class KeyDecisionSnapshot: @unchecked Sendable {
         return [
             ("Media key tap", tapRunning ? "running" : "stopped"),
             ("Accessibility", context.mediaKeys.isTrusted ? "granted" : "not granted"),
-            ("Shortcuts registered", String(context.config.value.keys.shortcuts.values.count - hotkeyProblems.count)),
+            ("Shortcuts registered", String(context.config.value.keys.shortcuts.values.keys
+                .filter { !DisplayActionID.retiredActions.contains($0) }.count - hotkeyProblems.count)),
             ("Shortcut problems", String(hotkeyProblems.count)),
             ("Sound output has volume", output.hasVolume ? "yes" : "no"),
             ("Volume keys target a display now", matched ? "yes" : "no"),

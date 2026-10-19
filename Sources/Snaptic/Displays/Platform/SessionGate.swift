@@ -47,7 +47,6 @@ enum SessionEvent: Equatable {
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     private var eventHandlers: [(UInt64, @MainActor (SessionEvent) -> Void)] = []
     private var serial: UInt64 = 0
-    private var waiters: [CheckedContinuation<Void, Never>] = []
     private var active = false
 
     // MARK: Lifecycle
@@ -79,7 +78,6 @@ enum SessionEvent: Equatable {
         for (center, token) in observers { center.removeObserver(token) }
         observers = []
         authWatcher.stopAll()
-        resumeWaiters()
         context = nil
     }
 
@@ -136,18 +134,6 @@ enum SessionEvent: Equatable {
         isOpen = open
         EventLog.shared.record(.safety, open ? "Session open" : "Session paused")
         onStateChange?(open)
-        if open { resumeWaiters() }
-    }
-
-    func waitUntilOpen() async {
-        if isOpen || !active { return }
-        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in waiters.append(c) }
-    }
-
-    private func resumeWaiters() {
-        let list = waiters
-        waiters = []
-        list.forEach { $0.resume() }
     }
 
     /// Fresh check for resume-like actions (capture, XDR, dim on lock): on console and unlocked.

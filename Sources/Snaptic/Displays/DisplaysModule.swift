@@ -10,7 +10,7 @@ import SnapticKit
     let id: ModuleID = .displays
     let title = L("Displays")
     let symbolName = "display.2"
-    let summary = L("Brightness, resolution, DDC, virtual screens and more, for every display.")
+    let summary = L("Brightness, resolution, hardware controls, virtual displays, and more, for every display.")
     private(set) var state: ModuleState = .stopped
 
     /// Before start(), what the saved settings would turn on (for the host's launch request).
@@ -24,6 +24,23 @@ import SnapticKit
     private(set) lazy var pageEnvironment = DisplaysPageEnvironment(
         config: config, runtime: runtime, enableFeature: { [weak self] in self?.enable($0) })
 
+    /// Every menu contributor type (lead-owned list; lint03 checks every `DisplayMenuContributor` conformer is here).
+    /// `--selftest-controls` checks the union of their `menuItemIDs` against the frozen 0.2 menu ids (R5-13,
+    /// `menuCoverageProblems()`). Add a type here when you add a contributor.
+    static let menuContributorTypes: [any DisplayMenuContributor.Type] = [
+        PanicCoordinator.self, AutomationMenuItems.self, OverviewMenuItems.self, VirtualMenuItems.self,
+        LayoutsMenuItems.self, ManagementMenuItems.self, ResolutionMenuItems.self, DDCMenuItems.self,
+        BrightnessMenuItems.self, ColorMenuItems.self, PIPMenuItems.self,
+    ]
+
+    /// R5-13 (review5 code N1): every frozen 0.2 menu id that wasn't removed is declared by exactly one contributor,
+    /// and no contributor declares a removed one (Kit `ControlLegacy.menuCoverageProblems`, tested there).
+    static func menuCoverageProblems() -> [String] {
+        var contributed: [String: [String]] = [:]
+        for type in menuContributorTypes { contributed[String(describing: type)] = type.menuItemIDs.map(\.rawValue) }
+        return ControlLegacy.menuCoverageProblems(contributed: contributed, removed: Set(ControlRemovals.removed.keys))
+    }
+
     /// Every controller class; the order is the start order (stop runs in reverse).
     static let controllerTypes: [any DisplayFeatureController.Type] = [
         OverviewController.self, DiagnosticsController.self,
@@ -35,27 +52,6 @@ import SnapticKit
         ProtectionController.self, LayoutsController.self,
         VirtualController.self, SmartHiDPIController.self,
         PIPController.self, MenuBarOverlaysController.self, AutomationController.self,
-    ]
-
-    /// Settings pages: (page id, title, symbol, view). Page ids match FeatureGraph `page`.
-    private static let pageTable: [(id: String, title: String, symbol: String, always: Bool,
-                                     make: @MainActor (DisplaysPageEnvironment) -> AnyView)] = [
-        ("overview", L("Displays"), "display.2", true, { AnyView(DisplaysOverviewPage(env: $0)) }),
-        ("features", L("Display Features"), "switch.2", true, { AnyView(FeaturesPage(env: $0)) }),
-        ("resolution", L("Resolution"), "rectangle.arrowtriangle.2.outward", false, { AnyView(ResolutionPage(env: $0)) }),
-        ("brightness", L("Brightness"), "sun.max", false, { AnyView(BrightnessPage(env: $0)) }),
-        ("color", L("Color"), "paintpalette", false, { AnyView(ColorPage(env: $0)) }),
-        ("ddc", L("DDC & Monitor Controls"), "slider.horizontal.3", false, { AnyView(DDCPage(env: $0)) }),
-        ("keys", L("Keys & Shortcuts"), "keyboard", false, { AnyView(KeysPage(env: $0)) }),
-        ("osd", L("On-Screen Display"), "rectangle.inset.filled", false, { AnyView(OSDPage(env: $0)) }),
-        ("arrangement", L("Arrangement"), "rectangle.3.group", false, { AnyView(ArrangementPage(env: $0)) }),
-        ("protection", L("Protection & Layouts"), "lock.rectangle", false, { AnyView(ProtectionLayoutsPage(env: $0)) }),
-        ("virtual", L("Virtual Screens & HiDPI"), "display.and.arrow.down", false, { AnyView(VirtualScreensPage(env: $0)) }),
-        ("pip", L("Picture in Picture"), "pip", false, { AnyView(PIPPage(env: $0)) }),
-        ("automation", L("Automation"), "gearshape.2", false, { AnyView(AutomationPage(env: $0)) }),
-        ("identity", L("Display Names"), "tag", true, { AnyView(DisplayIdentityPage(env: $0)) }),
-        ("safety", L("Safety"), "lifepreserver", true, { AnyView(SafetyPage(env: $0)) }),
-        ("diagnostics", L("Diagnostics"), "stethoscope", true, { AnyView(DiagnosticsPage(env: $0)) }),
     ]
 
     private let controllers: [DisplayControllerID: any DisplayFeatureController]
@@ -128,7 +124,7 @@ import SnapticKit
         }
         ctx.actions.isEffective = { [weak self] feature in self?.effective.contains(feature) ?? false }
         ctx.actions.onRefused = { [weak ctx] action in
-            ctx?.toasts.show(L("“\(action.title)” isn't available right now: its feature is off."))
+            ctx?.toasts.show(L("“\(action.title)” isn’t available right now: its feature is off."))
         }
         paused = ctx.otherApps.pausedDisplayFeatures
         ctx.otherApps.onChange = { [weak self] in
@@ -198,16 +194,11 @@ import SnapticKit
         return DisplaysMenuBuilder(context: ctx).build()
     }
 
-    func settingsPages() -> [SettingsPage] {
-        let env = pageEnvironment
-        let pagesWithFeatures = Set(effective.map { FeatureGraph.spec($0).page })
-        return Self.pageTable
-            .filter { $0.always || pagesWithFeatures.contains($0.id) }
-            .map { row in
-                let make = row.make
-                return SettingsPage(id: "displays.\(row.id)", title: row.title, symbol: row.symbol) { make(env) }
-            }
-    }
+    // Settings root and sub-pages (F's DisplaysPage, §4.3).
+    var tint: SettingsTint { DisplaysPage.tint }
+    var highlights: [FeatureHighlight] { DisplaysPage.highlights }
+    func settingsRoot() -> SettingsRoot { DisplaysPage.settingsRoot(env: pageEnvironment) }
+    func settingsDestination(_ route: SettingsRoute) -> AnyView? { DisplaysPage.destination(route, env: pageEnvironment) }
 
     /// Runs a registered action (quick menu, floating panel, CLI). False if unknown.
     @discardableResult
@@ -247,7 +238,7 @@ import SnapticKit
             var a = controllers[FeatureGraph.controller(of: feature)]?.availability(of: feature, context: ctx)
                 ?? .unavailable(L("Not available on this Mac"))
             if a.isAvailable, let reason = privateMissing[feature] { a = .unavailable(reason) }
-            if killSwitches.contains(feature) { a = .unavailable(L("Turned off by a defaults setting")) }
+            if killSwitches.contains(feature) { a = .unavailable(DefaultsLock.text) }
             table[feature] = a
             if !a.isAvailable { missing.insert(feature) }
         }
@@ -269,8 +260,10 @@ import SnapticKit
         let before = controllerLifetimes
         if new.rawFeatures != old.rawFeatures { apply(resolveEffective(new)) }
         // Step 5: controllers that were already running hear about the change; newly
-        // started ones read the new value in start().
+        // started ones read the new value in start(). 0.3 §4.5: only those observing a changed section.
+        let changed = DisplaysConfig.changedSections(old: old, new: new)
         for type in Self.controllerTypes where before[type.id] != nil && controllerLifetimes[type.id] != nil {
+            guard !type.observedSections.isDisjoint(with: changed) else { continue }
             controllers[type.id]?.configDidChange(from: old, to: new)
         }
     }
@@ -373,8 +366,7 @@ import SnapticKit
 
     /// Persistent-domain Bool keys `Displays.disable.<feature>`, read once per start.
     private static func readKillSwitches() -> Set<DisplayFeature> {
-        guard let values = UserDefaults.standard.persistentDomain(
-            forName: ConfigStore<DisplaysConfig>.persistentDomainName) else { return [] }
-        return Set(DisplayFeature.allCases.filter { (values["Displays.disable.\($0.rawValue)"] as? Bool) == true })
+        KillSwitches.read(UserDefaults.standard.persistentDomain(forName: ConfigStore<DisplaysConfig>.persistentDomainName),
+                          prefix: "Displays")
     }
 }

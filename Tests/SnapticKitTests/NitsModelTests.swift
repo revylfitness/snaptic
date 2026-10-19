@@ -45,4 +45,23 @@ final class NitsModelTests: XCTestCase {
         XCTAssertEqual(NitsModel.label(42.4, estimate: true), "≈42 nits")
         XCTAssertEqual(NitsModel.label(.nan, estimate: false), "0 nits")
     }
+
+    /// Review F5: one control ("Show brightness in nits") decides the indicator's nits; nothing else gates it.
+    func testIndicatorDetailFollowsShowNitsOnly() {
+        let nits = (value: 347.0, estimate: true)
+        XCTAssertEqual(NitsModel.indicatorDetail(showNits: true, nitsEffective: true, nits: nits, extra: false), "≈350 nits")
+        XCTAssertEqual(NitsModel.indicatorDetail(showNits: true, nitsEffective: true, nits: nits, extra: true), "≈350 nits")
+        XCTAssertNil(NitsModel.indicatorDetail(showNits: false, nitsEffective: true, nits: nits, extra: false))
+        XCTAssertNil(NitsModel.indicatorDetail(showNits: true, nitsEffective: false, nits: nits, extra: false))
+        XCTAssertNil(NitsModel.indicatorDetail(showNits: true, nitsEffective: true, nits: nil, extra: false))
+        XCTAssertEqual(NitsModel.indicatorDetail(showNits: false, nitsEffective: true, nits: nits, extra: true), "Extra brightness")
+        XCTAssertEqual(NitsModel.indicatorDetail(showNits: true, nitsEffective: true, nits: nil, extra: true), "Extra brightness")
+        XCTAssertTrue(NitsModel.shows(showNits: true, nitsEffective: true))
+        XCTAssertFalse(NitsModel.shows(showNits: true, nitsEffective: false))
+        XCTAssertFalse(NitsModel.shows(showNits: false, nitsEffective: true))
+        // A fresh 0.3 config shows nits even though the legacy indicator option is off.
+        let config = DisplaysConfig()
+        XCTAssertFalse(config.keys.osdShowNits)
+        XCTAssertTrue(NitsModel.shows(showNits: config.brightness.showNits, nitsEffective: true))
+    }
 }

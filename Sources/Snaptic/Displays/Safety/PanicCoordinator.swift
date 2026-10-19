@@ -2,10 +2,13 @@ import AppKit
 import Combine
 import SnapticKit
 
-// "Restore All Displays" (owner: B). PLAN §4.7 + R5.4: ⌃⌥⌘⎋ (fallback ⌃⌥⌘⇧⎋), the menu and
-// the CLI. Reverts modes Snaptic set in the last 60 s, re-enables displays Snaptic disabled,
-// runs every PanicParticipant (each feature's own row of the R5.4 panic table), honors
+// "Restore All Displays" (owner: B). PLAN §4.7 + R5.4: ⌃⌥⌘⎋ (fallback ⌃⌥⌘⇧⎋, or the user's own shortcut
+// first; 0.3 §4.6 M6), the menu and the CLI. Reverts modes Snaptic set in the last 60 s, re-enables displays
+// Snaptic disabled, runs every PanicParticipant (each feature's own row of the R5.4 panic table), honors
 // invariant 8, shows a HUD and sets the latch that pauses automation until Resume.
+//
+// 0.3 §4.5: page-visible state (latch, shortcut registration) bumps `revision(.diagnostics)`, the revision the
+// Confirm display changes section and Display Information observe; menu items are built with MenuKit (§5.1).
 
 fileprivate extension DisplayActionID {
     static let restoreAll = PanicCoordinator.restoreActionID
@@ -14,14 +17,28 @@ fileprivate extension DisplayActionID {
 
 fileprivate extension DisplayMenuItemID {
     static let restoreAll = DisplayMenuItemID(rawValue: "b.restoreAll")
-    static let restoreAllQuick = DisplayMenuItemID(rawValue: "b.restoreAll.quick")
     static let resumeAutomation = DisplayMenuItemID(rawValue: "b.resumeAutomation")
 }
 
-@MainActor final class PanicCoordinator: DisplayMenuContributor, DiagnosticsContributor {
+/// The panic shortcut setting as PanicCoordinator reads it (publishes only when one of these changes).
+private struct PanicShortcutSettings: Equatable {
+    let enabled: Bool
+    let candidates: [HotkeyCombo]
+    init(_ safety: SafetyConfig) {
+        enabled = safety.panicHotkeyEnabled
+        candidates = safety.panicHotkeyCandidates
+    }
+}
+
+@MainActor final class PanicCoordinator: DisplayMenuContributor, DiagnosticsContributor, ControlDeclaring {
+    typealias Controls = PanicCoordinatorControls
+
     /// Action ids other files use (F's Resume buttons): `ctx.actions.perform(PanicCoordinator.resumeActionID…)`.
     nonisolated static let restoreActionID = DisplayActionID(rawValue: "b.restoreAll")
     nonisolated static let resumeActionID = DisplayActionID(rawValue: "b.resumeAutomation")
+    /// The name the shortcut is registered under (also the `owner` of the Settings shortcut row, so the row
+    /// doesn't report its own registration as a conflict).
+    static var shortcutOwner: String { L("Restore All Displays") }
     private(set) var isLatched = false
     /// Set by DisplaysModule; called whenever `isLatched` changes.
     var onLatchChanged: (@MainActor () -> Void)?
@@ -35,10 +52,18 @@ fileprivate extension DisplayMenuItemID {
     ]
 
     private weak var context: DisplaysContext?
+    /// Kept after stop (it outlives module starts) so the last state change still reaches open pages.
+    private weak var runtime: DisplaysRuntimeState?
     private var lifetime: Lifetime?
     private var hotkeyLifetime: Lifetime?
-    private(set) var registeredHotkey: HotkeyCombo?
-    private(set) var hotkeyProblem: String?
+    private(set) var registeredHotkey: HotkeyCombo? {
+        didSet { if registeredHotkey != oldValue { changed() } }
+    }
+    private(set) var hotkeyProblem: String? {
+        didSet { if hotkeyProblem != oldValue { changed() } }
+    }
+    /// The candidate list the current registration was made from.
+    private var registeredCandidates: [HotkeyCombo] = []
     private var sinks: [AnyCancellable] = []
     private(set) var lastPanicAt: Date?
 
@@ -49,6 +74,7 @@ fileprivate extension DisplayMenuItemID {
         guard self.context == nil else { return }
         self.context = context
         self.lifetime = lifetime
+        runtime = context.runtime
         context.preConfirm.attach(context)
 
         context.actions.register(Action(id: .restoreAll, title: L("Restore All Displays"), feature: .overview,
@@ -59,18 +85,18 @@ fileprivate extension DisplayMenuItemID {
                                         cliAllowed: true) { [weak self] _ in self?.resume() }, lifetime: lifetime)
         context.commands.register("panic", policy: .low, offOnly: false, cliAllowed: true,
                                   summary: L("Restore all displays and pause display automation"),
-                                  lifetime: lifetime) { [weak self] _ in
+                                  lifetime: lifetime) { [weak self] _, _ in
             guard let self else { return .failure(ControlExit.unavailable, L("Displays are off")) }
             self.panic(reason: L("Command line"))
             return .ok(L("Displays restored. Display automation is paused until `snaptic resume`."))
         }
         context.commands.register("resume", policy: .low, offOnly: false, cliAllowed: true,
                                   summary: L("Resume display automation after Restore All Displays"),
-                                  lifetime: lifetime) { [weak self] _ in
+                                  lifetime: lifetime) { [weak self] _, _ in
             guard let self else { return .failure(ControlExit.unavailable, L("Displays are off")) }
             let was = self.isLatched
             self.resume()
-            return .ok(was ? L("Display automation resumed.") : L("Display automation wasn't paused."))
+            return .ok(was ? L("Display automation resumed.") : L("Display automation wasn’t paused."))
         }
         context.menus.register(self, lifetime: lifetime)
         context.diagnostics.register(self, section: L("Restore All Displays"), lifetime: lifetime)
@@ -80,13 +106,15 @@ fileprivate extension DisplayMenuItemID {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.updateHotkey() } }
             .store(in: &sinks)
+        // Only the safety section's shortcut fields (0.3 §4.5): other config writes never reach here.
         context.config.$value
-            .map { $0.safety.panicHotkeyCandidates + ($0.safety.panicHotkeyEnabled ? [] : [HotkeyCombo(keyCode: 0, carbonModifiers: 0)]) }
+            .map { PanicShortcutSettings($0.safety) }
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.updateHotkey() } }
             .store(in: &sinks)
         updateHotkey()
+        changed()
     }
 
     func stop() {
@@ -94,53 +122,63 @@ fileprivate extension DisplayMenuItemID {
         hotkeyLifetime?.end()
         hotkeyLifetime = nil
         registeredHotkey = nil
+        registeredCandidates = []
+        hotkeyProblem = nil
         context?.preConfirm.attach(nil)
         context = nil
         lifetime = nil
+        changed()
+    }
+
+    /// One coalesced publish for the pages that show the latch or the shortcut (0.3 §4.5).
+    private func changed() {
+        runtime?.revision(.diagnostics).bump()
     }
 
     // MARK: Hotkey
 
     /// Registered while a guarded feature is effective and the setting is on — or regardless
-    /// of the setting while Snaptic holds a long-armed state (PLAN §4.7).
+    /// of the setting while Snaptic holds a long-armed state (PLAN §4.7). The guard client calls
+    /// this when its long-armed state appears or goes away.
     func updateHotkey() {
         guard let ctx = context, let lifetime, !lifetime.isEnded else { return }
-        let longArmed = ctx.guardClient.hasLongState
-        let wanted = !ctx.runtime.effectiveFeatures.isDisjoint(with: Self.guardedFeatures)
-            && (ctx.config.value.safety.panicHotkeyEnabled || longArmed)
-        let candidates = ctx.config.value.safety.panicHotkeyCandidates
-        if wanted, let current = registeredHotkey, candidates.contains(current) { return }
+        let guarded = !ctx.runtime.effectiveFeatures.isDisjoint(with: Self.guardedFeatures)
+        let candidates = guarded ? ctx.config.value.safety.panicHotkeys(longArmed: ctx.guardClient.hasLongState) : []
+        // Same list as last time and something registered: nothing to do. A changed list (a new custom combo in
+        // front) re-registers from the top, so the user's own combo wins as soon as it is set.
+        if registeredHotkey != nil, candidates == registeredCandidates { return }
+        registeredCandidates = candidates
         hotkeyLifetime?.end()
         hotkeyLifetime = nil
         registeredHotkey = nil
-        hotkeyProblem = nil
-        guard wanted else { return }
+        guard !candidates.isEmpty else {
+            hotkeyProblem = nil
+            return
+        }
         let life = lifetime.child()
         for combo in candidates {
             do {
-                _ = try ctx.hotkeys.register(combo, owner: L("Restore All Displays"), lifetime: life) { [weak self] in
+                _ = try ctx.hotkeys.register(combo, owner: Self.shortcutOwner, lifetime: life) { [weak self] in
                     self?.panic(reason: L("Keyboard shortcut"))
                 }
-                registeredHotkey = combo
                 hotkeyLifetime = life
+                registeredHotkey = combo
+                // The user's own combo lost to another app while a default stood in for it (the default's own
+                // fallback is the documented behavior, not a problem).
+                hotkeyProblem = combo == candidates.first || candidates.first == SafetyConfig.defaultPanicHotkey ? nil
+                    : L("\(HotkeyRules.displayString(candidates[0])) is used by another app, so \(HotkeyRules.displayString(combo)) restores your displays instead.")
                 return
             } catch {
-                hotkeyProblem = L("The Restore All Displays shortcut is taken by another app.")
+                continue
             }
         }
         life.end()
+        hotkeyProblem = L("Another app uses these shortcuts, so Restore All Displays has none right now.")
         EventLog.shared.record(.safety, "Panic shortcut could not be registered")
     }
 
-    /// "⌃⌥⌘⎋" for the Safety page.
-    static func describe(_ combo: HotkeyCombo) -> String {
-        var s = ""
-        if combo.carbonModifiers & 0x1000 != 0 { s += "⌃" }
-        if combo.carbonModifiers & 0x0800 != 0 { s += "⌥" }
-        if combo.carbonModifiers & 0x0200 != 0 { s += "⇧" }
-        if combo.carbonModifiers & 0x0100 != 0 { s += "⌘" }
-        return s + (combo.keyCode == 53 ? "⎋" : L("key \(combo.keyCode)"))
-    }
+    /// "⌃⌥⌘⎋" (diagnostics, menus).
+    static func describe(_ combo: HotkeyCombo) -> String { HotkeyRules.displayString(combo) }
 
     // MARK: Panic
 
@@ -162,6 +200,7 @@ fileprivate extension DisplayMenuItemID {
         ctx.runtime.lastPanicSummary = summary
         ctx.toasts.show(summary, action: ToastAction(title: L("Resume")) { [weak self] in self?.resume() })
         setLatched(true)
+        changed()
         NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
                              userInfo: [.announcement: summary, .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
@@ -176,43 +215,41 @@ fileprivate extension DisplayMenuItemID {
         guard isLatched != on else { return }
         isLatched = on
         onLatchChanged?()
+        changed()
         context?.requestMenuRebuild()
     }
 
-    // MARK: Menu (.tools and .quick)
+    // MARK: Menu (0.3 §4.8 b.*, §5.2)
+
+    /// Every item id this contributor can produce (R5-13). The 0.2 quick-menu copy is gone (C3).
+    static var menuItemIDs: [DisplayMenuItemID] { [.restoreAll, .resumeAutomation] }
 
     var descriptors: [DisplayMenuItemDescriptor] {
         [DisplayMenuItemDescriptor(id: .restoreAll, title: L("Restore All Displays"), slot: .tools, defaultVisibility: .visible),
          DisplayMenuItemDescriptor(id: .resumeAutomation, title: L("Resume Display Automation"), slot: .tools,
-                                   defaultVisibility: .visible),
-         DisplayMenuItemDescriptor(id: .restoreAllQuick, title: L("Restore All Displays"), slot: .quick, defaultVisibility: .visible)]
+                                   defaultVisibility: .visible)]
     }
 
     func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
 
+    /// The menu builder places these by id (§4.8): Restore All Displays in Display Tools, and at the top level of
+    /// the Displays section while a change awaits confirmation; Resume Display Automation under the "Display
+    /// automation is paused" status row, produced only while paused.
     func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] {
-        switch slot {
-        case .tools:
-            var items: [(DisplayMenuItemID, NSMenuItem)] = [(.restoreAll, restoreItem())]
-            if isLatched {
-                items.append((.resumeAutomation, PanicMenuItem(title: L("Resume Display Automation"), symbol: "play.circle") { [weak self] in
-                    self?.resume()
-                }))
-            }
-            return items
-        case .quick:
-            return [(.restoreAllQuick, restoreItem())]
-        case .display, .header:
-            return []
-        }
-    }
-
-    private func restoreItem() -> NSMenuItem {
-        let item = PanicMenuItem(title: L("Restore All Displays"), symbol: "arrow.uturn.backward.circle") { [weak self] in
+        guard slot == .tools else { return [] }
+        let restore = MenuKit.action(L("Restore All Displays"), symbol: "arrow.uturn.backward.circle",
+                                     control: ControlID("menu.display.b.restoreAll")) { [weak self] in
             self?.panic(reason: L("Menu"))
         }
-        if let combo = registeredHotkey { item.toolTip = Self.describe(combo) }
-        return item
+        if let combo = registeredHotkey { restore.toolTip = Self.describe(combo) }
+        var items: [(DisplayMenuItemID, NSMenuItem)] = [(.restoreAll, restore)]
+        if isLatched {
+            items.append((.resumeAutomation, MenuKit.action(L("Resume Display Automation"), symbol: "play.circle",
+                                                            control: ControlID("menu.display.b.resume")) { [weak self] in
+                self?.resume()
+            }))
+        }
+        return items
     }
 
     func diagnostics() -> [(String, String)] {
@@ -220,23 +257,4 @@ fileprivate extension DisplayMenuItemID {
          ("Shortcut", registeredHotkey.map(Self.describe) ?? "not registered"),
          ("Participants", "\(context?.panicParticipants.count ?? 0)")]
     }
-}
-
-/// A menu item that runs a closure (re-resolving state when clicked).
-private final class PanicMenuItem: NSMenuItem {
-    private let handler: @MainActor () -> Void
-
-    init(title: String, symbol: String, handler: @escaping @MainActor () -> Void) {
-        self.handler = handler
-        super.init(title: title, action: #selector(run), keyEquivalent: "")
-        target = self
-        image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-    }
-
-    required init(coder: NSCoder) {
-        handler = {}
-        super.init(coder: coder)
-    }
-
-    @objc private func run() { MainActor.assumeIsolated { handler() } }
 }

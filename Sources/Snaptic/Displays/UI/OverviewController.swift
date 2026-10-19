@@ -2,29 +2,23 @@ import AppKit
 import SwiftUI
 import SnapticKit
 
-/// The always-on overview controller (PLAN §2.1 `overview`, R5.8): registers the
-/// "Show Displays panel", Identify and Redetect actions (menu Tools items, quick-menu
-/// item, shortcuts, CLI verbs) and owns the floating Displays panel and the Identify labels.
-@MainActor final class OverviewController: DisplayFeatureController, DisplayMenuContributor, DiagnosticsContributor,
-    SessionParticipant {
+/// The always-on overview controller (PLAN §2.1 `overview`, R5.8; 0.3 §5.6): registers the "Show Displays Panel",
+/// Identify and Redetect actions (Display Tools items through `OverviewMenuItems`, CLI verbs) and owns the floating
+/// Displays panel and the Identify labels. Their shortcuts are ordinary Displays shortcuts
+/// (`keys.shortcuts[.fShowPanel]` / `[.fIdentify]`, migration M4), registered by `KeysController` like every other
+/// action's (0.3 §4.4 #5). Its menu items live in `OverviewMenuItems`; the controller itself contributes none.
+@MainActor final class OverviewController: DisplayFeatureController, DiagnosticsContributor, SessionParticipant {
     static var id: DisplayControllerID { .overview }
     static var privateSymbols: [PrivateSymbol] { [] }
 
-    static let showPanelAction = DisplayActionID(rawValue: "f.showPanel")
-    static let identifyAction = DisplayActionID(rawValue: "f.identify")
     static let redetectAction = DisplayActionID(rawValue: "f.redetect")
-    static let identifyItem = DisplayMenuItemID(rawValue: "f.tools.identify")
-    static let redetectItem = DisplayMenuItemID(rawValue: "f.tools.redetect")
-    static let panelItem = DisplayMenuItemID(rawValue: "f.tools.panel")
-    static let quickRedetectItem = DisplayMenuItemID(rawValue: "f.quick.redetect")
 
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
     private var lifetime: Lifetime?
-    private var hotkeyLifetime: Lifetime?
-    private var hotkeyProblems: [String] = []
     private let panel = DisplaysPanelController()
     private let identifyOverlay = IdentifyOverlay()
+    private var menuItems: OverviewMenuItems?
 
     init() {}
 
@@ -38,26 +32,30 @@ import SnapticKit
         panel.owner = self
         registerActions(context, lifetime: lifetime)
         registerCommands(context, lifetime: lifetime)
-        context.menus.register(self, lifetime: lifetime)
+        let items = OverviewMenuItems(context: context)
+        items.owner = self
+        menuItems = items
+        context.menus.register(items, lifetime: lifetime)
         context.diagnostics.register(self, section: L("Displays menu and panel"), lifetime: lifetime)
         context.registerSession(self, lifetime: lifetime)
-        registerHotkeys(context.config.value.menu, announce: false)
         lifetime.onEnd { [weak self] in self?.closeUI() }
     }
 
     func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) {}
 
+    /// Every section: the Displays menu reads `.menu` (Customize Displays Menu, style, badges, hidden displays,
+    /// order, "Show All Displays"), names and icons (`.identity`, per-display identity) and most other sections, and
+    /// only some owners request a rebuild for their own. The always-on overview marks the status menu dirty on any
+    /// change (it rebuilds lazily, when next opened; ui-correctness F3).
+    static var observedSections: Set<DisplaysConfigSection> { Set(DisplaysConfigSection.allCases) }
+
     func configDidChange(from old: DisplaysConfig, to new: DisplaysConfig) {
-        if old.menu.showPanelShortcut != new.menu.showPanelShortcut || old.menu.identifyShortcut != new.menu.identifyShortcut {
-            registerHotkeys(new.menu, announce: true)
-        }
+        context?.requestMenuRebuild()
     }
 
     func stop() {
         closeUI()
-        hotkeyLifetime?.end()
-        hotkeyLifetime = nil
-        hotkeyProblems = []
+        menuItems = nil
         lifetime = nil
         context = nil
     }
@@ -75,9 +73,9 @@ import SnapticKit
     // MARK: Registrations
 
     private func registerActions(_ ctx: DisplaysContext, lifetime: Lifetime) {
-        ctx.actions.register(Action(id: Self.showPanelAction, title: L("Show Displays Panel"), feature: .overview,
+        ctx.actions.register(Action(id: .fShowPanel, title: L("Show Displays Panel"), feature: .overview,
                                     cliAllowed: true) { [weak self] _ in self?.togglePanel() }, lifetime: lifetime)
-        ctx.actions.register(Action(id: Self.identifyAction, title: L("Identify Displays"), feature: .overview,
+        ctx.actions.register(Action(id: .fIdentify, title: L("Identify Displays"), feature: .overview,
                                     cliAllowed: true) { [weak self] _ in _ = self?.identifyDisplays() }, lifetime: lifetime)
         ctx.actions.register(Action(id: Self.redetectAction, title: L("Redetect Displays"), feature: .overview,
                                     cliAllowed: true) { [weak self] _ in self?.redetect() }, lifetime: lifetime)
@@ -85,51 +83,17 @@ import SnapticKit
 
     private func registerCommands(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("identify", policy: .low, offOnly: false, cliAllowed: true,
-                              summary: L("Show each display's number and name for 3 seconds"),
-                              lifetime: lifetime) { [weak self] _ in
-            guard let self else { return .failure(ControlExit.unavailable, L("Displays isn't running")) }
+                              summary: L("Show each display’s number and name for 3 seconds"),
+                              lifetime: lifetime) { [weak self] _, _ in
+            guard let self else { return .failure(ControlExit.unavailable, L("Displays isn’t running")) }
             let count = self.identifyDisplays()
             return .ok(L("Identifying \(count) displays"))
         }
         ctx.commands.register("redetect", policy: .low, offOnly: false, cliAllowed: true,
-                              summary: L("Look for connected displays again"), lifetime: lifetime) { [weak self] _ in
-            guard let self else { return .failure(ControlExit.unavailable, L("Displays isn't running")) }
+                              summary: L("Look for connected displays again"), lifetime: lifetime) { [weak self] _, _ in
+            guard let self else { return .failure(ControlExit.unavailable, L("Displays isn’t running")) }
             self.redetect()
             return .ok(L("Looking for displays"))
-        }
-    }
-
-    private func registerHotkeys(_ menu: MenuConfig, announce: Bool) {
-        hotkeyLifetime?.end()
-        hotkeyLifetime = nil
-        hotkeyProblems = []
-        guard let ctx = context, let lifetime else { return }
-        let life = lifetime.child()
-        hotkeyLifetime = life
-        let wanted: [(HotkeyCombo?, String, @MainActor () -> Void)] = [
-            (menu.showPanelShortcut, L("Show Displays panel"), { [weak self] in self?.togglePanel() }),
-            (menu.identifyShortcut, L("Identify displays"), { [weak self] in _ = self?.identifyDisplays() }),
-        ]
-        for (combo, owner, action) in wanted {
-            guard let combo else { continue }
-            do {
-                _ = try ctx.hotkeys.register(combo, owner: owner, lifetime: life, action: action)
-            } catch {
-                let problem = "\(owner): \(Self.describe(error))"
-                hotkeyProblems.append(problem)
-                EventLog.shared.record(.keys, "Displays shortcut not registered: \(Self.describe(error))")
-                if announce { ctx.toasts.show(problem, lifetime: lifetime) }
-            }
-        }
-    }
-
-    private static func describe(_ error: Error) -> String {
-        guard let error = error as? GlobalHotkeys.RegisterError else { return L("the shortcut couldn't be registered") }
-        switch error {
-        case .conflict(let owner): return L("already used by \(owner)")
-        case .systemRefused: return L("macOS refused the shortcut")
-        case .invalid(let reason): return reason
-        case .ended: return L("the feature stopped before the shortcut was registered")
         }
     }
 
@@ -184,61 +148,30 @@ import SnapticKit
         if let lifetime { ctx.toasts.show(L("Looking for displays…"), lifetime: lifetime) }
     }
 
-    /// The display's full menu block, popped up at the pointer (the panel's "More" button).
-    func popUpMenu(for display: DisplayInfo) {
+    /// The display's menu content as a real NSMenu, popped up under the panel's "⋯" button (at the pointer when the
+    /// button's view isn't known), so the panel never mixes its rows with menu items (0.3 §5.6).
+    func popUpMenu(for display: DisplayInfo, at view: NSView?) {
         guard let ctx = context else { return }
         let items = DisplayMenuBlock(display: display, context: ctx, showHeader: false, forceExpanded: true).items()
         guard !items.isEmpty else { return }
         let menu = DisplayMenuBlock.menu(items, title: display.name)
-        _ = menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
-    }
-
-    // MARK: DisplayMenuContributor
-
-    var descriptors: [DisplayMenuItemDescriptor] {
-        [
-            DisplayMenuItemDescriptor(id: Self.identifyItem, title: L("Identify Displays"), slot: .tools, defaultVisibility: .visible),
-            DisplayMenuItemDescriptor(id: Self.redetectItem, title: L("Redetect Displays"), slot: .tools, defaultVisibility: .visible),
-            DisplayMenuItemDescriptor(id: Self.panelItem, title: L("Show Displays Panel"), slot: .tools, defaultVisibility: .visible),
-            DisplayMenuItemDescriptor(id: Self.quickRedetectItem, title: L("Redetect Displays"), slot: .quick, defaultVisibility: .visible),
-        ]
-    }
-
-    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
-
-    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] {
-        switch slot {
-        case .tools:
-            return [
-                (Self.identifyItem, DisplayMenuBlock.actionItem(L("Identify Displays"), symbol: "number.square") { [weak self] in
-                    _ = self?.identifyDisplays()
-                }),
-                (Self.redetectItem, redetectItem()),
-                (Self.panelItem, DisplayMenuBlock.actionItem(L("Show Displays Panel"), symbol: "slider.horizontal.3") { [weak self] in
-                    self?.togglePanel()
-                }),
-            ]
-        case .quick:
-            return [(Self.quickRedetectItem, redetectItem())]
-        case .display, .header:
-            return []
-        }
-    }
-
-    private func redetectItem() -> NSMenuItem {
-        DisplayMenuBlock.actionItem(L("Redetect Displays"), symbol: "arrow.triangle.2.circlepath") { [weak self] in
-            self?.redetect()
+        if let view, view.window != nil {
+            _ = menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.isFlipped ? view.bounds.maxY + 4 : -4), in: view)
+        } else {
+            _ = menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
         }
     }
 
     // MARK: DiagnosticsContributor
 
     func diagnostics() -> [(String, String)] {
-        let menu = context?.config.value.menu ?? MenuConfig()
+        let config = context?.config.value
+        let menu = config?.menu ?? MenuConfig()
+        let shortcuts = config?.keys.shortcuts
         return [
-            ("Panel shortcut", menu.showPanelShortcut == nil ? "none" : "set"),
-            ("Identify shortcut", menu.identifyShortcut == nil ? "none" : "set"),
-            ("Shortcut problems", hotkeyProblems.isEmpty ? "none" : hotkeyProblems.joined(separator: "; ")),
+            // Registered (and any problem reported) by KeysController, like every Displays shortcut.
+            ("Panel shortcut", shortcuts?[.fShowPanel] == nil ? "none" : "set"),
+            ("Identify shortcut", shortcuts?[.fIdentify] == nil ? "none" : "set"),
             ("Panel open", panel.isVisible ? "yes" : "no"),
             ("Menu style", menu.compact ? "compact" : "expanded"),
             ("Section order", menu.orderedSections.map(\.rawValue).joined(separator: ", ")),
@@ -250,10 +183,10 @@ import SnapticKit
 
 // MARK: - Floating Displays panel (R5.8)
 
-/// The floating Displays panel: the same live controls as the Overview page, opened at
-/// the pointer by the "Show Displays panel" action or shortcut. On macOS 27 the status
-/// item can be hidden in the overflow, so this is how the controls stay reachable.
-/// Non-activating (Snaptic stays an accessory app); Escape or clicking elsewhere closes it.
+/// The floating Displays panel (0.3 §5.6): the Displays root page's live rows (`DisplaysPanelContent`), opened at
+/// the pointer by the "Show Displays Panel" action or shortcut. On macOS 26 and 27 the status item can be hidden or
+/// in the overflow, so this is how the controls stay reachable. Non-activating (Snaptic stays an accessory app);
+/// Escape or clicking elsewhere closes it.
 @MainActor final class DisplaysPanelController: NSObject, NSWindowDelegate {
     weak var owner: OverviewController?
     private var panel: FloatingPanel?
@@ -268,18 +201,15 @@ import SnapticKit
         close()
         let actions = DisplaysPanelActions(
             identify: { [weak self] in _ = self?.owner?.identifyDisplays() },
-            redetect: { [weak self] in self?.owner?.redetect() },
             restoreAll: { [weak context] in context?.panic.panic(reason: L("Restore All Displays (Displays panel)")) },
-            // B's registered Resume action (the same one its Tools item and the CLI use).
+            // B's registered Resume action (the same one its menu item and the CLI use).
             resume: { [weak context] in _ = context?.actions.perform(PanicCoordinator.resumeActionID, on: .all) },
             settings: { [weak self, weak context] in
                 self?.close()
-                context?.openSettings("displays.overview")
+                context?.openSettings(SettingsRootID.displays)
             },
-            showMore: { [weak self] display in self?.owner?.popUpMenu(for: display) },
-            enable: { [weak context] feature in if let context { DisplayMenuBlock.enable(feature, context: context) } })
-        let root = DisplaysPanelView(runtime: context.runtime, config: context.config, context: context, actions: actions)
-        let host = NSHostingController(rootView: root)
+            showMore: { [weak self] display, view in self?.owner?.popUpMenu(for: display, at: view) })
+        let host = NSHostingController(rootView: DisplaysPanelContent(context: context, actions: actions))
         host.sizingOptions = [.preferredContentSize]
 
         let panel = FloatingPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 200),
@@ -339,94 +269,5 @@ import SnapticKit
         override var canBecomeKey: Bool { true }
         override var canBecomeMain: Bool { false }
         override func cancelOperation(_ sender: Any?) { onCancel?() }
-    }
-}
-
-struct DisplaysPanelActions {
-    let identify: @MainActor () -> Void
-    let redetect: @MainActor () -> Void
-    let restoreAll: @MainActor () -> Void
-    let resume: @MainActor () -> Void
-    let settings: @MainActor () -> Void
-    let showMore: @MainActor (DisplayInfo) -> Void
-    let enable: @MainActor (DisplayFeature) -> Void
-}
-
-private struct DisplaysPanelView: View {
-    @ObservedObject var runtime: DisplaysRuntimeState
-    @ObservedObject var config: ConfigStore<DisplaysConfig>
-    weak var context: DisplaysContext?
-    let actions: DisplaysPanelActions
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            banners
-            if let ctx = context {
-                let displays = DisplaysMenuBuilder.orderedDisplays(ctx)
-                if displays.isEmpty {
-                    Text(runtime.displays.isEmpty ? L("No displays detected") : L("All displays are hidden from the menu"))
-                        .foregroundStyle(.secondary)
-                } else if displays.count > 3 {
-                    ScrollView { cards(displays, ctx) }.frame(height: 480)
-                } else {
-                    cards(displays, ctx)
-                }
-            }
-            Divider()
-            HStack(spacing: 6) {
-                Button(L("Identify")) { actions.identify() }
-                    .help(L("Show each display's number and name"))
-                Button(L("Redetect")) { actions.redetect() }
-                Spacer()
-                Button(L("Restore All")) { actions.restoreAll() }
-                    .help(L("Undo Snaptic's display changes (same as ⌃⌥⌘⎋)"))
-                Button { actions.settings() } label: { Image(systemName: "gearshape") }
-                    .accessibilityLabel(L("Displays settings"))
-                    .help(L("Displays settings"))
-            }
-            .controlSize(.small)
-        }
-        .padding(14)
-        .frame(width: 360)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private func cards(_ displays: [DisplayInfo], _ ctx: DisplaysContext) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ForEach(Array(displays.enumerated()), id: \.element.key) { index, display in
-                if index > 0 { Divider() }
-                DisplayControlsCard(display: display, number: index + 1, runtime: runtime, context: ctx, compact: true,
-                                    enableFeature: actions.enable, showMore: actions.showMore)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var banners: some View {
-        if let ctx = context {
-            if ctx.safeMode.isActive {
-                Label(L("Safe Mode: display automation is off"), systemImage: "exclamationmark.shield")
-                    .font(.caption)
-            }
-            if ctx.panic.isLatched {
-                HStack {
-                    Label(L("Display automation is paused"), systemImage: "pause.circle").font(.caption)
-                    Spacer()
-                    Button(L("Resume")) { actions.resume() }.controlSize(.small)
-                }
-            }
-            let paused = ctx.otherApps.pausedDisplayFeatures
-            if !paused.isEmpty {
-                Label(DisplaysMenuBuilder.pauseReasons(paused, monitor: ctx.otherApps).first ?? L("Some features are paused"),
-                      systemImage: "pause.circle")
-                    .font(.caption)
-            }
-            if let reason = DisplaysMenuBuilder.unprotectedReason(ctx) {
-                Label(L("Unprotected"), systemImage: "exclamationmark.shield")
-                    .font(.caption)
-                    .help(reason)
-                    .accessibilityValue(Text(reason))
-            }
-        }
     }
 }

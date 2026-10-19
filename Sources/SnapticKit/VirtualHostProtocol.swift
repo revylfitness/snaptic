@@ -41,11 +41,11 @@ package enum VirtualHostFailure: String, Codable, CaseIterable, Sendable {
 
     package var message: String {
         switch self {
-        case .unavailable: return L("Virtual displays aren't available on this Mac")
-        case .invalidRequest: return L("The virtual screen settings are out of range")
-        case .alreadyCreated: return L("The virtual screen already exists")
-        case .notCreated: return L("The virtual screen isn't running")
-        case .refused: return L("macOS refused to create the virtual screen")
+        case .unavailable: return L("Virtual displays aren’t available on this Mac")
+        case .invalidRequest: return L("The virtual display settings are out of range")
+        case .alreadyCreated: return L("The virtual display already exists")
+        case .notCreated: return L("The virtual display isn’t running")
+        case .refused: return L("macOS refused to create the virtual display")
         case .protocolMismatch: return L("Restart Snaptic to finish updating")
         }
     }
@@ -70,10 +70,10 @@ package enum VirtualHostSpawnFailure: Equatable, Sendable {
         case .helpersStarting: return L("Snaptic is still starting. Try again in a moment.")
         case .helpersUnavailable(let reason):
             let clean = reason.trimmingCharacters(in: .whitespacesAndNewlines)
-            return clean.isEmpty ? L("The virtual screen helper can't run right now.") : clean
+            return clean.isEmpty ? L("The virtual display helper can’t run right now.") : clean
         case .appChanged: return L("Restart Snaptic to finish updating")
-        case .checkFailed: return L("The virtual screen helper failed a safety check and was stopped. Try again.")
-        case .launchFailed: return L("The virtual screen helper couldn't start. Try again.")
+        case .checkFailed: return L("The virtual display helper failed a safety check and was stopped. Try again.")
+        case .launchFailed: return L("The virtual display helper couldn’t start. Try again.")
         }
     }
 

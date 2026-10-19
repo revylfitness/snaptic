@@ -6,20 +6,22 @@ import SnapticKit
 /// method A (overlay) or B (gamma) from what's effective and what calibration said,
 /// extends the brightness slider above 100%, registers toggle / XDR ± actions, the
 /// `toggle xdr` verb, menu toggles with a paused badge, and the auto-pause toast.
-@MainActor final class XDRController: DisplayFeatureController, PanicParticipant, DiagnosticsContributor,
-    DisplayMenuContributor {
+@MainActor final class XDRController: DisplayFeatureController, PanicParticipant, DiagnosticsContributor {
     static var id: DisplayControllerID { .xdr }
     static var privateSymbols: [PrivateSymbol] { [] }
 
     static let toggleAction = DisplayActionID(rawValue: "c.xdrToggle")
     static let upAction = DisplayActionID(rawValue: "c.xdrUp")
     static let downAction = DisplayActionID(rawValue: "c.xdrDown")
-    static let toggleItem = DisplayMenuItemID(rawValue: "c.xdr.toggle")
+    static var observedSections: Set<DisplaysConfigSection> { [.brightness, .perDisplayBrightness] }
 
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
     private var lifetime: Lifetime?
     private var sinks: [AnyCancellable] = []
+    private var menuItems: ColorMenuItems?
+    /// Displays whose brightness is above 100% (boosted), as last seen.
+    private var aboveSDR: Set<DisplayKey> = []
 
     init() {}
 
@@ -36,20 +38,26 @@ import SnapticKit
         self.context = context
         self.lifetime = lifetime
         context.registerPanic(self, lifetime: lifetime)
-        context.diagnostics.register(self, section: L("XDR"), lifetime: lifetime)
-        context.menus.register(self, lifetime: lifetime)
+        context.diagnostics.register(self, section: L("Extra brightness"), lifetime: lifetime)
+        let items = ColorMenuItems(context: context, part: .xdr, owner: self)
+        menuItems = items
+        context.menus.register(items, lifetime: lifetime)
         context.edr.onPauseChange = { [weak self] reason in
             guard let self, let ctx = self.context else { return }
             if let reason {
                 ctx.toasts.show(L("Extra brightness paused: ") + reason, lifetime: self.lifetime)
             }
+            ctx.runtime.revision(.xdr).bump()
             ctx.requestMenuRebuild()
         }
-        context.edr.onCalibrated = { [weak self] key in self?.apply(key) }
+        context.edr.onCalibrated = { [weak self] key in
+            self?.apply(key)
+            self?.context?.runtime.revision(.xdr).bump()
+        }
         registerActions(context, lifetime: lifetime)
         context.commands.register("toggle xdr", policy: .low, offOnly: false, cliAllowed: true,
-                                  summary: L("Toggle extra brightness: toggle xdr [display]"),
-                                  lifetime: lifetime) { [weak self] request in
+                                  summary: L("Turn extra brightness on or off: toggle xdr [display]"),
+                                  lifetime: lifetime) { [weak self] request, _ in
             guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
             let usage = L("Usage: toggle xdr [display]. ") + DisplayTargets.usage
             let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 0, usage: usage, ctx)
@@ -60,7 +68,7 @@ import SnapticKit
         }
         context.commands.register("get xdr", policy: .read, offOnly: false, cliAllowed: true,
                                   summary: L("Print extra brightness per display: get xdr [display]"),
-                                  lifetime: lifetime) { [weak self] request in
+                                  lifetime: lifetime) { [weak self] request, _ in
             guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
             let usage = L("Usage: get xdr [display]. ") + DisplayTargets.usage
             let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 0, default: .all, usage: usage, ctx)
@@ -85,12 +93,22 @@ import SnapticKit
             .store(in: &sinks)
         context.brightness.changeEvents
             .filter { $0.source != .restore }
-            .sink { [weak self] _ in self?.context?.requestMenuRebuild() }
+            .sink { [weak self] change in self?.brightnessChanged(change) }
             .store(in: &sinks)
         applyAll()
     }
 
     func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) { applyAll() }
+
+    /// The Extra Brightness item and pages show whether a display is boosted: refresh them when that flips (the
+    /// slider itself follows `DisplayRuntime`).
+    private func brightnessChanged(_ change: BrightnessService.Change) {
+        let above = change.value > 1.0001
+        guard above != aboveSDR.contains(change.key) else { return }
+        if above { aboveSDR.insert(change.key) } else { aboveSDR.remove(change.key) }
+        context?.runtime.revision(.xdr).bump()
+        context?.requestMenuRebuild()
+    }
 
     func configDidChange(from old: DisplaysConfig, to new: DisplaysConfig) {
         if old.brightness.xdrMaxScale != new.brightness.xdrMaxScale || old.brightness.xdrMethod != new.brightness.xdrMethod
@@ -109,6 +127,8 @@ import SnapticKit
             }
         }
         context?.edr.onCalibrated = nil
+        menuItems = nil
+        aboveSDR.removeAll()
         lifetime = nil
         context = nil
     }
@@ -130,6 +150,7 @@ import SnapticKit
     private func applyAll() {
         guard let context else { return }
         for display in context.registry.displays where display.isOnline { apply(display.key) }
+        context.runtime.revision(.xdr).bump()
         context.requestMenuRebuild()
     }
 
@@ -174,7 +195,7 @@ import SnapticKit
     }
 
     private func registerActions(_ ctx: DisplaysContext, lifetime: Lifetime) {
-        ctx.actions.register(Action(id: Self.toggleAction, title: L("Toggle Extra Brightness (XDR)"), feature: .xdr,
+        ctx.actions.register(Action(id: Self.toggleAction, title: DisplaysToggleText.extraBrightness, feature: .xdr,
                                     cliAllowed: true) { [weak self] target in self?.toggle(target) }, lifetime: lifetime)
         ctx.actions.register(Action(id: Self.upAction, title: L("Extra Brightness Up"), feature: .xdr,
                                     cliAllowed: true) { [weak self] target in self?.step(target, up: true) }, lifetime: lifetime)
@@ -184,22 +205,6 @@ import SnapticKit
 
     // MARK: Menu
 
-    var descriptors: [DisplayMenuItemDescriptor] {
-        [DisplayMenuItemDescriptor(id: Self.toggleItem, title: L("Extra brightness (XDR)"), slot: .display,
-                                   defaultVisibility: .inSubmenu)]
-    }
-
-    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] {
-        guard let context, method(for: display.key).0 != nil else { return [] }
-        let key = display.key
-        var title = L("Extra Brightness (XDR)")
-        if let reason = context.edr.pauseReason, isEnabled(key) { title = L("XDR paused (\(reason))") }
-        else if context.edr.isBoosting(key) { title += String(format: " · %.0f%%", context.edr.appliedBoost(key) * 100) }
-        let item = CMenu.item(title, on: isEnabled(key)) { [weak self] in _ = self?.toggle(.display(key)) }
-        return [(Self.toggleItem, item)]
-    }
-
-    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
 
     // MARK: Diagnostics
 

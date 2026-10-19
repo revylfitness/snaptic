@@ -180,6 +180,107 @@ final class ConfigMenuTests: XCTestCase {
         XCTAssertNil(s.identifyShortcut, "one shortcut can't do two things")
     }
 
+    // MARK: 0.3
+
+    func testStyleIsTheCompactFlag() throws {
+        var c = MenuConfig()
+        XCTAssertEqual(c.style, .standard)
+        c.style = .compact
+        XCTAssertTrue(c.compact)
+        XCTAssertEqual(c.style, .compact)
+        let decoded = try JSONDecoder().decode(MenuConfig.self, from: JSONEncoder().encode(c))
+        XCTAssertEqual(decoded.style, .compact)
+        c.style = .standard
+        XCTAssertFalse(c.compact)
+        XCTAssertEqual(MenuStyle.allCases, [.standard, .compact])
+    }
+
+    func testRestoringDefaultsPerScope() {
+        let cmdK = HotkeyCombo(keyCode: 40, carbonModifiers: 0x0100)
+        var c = MenuConfig()
+        c.setVisibility(.hidden, for: brightness, default: .visible)
+        c.setHidden(true, for: key(1))
+        c.setCollapsed(true, for: key(2))
+        c.displayOrder = [key(3), key(1)]
+        c.sectionOrder = [.tools, .displays]
+        c.mainFirst = false
+        c.showBadges = false
+        c.headerForSingleDisplay = false
+        c.compact = true
+        c.scrollAdjustsSliders = false
+        c.showPanelShortcut = cmdK
+        c.identifyShortcut = HotkeyCombo(keyCode: 34, carbonModifiers: 0x0100)
+
+        let sheet = c.restoringDefaults(scope: .displaysMenu)
+        XCTAssertTrue(sheet.items.values.isEmpty)
+        XCTAssertEqual(sheet.hiddenDisplays, [])
+        XCTAssertEqual(sheet.collapsedDisplays, [])
+        XCTAssertEqual(sheet.displayOrder, [])
+        XCTAssertEqual(sheet.orderedSections, [.displays, .tools])
+        XCTAssertTrue(sheet.mainFirst && sheet.showBadges && sheet.headerForSingleDisplay)
+        XCTAssertTrue(sheet.compact, "Style is the Menu Bar page's")
+        XCTAssertFalse(sheet.scrollAdjustsSliders)
+        XCTAssertEqual(sheet.showPanelShortcut, cmdK, "0.2 shortcut fields are never reset here")
+        XCTAssertEqual(sheet.identifyShortcut, c.identifyShortcut)
+
+        let page = c.restoringDefaults(scope: .menuBar)
+        var expected = MenuConfig()
+        expected.showPanelShortcut = c.showPanelShortcut
+        expected.identifyShortcut = c.identifyShortcut
+        XCTAssertEqual(page, expected)
+        XCTAssertEqual(MenuConfig().restoringDefaults(scope: .menuBar), MenuConfig())
+    }
+
+    func testSlidersAreShowOrHideOnly() {
+        let slider = DisplayMenuItemID(rawValue: "c.brightness.slider")
+        let mute = DisplayMenuItemID(rawValue: "c.ddc.mute")
+        XCTAssertTrue(MenuConfig.isSlider(slider))
+        XCTAssertFalse(MenuConfig.isSlider(mute))
+        XCTAssertEqual(MenuConfig.sliderItemIDs.count, 5)
+        XCTAssertEqual(MenuConfig.choices(for: slider), [.visible, .hidden])
+        XCTAssertEqual(MenuConfig.choices(for: mute), [.visible, .inSubmenu, .hidden])
+
+        var c = MenuConfig()
+        XCTAssertTrue(c.isSliderShown(slider, default: .visible))
+        XCTAssertFalse(c.isSliderShown(slider, default: .hidden))
+        // A 0.2 "In submenu" choice keeps the slider, now at the top level.
+        c.items[slider] = .inSubmenu
+        XCTAssertTrue(c.isSliderShown(slider, default: .visible))
+
+        c.setSliderShown(false, for: slider, default: .visible)
+        XCTAssertEqual(c.items[slider], .hidden)
+        XCTAssertFalse(c.isSliderShown(slider, default: .visible))
+        c.setSliderShown(true, for: slider, default: .visible)
+        XCTAssertNil(c.items[slider], "equal to the default: no override")
+
+        let contrast = DisplayMenuItemID(rawValue: "c.ddc.contrast")
+        c.setSliderShown(true, for: contrast, default: .hidden)
+        XCTAssertEqual(c.items[contrast], .visible)
+        c.setSliderShown(false, for: contrast, default: .hidden)
+        XCTAssertNil(c.items[contrast])
+
+        // A slider whose descriptor default is "In submenu" shows by default and hides on request.
+        let custom = DisplayMenuItemID(rawValue: "c.ddc.custom")
+        XCTAssertTrue(c.isSliderShown(custom, default: .inSubmenu))
+        c.setSliderShown(false, for: custom, default: .inSubmenu)
+        XCTAssertFalse(c.isSliderShown(custom, default: .inSubmenu))
+        c.setSliderShown(true, for: custom, default: .inSubmenu)
+        XCTAssertNil(c.items[custom])
+        XCTAssertTrue(c.isSliderShown(custom, default: .inSubmenu))
+    }
+
+    func testSectionOrderIsAlwaysAFullPermutation() {
+        var c = MenuConfig()
+        c.sectionOrder = []
+        XCTAssertEqual(c.orderedSections, [.displays, .tools])
+        c.sectionOrder = [.tools, .tools]
+        XCTAssertEqual(c.orderedSections, [.tools, .displays])
+        c.moveSection(.displays, by: -5)
+        XCTAssertEqual(c.orderedSections, [.displays, .tools])
+        c.moveSection(.displays, by: 9)
+        XCTAssertEqual(c.orderedSections, [.tools, .displays])
+    }
+
     func testFuzzedSanitizeIsStableAndBounded() throws {
         var rng = SeededGenerator(seed: 0xF00D)
         let visibilities = MenuItemVisibility.allCases

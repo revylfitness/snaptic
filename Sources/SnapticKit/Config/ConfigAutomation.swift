@@ -15,15 +15,37 @@ package enum HookEvent: String, Codable, CaseIterable, Sendable {
     /// Wake, then the hook's delay.
     case wakeDelayed
 
+    /// The editor's "When" choice, sentence case (0.3 §4.2 copy rules).
     package var title: String {
         switch self {
-        case .connect: return L("Connected")
-        case .disconnect: return L("Disconnected")
-        case .softConnect: return L("Turned on (soft connect)")
-        case .softDisconnect: return L("Turned off (soft disconnect)")
-        case .sleep: return L("Mac goes to sleep")
-        case .wake: return L("Mac wakes up")
-        case .wakeDelayed: return L("Mac wakes up, after a delay")
+        case .connect: return L("A display connects")
+        case .disconnect: return L("A display disconnects")
+        case .softConnect: return L("A display turns on")
+        case .softDisconnect: return L("A display turns off")
+        case .sleep: return L("Your Mac goes to sleep")
+        case .wake: return L("Your Mac wakes")
+        case .wakeDelayed: return L("Your Mac wakes, after a delay")
+        }
+    }
+
+    /// One line under the "When" choice where the title alone is ambiguous; nil otherwise.
+    package var help: String? {
+        switch self {
+        case .softConnect: return L("A display that stayed plugged in is turned back on, by Snaptic or another app.")
+        case .softDisconnect: return L("A display is turned off without being unplugged.")
+        case .wakeDelayed: return L("Waits after waking, so displays and drives have time to come back.")
+        case .connect, .disconnect, .sleep, .wake: return nil
+        }
+    }
+
+    /// The verb after a display's name in a hook's summary ("“DELL U2720Q” connects").
+    fileprivate var displayVerb: String {
+        switch self {
+        case .connect: return L("connects")
+        case .disconnect: return L("disconnects")
+        case .softConnect: return L("turns on")
+        case .softDisconnect: return L("turns off")
+        case .sleep, .wake, .wakeDelayed: return ""
         }
     }
 
@@ -52,6 +74,13 @@ package struct CommandSpec: Codable, Equatable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         executable = c.lossy(.executable, "")
         arguments = c.lossy(.arguments, [])
+    }
+
+    /// The program's file name ("dock.sh"), or "" when no program is set.
+    package var programName: String {
+        let trimmed = executable.hasSuffix("/") ? String(executable.dropLast()) : executable
+        guard let slash = trimmed.lastIndex(of: "/") else { return trimmed }
+        return String(trimmed[trimmed.index(after: slash)...])
     }
 
     package func sanitized() -> CommandSpec {
@@ -97,6 +126,38 @@ package struct HookSpec: Codable, Equatable, Sendable, Identifiable {
         delaySeconds = c.lossy(.delaySeconds, 10)
         command = c.lossy(.command, CommandSpec())
     }
+
+    /// What the hook waits for, as a sentence: "When “DELL U2720Q” connects", "When a display disconnects", "When your
+    /// Mac wakes, after 1 min 30 s". `displayName` names `display` (nil, or no display set: "a display"). Shown as the
+    /// list row's subtitle and as the name field's placeholder.
+    package func summary(displayName: String?) -> String {
+        switch event {
+        case .connect, .disconnect, .softConnect, .softDisconnect:
+            let name = display == nil ? nil : displayName.map { TextSanitizer.clean($0, maxScalars: 64) }
+            if let name, !name.isEmpty {
+                return L("When “\(name)” \(event.displayVerb)")
+            }
+            return L("When a display \(event.displayVerb)")
+        case .sleep:
+            return L("When your Mac goes to sleep")
+        case .wake:
+            return L("When your Mac wakes")
+        case .wakeDelayed:
+            return L("When your Mac wakes, after \(Self.durationText(sanitized().delaySeconds))")
+        }
+    }
+
+    /// "10 s", "1 min", "1 min 30 s" (whole seconds; the editor clamps to 1…600).
+    package static func durationText(_ seconds: Double) -> String {
+        let total = seconds.isFinite ? max(0, Int(seconds.rounded())) : 0
+        let minutes = total / 60, rest = total % 60
+        if minutes == 0 { return L("\(rest) s") }
+        if rest == 0 { return L("\(minutes) min") }
+        return L("\(minutes) min \(rest) s")
+    }
+
+    /// A hook without a program never runs (a new hook is on before its program is chosen).
+    package var hasProgram: Bool { !command.executable.isEmpty }
 
     package func sanitized() -> HookSpec {
         var h = self
@@ -196,7 +257,7 @@ package struct AutomationConfig: ConfigModel {
 
     package func hooks(for event: HookEvent, display: DisplayKey?) -> [HookSpec] {
         hooks.filter { hook in
-            hook.enabled && hook.event == event && (hook.display == nil || hook.display == display)
+            hook.enabled && hook.hasProgram && hook.event == event && (hook.display == nil || hook.display == display)
         }
     }
 
@@ -204,32 +265,5 @@ package struct AutomationConfig: ConfigModel {
     package func action(cliName: String) -> CustomActionSpec? {
         let wanted = cliName.lowercased()
         return actions.first { $0.cliName == wanted }
-    }
-}
-
-/// An array decoded element by element; bad elements are skipped (for example a hook
-/// with an event this version doesn't know).
-package struct LossyArray<Element: Decodable>: Decodable {
-    package var items: [Element]
-
-    package init() { items = [] }
-
-    package init(from decoder: Decoder) throws {
-        var container = try decoder.unkeyedContainer()
-        var result: [Element] = []
-        var guardCount = 0
-        while !container.isAtEnd && guardCount < 1_024 {
-            guardCount += 1
-            if let item = try? container.decode(Element.self) {
-                result.append(item)
-            } else if (try? container.decode(SkipValue.self)) == nil {
-                break
-            }
-        }
-        items = result
-    }
-
-    private struct SkipValue: Decodable {
-        init(from decoder: Decoder) throws {}
     }
 }

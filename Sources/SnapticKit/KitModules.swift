@@ -3,15 +3,61 @@ import Foundation
 // Shared identifiers. Lead-owned: these are the names every team uses, so they
 // live in one place and change only through the lead (PLAN §13, R5.1).
 
-/// Thrown by stubs that haven't been implemented yet (step 0b convention).
-package enum StubError: Error, Equatable, Sendable { case notBuilt }
+/// Hidden kill switches (N14): `<prefix>.disable.<id>` set to true in Snaptic's persistent domain turns that id off
+/// (`Modules`, `Displays` and `Awake` prefixes). Any other value (missing, false, a string) leaves it alone.
+package enum KillSwitches {
+    package static func key(prefix: String, id: String) -> String { prefix + ".disable." + id }
 
-package enum ModuleID: String, Codable, CaseIterable, Sendable { case windowSwitcher, displays }
+    package static func read<ID: CaseIterable & RawRepresentable & Hashable>(
+        _ domain: [String: Any]?, prefix: String, as _: ID.Type = ID.self
+    ) -> Set<ID> where ID.RawValue == String {
+        guard let domain else { return [] }
+        return Set(ID.allCases.filter { (domain[key(prefix: prefix, id: $0.rawValue)] as? Bool) == true })
+    }
+}
+
+/// Start order = declaration order (0.3: windowSwitcher, displays, awake; PLAN 0.3 §2.2).
+package enum ModuleID: String, Codable, CaseIterable, Sendable { case windowSwitcher, displays, awake }
 
 package enum Permission: String, Codable, CaseIterable, Sendable { case accessibility, screenRecording }
 
 /// All user-visible strings go through L() so a String Catalog can be added later.
 package func L(_ s: String) -> String { s }
+
+/// Names placed inside running text (design-spec §4.1; review6 ux R3-3). Labels are sentence case ("Virtual
+/// displays"), so mid-sentence their first letter is lowercased, unless the name starts with a proper name or an
+/// acronym ("Picture in Picture", "Night Shift controls", "HDR virtual modes").
+package enum SentenceText {
+    /// Names Apple or Snaptic capitalize wherever they appear.
+    package static let properNames = ["Picture in Picture", "Night Shift", "High Dynamic Range", "Display Information",
+                                      "Displays panel", "Window Switcher",
+                                      "True Tone", "Touch ID", "Apple", "Snaptic", "Mac", "Keep Awake", "Drive Alive",
+                                      "Safe Mode", "Sidecar", "AirPlay"]
+
+    /// "Virtual displays" → "virtual displays"; "Picture in Picture filters", "HDR virtual modes" and
+    /// "macOS" unchanged.
+    package static func inSentence(_ name: String) -> String {
+        guard let first = name.first, first.isUppercase else { return name }
+        for proper in properNames where name.hasPrefix(proper) {
+            let rest = name.dropFirst(proper.count)
+            if rest.first.map({ !$0.isLetter }) ?? true { return name }
+        }
+        let firstWord = name.prefix { $0.isLetter || $0.isNumber || $0 == "-" }
+        // An acronym or a name with inner capitals (HDR, HiDPI, USB-C) keeps its case.
+        if firstWord.dropFirst().contains(where: \.isUppercase) { return name }
+        return first.lowercased() + name.dropFirst()
+    }
+
+    /// "A", "A and B", "A, B, and C" (serial comma, design-spec §4.1); "" for none.
+    package static func list(_ items: [String]) -> String {
+        switch items.count {
+        case 0: return ""
+        case 1: return items[0]
+        case 2: return L("\(items[0]) and \(items[1])")
+        default: return L("\(items.dropLast().joined(separator: ", ")), and \(items[items.count - 1])")
+        }
+    }
+}
 
 package struct HotkeyCombo: Codable, Hashable, Sendable {
     package var keyCode: UInt32
@@ -38,6 +84,74 @@ package struct DisplayMenuItemID: RawRepresentable, Codable, Hashable, Sendable 
 
 package enum MenuPlacementChoice: String, Codable, CaseIterable, Sendable { case shared, ownIcon, hidden }
 
+/// Where a module shows in the menu bar (0.3 §5.2, Control Center wording; replaces MenuPlacementChoice in the UI).
+/// Cases are in menu order; raw values are persisted.
+package enum MenuPresence: String, Codable, CaseIterable, Sendable {
+    /// "Always Show in Menu Bar".
+    case ownIcon
+    /// "Show When Active": Displays while an external display is connected, Awake while a session runs.
+    case ownIconWhenActive
+    /// "Show in Snaptic Menu".
+    case inSnapticMenu
+    /// "Don't Show".
+    case hidden
+
+    /// The choices offered for a module: `ownIconWhenActive` only for Displays and Awake (sanitized → ownIcon elsewhere).
+    package static func allowed(for id: ModuleID) -> [MenuPresence] {
+        switch id {
+        case .displays, .awake: return allCases
+        case .windowSwitcher: return [.ownIcon, .inSnapticMenu, .hidden]
+        }
+    }
+
+    /// What 0.2 reads (written for downgrades; migration M2). Displays' "when active" is the 0.2 ownIcon + hide flag.
+    package var legacyPlacement: MenuPlacementChoice {
+        switch self {
+        case .ownIcon, .ownIconWhenActive: return .ownIcon
+        case .inSnapticMenu: return .shared
+        case .hidden: return .hidden
+        }
+    }
+
+    /// The 0.2 → 0.3 mapping (M2) for one stored placement and its hide flag.
+    package init(legacy placement: MenuPlacementChoice, hideWithoutExternalDisplay: Bool) {
+        switch placement {
+        case .shared: self = .inSnapticMenu
+        case .hidden: self = .hidden
+        case .ownIcon: self = hideWithoutExternalDisplay ? .ownIconWhenActive : .ownIcon
+        }
+    }
+}
+
+/// One-time General cards (0.3 §2.2): a closed enum, so "awake.migrated" survives migration M3's filter.
+package enum NewModuleCard: String, Codable, CaseIterable, Sendable {
+    case displays, awake, awakeMigrated = "awake.migrated"
+}
+
+/// Awake criterion kinds (0.3 §2.2); here so the Awake feature graph can reference them.
+package enum AwakeCriterionKind: String, Codable, CaseIterable, Sendable {
+    case app, display, power, schedule, cpu, audio, idle, volume, usb, network, networkActivity, bluetooth
+}
+
+/// Identifies an Awake action (hotkey, menu item). Open like DisplayActionID; raw values are "awake.*" and the
+/// Awake team declares the constants.
+package struct AwakeActionID: RawRepresentable, Codable, Hashable, Sendable {
+    package let rawValue: String
+    package init(rawValue: String) { self.rawValue = rawValue }
+}
+
+extension DisplayActionID {
+    /// Show the floating Displays panel (migration M4 target; OverviewController registers it).
+    package static let fShowPanel = DisplayActionID(rawValue: "f.showPanel")
+    /// Identify displays (migration M4 target).
+    package static let fIdentify = DisplayActionID(rawValue: "f.identify")
+}
+
+extension DisplayMenuItemID {
+    /// "Turn Off Display" (DDC power) under a display's row (migration M10; C's DDCMenuItems uses it).
+    package static let cDDCPower = DisplayMenuItemID(rawValue: "c.ddc.power")
+}
+
 package enum MenuItemVisibility: String, Codable, CaseIterable, Sendable { case visible, inSubmenu, hidden }
 
 /// User-facing Displays features (PLAN §2.1, R5.4). Raw values are persisted.
@@ -53,7 +167,7 @@ package enum DisplayFeature: String, Codable, CaseIterable, Sendable {
     case disconnect, autoDisconnectBuiltin, protection, layouts
     case virtualScreens, smartHiDPI, hdrVirtual
     case pip, pipFilters
-    case menuBarOverlays, sleepPrevention
+    case menuBarOverlays
     case hooks, customActions
 }
 
@@ -120,6 +234,11 @@ package struct EventCategory: RawRepresentable, Hashable, Sendable {
     package static let automation = Self(rawValue: "automation")
     package static let control = Self(rawValue: "control")
     package static let safety = Self(rawValue: "safety")
+    /// Awake: written only through EventLog's AwakeLogEvent overload (lint L9).
+    package static let awake = Self(rawValue: "awake")
+
+    /// Whether entries of this category may go into the exported diagnostics report (0.3 §3.6: never Awake).
+    package var isExportedInDiagnostics: Bool { self != Self.awake }
 }
 
 /// Stable, salted identity of a display: 32 lowercase hex characters.
@@ -168,5 +287,50 @@ package struct StableID: RawRepresentable, Hashable, Sendable, Codable {
     package func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         try container.encode(rawValue)
+    }
+}
+
+/// 128-bit FNV-1a (0.3 §2.14, N18): offset basis 0x6c62272e07bb014262b821756295c58d, prime 2^88 + 0x13b, over the
+/// given bytes. Not a secret or a MAC: Kit has no SHA (CryptoKit is app-only) and these ids aren't secrets.
+package enum NameHash {
+    package static let offsetBasis: (hi: UInt64, lo: UInt64) = (0x6c62_272e_07bb_0142, 0x62b8_2175_6295_c58d)
+
+    package static func fnv1a128(_ bytes: [UInt8]) -> (hi: UInt64, lo: UInt64) {
+        var hi = offsetBasis.hi
+        var lo = offsetBasis.lo
+        // prime = 2^88 + 0x13b: (hi·2^64 + lo)·prime mod 2^128
+        //       = lo·0x13b + 2^64·(hi·0x13b + lo·2^24) mod 2^128.
+        for byte in bytes {
+            lo ^= UInt64(byte)
+            let low = lo.multipliedFullWidth(by: 0x13b)
+            let newHi = (hi &* 0x13b) &+ (lo &<< 24) &+ low.high
+            lo = low.low
+            hi = newHi
+        }
+        return (hi, lo)
+    }
+}
+
+extension StableID {
+    /// Name-based id (N18): fnv1a128(namespace ‖ 0x00 ‖ name) shaped as a UUID with RFC 9562 version 8 ("custom",
+    /// the hash isn't SHA-1) and variant 10. Always a valid StableID; the same input gives the same id on every run
+    /// and platform (migration M1 re-runs, default presets).
+    package static func derived(namespace: String, name: String) -> StableID {
+        let hash = NameHash.fnv1a128(Array(namespace.utf8) + [0] + Array(name.utf8))
+        var bytes: [UInt8] = []
+        for shift in stride(from: 56, through: 0, by: -8) { bytes.append(UInt8(truncatingIfNeeded: hash.hi >> UInt64(shift))) }
+        for shift in stride(from: 56, through: 0, by: -8) { bytes.append(UInt8(truncatingIfNeeded: hash.lo >> UInt64(shift))) }
+        bytes[6] = (bytes[6] & 0x0F) | 0x80
+        bytes[8] = (bytes[8] & 0x3F) | 0x80
+        let hex = bytes.map { byte -> String in
+            let digits = Array("0123456789ABCDEF")
+            return String([digits[Int(byte >> 4)], digits[Int(byte & 0x0F)]])
+        }
+        let text = hex[0..<4].joined() + "-" + hex[4..<6].joined() + "-" + hex[6..<8].joined() + "-"
+            + hex[8..<10].joined() + "-" + hex[10..<16].joined()
+        // Always parses (36 hex/dash characters); the fallback only keeps this total.
+        return StableID(rawValue: text) ?? StableID(UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5],
+                                                                 bytes[6], bytes[7], bytes[8], bytes[9], bytes[10],
+                                                                 bytes[11], bytes[12], bytes[13], bytes[14], bytes[15])))
     }
 }

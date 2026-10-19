@@ -12,7 +12,8 @@ package struct PreConfirmAllowList: Codable, Equatable, Sendable {
 
     package init(from decoder: Decoder) throws {
         let c = try decoder.singleValueContainer()
-        entries = ((try? c.decode([String].self)) ?? []).filter(Self.isValidEntry)
+        // Element by element and bounded (Kit LossyArray): one bad entry doesn't drop the list.
+        entries = ((try? c.decode(LossyArray<String>.self))?.items ?? []).filter(Self.isValidEntry)
     }
 
     package func encode(to encoder: Encoder) throws {
@@ -49,7 +50,7 @@ package struct KeptModes: Codable, Equatable, Sendable {
 
     package init(from decoder: Decoder) throws {
         let c = try decoder.singleValueContainer()
-        modes = (try? c.decode([LossyModeRef].self))?.compactMap(\.value) ?? []
+        modes = (try? c.decode(LossyArray<ModeRef>.self))?.items ?? []
     }
 
     package func encode(to encoder: Encoder) throws {
@@ -75,14 +76,11 @@ package struct KeptModes: Codable, Equatable, Sendable {
     }
 }
 
-/// Decodes one array element, or nil, without failing the array.
-private struct LossyModeRef: Decodable {
-    let value: ModeRef?
-    init(from decoder: Decoder) throws { value = try? ModeRef(from: decoder) }
-}
-
 package struct SafetyConfig: ConfigModel {
-    package static let confirmSecondsRange = 10...60
+    /// "Revert after" (0.3 §4.3: StepperSetting 5–60; 0.2 allowed 10–60). The guard never needs a longer panel:
+    /// its deadline is always the panel plus a fixed margin (`GuardProtocol.trialDeadline`, `panelExtension`), so a
+    /// shorter countdown only reverts sooner, never later. A 0.2 build reading 5 clamps it up to 10 (safer).
+    package static let confirmSecondsRange = 5...60
     package static let defaultConfirmSeconds = 15
 
     package var confirmResolution: ConfirmResolutionChanges
@@ -155,4 +153,102 @@ package struct SafetyConfig: ConfigModel {
         for d in [Self.defaultPanicHotkey, Self.fallbackPanicHotkey] where !list.contains(d) { list.append(d) }
         return list
     }
+}
+
+// MARK: - Restore All Displays shortcut (0.3 §4.6 M6, consistency M5)
+
+/// What the one "Restore All Displays" shortcut row edits. **No data migration**: the row reads and writes the two
+/// 0.2 fields with their 0.2 meanings, so a 0.3 → 0.2 → 0.3 round trip keeps the user's choice.
+/// - `standard`: `panicHotkeyEnabled == true`, `panicHotkey == nil` → ⌃⌥⌘⎋, then ⌃⌥⌘⇧⎋ if that is taken.
+/// - `custom`: `panicHotkeyEnabled == true`, `panicHotkey` set → that combo first, then the default and fallback.
+/// - `off`: `panicHotkeyEnabled == false` → no shortcut at all (except while Snaptic holds a long-armed state).
+package enum PanicShortcutState: Equatable, Sendable {
+    case standard
+    case custom(HotkeyCombo)
+    case off
+}
+
+extension SafetyConfig {
+    package var panicShortcutState: PanicShortcutState {
+        guard panicHotkeyEnabled else { return .off }
+        if let custom = panicHotkey, custom != Self.defaultPanicHotkey { return .custom(custom) }
+        return .standard
+    }
+
+    /// What the shortcut recorder shows: the custom combo, the default one, or nothing when off.
+    package var panicShortcutShown: HotkeyCombo? {
+        switch panicShortcutState {
+        case .standard: return Self.defaultPanicHotkey
+        case .custom(let combo): return combo
+        case .off: return nil
+        }
+    }
+
+    /// The recorder wrote `combo`: a recorded combo turns the shortcut on (the default combo is stored as nil, so
+    /// it keeps its fallback); Clear (`nil`) sets `panicHotkeyEnabled = false` and leaves `panicHotkey` as it was,
+    /// exactly the 0.2 switch. A combo macOS can't register is ignored.
+    package func settingPanicShortcut(_ combo: HotkeyCombo?) -> SafetyConfig {
+        var c = self
+        guard let combo else {
+            c.panicHotkeyEnabled = false
+            return c
+        }
+        let normalized = HotkeyRules.normalized(combo)
+        guard HotkeyRules.problem(normalized) == nil, Self.isStorablePanicHotkey(normalized) else { return self }
+        c.panicHotkeyEnabled = true
+        c.panicHotkey = normalized == Self.defaultPanicHotkey ? nil : normalized
+        return c
+    }
+
+    /// "Use Default": back to ⌃⌥⌘⎋ (with its fallback), on.
+    package func usingDefaultPanicShortcut() -> SafetyConfig {
+        var c = self
+        c.panicHotkeyEnabled = true
+        c.panicHotkey = nil
+        return c
+    }
+
+    /// The combos to register, in order (the first one that registers wins); empty = no shortcut. While Snaptic
+    /// holds a long-armed state (a display disconnected, mirrored to a virtual display, dimmed to black) the
+    /// shortcut is registered whatever the setting says (PLAN 0.2 §4.7).
+    package func panicHotkeys(longArmed: Bool) -> [HotkeyCombo] {
+        guard panicHotkeyEnabled || longArmed else { return [] }
+        return panicHotkeyCandidates
+    }
+
+    /// The rule `sanitized()` applies to a stored custom combo.
+    package static func isStorablePanicHotkey(_ combo: HotkeyCombo) -> Bool {
+        combo.keyCode < 128 && combo.carbonModifiers & 0x1B00 != 0
+    }
+}
+
+// MARK: - Allowed without asking (one list, 0.3 §4.4 duplicate 2)
+
+extension PreConfirmAllowList {
+    /// "Input source: HDMI 1", "Power mode: Standby" for one stored entry; nil for an entry that doesn't parse.
+    package static func describe(_ entry: String) -> String? {
+        guard isValidEntry(entry) else { return nil }
+        let parts = entry.split(separator: ":")
+        guard let vcp = UInt8(parts[0], radix: 16), let value = UInt16(parts[1], radix: 16) else { return nil }
+        return VCPPolicy.name(vcp) + ": " + valueName(vcp: vcp, value: value)
+    }
+
+    /// The words for one value of a confirmed code.
+    package static func valueName(vcp: UInt8, value: UInt16) -> String {
+        switch vcp {
+        case 0x60: return VCPPolicy.inputName(value)
+        case 0xD6:
+            switch value {
+            case 1: return L("On")
+            case 2: return L("Standby")
+            case 3: return L("Suspend")
+            case 4, 5: return L("Off")
+            default: return String(value)
+            }
+        default: return String(value)
+        }
+    }
+
+    /// Every entry described, in stored order, without unreadable ones.
+    package var descriptions: [String] { entries.compactMap(Self.describe) }
 }

@@ -3,9 +3,11 @@ import SnapticKit
 
 /// Configuration protection (PLAN §9.6): a desired state per presented-display set,
 /// re-applied only through the ConnectPlanner as `restore`, with fight detection.
-@MainActor final class ProtectionController: DisplayFeatureController, DisplayMenuContributor, DiagnosticsContributor {
+@MainActor final class ProtectionController: DisplayFeatureController, DiagnosticsContributor {
     static var id: DisplayControllerID { .protection }
     static var privateSymbols: [PrivateSymbol] { [] }
+    /// Protected profiles and fields live in `management` (0.3 §4.5).
+    static var observedSections: Set<DisplaysConfigSection> { [.management] }
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
     private var lifetime: Lifetime?
@@ -15,6 +17,8 @@ import SnapticKit
     private var suspended = false
     private var activationObserver: NSObjectProtocol?
     private var applies = 0
+    /// Held here: the menu registry keeps contributors weakly.
+    private var menu: ManagementMenuItems?
 
     init() {}
 
@@ -26,21 +30,24 @@ import SnapticKit
         self.context = context
         self.lifetime = lifetime
         self.effective = effective
-        context.menus.register(self, lifetime: lifetime)
+        let items = ManagementMenuItems(context: context)
+        items.protection = self
+        menu = items
+        context.menus.register(items, lifetime: lifetime)
         context.diagnostics.register(self, section: L("Protection"), lifetime: lifetime)
         context.connectPlanner.attach(self, lifetime: lifetime)
-        context.actions.register(Action(id: .dProtectionToggle, title: L("Protect Arrangement"), feature: .protection,
+        context.actions.register(Action(id: .dProtectionToggle, title: DisplaysToggleText.protectArrangement, feature: .protection,
                                         cliAllowed: false) { [weak self] _ in self?.toggleCurrent() }, lifetime: lifetime)
         context.commands.register("protect", policy: .low, offOnly: true, cliAllowed: true,
-                                  summary: L("protect off: stop configuration protection"), lifetime: lifetime) { [weak self] req in
+                                  summary: L("protect off: stop configuration protection"), lifetime: lifetime) { [weak self] req, _ in
             guard let self, let ctx = self.context else { return .failure(ControlExit.unavailable, "") }
-            guard req.arguments.first?.lowercased() == "off" else { return .failure(ControlExit.refused, L("Only 'off' is allowed")) }
+            guard req.arguments.first?.lowercased() == "off" else { return .failure(ControlExit.refused, L("Only “off” is allowed")) }
             ctx.config.value.features[.protection] = false
             return .ok()
         }
         // R5.4 exposure name; off-only: it can turn protection off, never on.
         context.commands.register("toggle protection", policy: .low, offOnly: true, cliAllowed: true,
-                                  summary: L("toggle protection: turn configuration protection off"), lifetime: lifetime) { [weak self] _ in
+                                  summary: L("toggle protection: turn configuration protection off"), lifetime: lifetime) { [weak self] _, _ in
             guard let self, let ctx = self.context else { return .failure(ControlExit.unavailable, "") }
             guard self.effective.contains(.protection) else {
                 return .failure(ControlExit.refused, L("Protection can only be turned off from the command line"))
@@ -50,15 +57,34 @@ import SnapticKit
         }
         activationObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil,
                                                                     queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.suspended = false }
+            MainActor.assumeIsolated { self?.setSuspended(false) }
         }
     }
 
-    func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) { self.effective = effective }
+    func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) {
+        self.effective = effective
+        changed()
+    }
 
     func configDidChange(from old: DisplaysConfig, to new: DisplaysConfig) {
-        if old.management.protection != new.management.protection { context?.requestMenuRebuild() }
+        if old.management.protection != new.management.protection
+            || old.management.protectionFields != new.management.protectionFields { changed() }
     }
+
+    /// Page-visible state changed (protected sets, paused): one revision bump and a menu rebuild.
+    private func changed() {
+        context?.runtime.revision(Self.id).bump()
+        context?.requestMenuRebuild()
+    }
+
+    private func setSuspended(_ value: Bool) {
+        guard suspended != value else { return }
+        suspended = value
+        changed()
+    }
+
+    /// Re-applies stopped for the current set: macOS keeps changing it, or the last re-apply failed.
+    var isPaused: Bool { suspended || (currentSet().map { fights.isStopped($0) } ?? false) }
 
     func stop() {
         if let o = activationObserver { NotificationCenter.default.removeObserver(o) }
@@ -66,6 +92,7 @@ import SnapticKit
         fights.resetAll()
         lastApplied = [:]
         suspended = false
+        menu = nil
         lifetime = nil
         context = nil
         effective = []
@@ -151,6 +178,7 @@ import SnapticKit
         if let last = lastApplied[set], now - last <= ProtectionFightTracker.window, fights.noteOverwrite(set, at: now) {
             ctx.toasts.show(L("macOS keeps changing this arrangement; protection is paused for it"), lifetime: lifetime)
             EventLog.shared.record(.protection, "Protection stopped: fight detected")
+            changed()
             return
         }
         let list = changes(for: deltas, ctx: ctx)
@@ -161,7 +189,7 @@ import SnapticKit
         applies += 1
         if case .failed = outcome {
             // E.g. kCGErrorCannotComplete: wait for the user to come back to Snaptic.
-            suspended = true
+            setSuspended(true)
         }
     }
 
@@ -177,21 +205,6 @@ import SnapticKit
                                                                risk: unmirrorOnly ? .low : .trial, changes: list,
                                                                finalScope: self.scope(ctx)), lifetime: lifetime)
         }, lifetime: lifetime)
-    }
-
-    // MARK: Menu
-
-    var descriptors: [DisplayMenuItemDescriptor] {
-        [DisplayMenuItemDescriptor(id: .dProtection, title: L("Protect Arrangement"), slot: .tools, defaultVisibility: .visible)]
-    }
-
-    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
-
-    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] {
-        guard slot == .tools, effective.contains(.protection) else { return [] }
-        let item = ManagedMenuItem(L("Protect Arrangement"), on: isProtectingCurrent) { [weak self] in self?.toggleCurrent() }
-        if let set = currentSet(), fights.isStopped(set) { item.toolTip = L("Paused: macOS keeps changing this arrangement") }
-        return [(.dProtection, item)]
     }
 
     func diagnostics() -> [(String, String)] {

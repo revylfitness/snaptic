@@ -216,13 +216,7 @@ import SnapticShims
         for key in states.keys where states[key]?.floor ?? 1 < BrightnessConfig.dimFloor { apply(key) }
     }
 
-    var isDimmingToBlack: Bool {
-        states.values.contains { $0.written != nil && $0.floor < BrightnessConfig.dimFloor && $0.brightness < BrightnessConfig.dimFloor }
-    }
-
-    func isManaging(_ key: DisplayKey) -> Bool { states[key]?.written != nil }
     func hasGivenUp(_ key: DisplayKey) -> Bool { states[key]?.gaveUp ?? false }
-    func softwareBrightness(of key: DisplayKey) -> Double { states[key]?.brightness ?? 1 }
 
     /// Lets gamma try again on a display (after the user picked it explicitly).
     func resetGiveUp(_ key: DisplayKey) {

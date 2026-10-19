@@ -81,6 +81,9 @@ fileprivate extension DisplayActionID {
 @MainActor final class PIPController: DisplayFeatureController, PanicParticipant, SessionParticipant, DiagnosticsContributor {
     static var id: DisplayControllerID { .pip }
     static var privateSymbols: [PrivateSymbol] { [] }
+    /// 0.3 §4.5: saved configurations, privacy, options (`pip`) and each display's saved PIPs (`perDisplayPIP`).
+    /// Feature changes arrive through `effectiveFeaturesDidChange`; display names are read from the registry.
+    static var observedSections: Set<DisplaysConfigSection> { [.pip, .perDisplayPIP] }
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
 
@@ -214,6 +217,7 @@ fileprivate extension DisplayActionID {
         context?.capture.cancelPick()
         context?.capture.publish([])
         if context?.capture.controller === self { context?.capture.controller = nil }
+        context?.runtime.revision(.pip).bump()
         menuItems = nil
         sessionPaused = false
         displaysAsleep = false
@@ -360,7 +364,7 @@ fileprivate extension DisplayActionID {
         }
         let c = entry.configuration
         if origin == .cli, entry.source == .window {
-            return refuse(ControlExit.refused, L("“\(c.name)” uses a window chosen in a picker, so it can't start from the command line."))
+            return refuse(ControlExit.refused, L("“\(c.name)” uses a window chosen in a picker, so it can’t start from the command line."))
         }
         if ctx.permissions.state(.screenRecording) != .granted {
             if origin == .user {
@@ -375,7 +379,7 @@ fileprivate extension DisplayActionID {
         var sourceInfo: DisplayInfo?
         if case .display(let key) = entry.source {
             guard let info = ctx.registry.info(for: key), info.isOnline else {
-                return refuse(ControlExit.unavailable, L("“\(c.name)”: the source display isn't connected."))
+                return refuse(ControlExit.unavailable, L("“\(c.name)”: the source display isn’t connected."))
             }
             sourceInfo = info
         }
@@ -452,14 +456,14 @@ fileprivate extension DisplayActionID {
     func streamRefusal(source: PIPSourceRef, configuration c: PIPConfiguration, excluding: StableID?) -> String? {
         guard let ctx = context else { return L("Picture in Picture is off.") }
         guard let target = c.target else { return L("Choose a display for “\(c.name)” to cover.") }
-        guard let t = ctx.registry.info(for: target), t.isOnline else { return L("The target display isn't connected.") }
+        guard let t = ctx.registry.info(for: target), t.isOnline else { return L("The target display isn’t connected.") }
         // A full-screen window on any member of a mirror set covers the whole set.
         func mirrorRoot(_ d: DisplayInfo) -> UInt32 { d.mirrorOf ?? d.desktopID }
         let covered = mirrorRoot(t)
         if case .display(let key) = source {
-            if key == target { return L("A display can't stream onto itself.") }
+            if key == target { return L("A display can’t stream onto itself.") }
             if let s = ctx.registry.info(for: key), s.desktopID == t.desktopID || mirrorRoot(s) == covered {
-                return L("A display can't stream onto itself or its mirror.")
+                return L("A display can’t stream onto itself or its mirror.")
             }
         }
         let others = ctx.registry.displays.filter { $0.key != target && $0.isOnline && mirrorRoot($0) != covered }
@@ -474,7 +478,7 @@ fileprivate extension DisplayActionID {
             if s.configuration.target == target { return L("Another stream already covers that display.") }
             if case .display(let theirs) = s.source, theirs == target,
                case .display(let mine) = source, s.configuration.target == mine {
-                return L("Two streams can't point at each other.")
+                return L("Two streams can’t point at each other.")
             }
         }
         return nil
@@ -805,7 +809,7 @@ fileprivate extension DisplayActionID {
             guard let self else { return }
             self.lutLoading.remove(id)
             guard let loaded else {
-                _ = self.remember(L("A LUT couldn't be read; it was skipped."))
+                _ = self.remember(L("A LUT couldn’t be read; it was skipped."))
                 return
             }
             self.lutCache[id] = loaded
@@ -868,7 +872,6 @@ fileprivate extension DisplayActionID {
         for id in order.reversed() { endSession(id, reason: nil) }
     }
 
-    var hasSessions: Bool { !sessions.isEmpty }
     var allHidden: Bool { !sessions.isEmpty && sessions.values.allSatisfy(\.hidden) }
     var allPaused: Bool { !sessions.isEmpty && sessions.values.allSatisfy(\.userPaused) }
 
@@ -889,6 +892,12 @@ fileprivate extension DisplayActionID {
     }
 
     func isRunning(_ id: StableID) -> Bool { sessions[id] != nil }
+
+    /// A window PIP of this display is running (the display submenu's "Show in Picture in Picture" checkmark;
+    /// `toggleDisplay` stops exactly these).
+    func isShowingDisplay(_ key: DisplayKey) -> Bool {
+        sessions.values.contains { $0.source == .display(key) && $0.configuration.kind == .window }
+    }
 
     func toggle(_ id: StableID) {
         if sessions[id] != nil { endSession(id, reason: nil) } else { userStart(id) }
@@ -957,15 +966,10 @@ fileprivate extension DisplayActionID {
 
     private func defaultName(source: PIPSourceRef, kind: PIPKind, target: DisplayKey?) -> String {
         guard let ctx = context else { return L("Picture in Picture") }
-        let sourceName: String
-        switch source {
-        case .display(let key): sourceName = ctx.registry.info(for: key)?.name ?? L("Display")
-        case .window: sourceName = L("Window")
-        }
-        if kind == .fullScreen, let target, let t = ctx.registry.info(for: target) {
-            return PIPConfiguration.cleanName("\(sourceName) → \(t.name)")
-        }
-        return PIPConfiguration.cleanName(L("\(sourceName) PIP"))
+        var sourceName: String?
+        if case .display(let key) = source { sourceName = ctx.registry.info(for: key)?.name ?? L("Display") }
+        let targetName = target.flatMap { ctx.registry.info(for: $0)?.name }
+        return PIPSettingsText.defaultName(sourceName: sourceName, kind: kind, targetName: targetName)
     }
 
     // MARK: Hotkey
@@ -1023,7 +1027,7 @@ fileprivate extension DisplayActionID {
             guard let self else { return }
             self.setAllPaused(!self.allPaused)
         }, lifetime: lifetime)
-        ctx.actions.register(Action(id: .pipToggleDisplay, title: L("Picture in Picture of This Display"), feature: .pip, cliAllowed: false) {
+        ctx.actions.register(Action(id: .pipToggleDisplay, title: DisplaysToggleText.showInPictureInPicture, feature: .pip, cliAllowed: false) {
             [weak self] target in
             guard let self else { return }
             for display in self.displays(for: target) { self.toggleDisplay(display.key) }
@@ -1066,7 +1070,7 @@ fileprivate extension DisplayActionID {
 
     private func registerCommand(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("pip", policy: .low, offOnly: false, cliAllowed: true, summary: PIPCommand.usage,
-                              lifetime: lifetime) { [weak self] request in
+                              lifetime: lifetime) { [weak self] request, _ in
             guard let self else { return .failure(ControlExit.unavailable, L("Picture in Picture is off.")) }
             return self.handleCommand(request.arguments, json: request.json)
         }
@@ -1086,7 +1090,7 @@ fileprivate extension DisplayActionID {
             case .ambiguous(let n): return (nil, .failure(ControlExit.usage, L("\(n) configurations match “\(query)”; use the id.")))
             }
         }
-        let locked = L("PIP starts from the command line only while the Mac is unlocked and on the console.")
+        let locked = L("Picture in Picture starts from the command line only while the Mac is unlocked and on the console.")
         switch command {
         case .list:
             let numbers = Dictionary(DisplaySelectorResolver.ordered(ctx).enumerated().map { pair in (pair.element.key, pair.offset + 1) },
@@ -1275,6 +1279,8 @@ fileprivate extension DisplayActionID {
             return PIPSessionInfo(id: id, name: s.configuration.name, kind: s.configuration.kind, source: s.source, state: s.publicState)
         }
         context?.capture.publish(infos)
+        // 0.3 §4.5: pages observe `revision(.pip)` for session state (running, paused, hidden, suspended).
+        context?.runtime.revision(.pip).bump()
         context?.requestMenuRebuild()
     }
 

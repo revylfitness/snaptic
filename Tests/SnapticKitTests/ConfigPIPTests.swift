@@ -79,6 +79,34 @@ final class ConfigPIPTests: XCTestCase {
         XCTAssertEqual(empty, PerDisplayPIP())
     }
 
+    /// Every PIP list decodes through Kit `LossyArray`: attempts are bounded (a long run of bad elements stops the
+    /// read, so a valid element past the cap is never reached), not successes; the sanitizers then apply the caps.
+    func testListDecodingBoundsAttemptsNotSuccesses() throws {
+        let cap = LossyArray<PIPConfiguration>.maxElements
+        let garbage = Array(repeating: "1", count: cap).joined(separator: ",")
+        let late = #"{"name":"late"}"#
+        let g = try JSONDecoder().decode(PIPConfig.self, from: Data(
+            #"{"windowConfigurations":[\#(garbage),\#(late)],"luts":[\#(garbage),{"name":"L","size":33}]}"#.utf8))
+        XCTAssertEqual(g.windowConfigurations, [])
+        XCTAssertEqual(g.luts, [])
+        let per = try JSONDecoder().decode(PerDisplayPIP.self, from: Data(#"{"configurations":[\#(garbage),\#(late)]}"#.utf8))
+        XCTAssertEqual(per.configurations, [])
+
+        // Bad elements before the cap are skipped and the rest kept.
+        let mixed = try JSONDecoder().decode(PIPConfig.self, from: Data(#"{"windowConfigurations":[1,"x",\#(late),null]}"#.utf8))
+        XCTAssertEqual(mixed.windowConfigurations.map(\.name), ["late"])
+
+        // Valid elements past the old 256-success stop still decode; sanitizing applies the real caps.
+        let filters = Array(repeating: #"{"kind":"sepia"}"#, count: 300).joined(separator: ",")
+        let c = try JSONDecoder().decode(PIPConfiguration.self, from: Data(#"{"filters":[\#(filters)]}"#.utf8))
+        XCTAssertEqual(c.filters.count, 300)
+        XCTAssertEqual(c.sanitized().filters.count, PIPConfiguration.maxFilters)
+        let many = Array(repeating: late, count: 300).joined(separator: ",")
+        let big = try JSONDecoder().decode(PIPConfig.self, from: Data(#"{"windowConfigurations":[\#(many)]}"#.utf8))
+        XCTAssertEqual(big.windowConfigurations.count, 300)
+        XCTAssertEqual(big.sanitized().windowConfigurations.count, PIPConfig.maxWindowConfigurations)
+    }
+
     func testSanitizeClamps() {
         var c = PIPConfiguration(name: "  \u{202E}Evil\u{0007}  ")
         c.opacity = 0
@@ -442,6 +470,95 @@ final class ConfigPIPTests: XCTestCase {
         XCTAssertEqual(PIPGeometry.frameInterval(fps: 999, displayRefresh: 60), 1.0 / 120, accuracy: 1e-12)
     }
 
+    // MARK: Menu plan
+
+    private func entry(_ name: String, _ source: PIPSourceRef, kind: PIPKind = .window, target: DisplayKey? = nil) -> PIPEntry {
+        var c = PIPConfiguration(name: name, kind: kind)
+        c.target = target
+        return PIPEntry(source: source, configuration: c)
+    }
+
+    func testMenuPlanIsAbsentWithoutSavedConfigurations() {
+        XCTAssertNil(PIPMenuPlan.plan(entries: [], running: [], connected: [keyA]))
+    }
+
+    func testMenuPlanMarksRunningAndAvailable() throws {
+        let a = entry("A", .display(keyA))
+        let offline = entry("Offline", .display(keyB))
+        let window = entry("Window", .window)
+        let plan = try XCTUnwrap(PIPMenuPlan.plan(entries: [a, offline, window], running: [a.configuration.id],
+                                                  connected: [keyA]))
+        XCTAssertEqual(plan.rows.map(\.name), ["A", "Offline", "Window"])
+        XCTAssertEqual(plan.rows.map(\.running), [true, false, false])
+        XCTAssertEqual(plan.rows.map(\.available), [true, false, true])
+        XCTAssertFalse(plan.truncated)
+        XCTAssertTrue(plan.anyRunning)
+        let idle = try XCTUnwrap(PIPMenuPlan.plan(entries: [a], running: [], connected: [keyA]))
+        XCTAssertFalse(idle.anyRunning)
+    }
+
+    func testMenuPlanStreamAvailability() {
+        // A stream needs its source and a different, connected target.
+        XCTAssertTrue(PIPMenuPlan.isAvailable(entry("S", .display(keyA), kind: .fullScreen, target: keyB), connected: [keyA, keyB]))
+        XCTAssertFalse(PIPMenuPlan.isAvailable(entry("S", .display(keyA), kind: .fullScreen, target: keyB), connected: [keyA]))
+        XCTAssertFalse(PIPMenuPlan.isAvailable(entry("S", .display(keyA), kind: .fullScreen, target: keyA), connected: [keyA, keyB]))
+        XCTAssertFalse(PIPMenuPlan.isAvailable(entry("S", .display(keyA), kind: .fullScreen, target: nil), connected: [keyA, keyB]))
+        XCTAssertTrue(PIPMenuPlan.isAvailable(entry("W", .window), connected: []))
+        XCTAssertFalse(PIPMenuPlan.isAvailable(entry("W", .window, kind: .fullScreen, target: keyB), connected: []))
+        XCTAssertTrue(PIPMenuPlan.isAvailable(entry("W", .window, kind: .fullScreen, target: keyB), connected: [keyB]))
+        // A running configuration is always clickable (to stop it).
+        let s = entry("S", .display(keyA), kind: .fullScreen, target: keyB)
+        XCTAssertEqual(PIPMenuPlan.plan(entries: [s], running: [s.configuration.id], connected: [])?.rows.first?.available, true)
+    }
+
+    func testMenuPlanKeepsRunningRowsWhenTruncating() throws {
+        let entries = (0..<14).map { entry("P\($0)", .window) }
+        let running: Set<StableID> = [entries[12].configuration.id, entries[13].configuration.id]
+        let plan = try XCTUnwrap(PIPMenuPlan.plan(entries: entries, running: running, connected: []))
+        XCTAssertEqual(plan.rows.count, PIPMenuPlan.maxRows)
+        XCTAssertTrue(plan.truncated)
+        XCTAssertEqual(plan.rows.map(\.name), ["P0", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P12", "P13"])
+        let exact = try XCTUnwrap(PIPMenuPlan.plan(entries: Array(entries.prefix(10)), running: [], connected: []))
+        XCTAssertFalse(exact.truncated)
+        XCTAssertEqual(PIPMenuPlan.plan(entries: entries, running: [], connected: [], limit: 0)?.rows.count, 1)
+    }
+
+    func testFuzzedMenuPlanInvariants() throws {
+        var rng = SeededGenerator(seed: 0x919E)
+        let keys = [keyA, keyB]
+        for _ in 0..<500 {
+            let count = Int(rng.next() % 20)
+            let entries: [PIPEntry] = (0..<count).map { i in
+                let source: PIPSourceRef = rng.next() % 3 == 0 ? .window : .display(keys[Int(rng.next() % 2)])
+                let kind: PIPKind = rng.next() % 2 == 0 ? .window : .fullScreen
+                return entry("E\(i)", source, kind: kind, target: rng.next() % 4 == 0 ? nil : keys[Int(rng.next() % 2)])
+            }
+            let running = Set(entries.filter { _ in rng.next() % 4 == 0 }.map(\.configuration.id))
+            let connected = Set(keys.filter { _ in rng.next() % 2 == 0 })
+            let limit = 1 + Int(rng.next() % 12)
+            guard let plan = PIPMenuPlan.plan(entries: entries, running: running, connected: connected, limit: limit) else {
+                XCTAssertTrue(entries.isEmpty)
+                continue
+            }
+            XCTAssertEqual(plan.rows.count, min(limit, entries.count))
+            XCTAssertEqual(plan.truncated, entries.count > limit)
+            XCTAssertEqual(plan.anyRunning, !running.isEmpty)
+            // Rows keep saved order and are a subset.
+            let order = entries.map(\.configuration.id)
+            let indices = plan.rows.compactMap { row in order.firstIndex(of: row.id) }
+            XCTAssertEqual(indices.count, plan.rows.count)
+            XCTAssertEqual(indices, indices.sorted())
+            XCTAssertEqual(Set(indices).count, indices.count)
+            // Running rows survive truncation whenever they fit.
+            let shownRunning = plan.rows.filter(\.running).count
+            XCTAssertEqual(shownRunning, min(running.count, limit))
+            for row in plan.rows {
+                XCTAssertEqual(row.running, running.contains(row.id))
+                if row.running { XCTAssertTrue(row.available) }
+            }
+        }
+    }
+
     // MARK: Fuzzing
 
     func testFuzzedJSONNeverTrapsAndSanitizeIsIdempotent() throws {
@@ -471,6 +588,126 @@ final class ConfigPIPTests: XCTestCase {
                     XCTAssertTrue(crop.x >= 0 && crop.y >= 0 && crop.x + crop.width <= 1 + 1e-12 && crop.y + crop.height <= 1 + 1e-12)
                 }
             }
+        }
+    }
+
+    // MARK: Settings text and limits (0.3 §4.3)
+
+    func testDefaultNames() {
+        XCTAssertEqual(PIPSettingsText.defaultName(sourceName: nil, kind: .window, targetName: nil),
+                       "Window Picture in Picture")
+        XCTAssertEqual(PIPSettingsText.defaultName(sourceName: "Built-in Display", kind: .window, targetName: "DELL"),
+                       "Built-in Display Picture in Picture")
+        XCTAssertEqual(PIPSettingsText.defaultName(sourceName: "Built-in Display", kind: .fullScreen, targetName: "DELL"),
+                       "Built-in Display → DELL")
+        // A stream without a target yet is named like a window.
+        XCTAssertEqual(PIPSettingsText.defaultName(sourceName: "A", kind: .fullScreen, targetName: nil),
+                       "A Picture in Picture")
+        // Names stay within the configuration's limit.
+        let long = String(repeating: "x", count: 200)
+        let name = PIPSettingsText.defaultName(sourceName: long, kind: .fullScreen, targetName: long)
+        XCTAssertLessThanOrEqual(name.unicodeScalars.count, PIPConfiguration.maxNameScalars)
+        XCTAssertEqual(PIPConfiguration.cleanName(name), name)
+        // New names use the 0.3 term only.
+        for kind in PIPKind.allCases {
+            for source in [nil, "DELL"] as [String?] {
+                let name = PIPSettingsText.defaultName(sourceName: source, kind: kind, targetName: nil)
+                XCTAssertNil(name.range(of: "PIP"), name)
+            }
+        }
+    }
+
+    func testSubtitleOrderAndParts() {
+        var c = PIPConfiguration(kind: .window)
+        XCTAssertEqual(PIPSettingsText.subtitle(c, sourceName: "Built-in Display", targetName: nil),
+                       "Built-in Display · 30 fps")
+        c.fps = 0
+        XCTAssertEqual(PIPSettingsText.subtitle(c, sourceName: nil, targetName: nil), "A window you choose")
+        c.kind = .fullScreen
+        c.crop = PIPRect(x: 0, y: 0, width: 0.5, height: 0.5)
+        c.rotation = 90
+        c.flipVertical = true
+        c.filters = [FilterInstance(kind: .sepia)]
+        c.autoStart = true
+        XCTAssertEqual(PIPSettingsText.subtitle(c, sourceName: "A", targetName: "B"),
+                       "A · Full screen on B · Cropped · Rotated 90° · Flipped · Filters · Offers to start")
+        XCTAssertEqual(PIPSettingsText.subtitle(c, sourceName: "A", targetName: nil),
+                       "A · Choose a display to stream onto · Cropped · Rotated 90° · Flipped · Filters · Offers to start")
+        // Only enabled filters count; a lookup table does.
+        c.filters = [FilterInstance(kind: .sepia, enabled: false)]
+        XCTAssertFalse(PIPSettingsText.subtitle(c, sourceName: "A", targetName: "B").contains("Filters"))
+        c.lutID = StableID()
+        XCTAssertTrue(PIPSettingsText.subtitle(c, sourceName: "A", targetName: "B").contains("Filters"))
+    }
+
+    func testCropText() {
+        XCTAssertEqual(PIPSettingsText.crop(nil), "None")
+        XCTAssertEqual(PIPSettingsText.crop(PIPRect(x: 0.1, y: 0.2, width: 0.5, height: 0.4)), "50% × 40% at 10%, 20%")
+        // Out-of-range crops are shown as they would apply (normalized), never as raw numbers.
+        let odd = PIPSettingsText.crop(PIPRect(x: -1, y: 0, width: 5, height: 0.5))
+        XCTAssertFalse(odd.contains("-"))
+        XCTAssertEqual(PIPSettingsText.crop(PIPRect(x: .nan, y: 0, width: 1, height: 1)),
+                       PIPSettingsText.crop(PIPRect(x: .nan, y: 0, width: 1, height: 1).normalizedCrop()))
+    }
+
+    func testCanAddAndRefusals() {
+        var config = DisplaysConfig()
+        XCTAssertTrue(PIPSettingsText.canAdd(source: .window, in: config))
+        XCTAssertTrue(PIPSettingsText.canAdd(source: .display(keyA), in: config))
+        for _ in 0..<PerDisplayPIP.maxConfigurations {
+            XCTAssertTrue(PIPConfig.add(PIPConfiguration(), source: .display(keyA), to: &config))
+        }
+        XCTAssertFalse(PIPSettingsText.canAdd(source: .display(keyA), in: config))
+        XCTAssertTrue(PIPSettingsText.canAdd(source: .display(keyB), in: config))
+        XCTAssertNotNil(PIPSettingsText.addRefusal(PIPConfiguration(), source: .display(keyA), in: config))
+        XCTAssertNil(PIPSettingsText.addRefusal(PIPConfiguration(), source: .display(keyB), in: config))
+        for _ in 0..<PIPConfig.maxWindowConfigurations {
+            XCTAssertTrue(PIPConfig.add(PIPConfiguration(), source: .window, to: &config))
+        }
+        XCTAssertFalse(PIPSettingsText.canAdd(source: .window, in: config))
+
+        var stream = PIPConfiguration(kind: .fullScreen)
+        XCTAssertEqual(PIPSettingsText.addRefusal(stream, source: .display(keyB), in: config),
+                       "Choose a display to stream onto.")
+        stream.target = keyB
+        XCTAssertNotNil(PIPSettingsText.addRefusal(stream, source: .display(keyB), in: config))
+        stream.target = keyA
+        XCTAssertNil(PIPSettingsText.addRefusal(stream, source: .display(keyB), in: config))
+    }
+
+    func testPrivacyListHelpers() {
+        XCTAssertTrue(PIPPrivacy.isDefaultList(PIPPrivacy.defaultProtectedPrefixes))
+        XCTAssertTrue(PIPPrivacy.isDefaultList(PIPPrivacy.defaultProtectedPrefixes.reversed()))
+        XCTAssertFalse(PIPPrivacy.isDefaultList(Array(PIPPrivacy.defaultProtectedPrefixes.dropLast())))
+        XCTAssertFalse(PIPPrivacy.isDefaultList(PIPPrivacy.defaultProtectedPrefixes + ["com.example.app"]))
+        XCTAssertFalse(PIPPrivacy.isDefaultList(PIPPrivacy.defaultProtectedPrefixes + [PIPPrivacy.defaultProtectedPrefixes[0]]))
+
+        XCTAssertEqual(PIPPrivacy.sanitizedPrefixes(["com.a.b", "bad", "com.a.b", "", "org.x", "a..b", "com.é.x"]),
+                       ["com.a.b", "org.x"])
+        let many = (0..<200).map { "com.example.app\($0)" }
+        let clean = PIPPrivacy.sanitizedPrefixes(many)
+        XCTAssertEqual(clean.count, PIPConfig.maxProtectedPrefixes)
+        XCTAssertEqual(clean, Array(many.prefix(PIPConfig.maxProtectedPrefixes)))
+        // The config's sanitizer uses the same rule.
+        var pip = PIPConfig()
+        pip.protectedBundlePrefixes = many + ["bad"]
+        XCTAssertEqual(pip.sanitized().protectedBundlePrefixes, clean)
+    }
+
+    func testFuzzedPrefixListsSanitizeIdempotently() {
+        var rng = SeededGenerator(seed: 0x9C1D)
+        let alphabet = Array("abcXYZ09.-_ é/".unicodeScalars)
+        for _ in 0..<500 {
+            let list = (0..<Int(rng.next() % 80)).map { _ -> String in
+                var s = String.UnicodeScalarView()
+                for _ in 0..<Int(rng.next() % 12) { s.append(alphabet[Int(rng.next() % UInt64(alphabet.count))]) }
+                return String(s)
+            }
+            let clean = PIPPrivacy.sanitizedPrefixes(list)
+            XCTAssertEqual(PIPPrivacy.sanitizedPrefixes(clean), clean)
+            XCTAssertLessThanOrEqual(clean.count, PIPConfig.maxProtectedPrefixes)
+            XCTAssertEqual(Set(clean).count, clean.count)
+            XCTAssertTrue(clean.allSatisfy(PIPPrivacy.isValidPrefix))
         }
     }
 }

@@ -6,22 +6,155 @@ final class DisplaysUIModelTests: XCTestCase {
 
     // MARK: Names
 
-    func testEveryFeatureHasDistinctTitleAndSummary() {
+    func testEveryFeatureHasADistinctTitle() {
         let titles = DisplayFeature.allCases.map(DisplaysUIText.title)
         XCTAssertEqual(Set(titles).count, titles.count)
         for feature in DisplayFeature.allCases {
             XCTAssertFalse(DisplaysUIText.title(feature).isEmpty)
-            XCTAssertFalse(DisplaysUIText.summary(feature).isEmpty)
         }
     }
 
-    func testEveryFeaturePageIsListedAndNamed() {
-        for feature in DisplayFeature.allCases {
-            let page = FeatureGraph.spec(feature).page
-            XCTAssertTrue(DisplaysUIText.pageOrder.contains(page), "\(feature) page \(page)")
-            XCTAssertNotEqual(DisplaysUIText.pageTitle(page), page)
+    /// ux M2: feature names reach alerts, Customize, onboarding and Display Information, so they use the 0.3 words
+    /// (PLAN 0.3 §4.2: never "monitor"; Apple terms), not 0.2's ids-in-words.
+    func testUserWordsHaveNo02Vocabulary() {
+        let banned = ["monitor", "ddc", "osd", "hidpi", "on/off", "on-screen", "pip", "gamma", "virtual screen",
+                      "menu-bar", "(", "&"]
+        var texts = DisplayFeature.allCases.map(DisplaysUIText.title)
+        texts += OnboardingChip.allCases.flatMap { [DisplaysOnboardingPlan.title($0), DisplaysOnboardingPlan.summary($0)] }
+        texts += [DisplaysOnboardingPlan.sharperTextNote(["A"]), DisplaysOnboardingPlan.sharperTextNote(["A", "B"])]
+        texts += DisplaysUIText.displaySymbols.map(\.title)
+        for text in texts {
+            for word in banned {
+                XCTAssertFalse(text.lowercased().contains(word), "“\(text)” contains “\(word)”")
+            }
         }
-        XCTAssertEqual(Set(DisplaysUIText.pageOrder).count, DisplaysUIText.pageOrder.count)
+        // The Apple terms table (PLAN 0.3 §4.2, [DS] §4.7) and the §4.7 chip.
+        XCTAssertEqual(DisplaysUIText.title(.osd), "Brightness indicator")
+        XCTAssertEqual(DisplaysUIText.title(.pip), "Picture in Picture")
+        XCTAssertEqual(DisplaysUIText.title(.virtualScreens), "Virtual displays")
+        XCTAssertEqual(DisplaysUIText.title(.layouts), "Saved layouts")
+        XCTAssertEqual(DisplaysUIText.title(.smartHiDPI), "Sharper text")
+        XCTAssertEqual(DisplaysUIText.title(.ddcControls), "Hardware controls")
+        XCTAssertEqual(DisplaysOnboardingPlan.title(.pip), "Picture in Picture")
+        XCTAssertEqual(DisplaysOnboardingPlan.title(.virtualScreens), "Virtual displays")
+    }
+
+    /// Review6 ux R3-3: feature names spliced into sentences read as sentences ("Turn off virtual displays?",
+    /// "This also turns off sharper text and HDR virtual modes.", "Keyboard shortcuts are off.").
+    func testFeatureNamesInSentences() {
+        XCTAssertEqual(L("Turn off \(SentenceText.inSentence(DisplaysUIText.title(.virtualScreens)))?"),
+                       "Turn off virtual displays?")
+        XCTAssertEqual(L("This also turns off \(DisplaysUIText.list([.smartHiDPI, .hdrVirtual]))."),
+                       "This also turns off sharper text and HDR virtual modes.")
+        XCTAssertEqual(DisplaysUIText.list([.layouts, .pip, .nightShift]),
+                       "saved layouts, Picture in Picture, and Night Shift controls")
+        XCTAssertEqual(DisplaysUIText.isOff(.shortcuts), "Keyboard shortcuts are off.")
+        XCTAssertEqual(DisplaysUIText.isOff(.brightness), "Brightness control is off.")
+        XCTAssertEqual(DisplaysUIText.notAvailableNow(.ddcControls), "Hardware controls aren’t available right now.")
+        XCTAssertEqual(DisplaysUIText.notAvailableNow(.color), "Color adjustments aren’t available right now.")
+        XCTAssertEqual(DisplaysUIText.notAvailableNow(.osd), "Brightness indicator isn’t available right now.")
+        XCTAssertEqual(DisplaysUIText.needs(.ddcControls), "Needs hardware controls.")
+        XCTAssertEqual(DisplaysUIText.needs(.layouts), "Needs saved layouts.")
+        XCTAssertEqual(DisplaysUIText.needs(.pip), "Needs Picture in Picture.")
+        XCTAssertEqual(DisplaysUIText.skippedWhileOff(.layouts), "Skipped while saved layouts are off.")
+        XCTAssertEqual(DisplaysUIText.skippedWhileOff(.rotation), "Skipped while rotation is off.")
+        for feature in DisplayFeature.allCases {
+            let inside = DisplaysUIText.inSentence(feature)
+            let title = DisplaysUIText.title(feature)
+            XCTAssertEqual(inside, DisplaysUIText.sentenceName(feature), title)
+            // A plural name ends in "s" or joins two things.
+            if DisplaysUIText.isPlural(feature) {
+                XCTAssertTrue(inside.hasSuffix("s") || inside.contains(" and "), title)
+            }
+            XCTAssertFalse(DisplaysUIText.isOff(feature).contains("  "), title)
+        }
+    }
+
+    /// Review7 ui-ux F1: a switch label that is a verb phrase ("Turn displays off and on") is never spliced into a
+    /// sentence ("Needs turn displays off and on.", "This also turns off turn off the built-in display
+    /// automatically."). Every feature's sentence name is a noun phrase, so no sentence any helper builds has a verb
+    /// where the name goes, and a name that is the label lowercased changes only its first letter.
+    func testEveryFeatureSentenceNameIsANounPhrase() {
+        let verbs: Set<String> = ["turn", "turns", "protect", "disconnect", "match", "sync", "restore", "show", "dim",
+                                  "automatically", "use", "choose", "keep", "allow", "open", "make"]
+        XCTAssertEqual(DisplaysUIText.needs(.ddcPower), "Needs display power control.")
+        XCTAssertEqual(DisplaysUIText.needs(.protection), "Needs arrangement protection.")
+        XCTAssertEqual(DisplaysUIText.needs(.disconnect), "Needs display disconnection.")
+        XCTAssertEqual(DisplaysUIText.needs(.scaleMatch), "Needs text size matching.")
+        XCTAssertEqual(DisplaysUIText.needs(.mainDisplay), "Needs the main display setting.")
+        XCTAssertEqual(DisplaysUIText.turnOffQuestion([.disconnect], label: "Disconnect displays"),
+                       "Turn off display disconnection?")
+        XCTAssertEqual(DisplaysUIText.turnOffQuestion([.virtualScreens], label: "Virtual displays"),
+                       "Turn off virtual displays?")
+        XCTAssertEqual(DisplaysUIText.turnOffQuestion([.arrangement, .mainDisplay, .mirroring],
+                                                      label: "Arrangement and mirroring"),
+                       "Turn off arrangement and mirroring?")
+        XCTAssertEqual(DisplaysUIText.alsoTurnsOff([.autoDisconnectBuiltin]),
+                       "This also turns off automatic turn-off for the built-in display.")
+        XCTAssertEqual(DisplaysUIText.alsoTurnsOff([.brightnessRestore, .dimToBlack, .nits, .sync, .brightnessKeys]),
+                       "This also turns off brightness restore, dimming to black, brightness in nits, brightness sync, "
+                       + "and brightness keys.")
+        XCTAssertEqual(DisplaysUIText.skippedWhileOff(.mainDisplay), "Skipped while the main display setting is off.")
+        XCTAssertEqual(DisplaysUIText.isOff(.ddcPower), "Display power control is off.")
+        for feature in DisplayFeature.allCases {
+            let name = DisplaysUIText.sentenceName(feature)
+            let first = name.split(separator: " ").first.map { String($0).lowercased() } ?? ""
+            XCTAssertFalse(verbs.contains(first), "\(feature): “\(name)” starts with a verb")
+            XCTAssertFalse(name.isEmpty, "\(feature)")
+            // Mid-sentence: lowercase first letter unless it is a proper name or acronym kept by SentenceText.
+            if name == SentenceText.inSentence(DisplaysUIText.title(feature)) {
+                XCTAssertEqual(name.dropFirst(), DisplaysUIText.title(feature).dropFirst(), "\(feature)")
+            } else {
+                XCTAssertTrue(name.first?.isLowercase == true, "\(feature): “\(name)”")
+            }
+            let sentences = [DisplaysUIText.needs(feature), DisplaysUIText.isOff(feature),
+                             DisplaysUIText.notAvailableNow(feature), DisplaysUIText.skippedWhileOff(feature),
+                             DisplaysUIText.turnOffQuestion([feature], label: DisplaysUIText.title(feature)),
+                             DisplaysUIText.alsoTurnsOff([feature]), DisplaysUIText.alsoTurnsOff([.rotation, feature])]
+            for sentence in sentences {
+                // The word after the sentence's own verb (or the first word) is never another verb: "Needs turn …",
+                // "This also turns off turn off …" and "Turn displays off and on is off." can't happen.
+                var rest = sentence.lowercased()
+                for frame in ["needs ", "turn off ", "this also turns off rotation and ", "this also turns off ",
+                              "skipped while "] where rest.hasPrefix(frame) {
+                    rest = String(rest.dropFirst(frame.count))
+                    break
+                }
+                let next = rest.split(separator: " ").first.map { String($0).trimmingCharacters(in: .punctuationCharacters) }
+                XCTAssertFalse(verbs.contains(next ?? ""), "“\(sentence)” has a verb where the name goes")
+                XCTAssertFalse(sentence.lowercased().contains("turn off turn"), sentence)
+                // Starts with a capital letter.
+                XCTAssertTrue(sentence.first?.isUppercase == true, sentence)
+            }
+        }
+    }
+
+    /// Review6 ux R3-1: the pop-up options Kit names (pickers map these enums' titles) are title case, like menu
+    /// items. Hook "When" clauses are sentence fragments and stay sentence case.
+    func testPopUpOptionTitlesAreTitleCase() {
+        let minor: Set<String> = ["a", "an", "and", "as", "at", "but", "by", "for", "from", "in", "into", "nor", "of",
+                                  "on", "onto", "or", "over", "per", "than", "the", "to", "up", "via", "vs", "with"]
+        var titles = OSDStyle.allCases.map(\.title) + OSDPosition.allCases.map(\.title) + OSDTarget.allCases.map(\.title)
+        titles += KeyPolicy.allCases.map(\.title) + KeyTarget.allCases.map(\.title) + VolumePolicy.allCases.map(\.title)
+        titles += BrightnessMethod.allCases.map(\.title) + BrightnessRestoreMode.allCases.map(\.title)
+        titles += XDRMethod.allCases.map(\.title) + ArrangementPlacement.allCases.map(\.title)
+        for title in titles {
+            let words = title.replacingOccurrences(of: #"\([^)]*\)"#, with: "", options: .regularExpression)
+                .split(separator: " ").map { $0.trimmingCharacters(in: CharacterSet(charactersIn: ",.")) }
+            for word in words.dropFirst() where !word.isEmpty && !minor.contains(word.lowercased()) {
+                // "macOS" keeps its own case.
+                XCTAssertTrue(word.contains(where: \.isUppercase), "“\(title)”: “\(word)”")
+            }
+        }
+    }
+
+    func testSharperTextNoteAgreesWithTheNumberOfDisplays() {
+        let one = DisplaysOnboardingPlan.sharperTextNote(["DELL U2723QE"])
+        XCTAssertTrue(one.hasPrefix("DELL U2723QE has no sharp mode"))
+        XCTAssertTrue(one.contains("on that display"))
+        let two = DisplaysOnboardingPlan.sharperTextNote(["LG", "BenQ"])
+        XCTAssertTrue(two.hasPrefix("LG and BenQ have no sharp mode"))
+        XCTAssertTrue(two.contains("on those displays"))
     }
 
     func testPermissionNameFollowsOS() {
@@ -301,10 +434,455 @@ final class DisplaysUIModelTests: XCTestCase {
     }
 
     func testHeaderNeverActsAndDisclosureIsDedicated() {
-        XCTAssertFalse(DisplayBlockDisclosure.headerClickActs)
         XCTAssertEqual(DisplayBlockDisclosure.control(showHeader: true, forceExpanded: false, collapsed: false), .collapse)
         XCTAssertEqual(DisplayBlockDisclosure.control(showHeader: true, forceExpanded: false, collapsed: true), .expand)
         XCTAssertEqual(DisplayBlockDisclosure.control(showHeader: true, forceExpanded: true, collapsed: true), .none)
         XCTAssertEqual(DisplayBlockDisclosure.control(showHeader: false, forceExpanded: false, collapsed: true), .none)
+    }
+}
+
+// MARK: - 0.3 root page, feature groups, live resolution, diagnostics events (F step 2)
+
+final class DisplaysRootModelTests: XCTestCase {
+    private func mode(_ w: Int, _ h: Int, hiDPI: Bool = true, hz: Int = 60, id: Int32 = 1, isDefault: Bool = false,
+                      native: Bool = false, depth: Int = 8) -> DisplayModeDescriptor {
+        let scale = hiDPI ? 2 : 1
+        let ref = ModeRef(ioModeID: id, pixelWidth: w * scale, pixelHeight: h * scale, pointWidth: w, pointHeight: h,
+                          refreshMilliHz: hz * 1000)
+        return DisplayModeDescriptor(ref: ref, isNative: native, isDefault: isDefault, isUsableForDesktop: true,
+                                     ioFlags: 0, bitDepth: depth)
+    }
+
+    func testStatusLine() {
+        XCTAssertEqual(DisplaysRootText.status(displayCount: 0), "No displays")
+        XCTAssertEqual(DisplaysRootText.status(displayCount: -3), "No displays")
+        XCTAssertEqual(DisplaysRootText.status(displayCount: 1), "1 display")
+        XCTAssertEqual(DisplaysRootText.status(displayCount: 2), "2 displays")
+        XCTAssertNil(DisplaysRootText.navigationValue(isOn: nil))
+        XCTAssertEqual(DisplaysRootText.navigationValue(isOn: true), "On")
+        XCTAssertEqual(DisplaysRootText.navigationValue(isOn: false), "Off")
+    }
+
+    // MARK: Feature groups (PLAN 0.3 §4.8 "Displays: feature switches")
+
+    func testUseSnapticForMatchesThePlan() {
+        let useFor = Set(DisplaysFeatureGroupsModel.useSnapticFor.flatMap(\.features))
+        XCTAssertEqual(useFor, [.resolution, .brightness, .shortcuts, .osd, .rotation, .disconnect, .mainDisplay,
+                                .arrangement, .mirroring])
+        let experimental = Set(DisplaysFeatureGroupsModel.experimental.flatMap(\.features))
+        XCTAssertEqual(experimental, [.hiddenModes, .autoBrightness, .osdBroadcast, .underscan, .hdrToggle])
+        XCTAssertTrue(useFor.isDisjoint(with: experimental))
+        let all = DisplaysFeatureGroupsModel.useSnapticFor + DisplaysFeatureGroupsModel.experimental
+        XCTAssertEqual(Set(all.map(\.id)).count, all.count)
+        for item in all {
+            XCTAssertFalse(item.title.isEmpty)
+            XCTAssertLessThanOrEqual(item.help.count, 90, item.id)
+            XCTAssertTrue(item.help.hasSuffix("."), item.id)
+            XCTAssertFalse(item.title.lowercased().hasPrefix("enable"), item.id)
+            XCTAssertTrue(item.features.allSatisfy { FeatureGraph.spec($0).defaultState != .always }, item.id)
+        }
+        XCTAssertTrue(DisplaysFeatureGroupsModel.experimental.allSatisfy { $0.badge == .experimental })
+        XCTAssertEqual(DisplaysFeatureGroupsModel.useSnapticFor.first { $0.id == "disconnect" }?.badge, .beta)
+    }
+
+    func testArrangementSwitchWritesAllThreeAndShowsArrangement() {
+        guard let item = DisplaysFeatureGroupsModel.useSnapticFor.first(where: { $0.id == "arrangement" }) else {
+            return XCTFail("arrangement switch")
+        }
+        XCTAssertEqual(item.shown, .arrangement)
+        XCTAssertEqual(DisplaysFeatureGroupsModel.changes(item, on: true),
+                       [.arrangement: true, .mainDisplay: true, .mirroring: true])
+        XCTAssertEqual(DisplaysFeatureGroupsModel.changes(item, on: false),
+                       [.arrangement: false, .mainDisplay: false, .mirroring: false])
+        var raw: [DisplayFeature: Bool] = [.arrangement: true, .mainDisplay: false, .mirroring: true]
+        XCTAssertTrue(item.isOn(raw: raw))
+        XCTAssertTrue(item.isMixed(raw: raw))
+        raw[.mainDisplay] = true
+        XCTAssertFalse(item.isMixed(raw: raw))
+    }
+
+    // MARK: Live resolution
+
+    func testSizesPutDefaultFirstThenLargestAndMarkLowResolutionTwins() {
+        let modes = [
+            mode(1280, 832, id: 1),
+            mode(1512, 982, id: 2, isDefault: true),
+            mode(1512, 982, hz: 120, id: 3),
+            mode(1800, 1169, id: 4),
+            mode(1800, 1169, hiDPI: false, id: 5),
+            mode(3024, 1964, hiDPI: false, id: 6, native: true),
+        ]
+        let sizes = LiveResolution.sizes(modes, current: modes[1].ref, favorites: [modes[0].ref])
+        XCTAssertEqual(sizes.map(\.title), ["Default — 1512 × 982", "3024 × 1964", "1800 × 1169",
+                                            "1800 × 1169 (low resolution)", "1280 × 832"])
+        XCTAssertEqual(sizes.filter(\.isDefault).count, 1)
+        XCTAssertTrue(sizes[4].isFavorite)
+        XCTAssertTrue(sizes[1].isNative)
+        XCTAssertEqual(Set(sizes.map(\.id)).count, sizes.count)
+    }
+
+    func testCurrentSizeIsAlwaysListedAndZeroSizesAreIgnored() {
+        let current = mode(1024, 768, hiDPI: false, id: 9).ref
+        let sizes = LiveResolution.sizes([mode(1920, 1080), mode(0, 0)], current: current)
+        XCTAssertEqual(sizes.map(\.title), ["1920 × 1080", "1024 × 768"])
+        XCTAssertTrue(LiveResolution.sizes([], current: nil).isEmpty)
+    }
+
+    func testOnlyOneDefaultAndTheHiDPIOneWins() {
+        let sizes = LiveResolution.sizes([mode(1920, 1080, hiDPI: false, id: 1, isDefault: true),
+                                          mode(1440, 900, id: 2, isDefault: true)], current: nil)
+        XCTAssertEqual(sizes.first?.title, "Default — 1440 × 900")
+        XCTAssertEqual(sizes.filter(\.isDefault).count, 1)
+    }
+
+    func testSizeChoiceKeepsTheRefreshRateWhenItCan() {
+        let current = mode(1512, 982, hz: 120, id: 3).ref
+        let modes = [mode(1800, 1169, hz: 60, id: 4), mode(1800, 1169, hz: 120, id: 5), mode(1800, 1169, hz: 100, id: 6),
+                     mode(1280, 832, hz: 60, id: 7)]
+        let id1800 = LiveResolution.sizeID(pointWidth: 1800, pointHeight: 1169, hiDPI: true)
+        XCTAssertEqual(LiveResolution.mode(forSize: id1800, in: modes, current: current)?.ioModeID, 5)
+        let id1280 = LiveResolution.sizeID(pointWidth: 1280, pointHeight: 832, hiDPI: true)
+        XCTAssertEqual(LiveResolution.mode(forSize: id1280, in: modes, current: current)?.ioModeID, 7)
+        XCTAssertEqual(LiveResolution.mode(forSize: LiveResolution.sizeID(of: current), in: modes, current: current), current)
+        XCTAssertNil(LiveResolution.mode(forSize: "1x1h", in: modes, current: current))
+    }
+
+    func testSizeChoicePrefersDeeperColorOnATie() {
+        let modes = [mode(1920, 1080, id: 1, depth: 8), mode(1920, 1080, id: 2, depth: 10)]
+        let id = LiveResolution.sizeID(pointWidth: 1920, pointHeight: 1080, hiDPI: true)
+        XCTAssertEqual(LiveResolution.mode(forSize: id, in: modes, current: nil)?.ioModeID, 2)
+    }
+
+    func testRefreshRatesForTheCurrentSize() {
+        let current = mode(1512, 982, hz: 120, id: 3).ref
+        var modes = [mode(1512, 982, hz: 60, id: 2), mode(1512, 982, hz: 120, id: 3), mode(1800, 1169, hz: 50, id: 4)]
+        modes.append(DisplayModeDescriptor(ref: ModeRef(ioModeID: 8, pixelWidth: 3024, pixelHeight: 1964, pointWidth: 1512,
+                                                        pointHeight: 982, refreshMilliHz: 59_940),
+                                           isNative: false, isDefault: false, isUsableForDesktop: true, ioFlags: 0,
+                                           bitDepth: 8))
+        modes.append(DisplayModeDescriptor(ref: ModeRef(ioModeID: 9, pixelWidth: 3024, pixelHeight: 1964, pointWidth: 1512,
+                                                        pointHeight: 982, refreshMilliHz: 60_004),
+                                           isNative: false, isDefault: false, isUsableForDesktop: true, ioFlags: 0,
+                                           bitDepth: 8))
+        let rates = LiveResolution.refreshRates(modes, current: current)
+        XCTAssertEqual(rates.map(\.title), ["120 Hz", "60 Hz", "59.94 Hz"])
+        XCTAssertEqual(LiveResolution.choice(for: 60_003, in: rates), 60_000)
+        XCTAssertNil(LiveResolution.choice(for: 75_000, in: rates))
+        XCTAssertEqual(LiveResolution.mode(forRefresh: 60_000, in: modes, current: current)?.ioModeID, 2)
+        XCTAssertEqual(LiveResolution.mode(forRefresh: 120_000, in: modes, current: current), current)
+        XCTAssertNil(LiveResolution.mode(forRefresh: 50_000, in: modes, current: current))
+        XCTAssertTrue(LiveResolution.refreshRates(modes, current: nil).isEmpty)
+    }
+
+    /// Seeded fuzz: whatever the mode list, the pop-ups are consistent with it.
+    func testResolutionChoicesFuzz() {
+        var rng = SeededGenerator(seed: 0xF0_2026)
+        func pick(_ n: Int) -> Int { Int(rng.next() % UInt64(n)) }
+        let widths = [0, 800, 1024, 1280, 1512, 1920, 2560]
+        let rates = [0, 50_000, 59_940, 60_000, 60_005, 120_000]
+        for _ in 0..<400 {
+            var modes: [DisplayModeDescriptor] = []
+            for i in 0..<pick(12) {
+                let w = widths[pick(widths.count)]
+                modes.append(mode(w, w * 10 / 16, hiDPI: pick(2) == 0, hz: 0, id: Int32(i), isDefault: pick(5) == 0,
+                                  depth: [8, 10][pick(2)]))
+                modes[modes.count - 1].ref.refreshMilliHz = rates[pick(rates.count)]
+            }
+            let current: ModeRef? = modes.isEmpty || pick(4) == 0 ? nil : modes[pick(modes.count)].ref
+            let sizes = LiveResolution.sizes(modes, current: current)
+            XCTAssertEqual(Set(sizes.map(\.id)).count, sizes.count)
+            XCTAssertLessThanOrEqual(sizes.filter(\.isDefault).count, 1)
+            if sizes.contains(where: \.isDefault) { XCTAssertTrue(sizes[0].isDefault) }
+            if let current, current.pointWidth > 0, current.pointHeight > 0 {
+                XCTAssertTrue(sizes.contains { $0.id == LiveResolution.sizeID(of: current) })
+            }
+            for size in sizes {
+                if let chosen = LiveResolution.mode(forSize: size.id, in: modes, current: current) {
+                    XCTAssertEqual(LiveResolution.sizeID(of: chosen), size.id)
+                } else {
+                    XCTAssertEqual(current.map(LiveResolution.sizeID(of:)), size.id, "only the current size may be unlisted")
+                }
+            }
+            let refresh = LiveResolution.refreshRates(modes, current: current)
+            XCTAssertEqual(refresh.map(\.milliHz), refresh.map(\.milliHz).sorted(by: >))
+            for (a, b) in zip(refresh, refresh.dropFirst()) {
+                XCTAssertGreaterThan(a.milliHz - b.milliHz, LiveResolution.refreshTolerance)
+            }
+            for rate in refresh {
+                if let chosen = LiveResolution.mode(forRefresh: rate.milliHz, in: modes, current: current), let current {
+                    XCTAssertEqual(LiveResolution.sizeID(of: chosen), LiveResolution.sizeID(of: current))
+                }
+            }
+        }
+    }
+
+    // MARK: Diagnostics events
+
+    func testExportedEventsDropAwakeAndKeepTheNewest() {
+        let awake = EventCategory(rawValue: "awake")
+        let entries: [(Int, EventCategory)] = [(1, .modules), (2, awake), (3, .ddc), (4, awake), (5, .registry)]
+        let kept = DiagnosticsText.exportedEvents(entries, category: { $0.1 }, limit: 2)
+        XCTAssertEqual(kept.map { $0.0 }, [3, 5])
+        XCTAssertEqual(DiagnosticsText.exportedEvents(entries, category: { $0.1 }, limit: 10).map { $0.0 }, [1, 3, 5])
+        XCTAssertTrue(DiagnosticsText.exportedEvents(entries, category: { $0.1 }, limit: 0).isEmpty)
+        XCTAssertTrue(DiagnosticsText.exportedEvents(entries, category: { $0.1 }, limit: -1).isEmpty)
+    }
+
+    // MARK: Display Information (names never leave in a report)
+
+    func testRedactingReplacesWholeNamesIgnoringCase() {
+        let text = "Display 1 (built-in): DELL U2720Q is on; dell u2720q again; DELL U2720Qx stays; Studio Display."
+        let out = DiagnosticsText.redacting(text, names: ["DELL U2720Q", "Studio Display"])
+        XCTAssertEqual(out, "Display 1 (built-in): [display name] is on; [display name] again; DELL U2720Qx stays; "
+                       + "[display name].")
+    }
+
+    func testRedactingSkipsShortAndDuplicateNamesAndPrefersLongest() {
+        XCTAssertEqual(DiagnosticsText.redactableNames(["  TV ", "LG", "LG UltraFine", "lg ultrafine", "LG UltraFine 2"]),
+                       ["LG UltraFine 2", "LG UltraFine"])
+        XCTAssertEqual(DiagnosticsText.redacting("LG UltraFine 2 and LG UltraFine", names: ["LG UltraFine", "LG UltraFine 2"]),
+                       "[display name] and [display name]")
+        XCTAssertEqual(DiagnosticsText.redacting("TV on", names: ["TV"]), "TV on")
+        XCTAssertEqual(DiagnosticsText.redacting("no names", names: []), "no names")
+    }
+
+    func testRedactingTreatsNamesAsLiteralText() {
+        let names = ["Dell (2) [*]", "a.b+c?", "$1 \\ x"]
+        XCTAssertEqual(DiagnosticsText.redacting("x Dell (2) [*] a.b+c? $1 \\ x y abxbcc", names: names),
+                       "x [display name] [display name] [display name] y abxbcc")
+    }
+
+    func testRedactingSectionsCoversTitlesLabelsAndValues() {
+        let sections = [DiagnosticsSection(title: "Office Dell", rows: [DiagnosticsRow("Office Dell status", "Office Dell asleep")])]
+        let out = DiagnosticsText.redacting(sections, names: ["Office Dell"])
+        XCTAssertEqual(out, [DiagnosticsSection(title: "[display name]", rows: [
+            DiagnosticsRow("[display name] status", "[display name] asleep"),
+        ])])
+        XCTAssertEqual(DiagnosticsText.redacting(sections, names: ["x"]), sections)
+    }
+
+    func testRedactingFuzzedNamesNeverLeaveAName() {
+        var rng = SeededGenerator(seed: 0xD15_1AF0)
+        let alphabet = Array("abcXYZ019 .-()[]*+?$\\éß")
+        func word() -> String {
+            String((0..<Int(3 + rng.next() % 10)).map { _ in alphabet[Int(rng.next() % UInt64(alphabet.count))] })
+        }
+        for _ in 0..<300 {
+            let names = (0..<Int(1 + rng.next() % 4)).map { _ in word() }
+            let text = (0..<Int(rng.next() % 6)).map { _ in names[Int(rng.next() % UInt64(names.count))] }
+                .joined(separator: " | ")
+            let out = DiagnosticsText.redacting(text, names: names)
+            for part in out.components(separatedBy: " | ") where !part.isEmpty {
+                let isName = names.contains { $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .caseInsensitiveCompare(part.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame }
+                XCTAssertFalse(isName && part.trimmingCharacters(in: .whitespacesAndNewlines).count
+                               >= DiagnosticsText.minRedactedNameLength, "\(part) survived in \(out)")
+            }
+        }
+    }
+
+    func testTransportNamesAreDistinct() {
+        let names = Transport.allCases.map(DisplaysUIText.transportName)
+        XCTAssertEqual(Set(names).count, Transport.allCases.count)
+        XCTAssertEqual(DisplaysUIText.transportName(.wired), "Cable")
+    }
+
+    func testDisplayTitleAndAwakeSection() {
+        XCTAssertEqual(DiagnosticsText.displayTitle(number: 1, isBuiltin: true), "Display 1 (built-in)")
+        XCTAssertEqual(DiagnosticsText.displayTitle(number: 2, isBuiltin: false), "Display 2")
+        XCTAssertNil(DiagnosticsText.awakeSection([]))
+        XCTAssertNil(DiagnosticsText.awakeSection(["", "   "]))
+        let section = DiagnosticsText.awakeSection(["State: running", "Session uuid: 0F8FAD5B-D9CB-469F-A165-70867728950E",
+                                                    "Keeping your Mac awake"])
+        XCTAssertEqual(section?.title, "Awake")
+        XCTAssertEqual(section?.rows.first, DiagnosticsRow("State", "running"))
+        XCTAssertEqual(section?.rows[1].value, "••••0E")
+        XCTAssertEqual(section?.rows[2], DiagnosticsRow("Note", "Keeping your Mac awake"))
+    }
+
+    func testRememberedDisplaysAndTexts() {
+        let a = DisplayKey(rawValue: String(repeating: "a", count: 32))!
+        let b = DisplayKey(rawValue: String(repeating: "b", count: 32))!
+        let c = DisplayKey(rawValue: String(repeating: "c", count: 32))!
+        XCTAssertEqual(DisplayInformationText.remembered(stored: [c, a, b, a], online: [b]), [a, c])
+        var identity = PerDisplayIdentity()
+        XCTAssertEqual(DisplayInformationText.name(a, identity: nil), "Display aaaa…")
+        identity.lastKnownName = "DELL U2720Q"
+        XCTAssertEqual(DisplayInformationText.name(a, identity: identity), "DELL U2720Q")
+        identity.customName = "Desk"
+        XCTAssertEqual(DisplayInformationText.name(a, identity: identity), "Desk")
+        XCTAssertEqual(DisplayInformationText.resolutionCount(1), "1 resolution")
+        XCTAssertEqual(DisplayInformationText.resolutionCount(3), "3 resolutions")
+        XCTAssertEqual(DisplayInformationText.journal(hasSessionJournal: false, permanentSteps: 0), "Empty")
+        XCTAssertEqual(DisplayInformationText.journal(hasSessionJournal: true, permanentSteps: 1),
+                       "A change can be undone; 1 rotation or HDR step to confirm")
+        XCTAssertEqual(DisplayInformationText.journal(hasSessionJournal: false, permanentSteps: 2),
+                       "Empty; 2 rotation or HDR steps to confirm")
+    }
+
+    // MARK: Copy settings from (ux N3)
+
+    private func key(_ c: Character) -> DisplayKey { DisplayKey(rawValue: String(repeating: c, count: 32))! }
+
+    private func tuned(name: String, brightness: Double, contrast: Double, measured: Bool) -> PerDisplayConfig {
+        var c = PerDisplayConfig()
+        c.identity.customName = name
+        c.identity.symbol = "tv"
+        c.brightness.value = brightness
+        c.brightness.gammaWorks = measured
+        c.color.adjustments.contrast = contrast
+        c.resolution.matchUIScale = !measured
+        c.pip.configurations = [PIPConfiguration(name: name + " PIP")]
+        return c
+    }
+
+    func testCopySettingsKeepsTheSourceAndThisDisplaysOwnParts() throws {
+        let source = key("a"), target = key("b"), other = key("c")
+        let lg = tuned(name: "LG", brightness: 0.3, contrast: 1.4, measured: true)
+        let dell = tuned(name: "DELL", brightness: 0.8, contrast: 1, measured: false)
+        let third = tuned(name: "Third", brightness: 0.5, contrast: 1.1, measured: true)
+        let map = LossyMap([source: lg, target: dell, other: third])
+        let result = try XCTUnwrap(DisplaySettingsCopy.copying(from: source, to: target, in: map))
+        // A copy, not a move: the remembered display and every other entry are unchanged.
+        XCTAssertEqual(result[source], lg)
+        XCTAssertEqual(result[other], third)
+        XCTAssertEqual(result.values.count, 3)
+        let copied = try XCTUnwrap(result[target])
+        XCTAssertEqual(copied.brightness.value, 0.3)
+        XCTAssertEqual(copied.color.adjustments.contrast, 1.4)
+        XCTAssertEqual(copied.resolution.matchUIScale, false)
+        // This display's own name, icon, panel measurements and Picture in Picture setups stay.
+        XCTAssertEqual(copied.identity, dell.identity)
+        XCTAssertEqual(copied.pip, dell.pip)
+        XCTAssertEqual(copied.brightness.gammaWorks, false)
+        XCTAssertNotEqual(copied.pip.configurations.map(\.id), lg.pip.configurations.map(\.id))
+    }
+
+    func testCopySettingsOntoADisplayWithNothingStored() throws {
+        let source = key("a"), target = key("b")
+        let lg = tuned(name: "LG", brightness: 0.3, contrast: 1.4, measured: true)
+        let result = try XCTUnwrap(DisplaySettingsCopy.copying(from: source, to: target, in: LossyMap([source: lg])))
+        XCTAssertEqual(result[source], lg)
+        let copied = try XCTUnwrap(result[target])
+        XCTAssertEqual(copied.identity, PerDisplayIdentity())
+        XCTAssertEqual(copied.pip, PerDisplayPIP())
+        XCTAssertNil(copied.brightness.gammaWorks)
+        XCTAssertEqual(copied.brightness.value, 0.3)
+    }
+
+    func testCopySettingsRefusesWhatChangesNothing() {
+        let source = key("a"), target = key("b")
+        let lg = tuned(name: "LG", brightness: 0.3, contrast: 1.4, measured: true)
+        XCTAssertNil(DisplaySettingsCopy.copying(from: source, to: source, in: LossyMap([source: lg])))
+        XCTAssertNil(DisplaySettingsCopy.copying(from: key("c"), to: target, in: LossyMap([source: lg])))
+        // Copying again changes nothing, so there is nothing to confirm or write.
+        let once = DisplaySettingsCopy.copying(from: source, to: target, in: LossyMap([source: lg]))!
+        XCTAssertNil(DisplaySettingsCopy.copying(from: source, to: target, in: once))
+    }
+
+    func testCopySettingsConfirmationNamesTheSourceAndKeepsIt() {
+        XCTAssertEqual(DisplaySettingsCopy.question(source: "LG HDR 4K"), "Copy the settings of “LG HDR 4K” to this display?")
+        XCTAssertTrue(DisplaySettingsCopy.message(source: "LG HDR 4K").contains("keeps remembering “LG HDR 4K”"))
+        XCTAssertEqual(DisplaySettingsCopy.movePIPTitle, "Also move its Picture in Picture setups")
+        // Review7 ui-ux N1: a partial move says so; the message has the serial comma and no mechanism names.
+        XCTAssertEqual(DisplaySettingsCopy.movePIPTitle(movable: 3, total: 3), "Also move its Picture in Picture setups")
+        XCTAssertEqual(DisplaySettingsCopy.movePIPTitle(movable: 1, total: 1), "Also move its Picture in Picture setup")
+        XCTAssertEqual(DisplaySettingsCopy.movePIPTitle(movable: 2, total: 3),
+                       "Also move 2 of its 3 Picture in Picture setups")
+        let message = DisplaySettingsCopy.message(source: "LG")
+        XCTAssertTrue(message.contains("keys (with their audio device), and connection settings"), message)
+        XCTAssertFalse(message.contains("DDC"), message)
+        XCTAssertTrue(message.contains("Unlocked manufacturer codes aren’t copied."), message)
+    }
+
+    /// Review7 security N5: codes unlocked on the remembered display's model never reach this display; this
+    /// display's own unlocks stay.
+    func testCopySettingsKeepsEachDisplaysUnlockedCodes() throws {
+        let source = key("a"), target = key("b")
+        var lg = tuned(name: "LG", brightness: 0.3, contrast: 1.4, measured: true)
+        lg.ddc.unlockedCodes = [VCPKey(0xE0), VCPKey(0xF4)]
+        var dell = tuned(name: "DELL", brightness: 0.8, contrast: 1, measured: false)
+        dell.ddc.unlockedCodes = [VCPKey(0xE2)]
+        let result = try XCTUnwrap(DisplaySettingsCopy.copying(from: source, to: target,
+                                                                in: LossyMap([source: lg, target: dell])))
+        XCTAssertEqual(result[target]?.ddc.unlockedCodes, [VCPKey(0xE2)])
+        XCTAssertEqual(result[source]?.ddc.unlockedCodes, lg.ddc.unlockedCodes)
+        let fresh = try XCTUnwrap(DisplaySettingsCopy.copying(from: source, to: target, in: LossyMap([source: lg])))
+        XCTAssertEqual(fresh[target]?.ddc.unlockedCodes, [])
+        XCTAssertEqual(DisplaySettingsCopy.pipCount(of: source, in: LossyMap([source: lg])), 1)
+        XCTAssertEqual(DisplaySettingsCopy.pipCount(of: target, in: LossyMap([source: lg])), 0)
+    }
+
+    /// Round 3 ui N2: the help and the alert name everything a copy replaces (DDC tuning, keys with their audio
+    /// device, connection), not only brightness, color and resolution.
+    func testCopySettingsTextNamesEverythingItCopies() throws {
+        for text in [DisplaySettingsCopy.help, DisplaySettingsCopy.message(source: "LG")] {
+            for part in ["brightness", "color", "resolution", "hardware control tuning", "keys", "connection"] {
+                XCTAssertTrue(text.contains(part), "\(part) missing from: \(text)")
+            }
+        }
+        XCTAssertTrue(DisplaySettingsCopy.message(source: "LG").contains("audio device"))
+        // What the text says matches the copy: DDC tuning, keys and connection travel; the learned framing doesn't.
+        let source = key("a"), target = key("b")
+        var lg = tuned(name: "LG", brightness: 0.3, contrast: 1.4, measured: true)
+        lg.ddc.replyDelayMs = 80
+        lg.keys.audioDeviceName = "LG Speakers"
+        lg.management.preventSleep = !PerDisplayConfig().management.preventSleep
+        lg.ddc.framing = DDCFraming.allCases.first
+        let copied = try XCTUnwrap(DisplaySettingsCopy.copying(from: source, to: target, in: LossyMap([source: lg]))?[target])
+        XCTAssertEqual(copied.ddc.replyDelayMs, 80)
+        XCTAssertEqual(copied.keys.audioDeviceName, "LG Speakers")
+        XCTAssertEqual(copied.management.preventSleep, lg.management.preventSleep)
+        XCTAssertNil(copied.ddc.framing, "the learned framing belongs to the source's panel")
+    }
+
+    /// Round 3 parity R1: "Also move its Picture in Picture setups" moves the remembered display's setups here
+    /// (after this display's own, up to the cap) and off the remembered display, so each id stays in one place; a
+    /// stream that pointed at this display loses its target. Off, nothing moves.
+    func testCopySettingsCanMovePictureInPictureSetups() throws {
+        let source = key("a"), target = key("b")
+        var lg = tuned(name: "LG", brightness: 0.3, contrast: 1.4, measured: true)
+        var stream = PIPConfiguration(name: "LG → DELL", kind: .fullScreen)
+        stream.target = target
+        lg.pip.configurations.append(stream)
+        let dell = tuned(name: "DELL", brightness: 0.8, contrast: 1, measured: false)
+        let map = LossyMap([source: lg, target: dell])
+        XCTAssertEqual(DisplaySettingsCopy.movablePIPCount(from: source, to: target, in: map), 2)
+
+        let plain = try XCTUnwrap(DisplaySettingsCopy.copying(from: source, to: target, in: map))
+        XCTAssertEqual(plain[source], lg)
+        XCTAssertEqual(plain[target]?.pip, dell.pip)
+
+        let moved = try XCTUnwrap(DisplaySettingsCopy.copying(from: source, to: target, in: map, movePIP: true))
+        let here = try XCTUnwrap(moved[target]).pip.configurations
+        XCTAssertEqual(here.map(\.id), dell.pip.configurations.map(\.id) + lg.pip.configurations.map(\.id))
+        XCTAssertNil(here.last?.target, "a display can't stream onto itself")
+        XCTAssertEqual(moved[source]?.pip.configurations, [])
+        // Everything else about the remembered display stays.
+        var rest = try XCTUnwrap(moved[source])
+        rest.pip = lg.pip
+        XCTAssertEqual(rest, lg)
+        // Nothing left to move, and the settings already match: nothing to do.
+        XCTAssertEqual(DisplaySettingsCopy.movablePIPCount(from: source, to: target, in: moved), 0)
+        XCTAssertNil(DisplaySettingsCopy.copying(from: source, to: target, in: moved, movePIP: true))
+    }
+
+    /// The cap: only what fits moves; the rest stays with the remembered display. Settings already copied with setups
+    /// left to move still move them.
+    func testCopySettingsMovesOnlyWhatFits() throws {
+        let source = key("a"), target = key("b")
+        var lg = PerDisplayConfig()
+        lg.pip.configurations = (0..<3).map { PIPConfiguration(name: "LG \($0)") }
+        var dell = PerDisplayConfig()
+        dell.pip.configurations = (0..<(PerDisplayPIP.maxConfigurations - 1)).map { PIPConfiguration(name: "DELL \($0)") }
+        let map = LossyMap([source: lg, target: dell])
+        XCTAssertEqual(DisplaySettingsCopy.movablePIPCount(from: source, to: target, in: map), 1)
+        let moved = try XCTUnwrap(DisplaySettingsCopy.copying(from: source, to: target, in: map, movePIP: true))
+        XCTAssertEqual(moved[target]?.pip.configurations.count, PerDisplayPIP.maxConfigurations)
+        XCTAssertEqual(moved[target]?.pip.configurations.last?.id, lg.pip.configurations[0].id)
+        XCTAssertEqual(moved[source]?.pip.configurations.map(\.id), lg.pip.configurations.dropFirst().map(\.id))
+        XCTAssertEqual(DisplaySettingsCopy.movablePIPCount(from: source, to: target, in: moved), 0)
+        XCTAssertNil(DisplaySettingsCopy.copying(from: source, to: target, in: moved, movePIP: true))
+        XCTAssertEqual(DisplaySettingsCopy.movablePIPCount(from: source, to: source, in: map), 0)
     }
 }

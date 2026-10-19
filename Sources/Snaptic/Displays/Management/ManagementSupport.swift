@@ -163,7 +163,7 @@ enum ManagedModes {
             let outcome = await ctx.transactions.submit(request)
             if lifetime.isEnded { return }
             if !quiet, let text = message(outcome) { ctx.toasts.show(text, lifetime: lifetime) }
-            EventLog.shared.record(.transaction, "\(request.label): \(outcomeName(outcome))")
+            EventLog.shared.record(.transaction, logLine(request, outcome))
             completion?(outcome)
         }
     }
@@ -176,7 +176,7 @@ enum ManagedModes {
         var request = request
         if request.automatic && request.planID == nil { request.planID = ctx.connectPlanner.currentPlanID }
         let outcome = await ctx.transactions.submit(request)
-        EventLog.shared.record(.transaction, "\(request.label): \(outcomeName(outcome))")
+        EventLog.shared.record(.transaction, logLine(request, outcome))
         if request.risk == .restore, case .refused(let violations) = outcome,
            violations.contains(where: { if case .onlyDisplayUnsupported = $0 { return true }; return false }) {
             promptTrial(ctx, request)
@@ -189,10 +189,17 @@ enum ManagedModes {
         let changes = request.changes
         let scope = request.finalScope
         weak var weakCtx = ctx
-        ctx.toasts.show(L("Restore '\(label)'?"), action: ToastAction(title: L("Keep")) {
+        ctx.toasts.show(L("Restore “\(label)”?"), action: ToastAction(title: L("Keep")) {
             guard let ctx = weakCtx else { return }
             submit(ctx, TransactionRequest(label: label, risk: .trial, changes: changes, finalScope: scope), lifetime: ctx.lifetime)
         }, lifetime: ctx.lifetime)
+    }
+
+    /// The event-log line for a request: change kinds and counts, never `request.label` (callers may name a
+    /// display in the label for the confirm panel; TEAMS rule 3 keeps names out of the log).
+    static func logLine(_ request: TransactionRequest, _ outcome: TransactionOutcome) -> String {
+        TransactionLogText.line(changes: request.changes, risk: "\(request.risk)", automatic: request.automatic,
+                                outcome: outcomeName(outcome))
     }
 
     static func outcomeName(_ o: TransactionOutcome) -> String {
@@ -214,43 +221,6 @@ enum ManagedModes {
         case .reverted: return .failure(ControlExit.cancelled, message(outcome) ?? "")
         case .busy, .failed: return .failure(ControlExit.unavailable, message(outcome) ?? "")
         }
-    }
-}
-
-// MARK: Menu items
-
-/// A menu item that runs a closure. Captures `DisplayKey`s, never display ids (R3C §5.6).
-@MainActor final class ManagedMenuItem: NSMenuItem {
-    private let handler: @MainActor () -> Void
-
-    init(_ title: String, on: Bool = false, enabled: Bool = true, handler: @escaping @MainActor () -> Void) {
-        self.handler = handler
-        super.init(title: title, action: #selector(fire(_:)), keyEquivalent: "")
-        target = self
-        state = on ? .on : .off
-        isEnabled = enabled
-    }
-
-    required init(coder: NSCoder) {
-        handler = {}
-        super.init(coder: coder)
-    }
-
-    @objc private func fire(_ sender: Any?) { handler() }
-
-    /// A submenu holder item.
-    static func submenu(_ title: String, items: [NSMenuItem]) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        let menu = NSMenu(title: title)
-        items.forEach { menu.addItem($0) }
-        item.submenu = menu
-        return item
-    }
-
-    static func disabled(_ title: String) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        return item
     }
 }
 

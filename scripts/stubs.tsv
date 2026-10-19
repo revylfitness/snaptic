@@ -8,9 +8,10 @@ Sources/SnapticKit/OtherDisplayApps.swift	lead	K1	OtherDisplayApps	-
 Sources/SnapticKit/LineSplitter.swift	lead	L	-	-
 Sources/SnapticKit/Config/ConfigModel.swift	lead	L	-	-
 Sources/SnapticKit/Config/ConfigDisplays.swift	lead	L	-	-
-Sources/SnapticKit/KitLossy.swift	A	L	-	-
+Sources/SnapticKit/KitLossy.swift	lead	L	-	-
 Sources/SnapticKit/KitText.swift	A	L	-	-
 Sources/SnapticKit/KitControl.swift	A	S	KitControl	-
+Sources/SnapticKit/KitKeyPaths.swift	A	L	-	-
 Sources/SnapticKit/KitHookPolicy.swift	A	K1	KitHookPolicy	-
 Sources/SnapticKit/KitLaunchStability.swift	A	K1	KitLaunchStability	-
 Sources/SnapticKit/KitArgs.swift	A	K1	KitArgs	-
@@ -18,7 +19,7 @@ Sources/SnapticKit/KitHotkeys.swift	A	L	-	-
 Sources/SnapticKit/KitBackup.swift	A	L	-	-
 Sources/SnapticKit/KitPipeQueue.swift	A	L	-	-
 Sources/SnapticKit/KitHostUI.swift	A	L	-	-
-Sources/SnapticKit/Config/ConfigModules.swift	A	K2	ConfigModules	ModulesConfig
+Sources/SnapticKit/Config/ConfigModules.swift	lead	L	-	-
 Sources/SnapticKit/Config/ConfigAutomation.swift	A	K2	ConfigAutomation	AutomationConfig
 Sources/SnapticKit/Config/ConfigSwitcherFeatures.swift	A	K2	ConfigSwitcherFeatures	SwitcherFeaturesConfig
 Sources/SnapticKit/LayoutModel.swift	B	L	-	-
@@ -68,7 +69,7 @@ Sources/SnapticKit/Config/ConfigLayouts.swift	D	K2	ConfigLayouts	LayoutsConfig
 Sources/SnapticKit/CubeLUT.swift	E	K1	CubeLUT	-
 Sources/SnapticKit/FilterSpec.swift	E	K1	FilterSpec	-
 Sources/SnapticKit/Config/ConfigPIP.swift	E	K2	ConfigPIP	PIPConfig,PerDisplayPIP
-Sources/SnapticKit/Config/ConfigMenu.swift	F	K2	ConfigMenu	MenuConfig
+Sources/SnapticKit/Config/ConfigMenu.swift	M	K2	ConfigMenu	MenuConfig
 Sources/SnapticKit/DisplaysUIModel.swift	F	L	-	-
 Tests/SnapticKitTests/KitProbeTests.swift	lead	L	-	-
 Tests/SnapticKitTests/FeatureGraphTests.swift	lead	L	-	-
@@ -89,8 +90,8 @@ Sources/Snaptic/Core/ModuleContracts.swift	lead	L	-	-
 Sources/Snaptic/Core/AppDelegate.swift	A	L	-	-
 Sources/Snaptic/Core/Permissions.swift	A	L	-	-
 Sources/Snaptic/Core/SnapticEntry.swift	A	L	-	-
-Sources/Snaptic/Core/ModuleHost.swift	A	K5	ModuleHost	-
-Sources/Snaptic/Core/ModuleContext.swift	A	L	-	-
+Sources/Snaptic/Core/ModuleHost.swift	lead	L	-	-
+Sources/Snaptic/Core/ModuleContext.swift	lead	L	-	-
 Sources/Snaptic/Core/Lifetime.swift	A	L	-	-
 Sources/Snaptic/Core/ConfigStore.swift	A	L	-	-
 Sources/Snaptic/Core/DefaultsKeyObserver.swift	A	K5	DefaultsKeyObserver	-
@@ -106,14 +107,16 @@ Sources/Snaptic/Core/PermissionFlow.swift	A	S	PermissionFlow	-
 Sources/Snaptic/Core/Relauncher.swift	A	S	Relauncher	-
 Sources/Snaptic/Core/HelperSpawner.swift	A	S	HelperSpawner	-
 Sources/Snaptic/Core/HelperPrologue.swift	A	K14	HelperPrologue	-
-Sources/Snaptic/Core/ToastPresenter.swift	A	S	ToastPresenter	-
+Sources/Snaptic/Core/ToastPresenter.swift	lead	L	-	-
 Sources/Snaptic/Core/Backup.swift	A	K14	Backup	-
-Sources/Snaptic/Core/Onboarding.swift	A	K5	Onboarding	-
-Sources/Snaptic/Core/SettingsWindowHost.swift	A	K5	SettingsWindowHost	-
-Sources/Snaptic/Core/GeneralPages.swift	A	K14	GeneralPages	-
-Sources/Snaptic/Core/MenuPlacement.swift	A	K14	MenuPlacement	-
-Sources/Snaptic/Core/StatusMenu.swift	A	K5	StatusMenu	-
-Sources/Snaptic/Core/MenuSliderItem.swift	A	S	MenuSliderItem	-
+Sources/Snaptic/Core/Onboarding.swift	H	K5	Onboarding	-
+Sources/Snaptic/Core/SettingsWindowHost.swift	H	K5	SettingsWindowHost	-
+Sources/Snaptic/Core/GeneralPages.swift	H	K14	GeneralPages	-
+Sources/Snaptic/Core/GeneralAdvancedSheet.swift	H	L	-	-
+Sources/Snaptic/Core/PermissionsPage.swift	H	L	-	-
+Sources/Snaptic/Core/AboutPage.swift	H	L	-	-
+Sources/Snaptic/Core/MenuPlacement.swift	M	K14	MenuPlacement	-
+Sources/Snaptic/Core/StatusMenu.swift	M	K5	StatusMenu	-
 Sources/Snaptic/Core/ControlServer.swift	A	K5	ControlServer	-
 Sources/Snaptic/Core/ControlCommandRegistry.swift	A	S	ControlCommandRegistry	-
 Sources/Snaptic/Core/CLIClient.swift	A	K11	CLIClient	-
@@ -123,7 +126,7 @@ Sources/Snaptic/Switcher/AX.swift	A	L	-	-
 Sources/Snaptic/Switcher/HotkeyTap.swift	A	L	-	-
 Sources/Snaptic/Switcher/PrivateAPIs.swift	A	L	-	-
 Sources/Snaptic/Switcher/Settings.swift	A	L	-	-
-Sources/Snaptic/Switcher/SettingsView.swift	A	L	-	-
+Sources/Snaptic/Switcher/SettingsView.swift	H	L	-	-
 Sources/Snaptic/Switcher/SwitcherController.swift	A	L	-	-
 Sources/Snaptic/Switcher/SwitcherModel.swift	A	L	-	-
 Sources/Snaptic/Switcher/SwitcherView.swift	A	L	-	-
@@ -131,7 +134,8 @@ Sources/Snaptic/Switcher/SwitcherWindow.swift	A	L	-	-
 Sources/Snaptic/Switcher/ThumbnailStore.swift	A	L	-	-
 Sources/Snaptic/Switcher/WindowManager.swift	A	L	-	-
 Sources/Snaptic/Switcher/WindowSwitcherModule.swift	A	K5	WindowSwitcherModule	-
-Sources/Snaptic/Switcher/SwitcherPages.swift	A	K14	SwitcherPages	-
+Sources/Snaptic/Switcher/SwitcherPages.swift	H	K14	SwitcherPages	-
+Sources/Snaptic/Switcher/SwitcherShortcutsSheet.swift	H	L	-	-
 Sources/Snaptic/Switcher/WindowGatherer.swift	A	K5	WindowGatherer	-
 Sources/Snaptic/Displays/DisplaysModule.swift	lead	L	-	-
 Sources/Snaptic/Displays/DisplaysContext.swift	lead	L	-	-
@@ -202,42 +206,28 @@ Sources/Snaptic/Displays/Automation/SpawnerService.swift	A	K6	SpawnerService	spa
 Sources/Snaptic/Displays/Automation/AutomationController.swift	A	K8	AutomationController	automation
 Sources/Snaptic/Displays/UI/OverviewController.swift	F	K8	OverviewController	overview
 Sources/Snaptic/Displays/UI/DiagnosticsController.swift	F	K8	DiagnosticsController	diagnostics
-Sources/Snaptic/Displays/UI/DisplaysOverviewPage.swift	F	K10	DisplaysOverviewPage	Displays
-Sources/Snaptic/Displays/UI/FeaturesPage.swift	F	K10	FeaturesPage	Display Features
-Sources/Snaptic/Displays/UI/DisplaysMenuBuilder.swift	F	S	DisplaysMenuBuilder	-
-Sources/Snaptic/Displays/UI/DisplayMenuBlock.swift	F	K12	DisplayMenuBlock	-
-Sources/Snaptic/Displays/UI/DisplayIdentityPage.swift	F	K10	DisplayIdentityPage	Display Names
-Sources/Snaptic/Displays/UI/DiagnosticsPage.swift	F	K10	DiagnosticsPage	Diagnostics
+Sources/Snaptic/Displays/UI/DisplaysMenuBuilder.swift	M	S	DisplaysMenuBuilder	-
+Sources/Snaptic/Displays/UI/DisplayMenuBlock.swift	M	K12	DisplayMenuBlock	-
 Sources/Snaptic/Displays/UI/DisplaysOnboardingStep.swift	F	K10	DisplaysOnboardingStep	Displays
 Sources/Snaptic/Displays/UI/IdentifyOverlay.swift	F	K12	IdentifyOverlay	-
-Sources/Snaptic/Displays/UI/SafetyPage.swift	B	K10	SafetyPage	Safety
-Sources/Snaptic/Displays/UI/BrightnessPage.swift	C	K10	BrightnessPage	Brightness
 Sources/Snaptic/Displays/UI/BrightnessMenuItems.swift	C	K9	BrightnessMenuItems	-
 Sources/Snaptic/Displays/UI/ColorPage.swift	C	K10	ColorPage	Color
-Sources/Snaptic/Displays/UI/DDCPage.swift	C	K10	DDCPage	Monitor Controls
 Sources/Snaptic/Displays/UI/DDCMenuItems.swift	C	K9	DDCMenuItems	-
-Sources/Snaptic/Displays/UI/KeysPage.swift	C	K10	KeysPage	Keys & Shortcuts
-Sources/Snaptic/Displays/UI/OSDPage.swift	C	K10	OSDPage	On-Screen Display
-Sources/Snaptic/Displays/UI/ResolutionPage.swift	D	K10	ResolutionPage	Resolution
 Sources/Snaptic/Displays/UI/ResolutionMenuItems.swift	D	K9	ResolutionMenuItems	-
-Sources/Snaptic/Displays/UI/VirtualScreensPage.swift	D	K10	VirtualScreensPage	Virtual Screens
 Sources/Snaptic/Displays/UI/VirtualMenuItems.swift	D	K9	VirtualMenuItems	-
-Sources/Snaptic/Displays/UI/ArrangementPage.swift	D	K10	ArrangementPage	Arrangement
 Sources/Snaptic/Displays/UI/ArrangementCanvas.swift	D	K10	ArrangementCanvas	Arrangement
-Sources/Snaptic/Displays/UI/ProtectionLayoutsPage.swift	D	K10	ProtectionLayoutsPage	Protection & Layouts
 Sources/Snaptic/Displays/UI/LayoutsMenuItems.swift	D	K9	LayoutsMenuItems	-
 Sources/Snaptic/Displays/UI/PIPPage.swift	E	K10	PIPPage	Picture in Picture
 Sources/Snaptic/Displays/UI/PIPMenuItems.swift	E	K9	PIPMenuItems	-
-Sources/Snaptic/Displays/UI/AutomationPage.swift	A	K10	AutomationPage	Automation
-Sources/Snaptic/Displays/UI/MenuCustomizationPage.swift	A	K10	MenuCustomizationPage	Menu
-Tests/SnapticKitTests/KitModulesTests.swift	lead	K3	KitModulesTests	-
+Tests/SnapticKitTests/KitModulesTests.swift	lead	L	-	-
 Tests/SnapticKitTests/OtherDisplayAppsTests.swift	lead	K3	OtherDisplayAppsTests	-
 Tests/SnapticKitTests/LineSplitterTests.swift	lead	K3	LineSplitterTests	-
 Tests/SnapticKitTests/ConfigModelTests.swift	lead	K3	ConfigModelTests	-
-Tests/SnapticKitTests/ConfigDisplaysTests.swift	lead	K3	ConfigDisplaysTests	-
-Tests/SnapticKitTests/KitLossyTests.swift	A	K3	KitLossyTests	-
+Tests/SnapticKitTests/ConfigDisplaysTests.swift	lead	L	-	-
+Tests/SnapticKitTests/KitLossyTests.swift	lead	L	-	-
 Tests/SnapticKitTests/KitTextTests.swift	A	K3	KitTextTests	-
 Tests/SnapticKitTests/KitControlTests.swift	A	K3	KitControlTests	-
+Tests/SnapticKitTests/KitKeyPathsTests.swift	A	L	-	-
 Tests/SnapticKitTests/KitHookPolicyTests.swift	A	K3	KitHookPolicyTests	-
 Tests/SnapticKitTests/KitLaunchStabilityTests.swift	A	K3	KitLaunchStabilityTests	-
 Tests/SnapticKitTests/KitArgsTests.swift	A	K3	KitArgsTests	-
@@ -245,7 +235,7 @@ Tests/SnapticKitTests/KitHotkeysTests.swift	A	L	-	-
 Tests/SnapticKitTests/KitBackupTests.swift	A	L	-	-
 Tests/SnapticKitTests/KitPipeQueueTests.swift	A	L	-	-
 Tests/SnapticKitTests/KitHostUITests.swift	A	L	-	-
-Tests/SnapticKitTests/ConfigModulesTests.swift	A	K3	ConfigModulesTests	-
+Tests/SnapticKitTests/ConfigModulesTests.swift	lead	L	-	-
 Tests/SnapticKitTests/ConfigAutomationTests.swift	A	K3	ConfigAutomationTests	-
 Tests/SnapticKitTests/ConfigSwitcherFeaturesTests.swift	A	K3	ConfigSwitcherFeaturesTests	-
 Tests/SnapticKitTests/LayoutModelTests.swift	B	K3	LayoutModelTests	-
@@ -265,6 +255,7 @@ Tests/SnapticKitTests/KitEncodingTests.swift	B	K3	KitEncodingTests	-
 Tests/SnapticKitTests/AuthProcessesTests.swift	B	K3	AuthProcessesTests	-
 Tests/SnapticKitTests/ConfigSafetyTests.swift	B	K3	ConfigSafetyTests	-
 Tests/SnapticKitTests/ConfigIdentityTests.swift	B	K3	ConfigIdentityTests	-
+Tests/SnapticKitTests/ConfirmChangesSectionControlsTests.swift	B	L	-	-
 Tests/SnapticKitTests/DDCPacketTests.swift	C	K3	DDCPacketTests	-
 Tests/SnapticKitTests/DDCReplyTests.swift	C	K3	DDCReplyTests	-
 Tests/SnapticKitTests/DDCCapabilitiesTests.swift	C	K3	DDCCapabilitiesTests	-
@@ -283,6 +274,9 @@ Sources/SnapticKit/MediaKeyPress.swift	C	L	-	-
 Sources/SnapticKit/BrightnessFirstRead.swift	C	L	-	-
 Tests/SnapticKitTests/MediaKeyPressTests.swift	C	L	-	-
 Tests/SnapticKitTests/BrightnessFirstReadTests.swift	C	L	-	-
+Sources/SnapticKit/LiveMailbox.swift	C	L	-	-
+Sources/SnapticKit/ProfileMenuOrder.swift	C	L	-	-
+Tests/SnapticKitTests/LiveMailboxTests.swift	C	L	-	-
 Tests/SnapticKitTests/SoCCapsTests.swift	D	K3	SoCCapsTests	-
 Tests/SnapticKitTests/ScaleMatchTests.swift	D	K3	ScaleMatchTests	-
 Tests/SnapticKitTests/LayoutPresetModelTests.swift	D	K3	LayoutPresetModelTests	-
@@ -299,12 +293,278 @@ Tests/SnapticKitTests/ConfigLayoutsTests.swift	D	K3	ConfigLayoutsTests	-
 Tests/SnapticKitTests/CubeLUTTests.swift	E	K3	CubeLUTTests	-
 Tests/SnapticKitTests/FilterSpecTests.swift	E	K3	FilterSpecTests	-
 Tests/SnapticKitTests/ConfigPIPTests.swift	E	K3	ConfigPIPTests	-
-Tests/SnapticKitTests/ConfigMenuTests.swift	F	K3	ConfigMenuTests	-
+Tests/SnapticKitTests/ConfigMenuTests.swift	M	K3	ConfigMenuTests	-
 Tests/SnapticKitTests/DisplaysUIModelTests.swift	F	L	-	-
 Sources/SnapticKit/ManagementIDs.swift	D	L	-	-
 Sources/SnapticKit/ArrangementMath.swift	D	L	-	-
 Tests/SnapticKitTests/ManagementIDsTests.swift	D	L	-	-
 Tests/SnapticKitTests/ArrangementMathTests.swift	D	L	-	-
+Sources/SnapticKit/ResolutionMenuPicks.swift	D	L	-	-
+Tests/SnapticKitTests/ResolutionMenuPicksTests.swift	D	L	-	-
+Sources/SnapticKit/TransactionLogText.swift	D	L	-	-
+Tests/SnapticKitTests/TransactionLogTextTests.swift	D	L	-	-
+Sources/SnapticKit/ManagementText.swift	D	L	-	-
+Tests/SnapticKitTests/ManagementTextTests.swift	D	L	-	-
+Tests/SnapticKitTests/VirtualScreenSpecFuzzTests.swift	D	L	-	-
+Tests/SnapticKitTests/ResolutionTypedValueTests.swift	D	L	-	-
 Sources/Snaptic/Displays/Management/ManagementSupport.swift	D	L	-	-
-Sources/Snaptic/Displays/UI/ManagementPageParts.swift	D	L	-	-
 Sources/Snaptic/Displays/Registries/DisplaySelectorResolver.swift	lead	L	-	-
+# 0.3 (PLAN 0.3 §6.2, R5): lead
+Sources/SnapticKit/AwakeFeatureGraph.swift	lead	L	-	-
+Sources/SnapticKit/Controls/ControlRegistry.swift	lead	L	-	-
+Sources/SnapticKit/Controls/ControlLegacy.swift	lead	L	-	-
+Sources/SnapticKit/Controls/ControlRemovals.swift	lead	L	-	-
+Sources/SnapticKit/Config/ConfigMigrations.swift	lead	L	-	-
+Sources/SnapticKit/Config/ConfigAwake.swift	lead	L	-	-
+Tests/SnapticKitTests/AwakeFeatureGraphTests.swift	lead	L	-	-
+Tests/SnapticKitTests/ControlRegistryTests.swift	lead	L	-	-
+Tests/SnapticKitTests/ConfigMigrationsTests.swift	lead	L	-	-
+Sources/SnapticKit/ToastPolicy.swift	lead	L	-	-
+Sources/SnapticKit/MigrationNotices.swift	lead	L	-	-
+Tests/SnapticKitTests/ToastPolicyTests.swift	lead	L	-	-
+Tests/SnapticKitTests/MigrationNoticesTests.swift	lead	L	-	-
+Tests/SnapticKitTests/ConfigAwakeTests.swift	lead	L	-	-
+Tests/SnapticKitTests/Support/ConfigFixtures.swift	lead	L	-	-
+Sources/Snaptic/Core/HostSignals.swift	lead	L	-	-
+Sources/Snaptic/Core/ConfigSlice.swift	lead	L	-	-
+Sources/Snaptic/Awake/AwakeModule.swift	lead	L	-	-
+Sources/Snaptic/Awake/AwakeContext.swift	lead	L	-	-
+Sources/Snaptic/Awake/AwakeContracts.swift	lead	L	-	-
+Sources/Snaptic/Awake/AwakeRuntimeState.swift	lead	L	-	-
+# 0.3: control tables (K21; owner fills `controls`)
+Sources/SnapticKit/Controls/GeneralPageControls.swift	H	K21	GeneralPageControls	general.page
+Sources/SnapticKit/Controls/GeneralAdvancedSheetControls.swift	H	K21	GeneralAdvancedSheetControls	general.advanced
+Sources/SnapticKit/Controls/PermissionsPageControls.swift	H	K21	PermissionsPageControls	permissions.page
+Sources/SnapticKit/Controls/AboutPageControls.swift	H	K21	AboutPageControls	about.page
+Sources/SnapticKit/Controls/OnboardingControls.swift	H	K21	OnboardingControls	onboarding
+Sources/SnapticKit/Controls/SwitcherPageControls.swift	H	K21	SwitcherPageControls	switcher.page
+Sources/SnapticKit/Controls/SwitcherAdvancedSheetControls.swift	H	K21	SwitcherAdvancedSheetControls	switcher.advanced
+Sources/SnapticKit/Controls/SwitcherShortcutsSheetControls.swift	H	K21	SwitcherShortcutsSheetControls	switcher.shortcuts
+Sources/SnapticKit/Controls/MenuBarPageControls.swift	M	K21	MenuBarPageControls	menubar.page
+Sources/SnapticKit/Controls/CustomizeMenuSheetControls.swift	M	K21	CustomizeMenuSheetControls	menubar.customize
+Sources/SnapticKit/Controls/StatusMenuControls.swift	M	K21	StatusMenuControls	menu.snaptic
+Sources/SnapticKit/Controls/DisplaysMenuBuilderControls.swift	M	K21	DisplaysMenuBuilderControls	menu.displays
+Sources/SnapticKit/Controls/DisplayMenuBlockControls.swift	M	K21	DisplayMenuBlockControls	menu.display
+Sources/SnapticKit/Controls/DisplaysPageControls.swift	F	K21	DisplaysPageControls	displays.root
+Sources/SnapticKit/Controls/DisplayDetailsSheetControls.swift	F	K21	DisplayDetailsSheetControls	displays.details
+Sources/SnapticKit/Controls/DisplaysAdvancedSheetControls.swift	F	K21	DisplaysAdvancedSheetControls	displays.advanced
+Sources/SnapticKit/Controls/DisplayInformationPageControls.swift	F	K21	DisplayInformationPageControls	displays.info
+Sources/SnapticKit/Controls/DisplayLiveControlsControls.swift	F	K21	DisplayLiveControlsControls	displays.panel
+Sources/SnapticKit/Controls/DisplaysOnboardingStepControls.swift	F	K21	DisplaysOnboardingStepControls	onboarding.displays
+Sources/SnapticKit/Controls/OverviewMenuItemsControls.swift	F	K21	OverviewMenuItemsControls	menu.display.f
+Sources/SnapticKit/Controls/BrightnessSubpageControls.swift	C	K21	BrightnessSubpageControls	displays.brightness
+Sources/SnapticKit/Controls/BrightnessAdvancedSheetControls.swift	C	K21	BrightnessAdvancedSheetControls	displays.brightness.advanced
+Sources/SnapticKit/Controls/ColorPageControls.swift	C	K21	ColorPageControls	displays.color
+Sources/SnapticKit/Controls/HardwareControlsPageControls.swift	C	K21	HardwareControlsPageControls	displays.hardware
+Sources/SnapticKit/Controls/KeyboardPageControls.swift	C	K21	KeyboardPageControls	displays.keyboard
+Sources/SnapticKit/Controls/BrightnessMenuItemsControls.swift	C	K21	BrightnessMenuItemsControls	menu.display.c
+Sources/SnapticKit/Controls/DDCMenuItemsControls.swift	C	K21	DDCMenuItemsControls	menu.display.c
+Sources/SnapticKit/Controls/ColorMenuItemsControls.swift	C	K21	ColorMenuItemsControls	menu.display.c
+Sources/SnapticKit/Controls/ResolutionSectionsControls.swift	D	K21	ResolutionSectionsControls	displays.resolution
+Sources/SnapticKit/Controls/MatchTextSizeSectionControls.swift	D	K21	MatchTextSizeSectionControls	displays.matchTextSize
+Sources/SnapticKit/Controls/ArrangeSheetControls.swift	D	K21	ArrangeSheetControls	displays.arrange
+Sources/SnapticKit/Controls/ConnectionSectionControls.swift	D	K21	ConnectionSectionControls	displays.connection
+Sources/SnapticKit/Controls/SavedLayoutsPageControls.swift	D	K21	SavedLayoutsPageControls	displays.layouts
+Sources/SnapticKit/Controls/VirtualDisplaysPageControls.swift	D	K21	VirtualDisplaysPageControls	displays.virtual
+Sources/SnapticKit/Controls/VirtualDisplayEditorSheetControls.swift	D	K21	VirtualDisplayEditorSheetControls	displays.virtual.editor
+Sources/SnapticKit/Controls/ResolutionMenuItemsControls.swift	D	K21	ResolutionMenuItemsControls	menu.display.d
+Sources/SnapticKit/Controls/VirtualMenuItemsControls.swift	D	K21	VirtualMenuItemsControls	menu.display.d
+Sources/SnapticKit/Controls/LayoutsMenuItemsControls.swift	D	K21	LayoutsMenuItemsControls	menu.display.d
+Sources/SnapticKit/Controls/ManagementMenuItemsControls.swift	D	K21	ManagementMenuItemsControls	menu.display.dm
+Sources/SnapticKit/Controls/PIPPageControls.swift	E	K21	PIPPageControls	displays.pip
+Sources/SnapticKit/Controls/PIPEditorSheetControls.swift	E	K21	PIPEditorSheetControls	displays.pip.editor
+Sources/SnapticKit/Controls/PIPMenuItemsControls.swift	E	K21	PIPMenuItemsControls	menu.display.e
+Sources/SnapticKit/Controls/AutomationsPageControls.swift	A	K21	AutomationsPageControls	displays.automations
+Sources/SnapticKit/Controls/HookEditorSheetControls.swift	A	K21	HookEditorSheetControls	displays.automations.hook
+Sources/SnapticKit/Controls/ActionEditorSheetControls.swift	A	K21	ActionEditorSheetControls	displays.automations.action
+Sources/SnapticKit/Controls/WindowSwitcherModuleControls.swift	A	K21	WindowSwitcherModuleControls	menu.switcher
+Sources/SnapticKit/Controls/AutomationMenuItemsControls.swift	A	K21	AutomationMenuItemsControls	menu.display.a
+Sources/SnapticKit/Controls/ConfirmChangesSectionControls.swift	B	K21	ConfirmChangesSectionControls	displays.advanced.confirm
+Sources/SnapticKit/Controls/PanicCoordinatorControls.swift	B	K21	PanicCoordinatorControls	menu.display.b
+Sources/SnapticKit/Controls/AwakePageControls.swift	G	K21	AwakePageControls	awake.page
+Sources/SnapticKit/Controls/AwakeAdvancedSheetControls.swift	G	K21	AwakeAdvancedSheetControls	awake.advanced
+Sources/SnapticKit/Controls/PresetEditorSheetControls.swift	G	K21	PresetEditorSheetControls	awake.sessions
+Sources/SnapticKit/Controls/TriggerEditorSheetControls.swift	G	K21	TriggerEditorSheetControls	awake.rule
+Sources/SnapticKit/Controls/CustomSessionPanelControls.swift	G	K21	CustomSessionPanelControls	awake.custom
+Sources/SnapticKit/Controls/AwakeHistoryPageControls.swift	G	K21	AwakeHistoryPageControls	awake.history
+Sources/SnapticKit/Controls/AwakeMenuRowsControls.swift	G	K21	AwakeMenuRowsControls	menu.awake
+Sources/SnapticKit/Controls/IndicatorControllerControls.swift	G	K21	IndicatorControllerControls	menu.awake.item
+Sources/SnapticKit/Controls/DrivesPageControls.swift	J	K21	DrivesPageControls	awake.drives
+# 0.3: G (Awake core)
+Sources/SnapticKit/AwakeSession.swift	G	S	AwakeSession	-
+Sources/SnapticKit/AwakeActivityGate.swift	G	S	AwakeActivityGate	-
+Sources/SnapticKit/AwakeClock.swift	G	S	AwakeClock	-
+Sources/SnapticKit/AwakeArbiter.swift	G	S	AwakeArbiter	-
+Sources/SnapticKit/AwakeGuards.swift	G	S	AwakeGuards	-
+Sources/SnapticKit/AwakeTriggers.swift	G	S	AwakeTriggers	-
+Sources/SnapticKit/AwakeTriggerEngine.swift	G	S	AwakeTriggerEngine	-
+Sources/SnapticKit/AwakeHistory.swift	G	S	AwakeHistory	-
+Sources/SnapticKit/AwakeSnapshot.swift	G	S	AwakeSnapshot	-
+Sources/SnapticKit/AwakeMigration.swift	G	S	AwakeMigration	-
+Sources/SnapticKit/AwakeCommandGrammar.swift	G	S	AwakeCommandGrammar	-
+Sources/SnapticKit/AwakeLogEvent.swift	G	S	AwakeLogEvent	-
+Sources/SnapticKit/Config/ConfigAwakeSessions.swift	G	S	ConfigAwakeSessions	-
+Sources/SnapticKit/Config/ConfigAwakeIndicator.swift	G	S	ConfigAwakeIndicator	-
+Tests/SnapticKitTests/AwakeSessionTests.swift	G	K3	AwakeSessionTests	-
+Tests/SnapticKitTests/AwakeActivityGateTests.swift	G	K3	AwakeActivityGateTests	-
+Tests/SnapticKitTests/AwakeClockTests.swift	G	K3	AwakeClockTests	-
+Tests/SnapticKitTests/AwakeArbiterTests.swift	G	K3	AwakeArbiterTests	-
+Tests/SnapticKitTests/AwakeGuardsTests.swift	G	K3	AwakeGuardsTests	-
+Tests/SnapticKitTests/AwakeTriggersTests.swift	G	K3	AwakeTriggersTests	-
+Tests/SnapticKitTests/AwakeTriggerEngineTests.swift	G	K3	AwakeTriggerEngineTests	-
+Tests/SnapticKitTests/AwakeHistoryTests.swift	G	K3	AwakeHistoryTests	-
+Tests/SnapticKitTests/AwakeSnapshotTests.swift	G	K3	AwakeSnapshotTests	-
+Tests/SnapticKitTests/AwakeMigrationTests.swift	G	K3	AwakeMigrationTests	-
+Tests/SnapticKitTests/AwakeCommandGrammarTests.swift	G	K3	AwakeCommandGrammarTests	-
+Tests/SnapticKitTests/AwakeLogEventTests.swift	G	K3	AwakeLogEventTests	-
+Tests/SnapticKitTests/ConfigAwakeSessionsTests.swift	G	K3	ConfigAwakeSessionsTests	-
+Tests/SnapticKitTests/ConfigAwakeIndicatorTests.swift	G	K3	ConfigAwakeIndicatorTests	-
+Sources/Snaptic/Awake/Core/AssertionManager.swift	G	S	AssertionManager	-
+Sources/Snaptic/Awake/Core/SessionController.swift	G	S	SessionController	-
+Sources/Snaptic/Awake/Core/GuardsController.swift	G	K17	GuardsController	guards
+Sources/Snaptic/Awake/Core/TriggerController.swift	G	K17	TriggerController	triggers
+Sources/Snaptic/Awake/Core/Ticker.swift	G	K5	Ticker	-
+Sources/Snaptic/Awake/Core/HistoryController.swift	G	K17	HistoryController	history
+Sources/Snaptic/Awake/Core/AwakeAutomation.swift	G	K17	AwakeAutomation	automation
+Sources/Snaptic/Awake/Core/AwakeDiagnostics.swift	G	K5	AwakeDiagnostics	-
+Sources/Snaptic/Awake/UI/IndicatorController.swift	G	S	IndicatorController	-
+Sources/Snaptic/Awake/UI/AwakeMenuRows.swift	G	K5	AwakeMenuRows	-
+Sources/Snaptic/Awake/UI/CustomSessionPanel.swift	G	K19	CustomSessionPanel	Custom Session
+Sources/Snaptic/Awake/UI/AwakePage.swift	G	K18	AwakePage	Awake
+Sources/Snaptic/Awake/UI/PresetEditorSheet.swift	G	K19	PresetEditorSheet	Session
+Sources/Snaptic/Awake/UI/TriggerEditorSheet.swift	G	K19	TriggerEditorSheet	Rule
+Sources/Snaptic/Awake/UI/CriterionEditors.swift	G	K18	CriterionEditors	Conditions;TriggerEditorSheet
+Sources/Snaptic/Awake/UI/AwakeAdvancedSheet.swift	G	K19	AwakeAdvancedSheet	Awake Advanced Settings
+Sources/Snaptic/Awake/UI/OtherAssertionsSection.swift	G	K18	OtherAssertionsSection	Other apps keeping your Mac awake;AwakeAdvancedSheet
+Sources/Snaptic/Awake/UI/AwakeHistoryPage.swift	G	K18	AwakeHistoryPage	History
+Sources/SnapticKit/AwakeSessionPolicy.swift	G	L	-	-
+Sources/SnapticKit/AwakePresentation.swift	G	L	-	-
+Tests/SnapticKitTests/AwakeSessionPolicyTests.swift	G	L	-	-
+Tests/SnapticKitTests/AwakePresentationTests.swift	G	L	-	-
+Sources/Snaptic/Awake/Core/AwakeFormat.swift	G	L	-	-
+Sources/Snaptic/Awake/UI/AwakeStatusSection.swift	G	L	-	-
+Sources/Snaptic/Awake/UI/AwakeShortcutsSheet.swift	G	L	-	-
+# 0.3: J (Awake sources)
+Sources/SnapticKit/CPUMath.swift	J	S	CPUMath	-
+Sources/SnapticKit/PowerMath.swift	J	S	PowerMath	-
+Sources/SnapticKit/NetworkMath.swift	J	S	NetworkMath	-
+Sources/SnapticKit/DiskMath.swift	J	S	DiskMath	-
+Sources/SnapticKit/ActivityPolicy.swift	J	S	ActivityPolicy	-
+Sources/SnapticKit/DriveAlivePolicy.swift	J	S	DriveAlivePolicy	-
+Sources/SnapticKit/DrivesPageModel.swift	J	L	-	-
+Sources/SnapticKit/Config/ConfigAwakeDevices.swift	J	S	ConfigAwakeDevices	-
+Tests/SnapticKitTests/CPUMathTests.swift	J	K3	CPUMathTests	-
+Tests/SnapticKitTests/PowerMathTests.swift	J	K3	PowerMathTests	-
+Tests/SnapticKitTests/NetworkMathTests.swift	J	K3	NetworkMathTests	-
+Tests/SnapticKitTests/DiskMathTests.swift	J	K3	DiskMathTests	-
+Tests/SnapticKitTests/ActivityPolicyTests.swift	J	K3	ActivityPolicyTests	-
+Tests/SnapticKitTests/DriveAlivePolicyTests.swift	J	K3	DriveAlivePolicyTests	-
+Tests/SnapticKitTests/DrivesPageModelTests.swift	J	L	-	-
+Tests/SnapticKitTests/ConfigAwakeDevicesTests.swift	J	K3	ConfigAwakeDevicesTests	-
+Sources/SnapticKit/OtherAssertions.swift	J	S	OtherAssertions	-
+Tests/SnapticKitTests/OtherAssertionsTests.swift	J	K3	OtherAssertionsTests	-
+Sources/Snaptic/Awake/Sources/PowerMonitor.swift	J	S	PowerMonitor	-
+Sources/Snaptic/Awake/Sources/SystemEventsMonitor.swift	J	S	SystemEventsMonitor	-
+Sources/Snaptic/Awake/Sources/AppMonitor.swift	J	K16	AppMonitor	app
+Sources/Snaptic/Awake/Sources/DisplayPresence.swift	J	K16	DisplayPresence	display
+Sources/Snaptic/Awake/Sources/USBWatcher.swift	J	K16	USBWatcher	usb
+Sources/Snaptic/Awake/Sources/VolumeMonitor.swift	J	K16	VolumeMonitor	volume
+Sources/Snaptic/Awake/Sources/AudioMonitor.swift	J	K16	AudioMonitor	audio
+Sources/Snaptic/Awake/Sources/CPUSampler.swift	J	K16	CPUSampler	cpu
+Sources/Snaptic/Awake/Sources/IdleSampler.swift	J	K16	IdleSampler	idle
+Sources/Snaptic/Awake/Sources/NetworkMonitor.swift	J	K16	NetworkMonitor	network,networkActivity
+Sources/Snaptic/Awake/Sources/BluetoothPresence.swift	J	K16	BluetoothPresence	bluetooth
+Sources/Snaptic/Awake/Sources/DiskIOSampler.swift	J	K15	DiskIOSampler	-
+Sources/Snaptic/Awake/Sources/SourceSupport.swift	J	L	-	-
+Sources/Snaptic/Awake/Sources/ActivitySimulator.swift	J	S	ActivitySimulator	-
+Sources/Snaptic/Awake/Sources/DriveAliveService.swift	J	S	DriveAliveService	-
+Sources/Snaptic/Awake/Sources/OtherAssertionsReader.swift	J	K5	OtherAssertionsReader	-
+Sources/Snaptic/Awake/Sources/ProcessWatch.swift	J	S	ProcessWatch	-
+Sources/Snaptic/Awake/Core/ActivityController.swift	J	K17	ActivityController	activity
+Sources/Snaptic/Awake/Core/DriveAliveController.swift	J	K17	DriveAliveController	driveAlive
+Sources/Snaptic/Awake/UI/DrivesPage.swift	J	K18	DrivesPage	Drives
+# 0.3: H (Settings UI)
+Sources/SnapticKit/SliderMath.swift	H	S	SliderMath	-
+Sources/SnapticKit/SettingsIndex.swift	H	S	SettingsIndex	-
+Sources/SnapticKit/SettingsShellRules.swift	H	L	-	-
+Sources/SnapticKit/SettingsPageRules.swift	H	L	-	-
+Tests/SnapticKitTests/SliderMathTests.swift	H	K3	SliderMathTests	-
+Tests/SnapticKitTests/SettingsIndexTests.swift	H	K3	SettingsIndexTests	-
+Tests/SnapticKitTests/SettingsShellRulesTests.swift	H	L	-	-
+Tests/SnapticKitTests/SettingsPageRulesTests.swift	H	L	-	-
+Sources/Snaptic/SettingsUI/SettingsIcon.swift	H	S	SettingsIcon	-
+Sources/Snaptic/SettingsUI/SettingsPageHeader.swift	H	S	SettingsPageHeader	-
+Sources/Snaptic/SettingsUI/FeatureHighlights.swift	H	S	FeatureHighlights	-
+Sources/Snaptic/SettingsUI/SettingRow.swift	H	S	SettingRow	-
+Sources/Snaptic/SettingsUI/ToggleSetting.swift	H	S	ToggleSetting	-
+Sources/Snaptic/SettingsUI/SliderSetting.swift	H	S	SliderSetting	-
+Sources/Snaptic/SettingsUI/NumberField.swift	H	S	NumberField	-
+Sources/Snaptic/SettingsUI/StepperSetting.swift	H	S	StepperSetting	-
+Sources/Snaptic/SettingsUI/PickerSetting.swift	H	S	PickerSetting	-
+Sources/Snaptic/SettingsUI/GlyphTilePicker.swift	H	S	GlyphTilePicker	-
+Sources/Snaptic/SettingsUI/ActionMenuButton.swift	H	S	ActionMenuButton	-
+Sources/Snaptic/SettingsUI/InfoButton.swift	H	S	InfoButton	-
+Sources/Snaptic/SettingsUI/NavigationRow.swift	H	S	NavigationRow	-
+Sources/Snaptic/SettingsUI/ButtonRow.swift	H	S	ButtonRow	-
+Sources/Snaptic/SettingsUI/StatusRow.swift	H	S	StatusRow	-
+Sources/Snaptic/SettingsUI/PerDisplayPicker.swift	H	S	PerDisplayPicker	-
+Sources/Snaptic/SettingsUI/PageFooterButtons.swift	H	S	PageFooterButtons	-
+Sources/Snaptic/SettingsUI/AdvancedSheet.swift	H	S	AdvancedSheet	-
+Sources/Snaptic/SettingsUI/ReorderableList.swift	H	S	ReorderableList	-
+Sources/Snaptic/SettingsUI/AppListEditor.swift	H	S	AppListEditor	-
+Sources/Snaptic/SettingsUI/ShortcutSetting.swift	H	S	ShortcutSetting	-
+Sources/Snaptic/SettingsUI/EmptyListView.swift	H	S	EmptyListView	-
+Sources/Snaptic/SettingsUI/SettingsPageScaffold.swift	H	S	SettingsPageScaffold	-
+Sources/Snaptic/SettingsUI/SettingsAnchor.swift	H	S	SettingsAnchor	-
+Sources/Snaptic/SettingsUI/SettingsBinding.swift	H	S	SettingsBinding	-
+Sources/Snaptic/SettingsUI/SettingsShell.swift	H	S	SettingsShell	-
+Sources/Snaptic/SettingsUI/SettingsSearchView.swift	H	S	SettingsSearchView	-
+Sources/Snaptic/SettingsUI/ModuleSwitchRow.swift	H	L	-	-
+Sources/Snaptic/SettingsUI/SafeModeLeave.swift	H	L	-	-
+# 0.3: M (menu system)
+Sources/SnapticKit/MenuLayout.swift	M	S	MenuLayout	-
+Tests/SnapticKitTests/MenuLayoutTests.swift	M	K3	MenuLayoutTests	-
+Sources/SnapticKit/DisplaysMenuPlan.swift	M	L	-	-
+Tests/SnapticKitTests/DisplaysMenuPlanTests.swift	M	L	-	-
+Sources/Snaptic/Core/MenuKit.swift	M	S	MenuKit	-
+Sources/Snaptic/Core/MenuSliderRow.swift	M	S	MenuSliderRow	-
+Sources/Snaptic/Core/MenuSwitchHeader.swift	M	S	MenuSwitchHeader	-
+Sources/Snaptic/Core/MenuBarPage.swift	M	K18	MenuBarPage	Menu Bar
+Sources/Snaptic/Core/CustomizeMenuSheet.swift	M	K19	CustomizeMenuSheet	Customize Displays Menu
+# 0.3: Displays owners
+Sources/Snaptic/Displays/UI/DisplaysPage.swift	F	K18	DisplaysPage	Displays
+Sources/Snaptic/Displays/UI/DisplayLiveControls.swift	F	K18	DisplayLiveControls	Display Controls
+Sources/Snaptic/Displays/UI/DisplayDetailsSheet.swift	F	K19	DisplayDetailsSheet	Display Details
+Sources/Snaptic/Displays/UI/DisplaysAdvancedSheet.swift	F	K19	DisplaysAdvancedSheet	Displays Advanced Settings
+Sources/Snaptic/Displays/UI/DisplaysFeatureGroups.swift	F	K18	DisplaysFeatureGroups	Use Snaptic For;DisplaysAdvancedSheet
+Sources/Snaptic/Displays/UI/DisplayInformationPage.swift	F	K18	DisplayInformationPage	Display Information
+Sources/Snaptic/Displays/UI/OverviewMenuItems.swift	F	K9	OverviewMenuItems	-
+Sources/Snaptic/Displays/UI/BrightnessSubpage.swift	C	K18	BrightnessSubpage	Brightness and Dimming
+Sources/Snaptic/Displays/UI/BrightnessSections.swift	C	K18	BrightnessSections	Brightness;BrightnessSubpage
+Sources/Snaptic/Displays/UI/BrightnessAdvancedSheet.swift	C	K19	BrightnessAdvancedSheet	Brightness Advanced Settings
+Sources/Snaptic/Displays/UI/HardwareControlsPage.swift	C	K18	HardwareControlsPage	Hardware Controls
+Sources/Snaptic/Displays/UI/KeyboardPage.swift	C	K18	KeyboardPage	Keyboard
+Sources/Snaptic/Displays/UI/ColorMenuItems.swift	C	K9	ColorMenuItems	-
+Sources/Snaptic/Displays/Live/DisplayLiveController.swift	C	S	DisplayLiveController	-
+Sources/SnapticKit/DisplaySettingsRules.swift	C	L	-	-
+Tests/SnapticKitTests/DisplaySettingsRulesTests.swift	C	L	-	-
+Sources/SnapticKit/Controls/MenuBarOverlaysSectionControls.swift	C	K21	MenuBarOverlaysSectionControls	displays.overlays
+Sources/Snaptic/Displays/UI/DisplayPageSupport.swift	C	L	-	-
+Sources/Snaptic/Displays/UI/KeyboardShortcutsSheet.swift	C	L	-	-
+Sources/Snaptic/Displays/UI/MenuBarOverlaysSection.swift	C	L	-	-
+Sources/Snaptic/Displays/UI/ResolutionSections.swift	D	K18	ResolutionSections	Resolution
+Sources/Snaptic/Displays/UI/ResolutionOptionsSection.swift	D	K18	ResolutionOptionsSection	Resolution Options;ResolutionSections
+Sources/Snaptic/Displays/UI/ResolutionFiltersSection.swift	D	L	-	-
+Sources/Snaptic/Displays/UI/MatchTextSizeSection.swift	D	K18	MatchTextSizeSection	Match Text Size
+Sources/Snaptic/Displays/UI/ArrangeSheet.swift	D	K19	ArrangeSheet	Arrange Displays
+Sources/Snaptic/Displays/UI/SavedLayoutsPage.swift	D	K18	SavedLayoutsPage	Saved Layouts
+Sources/Snaptic/Displays/UI/VirtualDisplaysPage.swift	D	K18	VirtualDisplaysPage	Virtual Displays
+Sources/Snaptic/Displays/UI/VirtualDisplayEditorSheet.swift	D	K19	VirtualDisplayEditorSheet	Virtual Display
+Sources/Snaptic/Displays/UI/ConnectionSection.swift	D	K18	ConnectionSection	Connection
+Sources/Snaptic/Displays/UI/ManagementMenuItems.swift	D	K9	ManagementMenuItems	-
+Sources/Snaptic/Displays/UI/PIPEditorSheet.swift	E	K19	PIPEditorSheet	Picture in Picture
+Sources/Snaptic/Displays/UI/ConfirmChangesSection.swift	B	K18	ConfirmChangesSection	Confirm Display Changes
+Sources/Snaptic/Displays/UI/AutomationsPage.swift	A	K18	AutomationsPage	Automations
+Sources/Snaptic/Displays/UI/HookEditorSheet.swift	A	K19	HookEditorSheet	Hook
+Sources/Snaptic/Displays/UI/ActionEditorSheet.swift	A	K19	ActionEditorSheet	Action
+Sources/Snaptic/Displays/UI/AutomationMenuItems.swift	A	K9	AutomationMenuItems	-

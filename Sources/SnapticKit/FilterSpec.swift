@@ -72,6 +72,65 @@ package struct FilterParameter: Equatable, Sendable {
         guard value.isFinite else { return defaultValue }
         return Swift.min(max, Swift.max(min, value))
     }
+
+    /// How Settings shows this value as a `SliderSetting` (0.3 §4.1): the title with its unit where `ValueFormat` has
+    /// none ("Angle (°)", "Radius (px)"), the format of the typed field, and the step. The step is dropped when the
+    /// default wouldn't sit on its grid, so the default is always reachable.
+    package var sliderStyle: FilterSliderStyle {
+        let span = max - min
+        var format: ValueFormat
+        var step: Double?
+        var title = self.title
+        switch unit {
+        case .degrees:
+            format = .plain(digits: 0)
+            step = 1
+            title = L("\(self.title) (°)")
+        case .kelvin:
+            format = .kelvin
+            step = 50
+        case .pixels:
+            format = .plain(digits: 1)
+            step = 0.5
+            title = L("\(self.title) (px)")
+        case .ev:
+            format = .plain(digits: 2)
+            step = 0.05
+            title = L("\(self.title) (EV)")
+        case .none:
+            let integral = [min, max, defaultValue].allSatisfy { $0.rounded() == $0 }
+            if integral && span >= 10 {
+                format = .plain(digits: 0)
+                step = 1
+            } else {
+                format = .plain(digits: 2)
+                step = 0.01
+            }
+        }
+        if let s = step, !(s > 0 && s < span && FilterParameter.onGrid(defaultValue, from: min, step: s)) {
+            step = nil
+            if case .plain(let digits) = format, digits == 0 { format = .plain(digits: 1) }
+        }
+        return FilterSliderStyle(title: title, format: format, step: step)
+    }
+
+    private static func onGrid(_ value: Double, from origin: Double, step: Double) -> Bool {
+        let n = (value - origin) / step
+        return abs(n - n.rounded()) < 1e-6
+    }
+}
+
+/// A filter parameter's slider in Settings (`FilterParameter.sliderStyle`).
+package struct FilterSliderStyle: Equatable, Sendable {
+    package let title: String
+    package let format: ValueFormat
+    package let step: Double?
+
+    package init(title: String, format: ValueFormat, step: Double?) {
+        self.title = title
+        self.format = format
+        self.step = step
+    }
 }
 
 /// A fixed (non-user) vector or color input.

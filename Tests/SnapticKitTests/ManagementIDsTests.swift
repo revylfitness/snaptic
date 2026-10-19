@@ -6,7 +6,17 @@ final class ManagementIDsTests: XCTestCase {
         let ids = DisplayActionID.managementActions
         XCTAssertEqual(Set(ids).count, ids.count)
         XCTAssertTrue(ids.allSatisfy { $0.rawValue.hasPrefix("d.") })
-        XCTAssertEqual(ids.count, 21 + 5 + 9 + 8)
+        XCTAssertEqual(ids.count, 20 + 5 + 9 + 8)
+    }
+
+    /// 0.2's display-sleep toggle moved to Awake (§2.13, R5-12): retired, never a management action, and the id M1
+    /// reads from raw 0.2 JSON.
+    func testSleepPreventionToggleIsRetired() {
+        let retired = DisplayActionID(rawValue: AwakeMigration.legacyToggleAction)
+        XCTAssertEqual(DisplayActionID.retiredActions, [retired])
+        XCTAssertEqual(retired.rawValue, "d.sleepPreventionToggle")
+        XCTAssertFalse(DisplayActionID.managementActions.contains(retired))
+        XCTAssertFalse(DisplayMenuItemID.managementItems.map(\.rawValue).contains("d.sleepPrevention"))
     }
 
     func testNumberedIDsClamp() {

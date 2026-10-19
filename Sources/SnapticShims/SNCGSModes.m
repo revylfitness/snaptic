@@ -6,7 +6,6 @@
 
 typedef void (*SNCGSCountFn)(uint32_t display, int *count);
 typedef void (*SNCGSDescribeFn)(uint32_t display, int index, void *out, int length);
-typedef void (*SNCGSCurrentFn)(uint32_t display, int *mode);
 
 #define kSNCGSRecordLength 0xD4
 #define kSNCGSMaxModes 4096
@@ -34,13 +33,6 @@ typedef void (*SNCGSCurrentFn)(uint32_t display, int *mode);
         [records addObject:[NSData dataWithBytes:buffer length:kSNCGSRecordLength]];
     }
     return records;
-}
-
-+ (int32_t)currentModeForDisplay:(uint32_t)display currentFunction:(const void *)currentFunction {
-    if (currentFunction == NULL) { return -1; }
-    int mode = -1;
-    ((SNCGSCurrentFn)currentFunction)(display, &mode);
-    return mode < 0 ? -1 : (int32_t)mode;
 }
 
 @end

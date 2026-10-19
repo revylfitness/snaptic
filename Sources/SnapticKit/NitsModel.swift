@@ -83,4 +83,17 @@ package enum NitsModel {
         let text = String(Int(max(0, rounded))) + " " + L("nits")
         return estimate ? "≈" + text : text
     }
+
+    /// Whether nits are shown anywhere (the brightness indicator, the Brightness and Dimming header): the single
+    /// control "Show brightness in nits" (`brightness.showNits`, PLAN 0.3 §4.4 #3) with the nits model running.
+    /// The legacy `keys.osdShowNits` has no say (merged once by migration M5).
+    package static func shows(showNits: Bool, nitsEffective: Bool) -> Bool { showNits && nitsEffective }
+
+    /// The brightness indicator's second line: the nits when they're shown and known; above 100% "Extra
+    /// brightness" when they aren't; otherwise none.
+    package static func indicatorDetail(showNits: Bool, nitsEffective: Bool, nits: (value: Double, estimate: Bool)?,
+                                        extra: Bool) -> String? {
+        if shows(showNits: showNits, nitsEffective: nitsEffective), let nits { return label(nits.value, estimate: nits.estimate) }
+        return extra ? L("Extra brightness") : nil
+    }
 }

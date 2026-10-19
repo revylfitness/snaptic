@@ -4,13 +4,12 @@ import SnapticKit
 
 /// Menu-bar strip (a black band behind the menu bar, hiding the notch) and rounded corner
 /// overlays, per display (PLAN §2.1 `menuBarOverlays`, parity §5.7). Panic removes them.
-@MainActor final class MenuBarOverlaysController: DisplayFeatureController, PanicParticipant, DiagnosticsContributor,
-    DisplayMenuContributor {
+@MainActor final class MenuBarOverlaysController: DisplayFeatureController, PanicParticipant, DiagnosticsContributor {
     static var id: DisplayControllerID { .menuBarOverlays }
     static var privateSymbols: [PrivateSymbol] { [] }
 
     static let stripAction = DisplayActionID(rawValue: "c.menuBarStrip")
-    static let stripItem = DisplayMenuItemID(rawValue: "c.menuBarStrip.toggle")
+    static var observedSections: Set<DisplaysConfigSection> { [.perDisplayColor] }
 
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
@@ -20,6 +19,7 @@ import SnapticKit
     private var corners: [DisplayKey: OverlayToken] = [:]
     /// After a panic, overlays stay off until the user changes a setting.
     private var heldByPanic = false
+    private var menuItems: ColorMenuItems?
 
     init() {}
 
@@ -32,9 +32,11 @@ import SnapticKit
         self.lifetime = lifetime
         heldByPanic = false
         context.registerPanic(self, lifetime: lifetime)
-        context.diagnostics.register(self, section: L("Menu-bar overlays"), lifetime: lifetime)
-        context.menus.register(self, lifetime: lifetime)
-        context.actions.register(Action(id: Self.stripAction, title: L("Toggle Menu-Bar Strip"), feature: .menuBarOverlays,
+        context.diagnostics.register(self, section: L("Menu bar overlays"), lifetime: lifetime)
+        let items = ColorMenuItems(context: context, part: .menuBarOverlays, owner: self)
+        menuItems = items
+        context.menus.register(items, lifetime: lifetime)
+        context.actions.register(Action(id: Self.stripAction, title: DisplaysToggleText.blackMenuBarBackground, feature: .menuBarOverlays,
                                         cliAllowed: false) { [weak self] target in self?.toggleStrip(target) }, lifetime: lifetime)
         context.registry.changes
             .receive(on: DispatchQueue.main)
@@ -49,12 +51,15 @@ import SnapticKit
         if old.perDisplay.values.mapValues(\.color) != new.perDisplay.values.mapValues(\.color) {
             heldByPanic = false
             sync(rebuild: true)
+            context?.runtime.revision(.menuBarOverlays).bump()
+            context?.requestMenuRebuild()
         }
     }
 
     func stop() {
         sinks.removeAll()
         removeAll()
+        menuItems = nil
         lifetime = nil
         context = nil
     }
@@ -62,6 +67,7 @@ import SnapticKit
     func panicRestore() {
         heldByPanic = true
         removeAll()
+        context?.runtime.revision(.menuBarOverlays).bump()
     }
 
     private func removeAll() {
@@ -123,18 +129,6 @@ import SnapticKit
 
     // MARK: Menu
 
-    var descriptors: [DisplayMenuItemDescriptor] {
-        [DisplayMenuItemDescriptor(id: Self.stripItem, title: L("Menu-bar strip"), slot: .display, defaultVisibility: .inSubmenu)]
-    }
-
-    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] {
-        guard let context, display.mirrorOf == nil else { return [] }
-        let key = display.key
-        let on = context.config.value.perDisplay[key]?.color.menuBarStrip ?? false
-        return [(Self.stripItem, CMenu.item(L("Black Menu-Bar Strip"), on: on) { [weak self] in self?.toggleStrip(.display(key)) })]
-    }
-
-    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
 
     func diagnostics() -> [(String, String)] {
         [("Strips", String(strips.count)), ("Rounded corners", String(corners.count)), ("Held by panic", heldByPanic ? "yes" : "no")]

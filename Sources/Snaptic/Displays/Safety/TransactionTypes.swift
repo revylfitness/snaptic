@@ -86,9 +86,3 @@ struct TransactionReport {
     /// Uptime seconds.
     let at: Double
 }
-
-/// How a pending trial ended.
-enum TrialResolution: Equatable {
-    case keep
-    case revert(String)
-}

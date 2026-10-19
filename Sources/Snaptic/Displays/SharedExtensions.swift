@@ -32,11 +32,16 @@ extension CGDirectDisplayID {
     }
 
     /// Online displays, or [] if the query fails.
-    static func online() -> [CGDirectDisplayID] {
+    static func online() -> [CGDirectDisplayID] { onlineOrNil() ?? [] }
+
+    /// Online displays (at most 64), [] when none are online, or nil when the query fails, for callers that treat
+    /// a failed read as "unknown" rather than "no displays" (Awake's display criteria).
+    static func onlineOrNil() -> [CGDirectDisplayID]? {
         var count: UInt32 = 0
-        guard CGGetOnlineDisplayList(0, nil, &count) == .success, count > 0 else { return [] }
-        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
-        guard CGGetOnlineDisplayList(count, &ids, &count) == .success else { return [] }
+        guard CGGetOnlineDisplayList(0, nil, &count) == .success else { return nil }
+        guard count > 0 else { return [] }
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(Swift.min(count, 64)))
+        guard CGGetOnlineDisplayList(UInt32(ids.count), &ids, &count) == .success else { return nil }
         return Array(ids.prefix(Int(count)))
     }
 }

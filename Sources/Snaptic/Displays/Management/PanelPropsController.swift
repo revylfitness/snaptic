@@ -1,16 +1,22 @@
 import AppKit
+import Combine
 import SnapticKit
 
 /// Rotation, underscan and HDR (PLAN §9.6, R5.2): always trials, journaled by the queue as
 /// MonitorPanel steps; refused when the safety helper can't revert them, and HDR/underscan
 /// are refused on the only strongly visible display. Panic doesn't touch them (R5.4).
-@MainActor final class PanelPropsController: DisplayFeatureController, DisplayMenuContributor, DiagnosticsContributor {
+@MainActor final class PanelPropsController: DisplayFeatureController, DiagnosticsContributor {
     static var id: DisplayControllerID { .panelProps }
     static var privateSymbols: [PrivateSymbol] { [] }
+    /// Reads no config: rotation, HDR and underscan are live panel state (0.3 §4.5).
+    static var observedSections: Set<DisplaysConfigSection> { [] }
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
     private var lifetime: Lifetime?
     private(set) var effective: Set<DisplayFeature> = []
+    /// Held here: the menu registry keeps contributors weakly.
+    private var menu: ManagementMenuItems?
+    private var sinks: [AnyCancellable] = []
 
     static let rotations = [0, 90, 180, 270]
 
@@ -27,21 +33,31 @@ import SnapticKit
         self.context = context
         self.lifetime = lifetime
         self.effective = effective
-        context.menus.register(self, lifetime: lifetime)
-        context.diagnostics.register(self, section: L("Rotation, underscan and HDR"), lifetime: lifetime)
+        let items = ManagementMenuItems(context: context)
+        items.panelProps = self
+        menu = items
+        context.menus.register(items, lifetime: lifetime)
+        context.diagnostics.register(self, section: ManagementText.panelPropertiesSection, lifetime: lifetime)
         context.connectPlanner.attach(self, lifetime: lifetime)
         registerActions(context, lifetime: lifetime)
         registerCommands(context, lifetime: lifetime)
+        // Rotation, HDR and underscan also change outside Snaptic (System Settings, a replug): pages re-read.
+        context.registry.changes
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.context?.runtime.revision(Self.id).bump() } }
+            .store(in: &sinks)
     }
 
     func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) {
         self.effective = effective
-        context?.requestMenuRebuild()
+        changed()
     }
 
     func configDidChange(from old: DisplaysConfig, to new: DisplaysConfig) {}
 
     func stop() {
+        sinks.removeAll()
+        menu = nil
         lifetime = nil
         context = nil
         effective = []
@@ -57,14 +73,14 @@ import SnapticKit
     func refusal(_ feature: DisplayFeature, for d: DisplayInfo) -> String? {
         guard let ctx = context else { return L("Displays is off") }
         guard effective.contains(feature) else { return L("This feature is off") }
-        guard ctx.guardClient.canMonitorPanel else { return L("Safety helper can't revert this") }
+        guard ctx.guardClient.canMonitorPanel else { return L("Safety helper can’t revert this") }
         let group = feature == .rotation ? "rotation" : feature == .hdrToggle ? "hdr" : "underscan"
         guard ctx.privateAPI.monitorPanelSupports(group) else { return L("Not supported on this Mac") }
         switch feature {
         case .rotation:
-            if d.isBuiltin { return L("The built-in display can't be rotated") }
+            if d.isBuiltin { return L("The built-in display can’t be rotated") }
         case .hdrToggle:
-            if d.hdrSupported != true { return L("This display doesn't support HDR") }
+            if d.hdrSupported != true { return L("This display doesn’t support HDR") }
             if ManagedDisplays.onlyStronglyVisible(ctx) == d.key { return L("Refused on the only visible display") }
         case .underscan:
             if ManagedDisplays.onlyStronglyVisible(ctx) == d.key { return L("Refused on the only visible display") }
@@ -83,7 +99,14 @@ import SnapticKit
         ManagedTransactions.submit(ctx, TransactionRequest(label: label, risk: .trial, changes: [change(d)], finalScope: .permanently),
                                    lifetime: lifetime) { [weak self] outcome in
             self?.context?.connectPlanner.endUserChange(changed: outcome == .applied || outcome == .kept)
+            self?.changed()
         }
+    }
+
+    /// Page-visible state changed: one revision bump and a menu rebuild.
+    private func changed() {
+        context?.runtime.revision(Self.id).bump()
+        context?.requestMenuRebuild()
     }
 
     func rotate(_ key: DisplayKey, to degrees: Int) {
@@ -105,51 +128,6 @@ import SnapticKit
         submit(.underscan, key, label: L("Change underscan")) { .underscan($0.hardwareID, v) }
     }
 
-    // MARK: Menu
-
-    var descriptors: [DisplayMenuItemDescriptor] {
-        [DisplayMenuItemDescriptor(id: .dRotationMenu, title: L("Rotation"), slot: .display, defaultVisibility: .inSubmenu),
-         DisplayMenuItemDescriptor(id: .dHDRToggle, title: L("HDR"), slot: .display, defaultVisibility: .inSubmenu),
-         DisplayMenuItemDescriptor(id: .dUnderscanMenu, title: L("Underscan"), slot: .display, defaultVisibility: .inSubmenu)]
-    }
-
-    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] {
-        let key = display.key
-        var items: [(DisplayMenuItemID, NSMenuItem)] = []
-        if effective.contains(.rotation), !display.isBuiltin, display.isActive {
-            let current = rotation(display)
-            let enabled = refusal(.rotation, for: display) == nil
-            let sub = Self.rotations.map { deg in
-                ManagedMenuItem(deg == 0 ? L("Standard") : "\(deg)°", on: deg == current, enabled: enabled) { [weak self] in
-                    self?.rotate(key, to: deg)
-                }
-            }
-            items.append((.dRotationMenu, ManagedMenuItem.submenu(L("Rotation"), items: sub)))
-        }
-        if effective.contains(.hdrToggle), display.hdrSupported == true {
-            let on = hdrEnabled(display) == true
-            items.append((.dHDRToggle, ManagedMenuItem(L("High Dynamic Range"), on: on, enabled: refusal(.hdrToggle, for: display) == nil) {
-                [weak self] in self?.setHDR(key, !on)
-            }))
-        }
-        // Same rule as the Arrangement page: shown where macOS reports underscan, or for externals.
-        if effective.contains(.underscan), display.isActive, underscan(display) != nil || !display.isBuiltin {
-            let current = UnderscanSteps.nearest(underscan(display))
-            let why = refusal(.underscan, for: display)
-            let sub = UnderscanSteps.values.map { step -> NSMenuItem in
-                let item = ManagedMenuItem(UnderscanSteps.title(step), on: step == current, enabled: why == nil) { [weak self] in
-                    self?.setUnderscan(key, step)
-                }
-                item.toolTip = why
-                return item
-            }
-            items.append((.dUnderscanMenu, ManagedMenuItem.submenu(L("Underscan"), items: sub)))
-        }
-        return items
-    }
-
-    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
-
     // MARK: Actions / CLI
 
     private func registerActions(_ ctx: DisplaysContext, lifetime: Lifetime) {
@@ -157,7 +135,7 @@ import SnapticKit
             guard let self, let ctx = self.context else { return }
             ManagedDisplays.resolve(ctx, t).forEach { self.rotateNext($0.key) }
         }, lifetime: lifetime)
-        ctx.actions.register(Action(id: .dHDRToggle, title: L("Toggle HDR"), feature: .hdrToggle, cliAllowed: true) { [weak self] t in
+        ctx.actions.register(Action(id: .dHDRToggle, title: ManagementText.highDynamicRangeOnOff, feature: .hdrToggle, cliAllowed: true) { [weak self] t in
             guard let self, let ctx = self.context else { return }
             for d in ManagedDisplays.resolve(ctx, t) { self.setHDR(d.key, !(self.hdrEnabled(d) ?? false)) }
         }, lifetime: lifetime)
@@ -165,7 +143,7 @@ import SnapticKit
 
     private func registerCommands(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("rotate", policy: .trial, offOnly: false, cliAllowed: true, summary: L("rotate <display> 0|90|180|270"),
-                              lifetime: lifetime) { [weak self] req in
+                              lifetime: lifetime) { [weak self] req, _ in
             guard let self, let ctx = self.context, self.effective.contains(.rotation) else {
                 return .failure(ControlExit.unavailable, L("Rotation is off"))
             }

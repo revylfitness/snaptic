@@ -37,7 +37,7 @@ struct ShortcutRecorder: View {
             }
             if let message {
                 Text(message)
-                    .font(.caption)
+                    .font(.callout)
                     .foregroundStyle(.orange)
             }
         }

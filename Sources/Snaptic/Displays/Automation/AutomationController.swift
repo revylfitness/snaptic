@@ -7,10 +7,11 @@ import SnapticKit
 /// items, shortcuts and, when the user allows it per action, CLI commands. FeatureGraph
 /// keeps both off in Safe Mode, and hooks off while panic-latched; panic kills running
 /// commands.
-@MainActor final class AutomationController: DisplayFeatureController, PanicParticipant, DisplayMenuContributor,
-    DiagnosticsContributor {
+@MainActor final class AutomationController: DisplayFeatureController, PanicParticipant, DiagnosticsContributor {
     static var id: DisplayControllerID { .automation }
     static var privateSymbols: [PrivateSymbol] { [] }
+    /// Only `automation` (0.3 §4.5): feature changes arrive through `effectiveFeaturesDidChange`.
+    static var observedSections: Set<DisplaysConfigSection> { [.automation] }
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
 
@@ -22,6 +23,8 @@ import SnapticKit
     private var sinks: [AnyCancellable] = []
     private var tokens: [NSObjectProtocol] = []
     private var actionThrottle = HookThrottle(interval: 1)
+    /// The custom actions' menu items (R5-13), registered while custom actions run.
+    private var actionMenu: AutomationMenuItems?
 
     init() {}
 
@@ -152,7 +155,7 @@ import SnapticKit
     private func run(_ hook: HookSpec, event: HookEvent, display: DisplayInfo?) {
         guard let ctx = context else { return }
         let environment = KitHookPolicy.environment(event: event, displayName: display?.name, displayKey: display?.key)
-        // A refusal is kept in SpawnerService.lastProblem for the Automation page.
+        // A refusal is kept in SpawnerService.lastProblem for Displays › Automations.
         let spawner = ctx.spawner
         let command = hook.command
         let key = hook.id.rawValue + "." + event.rawValue
@@ -163,10 +166,6 @@ import SnapticKit
 
     private static func actionID(_ spec: CustomActionSpec) -> DisplayActionID {
         DisplayActionID(rawValue: "a.custom." + spec.id.rawValue)
-    }
-
-    private static func menuID(_ spec: CustomActionSpec) -> DisplayMenuItemID {
-        DisplayMenuItemID(rawValue: "a.custom." + spec.id.rawValue)
     }
 
     private func startActions() {
@@ -184,13 +183,16 @@ import SnapticKit
                 }
             }
         }
-        ctx.menus.register(self, lifetime: life)
+        let items = AutomationMenuItems(context: ctx)
+        items.controller = self
+        actionMenu = items
+        ctx.menus.register(items, lifetime: life)
         ctx.commands.register("action list", policy: .read, offOnly: false, cliAllowed: true,
-                              summary: L("List the custom actions the command line may run"), lifetime: life) { [weak self] request in
+                              summary: L("List the custom actions the command line may run"), lifetime: life) { [weak self] request, _ in
             self?.listActions(json: request.json) ?? .failure(ControlExit.unavailable, L("Custom actions are off."))
         }
         ctx.commands.register("action run", policy: .low, offOnly: false, cliAllowed: true,
-                              summary: L("Run a custom action: action run <name>"), lifetime: life) { [weak self] request in
+                              summary: L("Run a custom action: action run <name>"), lifetime: life) { [weak self] request, _ in
             guard let self else { return .failure(ControlExit.unavailable, L("Custom actions are off.")) }
             return await self.runActionFromCLI(request)
         }
@@ -199,9 +201,12 @@ import SnapticKit
     private func stopActions() {
         actionsLifetime?.end()
         actionsLifetime = nil
+        actionMenu = nil
     }
 
-    private func runAction(_ id: StableID) {
+    /// Runs a custom action (its menu item, hotkey or action), at most once a second each; only while custom
+    /// actions run.
+    func runAction(_ id: StableID) {
         guard let ctx = context, actionsLifetime != nil,
               let spec = ctx.config.value.automation.actions.first(where: { $0.id == id }) else { return }
         guard actionThrottle.allow(id.rawValue, now: ProcessInfo.processInfo.systemUptime) else { return }
@@ -230,7 +235,7 @@ import SnapticKit
             return .failure(ControlExit.notFound, L("No such action."))
         }
         // Only actions the user marked "Allow from the command line" (R5.4).
-        guard spec.cliAllowed else { return .failure(ControlExit.refused, L("This action isn't allowed from the command line.")) }
+        guard spec.cliAllowed else { return .failure(ControlExit.refused, L("This action isn’t allowed from the command line.")) }
         let environment = ["PATH": KitHookPolicy.searchPath, "SNAPTIC_EVENT": "action"]
         if let problem = await ctx.spawner.run(spec.command, environment: environment, throttleKey: "cli." + spec.id.rawValue) {
             return .failure(ControlExit.unavailable, problem)
@@ -251,27 +256,7 @@ import SnapticKit
                     + L(" allowed from the CLI)")),
             (L("Commands running"), String(ctx.spawner.runningCount)),
             (L("Helpers"), ctx.helpers.unavailable ?? L("available")),
-            (L("Last problem"), ctx.spawner.lastProblem == nil ? L("none") : L("see the Automation page")),
+            (L("Last problem"), ctx.spawner.lastProblem == nil ? L("none") : L("see Displays › Automations")),
         ]
-    }
-
-    // MARK: DisplayMenuContributor
-
-    var descriptors: [DisplayMenuItemDescriptor] {
-        guard let ctx = context, actionsLifetime != nil else { return [] }
-        return ctx.config.value.automation.actions.filter { $0.showInMenu && !$0.name.isEmpty }.map {
-            DisplayMenuItemDescriptor(id: Self.menuID($0), title: $0.name, slot: .tools, defaultVisibility: .visible)
-        }
-    }
-
-    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
-
-    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] {
-        guard slot == .tools, let ctx = context, actionsLifetime != nil else { return [] }
-        return ctx.config.value.automation.actions.filter { $0.showInMenu && !$0.name.isEmpty }.map { spec in
-            let id = spec.id
-            let item = ClosureMenuItem(title: spec.name) { [weak self] in self?.runAction(id) }
-            return (Self.menuID(spec), item)
-        }
     }
 }

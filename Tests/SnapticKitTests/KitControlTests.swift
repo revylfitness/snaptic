@@ -157,9 +157,10 @@ final class KitControlTests: XCTestCase {
                        "autodisconnectbuiltin")
         XCTAssertEqual(KitControl.protectedSetting(verb: "module", arguments: ["cli"]), "cli")
         XCTAssertNil(KitControl.protectedSetting(verb: "set", arguments: ["brightness", "50"]))
-        XCTAssertEqual(KitControl.protectedSetting(verb: "feature disable", arguments: ["sleep-prevention"]), "sleepprevention")
-        XCTAssertEqual(KitControl.protectedSetting(verb: "set", arguments: ["prevent_sleep", "on"]), "preventsleep")
-        XCTAssertEqual(KitControl.protectedSetting(verb: "toggle", arguments: ["SleepPrevention"]), "sleepprevention")
+        // The 0.2 sleep-prevention words went with the feature (R5-14).
+        XCTAssertNil(KitControl.protectedSetting(verb: "feature disable", arguments: ["sleep-prevention"]))
+        XCTAssertNil(KitControl.protectedSetting(verb: "set", arguments: ["prevent_sleep", "on"]))
+        XCTAssertNil(KitControl.protectedSetting(verb: "toggle", arguments: ["SleepPrevention"]))
         XCTAssertNil(KitControl.protectedSetting(verb: "disconnect", arguments: ["main"]))   // an action, not a setting
         // The host's `feature disable` verb: protected features stay untouchable even off.
         XCTAssertEqual(KitControl.protectedSetting(verb: "feature disable", arguments: ["disconnect"]), "disconnect")
@@ -307,5 +308,282 @@ final class KitControlTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(KitControl.clientTimeoutSeconds, 60 + 30)
         XCTAssertGreaterThanOrEqual(KitControl.clientTimeoutSeconds,
                                     Double(SafetyConfig.confirmSecondsRange.upperBound) + KitControl.applyMarginSeconds)
+    }
+
+    // MARK: 0.3 connection holds (§2.10)
+
+    func testResponseHoldingRoundTripsAndOldRepliesDecode() throws {
+        let held = ControlResponse.holding("Holding until this command ends (at most 12 h). Press Control-C to stop.")
+        XCTAssertTrue(held.holding)
+        let line = try XCTUnwrap(KitControl.encode(held))
+        XCTAssertEqual(KitControl.decodeResponse(line.dropLast()), held)
+        // A 0.2 server's reply has no "holding" key; a reply with a junk value is not a hold.
+        let old = try XCTUnwrap(KitControl.decodeResponse(Data(#"{"exitCode":0,"output":"ok"}"#.utf8)))
+        XCTAssertEqual(old, .ok("ok"))
+        XCTAssertFalse(old.holding)
+        XCTAssertEqual(KitControl.decodeResponse(Data(#"{"exitCode":4,"output":"x","holding":"yes"}"#.utf8)),
+                       .failure(4, "x"))
+        XCTAssertEqual(KitControl.decodeResponse(Data(#"{"exitCode":0}"#.utf8)), .ok(""))
+        XCTAssertNil(KitControl.decodeResponse(Data(#"{"output":"no code"}"#.utf8)))
+    }
+
+    func testOrdinaryRepliesKeepTheirBytes() throws {
+        let line = try XCTUnwrap(KitControl.encode(ControlResponse.ok("hi")))
+        XCTAssertEqual(String(decoding: line, as: UTF8.self), "{\"exitCode\":0,\"output\":\"hi\"}\n")
+        let held = try XCTUnwrap(KitControl.encode(ControlResponse.holding("h")))
+        XCTAssertEqual(String(decoding: held, as: UTF8.self), "{\"exitCode\":0,\"holding\":true,\"output\":\"h\"}\n")
+    }
+
+    func testJSONReplyKeepsHolding() throws {
+        let wrapped = KitControl.jsonReply(.holding("Holding while process 42 runs."))
+        XCTAssertTrue(wrapped.holding)
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(wrapped.output.utf8)) as? [String: Any])
+        XCTAssertEqual(object["output"] as? String, "Holding while process 42 runs.")
+        XCTAssertFalse(KitControl.jsonReply(.ok("x")).holding)
+    }
+
+    func testHoldLimitsAndPing() {
+        XCTAssertEqual(KitControl.maxHeldConnections, 8)
+        XCTAssertEqual(KitControl.holdPingSeconds, 300)
+        XCTAssertEqual(KitControl.pingLine.last, 0x0A)
+        XCTAssertTrue(KitControl.isPing(KitControl.pingLine.dropLast()))
+        XCTAssertTrue(KitControl.isPing(Data(#" { "ping" : true } "#.utf8)))
+        for notPing in [#"{"ping":false}"#, #"{"ping":true,"exitCode":0}"#, #"{"exitCode":0,"output":"ping"}"#,
+                        "ping", "", #"{"ping":1}"#, "[true]"] {
+            XCTAssertFalse(KitControl.isPing(Data(notPing.utf8)), notPing)
+        }
+        // A reply is never mistaken for a ping, and a ping never decodes as a reply.
+        XCTAssertNil(KitControl.decodeResponse(KitControl.pingLine.dropLast()))
+    }
+
+    func testProtectedAwakeWords() {
+        for word in ["awake", "nudge", "pointernudge", "drivealive", "activity", "guards", "batteryguard", "thermalguard"] {
+            XCTAssertTrue(KitControl.protectedSettings.contains(word), word)
+        }
+        // The 0.2 words went with Displays' sleep prevention (R5-14).
+        XCTAssertTrue(KitControl.protectedSettings.isDisjoint(with: ["sleepprevention", "preventsleep"]))
+        XCTAssertEqual(KitControl.protectedSetting(verb: "set", arguments: ["pointer-nudge", "on"]), "pointernudge")
+        XCTAssertEqual(KitControl.protectedSetting(verb: "feature", arguments: ["enable", "drive_alive"]), "drivealive")
+        XCTAssertEqual(KitControl.protectedSetting(verb: "set", arguments: ["awake", "on"]), "awake")
+        XCTAssertEqual(KitControl.protectedSetting(verb: "toggle", arguments: ["thermal-guard"]), "thermalguard")
+        // `module disable awake` names the module (off-only), not a setting.
+        XCTAssertNil(KitControl.protectedSetting(verb: "module disable", arguments: ["awake"]))
+        XCTAssertNil(KitControl.protectedSetting(verb: "module", arguments: ["disable", "Awake"]))
+        XCTAssertEqual(KitControl.protectedSetting(verb: "module disable", arguments: ["cli"]), "cli")
+        XCTAssertNil(KitControl.protectedSetting(verb: "awake", arguments: ["hold"]), "awake verbs aren't setting verbs")
+    }
+
+    // MARK: Retired verbs (R5-12)
+
+    func testPreventSleepIsRetiredWithItsPointer() {
+        XCTAssertEqual(KitControl.retiredVerbs, ["prevent-sleep": "Moved to Awake: use “snaptic awake …”."])
+        for words in [["prevent-sleep"], ["prevent-sleep", "off"], ["PREVENT-SLEEP", "on"], ["Prevent-Sleep", "x", "y"]] {
+            let retired = KitControl.retiredVerb(words)
+            XCTAssertEqual(retired?.verb, "prevent-sleep", "\(words)")
+            XCTAssertEqual(retired?.message, "Moved to Awake: use “snaptic awake …”.")
+        }
+        for words in [[], ["prevent"], ["prevent", "sleep"], ["prevent-sleeps"], ["awake", "prevent-sleep"], ["help"],
+                      ["help", "prevent-sleep"]] {
+            XCTAssertNil(KitControl.retiredVerb(words), "\(words)")
+        }
+        // No retired verb is a live verb word or an Awake verb.
+        for verb in KitControl.retiredVerbs.keys {
+            XCTAssertTrue(verb.split(separator: " ").allSatisfy { KitControl.isVerbWord(String($0)) }, verb)
+            XCTAssertNil(KitControl.verbRule(verb), verb)
+        }
+        XCTAssertEqual(ControlExit.usage, 2)
+    }
+
+    func testLineReaderKeepsBytesAfterTheNewline() {
+        var reader = ControlLineReader(maxLineBytes: 100)
+        let first = reader.append(Array("{\"a\":1}\n{\"ping\":true}\n{\"b\"".utf8))
+        XCTAssertEqual(first.map { String(decoding: $0, as: UTF8.self) }, ["{\"a\":1}", "{\"ping\":true}"])
+        XCTAssertTrue(reader.hasPartialLine)
+        XCTAssertEqual(reader.remainder.map { String(decoding: $0, as: UTF8.self) }, "{\"b\"")
+        XCTAssertEqual(reader.append(Array(":2}\n".utf8)).map { String(decoding: $0, as: UTF8.self) }, ["{\"b\":2}"])
+        XCTAssertNil(reader.remainder)
+        XCTAssertEqual(reader.append(Array("\n".utf8)), [Data()], "an empty line is still a line")
+    }
+
+    func testLineReaderDropsOverlongLinesOnly() {
+        var reader = ControlLineReader(maxLineBytes: 4)
+        XCTAssertEqual(reader.append(Array("12345".utf8)), [])
+        XCTAssertTrue(reader.overflowed)
+        XCTAssertNil(reader.remainder)
+        XCTAssertEqual(reader.append(Array("678\nok\n".utf8)), [Data("ok".utf8)])
+        XCTAssertFalse(reader.overflowed)
+    }
+
+    func testLineReaderFuzzIsChunkingIndependent() {
+        var rng = SeededGenerator(seed: 0x11E5)
+        for _ in 0..<500 {
+            let alphabet: [UInt8] = [0x0A, 0x61, 0x62, 0x7B, 0x7D]
+            let stream = (0..<Int(rng.next() % 200)).map { _ in alphabet[Int(rng.next() % UInt64(alphabet.count))] }
+            var whole = ControlLineReader(maxLineBytes: 16)
+            let expected = whole.append(stream)
+            var chunked = ControlLineReader(maxLineBytes: 16)
+            var got: [Data] = []
+            var index = 0
+            while index < stream.count {
+                let n = 1 + Int(rng.next() % 9)
+                got += chunked.append(stream[index..<min(stream.count, index + n)])
+                index += n
+            }
+            XCTAssertEqual(got, expected)
+            XCTAssertEqual(chunked.remainder, whole.remainder)
+            XCTAssertTrue(got.allSatisfy { $0.count <= 16 && !$0.contains(0x0A) })
+        }
+    }
+
+    func testSlotPoolMovesAHoldExactlyOnce() {
+        var pool = ControlSlotPool()
+        for _ in 0..<4 { XCTAssertTrue(pool.admit()) }
+        XCTAssertFalse(pool.admit(), "a 5th request is busy")
+        XCTAssertTrue(pool.promote())
+        XCTAssertEqual(pool.active, 3)
+        XCTAssertEqual(pool.held, 1)
+        XCTAssertTrue(pool.admit(), "a hold frees its request slot")
+        pool.release(wasHeld: true)
+        XCTAssertEqual(pool.held, 0)
+        XCTAssertEqual(pool.active, 4, "the held connection's finish never frees a request slot")
+    }
+
+    func testSlotPoolRefusesTheNinthHold() {
+        var pool = ControlSlotPool()
+        for _ in 0..<8 {
+            XCTAssertTrue(pool.admit())
+            XCTAssertTrue(pool.promote())
+        }
+        XCTAssertTrue(pool.admit())
+        XCTAssertFalse(pool.promote())
+        XCTAssertEqual(pool.held, 8)
+        XCTAssertEqual(pool.active, 1)
+        pool.release(wasHeld: false)
+        XCTAssertEqual(pool, { var p = ControlSlotPool(); for _ in 0..<8 { _ = p.admit(); _ = p.promote() }; return p }())
+    }
+
+    func testSlotPoolFuzzKeepsCountsInRange() {
+        var rng = SeededGenerator(seed: 0x5107)
+        var pool = ControlSlotPool()
+        var connections: [Bool] = []   // wasHeld per open connection
+        for _ in 0..<20_000 {
+            switch rng.next() % 3 {
+            case 0:
+                if pool.admit() { connections.append(false) }
+            case 1:
+                if let i = connections.firstIndex(of: false), pool.promote() { connections[i] = true }
+            default:
+                if !connections.isEmpty {
+                    let i = Int(rng.next() % UInt64(connections.count))
+                    pool.release(wasHeld: connections.remove(at: i))
+                }
+            }
+            XCTAssertEqual(pool.active, connections.filter { !$0 }.count)
+            XCTAssertEqual(pool.held, connections.filter { $0 }.count)
+            XCTAssertTrue((0...4).contains(pool.active) && (0...8).contains(pool.held))
+        }
+    }
+
+    // MARK: Awake verbs (0.3 §2.10, §3.1)
+
+    func testAwakeVerbTable() {
+        let rules = KitControl.awakeVerbRules
+        XCTAssertEqual(rules.map(\.verb), ["awake status", "awake start", "awake hold", "awake preset", "awake extend",
+                                           "awake stop", "awake pause"])
+        XCTAssertEqual(Set(rules.map(\.verb)).count, rules.count)
+        for rule in rules {
+            XCTAssertTrue(rule.verb.split(separator: " ").allSatisfy { KitControl.isVerbWord(String($0)) }, rule.verb)
+            XCTAssertLessThanOrEqual(rule.verb.split(separator: " ").count, KitControl.maxVerbWords)
+            XCTAssertEqual(KitControl.verbRule(rule.verb), rule)
+        }
+        XCTAssertEqual(rules.filter(\.holds).map(\.verb), ["awake hold"])
+        XCTAssertEqual(Set(rules.filter(\.offOnly).map(\.verb)), ["awake stop", "awake pause"])
+        XCTAssertEqual(Set(rules.filter(\.sessionLimited).map(\.verb)),
+                       ["awake start", "awake hold", "awake preset", "awake stop", "awake extend"])
+        XCTAssertEqual(KitControl.verbRule("awake status")?.policy, .read)
+        XCTAssertNil(KitControl.verbRule("awake"))
+        XCTAssertNil(KitControl.verbRule("brightness"))
+        XCTAssertEqual(KitControl.sessionVerbsPerSecond, 1)
+    }
+
+    /// Every documented command line reaches its verb through the client's parsing and the server's matching, is
+    /// never mistaken for a protected setting or a turn-on, and parses with the Awake grammar.
+    func testAwakeCommandLinesReachTheirVerbs() throws {
+        let verbs = KitControl.awakeVerbRules.map(\.verb) + ["version", "modules", "module disable", "list"]
+        let lines: [[String]] = [
+            ["awake", "status"], ["awake", "status", "--json"], ["--json", "awake", "status"],
+            ["awake", "start"], ["awake", "start", "2h"], ["awake", "start", "1h", "30m", "--display-may-sleep"],
+            ["awake", "start", "until", "5:30", "pm"], ["awake", "start", "idle"],
+            ["awake", "hold"], ["awake", "hold", "--max", "2h"], ["awake", "hold", "--pid", "4242"],
+            ["awake", "hold", "--pid", "4242", "--max", "30m"],
+            ["awake", "preset", "1"], ["awake", "preset", "Focus", "Time"], ["awake", "extend", "15m"],
+            ["awake", "stop"], ["awake", "pause"], ["awake", "pause", "2h"], ["AWAKE", "Hold"],
+        ]
+        for line in lines {
+            let command = try KitControl.parseCommandLine(line).get()
+            let match = try XCTUnwrap(KitControl.match(command.words, verbs: verbs), line.joined(separator: " "))
+            let rule = try XCTUnwrap(KitControl.verbRule(match.verb))
+            XCTAssertNil(KitControl.protectedSetting(verb: match.verb, arguments: match.arguments))
+            if rule.offOnly { XCTAssertFalse(KitControl.requestsTurningOn(match.arguments), line.joined(separator: " ")) }
+            let word = String(rule.verb.split(separator: " ").last ?? "")
+            XCTAssertNotNil(AwakeCommandGrammar.parse(verb: word, args: match.arguments), line.joined(separator: " "))
+        }
+        XCTAssertEqual(try KitControl.parseCommandLine(["--json", "awake", "status"]).get().json, true)
+        // Off-only verbs refuse a turn-on word; a hold without its pid is a usage error.
+        XCTAssertTrue(KitControl.requestsTurningOn(["on"]))
+        XCTAssertNil(AwakeCommandGrammar.parse(verb: "hold", args: ["--pid"]))
+        guard case .hold(let pid, nil)? = AwakeCommandGrammar.parse(verb: "hold", args: ["--pid", "4242"]) else {
+            return XCTFail("--pid form")
+        }
+        XCTAssertEqual(pid, 4242)
+        guard case .hold(nil, let cap)? = AwakeCommandGrammar.parse(verb: "hold", args: ["--max", "2h"]) else {
+            return XCTFail("connection form")
+        }
+        XCTAssertEqual(cap, 7_200)
+    }
+
+    // MARK: Security S-4 and R5-14a
+
+    func testAwakeVerbsAreCountedNeverLogged() {
+        var keys = Set<String>()
+        for rule in KitControl.awakeVerbRules {
+            for outcome in ControlVerbOutcome.allCases {
+                guard let key = KitControl.counterKey(verb: rule.verb, outcome: outcome) else {
+                    return XCTFail(rule.verb + " isn't counted")
+                }
+                // Fixed text: no digits (no time, pid or code), no spaces, one key per verb and outcome.
+                XCTAssertNil(key.rangeOfCharacter(from: .decimalDigits), key)
+                XCTAssertFalse(key.contains(" "), key)
+                XCTAssertTrue(key.hasPrefix("cli.awake."), key)
+                keys.insert(key)
+            }
+        }
+        XCTAssertEqual(keys.count, KitControl.awakeVerbRules.count * ControlVerbOutcome.allCases.count)
+        XCTAssertEqual(KitControl.counterKey(verb: "awake hold", outcome: .holding), "cli.awake.hold.holding")
+        for verb in ["layout apply", "display brightness", "prevent-sleep", "awake", "awake holdx", ""] {
+            XCTAssertNil(KitControl.counterKey(verb: verb, outcome: .ok), verb)
+        }
+    }
+
+    func testVerbOutcomeFromReply() {
+        XCTAssertEqual(ControlVerbOutcome(exitCode: ControlExit.ok, holding: false), .ok)
+        XCTAssertEqual(ControlVerbOutcome(exitCode: ControlExit.ok, holding: true), .holding)
+        for code in [ControlExit.usage, ControlExit.notFound, ControlExit.refused, ControlExit.unavailable,
+                     ControlExit.cancelled, 99] {
+            XCTAssertEqual(ControlVerbOutcome(exitCode: code, holding: true), .failed)
+        }
+    }
+
+    func testServerStopGivesHeldClientsAFinalLineWithExitZero() throws {
+        // R5-14a: turning command-line control off ends holds with a final line and exit 0, never a bare EOF.
+        let final = KitControl.serverStopFinal
+        XCTAssertEqual(final.exitCode, ControlExit.ok)
+        XCTAssertFalse(final.holding)
+        XCTAssertEqual(final.output, "Command-line control was turned off.")
+        let line = try XCTUnwrap(KitControl.encode(final))
+        XCTAssertEqual(line.last, 0x0A)
+        XCTAssertLessThanOrEqual(line.count, Int(KitControl.heldSendBufferBytes))
+        XCTAssertGreaterThan(KitControl.heldStopGraceSeconds, 0)
+        XCTAssertLessThanOrEqual(KitControl.heldStopGraceSeconds, 5)
     }
 }

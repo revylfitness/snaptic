@@ -207,7 +207,7 @@ extension InvariantViolation {
         case .dimToBlackWithoutOtherVisible: return L("Dimming to black needs another display that stays visible.")
         case .mainNotVisible: return L("The main display has to stay visible.")
         case .guardNotArmed: return L("Safety helper unavailable.")
-        case .onlyDisplayUnsupported: return L("This can't change unattended on your only visible display.")
+        case .onlyDisplayUnsupported: return L("This can’t change unattended on your only visible display.")
         }
     }
 }

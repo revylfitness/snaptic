@@ -194,6 +194,11 @@ enum JournalApplier {
 
     let files: JournalFiles?
     private(set) var permanent: PermanentJournal
+    /// Whether a session journal file exists: read once, then tracked by our own writes, so Settings never reads
+    /// the file to render a row (0.3 §4.5).
+    private(set) var hasSessionJournal: Bool
+    /// Called after every change of the session or permanent journal (the queue's revision bump).
+    var onChange: (@MainActor () -> Void)?
 
     init() {
         files = JournalFiles.defaultDirectory().map(JournalFiles.init(directory:))
@@ -201,9 +206,8 @@ enum JournalApplier {
         if let data = files?.read(JournalModel.permanentFileName), let p = JournalModel.decodePermanent(data), p.uid == getuid() {
             permanent = p
         }
+        hasSessionJournal = files?.read(JournalModel.sessionFileName) != nil
     }
-
-    var hasSessionJournal: Bool { files?.read(JournalModel.sessionFileName) != nil }
 
     /// Writes the session journal before a trial or restore. False = refuse the change.
     func writeSession(undo: [UndoOp], restoreColorSync: Bool, trialID: UInt64?, live: LayoutSnapshot) -> Bool {
@@ -212,17 +216,26 @@ enum JournalApplier {
                                createdAt: Date().timeIntervalSince1970, fingerprints: live.physicalFingerprints,
                                undo: undo, restoreColorSync: restoreColorSync, trialID: trialID)
         guard let data = JournalModel.encode(j) else { return false }
-        return files.write(data, to: JournalModel.sessionFileName)
+        let ok = files.write(data, to: JournalModel.sessionFileName)
+        if ok { hasSessionJournal = true }
+        onChange?()
+        return ok
     }
 
-    func clearSession() { files?.remove(JournalModel.sessionFileName) }
+    func clearSession() {
+        files?.remove(JournalModel.sessionFileName)
+        hasSessionJournal = false
+        onChange?()
+    }
 
     /// Records a trial's MonitorPanel steps before they're applied.
     func addPermanent(trial: UInt64, ops: [UndoOp]) -> Bool {
         let mp = ops.filter { $0.stage == .monitorPanel }
         guard !mp.isEmpty else { return true }
         permanent.add(trial: trial, ops: mp)
-        return savePermanent()
+        let ok = savePermanent()
+        onChange?()
+        return ok
     }
 
     /// Keep or revert finished.
@@ -230,6 +243,7 @@ enum JournalApplier {
         guard permanent.ops.contains(where: { $0.trialID == trial }) else { return }
         permanent.resolve(trial: trial)
         _ = savePermanent()
+        onChange?()
     }
 
     private func savePermanent() -> Bool {

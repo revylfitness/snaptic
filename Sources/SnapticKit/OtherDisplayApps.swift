@@ -63,7 +63,13 @@ package enum OtherDisplayApps {
         return result
     }
 
+    /// Sentence case, for settings rows and the command line ("Paused while MonitorControl runs").
     package static func pauseReason(_ app: OtherDisplayApp) -> String {
         L("Paused while ") + app.name + L(" runs")
+    }
+
+    /// Title Case, for the menu's status row ("Paused While MonitorControl Runs"); the app name stays as it is.
+    package static func menuPauseReason(_ app: OtherDisplayApp) -> String {
+        L("Paused While ") + app.name + L(" Runs")
     }
 }

@@ -9,7 +9,13 @@ final class KitArgsTests: XCTestCase {
         XCTAssertEqual(KitArgs.mode(arguments: ["/A/Snaptic", "--virtual-host"]), .virtualHost)
         XCTAssertEqual(KitArgs.mode(arguments: ["/A/Snaptic", "--selftest-helpers"]), .selftestHelpers)
         XCTAssertEqual(KitArgs.mode(arguments: ["/A/Snaptic", "--selftest-child"]), .selftestChild)
+        XCTAssertEqual(KitArgs.mode(arguments: ["/A/Snaptic", "--selftest-controls", "/tmp/t"]), .selftestControls)
+        XCTAssertEqual(KitArgs.mode(arguments: ["/A/Snaptic", "--selftest-control-server", "/tmp/t"]),
+                       .selftestControlServer)
         XCTAssertEqual(KitArgs.mode(arguments: ["/A/Snaptic", "cli", "list"]), .cli)
+        // Exact flags only.
+        XCTAssertEqual(KitArgs.mode(arguments: ["/A/Snaptic", "--selftest-control"]), .app)
+        XCTAssertEqual(KitArgs.mode(arguments: ["/A/Snaptic", "--selftest-controls=1"]), .app)
     }
 
     func testHelperFlagsLaterInArgvDontCount() {

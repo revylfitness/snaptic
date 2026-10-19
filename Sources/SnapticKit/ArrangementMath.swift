@@ -44,22 +44,22 @@ package enum ArrangementPlacement: String, Codable, CaseIterable, Sendable {
 
     package var title: String {
         switch self {
-        case .leftTop: return L("Left, top aligned")
-        case .leftCenter: return L("Left, centered")
-        case .leftBottom: return L("Left, bottom aligned")
-        case .rightTop: return L("Right, top aligned")
-        case .rightCenter: return L("Right, centered")
-        case .rightBottom: return L("Right, bottom aligned")
-        case .aboveLeft: return L("Above, left aligned")
-        case .aboveCenter: return L("Above, centered")
-        case .aboveRight: return L("Above, right aligned")
-        case .belowLeft: return L("Below, left aligned")
-        case .belowCenter: return L("Below, centered")
-        case .belowRight: return L("Below, right aligned")
-        case .topLeftCorner: return L("Top-left corner")
-        case .topRightCorner: return L("Top-right corner")
-        case .bottomLeftCorner: return L("Bottom-left corner")
-        case .bottomRightCorner: return L("Bottom-right corner")
+        case .leftTop: return L("Left, Top Aligned")
+        case .leftCenter: return L("Left, Centered")
+        case .leftBottom: return L("Left, Bottom Aligned")
+        case .rightTop: return L("Right, Top Aligned")
+        case .rightCenter: return L("Right, Centered")
+        case .rightBottom: return L("Right, Bottom Aligned")
+        case .aboveLeft: return L("Above, Left Aligned")
+        case .aboveCenter: return L("Above, Centered")
+        case .aboveRight: return L("Above, Right Aligned")
+        case .belowLeft: return L("Below, Left Aligned")
+        case .belowCenter: return L("Below, Centered")
+        case .belowRight: return L("Below, Right Aligned")
+        case .topLeftCorner: return L("Top-Left Corner")
+        case .topRightCorner: return L("Top-Right Corner")
+        case .bottomLeftCorner: return L("Bottom-Left Corner")
+        case .bottomRightCorner: return L("Bottom-Right Corner")
         }
     }
 }

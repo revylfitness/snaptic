@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SnapticKit
 import SnapticShims
 
@@ -7,6 +8,8 @@ import SnapticShims
 @MainActor final class VirtualController: DisplayFeatureController, PanicParticipant, SessionParticipant, DiagnosticsContributor {
     static var id: DisplayControllerID { .virtual }
     static var privateSymbols: [PrivateSymbol] { [] }
+    /// Virtual display specs, behavior and connected state (0.3 §4.5).
+    static var observedSections: Set<DisplaysConfigSection> { [.virtualScreens] }
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
     private var lifetime: Lifetime?
@@ -16,16 +19,21 @@ import SnapticShims
     private var limited: Set<StableID> = []
     /// Screens shut down for a locked/switched-out session, recreated on resume.
     private var pausedScreens: Set<StableID> = []
+    private var sinks: [AnyCancellable] = []
     private var stoppedAfterFailures = false
-    private(set) var lastError: String?
-    private var busy: Set<StableID> = []
+    private(set) var lastError: String? {
+        didSet { if lastError != oldValue { context?.runtime.revision(Self.id).bump() } }
+    }
+    private var busy: Set<StableID> = [] {
+        didSet { if busy != oldValue { context?.runtime.revision(Self.id).bump() } }
+    }
 
     init() {}
 
     func availability(of feature: DisplayFeature, context: DisplaysContext) -> FeatureAvailability {
-        guard VirtualHostsService.isAvailable else { return .unavailable(L("Virtual displays aren't available on this Mac")) }
+        guard VirtualHostsService.isAvailable else { return .unavailable(L("Virtual displays aren’t available on this Mac")) }
         if feature == .hdrVirtual && !SNVirtualDisplayHDR.supported {
-            return .unavailable(L("HDR virtual modes aren't supported on this macOS version"))
+            return .unavailable(L("HDR virtual modes aren’t supported on this macOS version"))
         }
         return .available
     }
@@ -43,11 +51,16 @@ import SnapticShims
         context.menus.register(items, lifetime: lifetime)
         context.registerPanic(self, lifetime: lifetime)
         context.registerSession(self, lifetime: lifetime)
-        context.diagnostics.register(self, section: L("Virtual screens"), lifetime: lifetime)
+        context.diagnostics.register(self, section: ManagementText.virtualDisplaysSection, lifetime: lifetime)
         context.connectPlanner.attach(self, lifetime: lifetime)
         context.virtualHosts.addExitListener(lifetime: lifetime) { [weak self] id, unexpected in
             self?.hostExited(id, unexpected: unexpected)
         }
+        // Live/busy state shows on Virtual Displays and in the menu; screens also come and go with the registry.
+        context.registry.changes
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.context?.runtime.revision(Self.id).bump() } }
+            .store(in: &sinks)
         // Lock (opt-in) and session resign shut screens down; sleep alone keeps them (§4.9, §9.4).
         context.sessionGate.observeEvents(lifetime: lifetime) { [weak self] event in
             self?.sessionEvent(event)
@@ -58,6 +71,12 @@ import SnapticShims
 
     func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) {
         self.effective = effective
+        changed()
+    }
+
+    /// Page-visible state changed: one revision bump and a menu rebuild.
+    private func changed() {
+        context?.runtime.revision(Self.id).bump()
         context?.requestMenuRebuild()
     }
 
@@ -66,7 +85,7 @@ import SnapticShims
         // Removed screens go away.
         let ids = Set(new.virtualScreens.screens.map(\.id))
         for s in old.virtualScreens.screens where !ids.contains(s.id) { ctx.virtualHosts.destroyNow(specID: s.id) }
-        ctx.requestMenuRebuild()
+        changed()
     }
 
     /// Shuts down this controller's hosts (Smart HiDPI hosts belong to their own controller).
@@ -74,6 +93,7 @@ import SnapticShims
         if let ctx = context {
             for s in ctx.config.value.virtualScreens.screens { ctx.virtualHosts.destroyNow(specID: s.id) }
         }
+        sinks.removeAll()
         menu = nil
         lifetime = nil
         context = nil
@@ -97,7 +117,7 @@ import SnapticShims
     func add(_ spec: VirtualScreenSpec) -> Bool {
         guard let ctx = context else { return false }
         guard ctx.config.value.virtualScreens.screens.count < VirtualConfig.maxScreens else {
-            ctx.toasts.show(L("You can create up to 8 virtual screens"), lifetime: lifetime)
+            ctx.toasts.show(ManagementText.tooManyVirtualDisplays(VirtualConfig.maxScreens), lifetime: lifetime)
             return false
         }
         var s = spec.sanitized(soc: ManagedHardware.soc)
@@ -113,7 +133,9 @@ import SnapticShims
             aspect = (m.pixelWidth, m.pixelHeight)
         }
         if add(Recipes.spec(for: kind, soc: ManagedHardware.soc, target: target, targetAspect: aspect)), kind == .recording {
-            ctx.toasts.show(L("Recording screen created. Set up its picture-in-picture view on the PIP page."), lifetime: lifetime)
+            ctx.toasts.show(ManagementText.recordingDisplayCreated, action: ToastAction(title: L("Set Up…")) { [weak self] in
+                self?.context?.openSettings("displays.pip")
+            }, lifetime: lifetime)
         }
     }
 
@@ -169,7 +191,10 @@ import SnapticShims
         guard let ctx = context, effective.contains(.virtualScreens), let spec = screen(id), !isLive(id), !busy.contains(id),
               let initial = spec.initialMode else { return }
         busy.insert(id)
-        defer { busy.remove(id); context?.requestMenuRebuild() }
+        defer {
+            busy.remove(id)
+            changed()
+        }
         ctx.virtualHosts.setHeadless(id, spec.headlessPrimary)
         do {
             var displayID = try await ctx.virtualHosts.create(spec: spec, initialMode: initial, limitToInitial: limited.contains(id))
@@ -186,7 +211,7 @@ import SnapticShims
             if extra.count > 1 { try? await ctx.virtualHosts.setModes(extra, for: id) }
             lastError = nil
             await place(spec, displayID: displayID, ctx: ctx)
-            EventLog.shared.record(.virtualDisplay, automatic ? "Virtual screen connected automatically" : "Virtual screen connected")
+            EventLog.shared.record(.virtualDisplay, automatic ? "Virtual display connected automatically" : "Virtual display connected")
         } catch {
             let message = (error as? VirtualHostsService.HostError)?.message ?? L("Virtual display failed to start")
             lastError = message
@@ -209,7 +234,7 @@ import SnapticShims
             return
         }
         guard Int32(b.origin.x.rounded()) != target.x || Int32(b.origin.y.rounded()) != target.y else { return }
-        _ = await ManagedTransactions.run(ctx, TransactionRequest(label: L("Place virtual screen"), risk: .low,
+        _ = await ManagedTransactions.run(ctx, TransactionRequest(label: ManagementText.placeVirtualDisplay, risk: .low,
                                                                   changes: [.origin(displayID, x: target.x, y: target.y)],
                                                                   finalScope: .forSession, automatic: true))
     }
@@ -237,7 +262,7 @@ import SnapticShims
             }
         }
         await ctx.virtualHosts.destroy(specID: id)
-        ctx.requestMenuRebuild()
+        changed()
     }
 
     func toggle(_ id: StableID) {
@@ -275,10 +300,10 @@ import SnapticShims
 
     func promptMirror(_ id: StableID, onto target: DisplayKey) {
         guard let ctx = context, let spec = screen(id), let t = ManagedDisplays.info(ctx, key: target) else { return }
-        ctx.toasts.show(L("Mirror '\(spec.name)' onto \(t.name)?"), action: ToastAction(title: L("Mirror")) { [weak self] in
+        ctx.toasts.show(ManagementText.mirrorVirtualDisplayPrompt(spec.name, onto: t.name), action: ToastAction(title: L("Mirror")) { [weak self] in
             guard let self, let ctx = self.context, let lifetime = self.lifetime, let vid = self.displayID(id),
                   let t = ManagedDisplays.info(ctx, key: target) else { return }
-            ManagedTransactions.submit(ctx, TransactionRequest(label: L("Mirror virtual screen"), risk: .trial,
+            ManagedTransactions.submit(ctx, TransactionRequest(label: ManagementText.mirrorVirtualDisplay, risk: .trial,
                                                                changes: [.mirror(t.hardwareID, of: vid)], finalScope: .forSession),
                                        lifetime: lifetime)
         }, lifetime: lifetime)
@@ -286,7 +311,7 @@ import SnapticShims
 
     func promptStream(_ id: StableID, onto target: DisplayKey, flipped: Bool) {
         guard let ctx = context, let spec = screen(id), let t = ManagedDisplays.info(ctx, key: target) else { return }
-        let text = flipped ? L("Stream '\(spec.name)' flipped onto \(t.name)?") : L("Stream '\(spec.name)' onto \(t.name)?")
+        let text = ManagementText.streamVirtualDisplayPrompt(spec.name, onto: t.name, flipped: flipped)
         ctx.toasts.show(text, action: ToastAction(title: L("Set Up…")) { [weak self] in
             self?.context?.openSettings("displays.pip")
         }, lifetime: lifetime)
@@ -366,13 +391,14 @@ import SnapticShims
     }
 
     private func hostExited(_ id: StableID, unexpected: Bool) {
-        guard let ctx = context, screen(id) != nil, unexpected else { return }
+        guard let ctx = context, screen(id) != nil else { return }
+        guard unexpected else { return changed() }
         // FIXES-R3 5: a host that speaks another protocol means Snaptic was updated on disk;
         // re-creating would only fail again.
         if ctx.virtualHosts.restartRequired {
             lastError = L("Restart Snaptic to finish updating")
             ctx.toasts.show(L("Restart Snaptic to finish updating"), lifetime: lifetime)
-            ctx.requestMenuRebuild()
+            changed()
             return
         }
         if ctx.virtualHosts.recentFailures >= 3 {
@@ -381,14 +407,14 @@ import SnapticShims
         } else {
             ctx.connectPlanner.trigger(.reconfigure)
         }
-        ctx.requestMenuRebuild()
+        changed()
     }
 
     // MARK: Actions / CLI
 
     private func registerActions(_ ctx: DisplaysContext, lifetime: Lifetime) {
         for n in 1...VirtualConfig.maxScreens {
-            ctx.actions.register(Action(id: .dVirtualToggle(n), title: L("Toggle Virtual Screen \(n)"), feature: .virtualScreens,
+            ctx.actions.register(Action(id: .dVirtualToggle(n), title: ManagementText.virtualDisplayOnOff(n), feature: .virtualScreens,
                                         cliAllowed: true) { [weak self] _ in
                 guard let self, self.screens.indices.contains(n - 1) else { return }
                 self.toggle(self.screens[n - 1].id)
@@ -405,9 +431,9 @@ import SnapticShims
 
     private func registerCommands(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("virtual", policy: .low, offOnly: false, cliAllowed: true,
-                              summary: L("virtual list | connect <name> | disconnect <name>"), lifetime: lifetime) { [weak self] req in
+                              summary: L("virtual list | connect <name> | disconnect <name>"), lifetime: lifetime) { [weak self] req, _ in
             guard let self, self.effective.contains(.virtualScreens) else {
-                return .failure(ControlExit.unavailable, L("Virtual screens are off"))
+                return .failure(ControlExit.unavailable, ManagementText.virtualDisplaysOff)
             }
             let a = req.arguments
             switch a.first?.lowercased() {
@@ -425,7 +451,7 @@ import SnapticShims
                 }.joined(separator: "\n"))
             case "connect", "disconnect":
                 guard a.count > 1, let s = self.find(a.dropFirst().joined(separator: " ")) else {
-                    return .failure(ControlExit.notFound, L("No such virtual screen"))
+                    return .failure(ControlExit.notFound, ManagementText.noSuchVirtualDisplay)
                 }
                 if a[0].lowercased() == "connect" {
                     await self.connect(s.id)
@@ -440,9 +466,9 @@ import SnapticShims
     }
 
     func diagnostics() -> [(String, String)] {
-        [(L("Virtual screens"), String(screens.count)),
+        [(L("Virtual displays"), String(screens.count)),
          (L("Connected"), String(screens.filter { isLive($0.id) }.count)),
-         (L("HiDPI fallbacks"), String(limited.count)),
+         (L("Limited to the first size"), String(limited.count)),
          (L("Stopped after failures"), stoppedAfterFailures ? L("Yes") : L("No")),
          (L("Last error"), lastError ?? L("none"))]
     }

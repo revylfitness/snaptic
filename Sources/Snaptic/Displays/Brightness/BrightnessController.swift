@@ -69,7 +69,7 @@ enum DisplayTargets {
     }
 
     /// Displays isn't running (the controller's context is gone).
-    static func notRunning() -> ControlResponse { .failure(ControlExit.unavailable, L("Displays isn't running")) }
+    static func notRunning() -> ControlResponse { .failure(ControlExit.unavailable, L("Displays isn’t running")) }
 
     /// One line per display for `get` verbs: "<n>\t<name>\t<value…>" with n as in
     /// `snaptic list`, or a JSON array with `--json`. Empty rows: nothing matched.
@@ -87,7 +87,7 @@ enum DisplayTargets {
                 return o
             }
             guard let data = try? JSONSerialization.data(withJSONObject: objects, options: [.sortedKeys]) else {
-                return .failure(ControlExit.unavailable, L("Couldn't encode the reply"))
+                return .failure(ControlExit.unavailable, L("Couldn’t encode the reply"))
             }
             return .ok(String(decoding: data, as: UTF8.self))
         }
@@ -134,12 +134,12 @@ enum Feedback {
     /// Brightness OSD for a display, with nits when that's on.
     @MainActor static func brightness(_ ctx: DisplaysContext, _ display: DisplayInfo) {
         guard let value = ctx.brightness.value(for: display.key) else { return }
-        var detail: String?
-        if ctx.runtime.isEffective(.nits), ctx.config.value.brightness.showNits, let nits = ctx.brightness.nits(for: display.key) {
-            detail = NitsModel.label(nits.value, estimate: nits.estimate)
-        }
+        let nitsEffective = ctx.runtime.isEffective(.nits)
+        let detail = NitsModel.indicatorDetail(showNits: ctx.config.value.brightness.showNits, nitsEffective: nitsEffective,
+                                               nits: nitsEffective ? ctx.brightness.nits(for: display.key) : nil,
+                                               extra: value > 1)
         if value > 1 {
-            show(ctx, .xdr, value: value, max: 1, display: display, detail: detail ?? L("Extra brightness"))
+            show(ctx, .xdr, value: value, max: 1, display: display, detail: detail)
         } else {
             show(ctx, .brightness, value: value, max: 1, display: display, detail: detail)
         }
@@ -169,7 +169,7 @@ enum PerDisplayEdit {
             case .ended: return L("the feature stopped")
             }
         } catch {
-            return L("the shortcut couldn't be registered")
+            return L("the shortcut couldn’t be registered")
         }
     }
 }
@@ -189,6 +189,7 @@ enum PerDisplayEdit {
     static let downAction = DisplayActionID(rawValue: "c.brightnessDown")
     static let fineUpAction = DisplayActionID(rawValue: "c.brightnessUpFine")
     static let fineDownAction = DisplayActionID(rawValue: "c.brightnessDownFine")
+    static var observedSections: Set<DisplaysConfigSection> { [.brightness, .perDisplayBrightness] }
 
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
@@ -206,7 +207,7 @@ enum PerDisplayEdit {
         case .brightnessApple:
             return context.privateAPI.availability(of: .dsGetBrightness)
         case .brightnessDDC:
-            return SNDDC.isAvailable() ? .available : .unavailable(L("DDC isn't available on this Mac"))
+            return SNDDC.isAvailable() ? .available : .unavailable(L("Hardware brightness isn’t available on this Mac"))
         case .brightnessGamma:
             if AffectedModels.gammaIsUnreliable(HostInfo.current) { return .unavailable(AffectedModels.reason(.gammaNoOp)) }
             return .available
@@ -240,6 +241,7 @@ enum PerDisplayEdit {
         self.effective = effective
         if !effective.contains(.dimOnLock) { context?.brightness.setLockDim(nil) }
         context?.brightness.reevaluate()
+        context?.runtime.revision(.brightness).bump()
         context?.requestMenuRebuild()
     }
 
@@ -252,7 +254,10 @@ enum PerDisplayEdit {
                 || a.gammaWorks != b.gammaWorks || a.nits != b.nits
         }
         for key in changedKeys { context?.brightness.reevaluate(key) }
-        if !changedKeys.isEmpty { context?.requestMenuRebuild() }
+        if !changedKeys.isEmpty {
+            context?.runtime.revision(.brightness).bump()
+            context?.requestMenuRebuild()
+        }
     }
 
     func stop() {
@@ -303,8 +308,8 @@ enum PerDisplayEdit {
 
     // MARK: Changes
 
+    /// Menus, pages and the panel follow `DisplayRuntime` (BrightnessService writes it); this only asks about gamma.
     private func brightnessChanged(_ change: BrightnessService.Change) {
-        menuItems?.update(change.key, value: change.value)
         if change.source == .user || change.source == .keys { askDidItGetDarker(change.key) }
     }
 
@@ -316,8 +321,8 @@ enum PerDisplayEdit {
               let out = context.brightness.output(for: key), out.software < 0.7 else { return }
         askedDarker.insert(key)
         PerDisplayEdit.update(context, key) { $0.brightness.gammaWorks = true }
-        context.toasts.show(L("Snaptic dimmed this display with its color table. If it didn't get darker, switch to overlay dimming."),
-                            action: ToastAction(title: L("It didn't get darker")) { [weak self] in
+        context.toasts.show(L("Snaptic dimmed this display with its color table. If it didn’t get darker, switch to overlay dimming."),
+                            action: ToastAction(title: L("It Didn’t Get Darker")) { [weak self] in
                                 guard let self, let ctx = self.context else { return }
                                 PerDisplayEdit.update(ctx, key) { $0.brightness.gammaWorks = false }
                                 ctx.brightness.reevaluate(key)
@@ -352,7 +357,7 @@ enum PerDisplayEdit {
     private func registerCommands(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("set brightness", policy: .low, offOnly: false, cliAllowed: true,
                               summary: L("Set brightness: set brightness 60 [display] (or +10 / -10)"),
-                              lifetime: lifetime) { [weak self] request in
+                              lifetime: lifetime) { [weak self] request, _ in
             guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
             let usage = L("Usage: set brightness <percent|+n|-n> [display]. ") + DisplayTargets.usage
             let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 1, usage: usage, ctx)
@@ -376,7 +381,7 @@ enum PerDisplayEdit {
         }
         ctx.commands.register("get brightness", policy: .read, offOnly: false, cliAllowed: true,
                               summary: L("Print brightness per display: get brightness [display]"), lifetime: lifetime) {
-            [weak self] request in
+            [weak self] request, _ in
             guard let self, let ctx = self.context else { return DisplayTargets.notRunning() }
             let usage = L("Usage: get brightness [display]. ") + DisplayTargets.usage
             let (parsed, error) = DisplayTargets.cliArguments(request.arguments, valueCount: 0, default: .all, usage: usage, ctx)

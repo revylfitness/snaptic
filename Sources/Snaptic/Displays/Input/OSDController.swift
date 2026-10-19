@@ -21,13 +21,15 @@ import SnapticShims
         if self.lifetime != nil { stop() }
         self.context = context
         self.lifetime = lifetime
-        context.diagnostics.register(self, section: L("On-screen display"), lifetime: lifetime)
+        context.diagnostics.register(self, section: L("Brightness indicator"), lifetime: lifetime)
         context.registerSession(self, lifetime: lifetime)
         context.osd.controller = self
         apply(effective)
     }
 
     func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) { apply(effective) }
+
+    static var observedSections: Set<DisplaysConfigSection> { [.keys] }
 
     func configDidChange(from old: DisplaysConfig, to new: DisplaysConfig) {
         if old.keys.osdStyle != new.keys.osdStyle || old.keys.osdPosition != new.keys.osdPosition { context?.osd.hideAll() }

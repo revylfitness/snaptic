@@ -85,7 +85,7 @@ package struct VirtualConfig: ConfigModel {
 
     package init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        screens = (try? c.decodeIfPresent(TolerantArray<VirtualScreenSpec>.self, forKey: .screens))?.values ?? []
+        screens = c.lossyArray(.screens, [])
         connected = c.lossy(.connected, LossyMap())
         smartHiDPI = c.lossy(.smartHiDPI, LossyMap())
         restoreLayoutAfterConnect = c.lossy(.restoreLayoutAfterConnect, true)
@@ -130,5 +130,10 @@ package struct VirtualConfig: ConfigModel {
     package func screen(_ id: StableID) -> VirtualScreenSpec? { screens.first { $0.id == id } }
 
     /// Estimated backing of every user screen (for the budget).
-    package var totalBackingBytes: UInt64 { screens.reduce(0) { $0 &+ $1.estimatedBackingBytes } }
+    package var totalBackingBytes: UInt64 {
+        screens.reduce(0) { total, screen in
+            let (sum, overflow) = total.addingReportingOverflow(screen.estimatedBackingBytes)
+            return overflow ? UInt64.max : sum
+        }
+    }
 }

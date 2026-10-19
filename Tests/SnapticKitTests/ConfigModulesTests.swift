@@ -13,7 +13,10 @@ final class ConfigModulesTests: XCTestCase {
     func testFreshDefaultsEnableEveryModuleInTheSharedMenu() {
         let c = ModulesConfig()
         XCTAssertEqual(c.enabledModules, ModuleID.allCases)
-        for id in ModuleID.allCases { XCTAssertEqual(c.placement(id), .shared) }
+        // 0.3: per-id defaults; Awake is shown when active (C11), so placement(.awake) is no longer .shared.
+        for id in [ModuleID.windowSwitcher, .displays] { XCTAssertEqual(c.placement(id), .shared) }
+        XCTAssertEqual(c.presence(.awake), .ownIconWhenActive)
+        XCTAssertEqual(c.placement(.awake), .ownIcon)
         XCTAssertFalse(c.showNewDisplaysCard)
         XCTAssertFalse(c.commandLine.enabled)
         XCTAssertEqual(c.otherApps, .pauseOverlapping)
@@ -25,6 +28,10 @@ final class ConfigModulesTests: XCTestCase {
         XCTAssertTrue(c.isEnabled(.windowSwitcher))
         XCTAssertFalse(c.isEnabled(.displays))
         XCTAssertTrue(c.showNewDisplaysCard)
+        XCTAssertEqual(c.newModuleCards, [.displays, .awake])
+        // 0.3 C7: upgraders get Awake off, shown when active.
+        XCTAssertFalse(c.isEnabled(.awake))
+        XCTAssertEqual(c.presence(.awake), .ownIconWhenActive)
     }
 
     func testTurningDisplaysOnDismissesTheCard() {
@@ -167,6 +174,25 @@ final class ConfigModulesTests: XCTestCase {
         XCTAssertTrue(plan.ownIcon.isEmpty)
     }
 
+    /// Review6 ux nit 7: the Menu Bar page's Snaptic icon tiles are live only while a Snaptic item exists.
+    func testHasSnapticItem() {
+        let all = Set(ModuleID.allCases)
+        var c = ModulesConfig()
+        XCTAssertTrue(c.hasSnapticItem(running: all), "defaults: every module in the Snaptic menu")
+        for id in [ModuleID.windowSwitcher, .displays] { c.setPresence(.ownIcon, for: id) }
+        c.setPresence(.ownIcon, for: .awake)
+        XCTAssertFalse(c.hasSnapticItem(running: all), "every module Always Show: no Snaptic item")
+        c.setPresence(.ownIconWhenActive, for: .awake)
+        XCTAssertTrue(c.hasSnapticItem(running: all), "Awake's compact rows live in the Snaptic item at rest")
+        c.setPresence(.hidden, for: .awake)
+        XCTAssertFalse(c.hasSnapticItem(running: all))
+        c.setPresence(.inSnapticMenu, for: .windowSwitcher)
+        XCTAssertTrue(c.hasSnapticItem(running: all))
+        XCTAssertFalse(c.hasSnapticItem(running: [.displays, .awake]), "a stopped module shows nothing")
+        for id in ModuleID.allCases { c.setEnabled(false, for: id) }
+        XCTAssertTrue(c.hasSnapticItem(running: []), "No Modules Are On is the Snaptic item")
+    }
+
     func testDisabledModulesDontAppearEvenIfStillRunning() {
         var c = ModulesConfig()
         c.setEnabled(false, for: .displays)
@@ -258,5 +284,240 @@ final class ConfigModulesTests: XCTestCase {
         c.setEnabled(true, for: .displays)
         c.setPlacement(.hidden, for: .displays)
         XCTAssertFalse(c.iconsNeedExternalDisplay)       // everything hidden has its own notice
+    }
+
+    // MARK: 0.3 presence (M2)
+
+    func testPerIDDefaults() {
+        XCTAssertEqual(ModulesConfig.defaultPreferences(.windowSwitcher), ModulePreferences(enabled: true, presence: .inSnapticMenu))
+        XCTAssertEqual(ModulesConfig.defaultPreferences(.displays), ModulePreferences(enabled: true, presence: .inSnapticMenu))
+        XCTAssertEqual(ModulesConfig.defaultPreferences(.awake), ModulePreferences(enabled: true, presence: .ownIconWhenActive))
+    }
+
+    func testM2MapsStoredPlacementsWhilePresenceIsAbsent() throws {
+        let json = #"""
+        {"modules":{"windowSwitcher":{"enabled":true,"placement":"shared"},
+                    "displays":{"enabled":true,"placement":"ownIcon","hideWithoutExternalDisplay":true},
+                    "awake":{"enabled":true,"placement":"ownIcon"}}}
+        """#
+        let c = try decode(json)
+        XCTAssertEqual(c.presence(.windowSwitcher), .inSnapticMenu)
+        XCTAssertEqual(c.presence(.displays), .ownIconWhenActive)
+        XCTAssertEqual(c.presence(.awake), .ownIconWhenActive)   // Awake's own icon → its default
+        let hidden = try decode(#"{"modules":{"displays":{"placement":"hidden"},"awake":{"placement":"hidden"}}}"#)
+        XCTAssertEqual(hidden.presence(.displays), .hidden)
+        XCTAssertEqual(hidden.presence(.awake), .hidden)
+        let own = try decode(#"{"modules":{"displays":{"placement":"ownIcon"}}}"#)
+        XCTAssertEqual(own.presence(.displays), .ownIcon)
+    }
+
+    func testStoredPresenceWinsAndAnUnknownOneFallsBack() throws {
+        let json = #"{"modules":{"awake":{"presence":"ownIcon","placement":"hidden"},"displays":{"presence":"teleport","placement":"hidden"}}}"#
+        let c = try decode(json)
+        XCTAssertEqual(c.presence(.awake), .ownIcon)
+        XCTAssertEqual(c.presence(.displays), .hidden)
+    }
+
+    func testPresenceIsWrittenBackAsTheZeroTwoFields() throws {
+        var c = ModulesConfig()
+        c.setPresence(.ownIconWhenActive, for: .displays)
+        c.setPresence(.hidden, for: .windowSwitcher)
+        let text = String(decoding: try JSONEncoder().encode(c), as: UTF8.self)
+        struct Legacy: Decodable {
+            struct Prefs: Decodable { var placement: MenuPlacementChoice; var hideWithoutExternalDisplay: Bool }
+            var modules: [String: Prefs]
+        }
+        let legacy = try JSONDecoder().decode(Legacy.self, from: Data(text.utf8))
+        XCTAssertEqual(legacy.modules["displays"]?.placement, .ownIcon)
+        XCTAssertEqual(legacy.modules["displays"]?.hideWithoutExternalDisplay, true)
+        XCTAssertEqual(legacy.modules["windowSwitcher"]?.placement, .hidden)
+        XCTAssertEqual(try roundTrip(c), c)
+    }
+
+    func testZeroTwoRoundTripKeepsPresence() throws {
+        // 0.3 → 0.2 (re-saves without `presence`) → 0.3.
+        var c = ModulesConfig()
+        c.setPresence(.ownIconWhenActive, for: .displays)
+        c.setPresence(.inSnapticMenu, for: .awake)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let stripped = String(decoding: try encoder.encode(c), as: UTF8.self)
+            .replacingOccurrences(of: #""presence":"ownIconWhenActive","#, with: "")
+            .replacingOccurrences(of: #""presence":"inSnapticMenu","#, with: "")
+        XCTAssertFalse(stripped.contains("presence"))
+        let back = try decode(stripped)
+        XCTAssertEqual(back.presence(.displays), .ownIconWhenActive)
+        XCTAssertEqual(back.presence(.awake), .inSnapticMenu)
+    }
+
+    func testZeroTwoSettersKeepPresenceInStep() {
+        var c = ModulesConfig()
+        c.setPlacement(.ownIcon, for: .displays)
+        var p = c.preferences(.displays)
+        p.hideWithoutExternalDisplay = true
+        c.modules[.displays] = p
+        XCTAssertEqual(c.presence(.displays), .ownIconWhenActive)
+        c.setPlacement(.ownIcon, for: .displays)
+        XCTAssertEqual(c.presence(.displays), .ownIconWhenActive)
+        c.setPlacement(.shared, for: .displays)
+        XCTAssertEqual(c.presence(.displays), .inSnapticMenu)
+        c.resetMenu()
+        XCTAssertEqual(c.presence(.awake), .ownIconWhenActive)
+        XCTAssertEqual(c.presence(.displays), .inSnapticMenu)
+    }
+
+    func testSanitizeOnlyAllowsWhenActiveForDisplaysAndAwake() {
+        var c = ModulesConfig()
+        c.modules[.windowSwitcher] = ModulePreferences(enabled: true, presence: .ownIconWhenActive)
+        XCTAssertEqual(c.sanitized().presence(.windowSwitcher), .ownIcon)
+        c.setPresence(.ownIconWhenActive, for: .windowSwitcher)
+        XCTAssertEqual(c.presence(.windowSwitcher), .ownIcon)
+    }
+
+    // MARK: 0.3 new-module cards (M3)
+
+    func testNewModuleCardsDecodeLossilyAndDeduplicated() throws {
+        let c = try decode(#"{"newModuleCards":["awake.migrated","teleport","displays","awake.migrated",4]}"#)
+        XCTAssertEqual(c.newModuleCards, [.awakeMigrated, .displays])
+        XCTAssertEqual(c.sanitized().newModuleCards, [.awakeMigrated, .displays])
+        XCTAssertEqual(try roundTrip(c).newModuleCards, [.awakeMigrated, .displays])
+    }
+
+    func testM3RunsOnceAndRecordsItsMarker() {
+        var c = ModulesConfig()
+        c.showNewDisplaysCard = true
+        var ledger = MigrationLedger()
+        let once = c.migrated(ledger: &ledger)
+        XCTAssertEqual(once.newModuleCards, [.displays])
+        XCTAssertTrue(ledger.has(.newModuleCards))
+        // The user dismisses the card; a second run must not bring it back.
+        var dismissed = once
+        dismissed.newModuleCards = []
+        XCTAssertEqual(dismissed.migrated(ledger: &ledger), dismissed)
+    }
+
+    func testM3WithoutTheCardAddsNothing() {
+        var ledger = MigrationLedger()
+        XCTAssertEqual(ModulesConfig().migrated(ledger: &ledger).newModuleCards, [])
+        XCTAssertTrue(ledger.has(.newModuleCards))
+    }
+
+    // MARK: Awake upgrader insertion (§2.13, marker awakeUpgrade.v1)
+
+    /// One launch as ModuleHost runs it: the stored value (or the first-run value), M3, the Awake insertion, then
+    /// M1's marker (recorded on every launch whatever M1 found); what it returns is what gets saved, so it goes
+    /// through JSON like the store.
+    private func launch(_ stored: ModulesConfig?, launchedBefore: Bool = true,
+                        ledger: inout MigrationLedger) throws -> ModulesConfig {
+        var c = stored ?? ModulesConfig.firstRun(launchedBefore: launchedBefore)
+        c = c.migrated(ledger: &ledger)
+        c = c.insertingAwakeForUpgrader(modulesExisted: stored != nil, ledger: &ledger)
+        ledger.record(.fromDisplays)
+        return try roundTrip(c)
+    }
+
+    /// A tester who installed a 0.3 build from before `awakeUpgrade.v1` existed (review5 ui N1): its launches
+    /// recorded M3 and M1 but not this marker. The next build must not take it for a 0.2 upgrader.
+    func testPreMarkerZeroThreeInstallIsNotAnUpgrader() throws {
+        var ledger = MigrationLedger()
+        ledger.record(.newModuleCards)
+        ledger.record(.fromDisplays)
+        var stored = ModulesConfig.firstRun(launchedBefore: false)
+        stored.onboarding = .done
+        XCTAssertNil(stored.modules[.awake])
+        let c = try launch(stored, ledger: &ledger)
+        XCTAssertNil(c.modules[.awake])
+        XCTAssertTrue(c.isEnabled(.awake))
+        XCTAssertFalse(c.newModuleCards.contains(.awake))
+        XCTAssertTrue(ledger.has(.awakeUpgrade))
+        // A 0.2 store has no ledger at all, so the same stored value from 0.2 is still an upgrade.
+        var fresh = MigrationLedger()
+        XCTAssertFalse(try launch(stored, ledger: &fresh).isEnabled(.awake))
+    }
+
+    func testFreshInstallKeepsAwakeOnAcrossLaunches() throws {
+        var ledger = MigrationLedger()
+        var c = try launch(nil, launchedBefore: false, ledger: &ledger)
+        XCTAssertTrue(ledger.has(.awakeUpgrade))
+        XCTAssertNil(c.modules[.awake])
+        // Onboarding finished without touching the Awake switch: still no Awake entry stored.
+        c.onboarding = .done
+        for _ in 0..<3 {
+            c = try launch(c, ledger: &ledger)
+            XCTAssertTrue(c.isEnabled(.awake))
+            XCTAssertEqual(c.presence(.awake), .ownIconWhenActive)
+            XCTAssertFalse(c.newModuleCards.contains(.awake))
+        }
+    }
+
+    func testResetKeepsThePerIDDefaults() throws {
+        var ledger = MigrationLedger()
+        var c = try launch(nil, launchedBefore: false, ledger: &ledger)
+        c.setEnabled(false, for: .awake)
+        c = try launch(c, ledger: &ledger)
+        // General › Reset writes ModulesConfig() and relaunches; the ledger is kept.
+        c = try launch(ModulesConfig(), ledger: &ledger)
+        for id in ModuleID.allCases { XCTAssertEqual(c.preferences(id), ModulesConfig.defaultPreferences(id)) }
+        XCTAssertTrue(c.isEnabled(.awake))
+        XCTAssertEqual(c.newModuleCards, [])
+    }
+
+    func testZeroTwoUpgraderGetsAwakeOffAndItsCardOnce() throws {
+        // A 0.2 store: module entries without Awake, no ledger (0.2 never writes it).
+        var zeroTwo = ModulesConfig()
+        zeroTwo.modules[.windowSwitcher] = ModulePreferences(enabled: true)
+        zeroTwo.modules[.displays] = ModulePreferences(enabled: true)
+        zeroTwo.onboarding = .done
+        var ledger = MigrationLedger()
+        var c = try launch(zeroTwo, ledger: &ledger)
+        XCTAssertEqual(c.modules[.awake], ModulesConfig.awakeUpgradePreferences)
+        XCTAssertFalse(c.isEnabled(.awake))
+        XCTAssertEqual(c.newModuleCards, [.awake])
+        XCTAssertTrue(ledger.has(.awakeUpgrade))
+        // The user dismisses the card, then turns Awake on: later launches change neither.
+        c.newModuleCards = []
+        c = try launch(c, ledger: &ledger)
+        XCTAssertEqual(c.newModuleCards, [])
+        c.setEnabled(true, for: .awake)
+        c = try launch(c, ledger: &ledger)
+        XCTAssertTrue(c.isEnabled(.awake))
+        XCTAssertEqual(c.newModuleCards, [])
+        // Even a stored value that lost its Awake entry later is not an upgrade any more.
+        c.modules[.awake] = nil
+        XCTAssertTrue(try launch(c, ledger: &ledger).isEnabled(.awake))
+    }
+
+    func testZeroOneUpgraderGetsTheEntryFromTheUpgradeDefaultsOnly() throws {
+        var ledger = MigrationLedger()
+        let c = try launch(nil, launchedBefore: true, ledger: &ledger)
+        XCTAssertFalse(c.isEnabled(.awake))
+        XCTAssertEqual(c.newModuleCards, [.displays, .awake])
+        XCTAssertTrue(ledger.has(.awakeUpgrade))
+        XCTAssertEqual(try launch(c, ledger: &ledger), c)
+    }
+
+    func testAwakeInsertionKeepsAStoredAwakeEntry() {
+        var c = ModulesConfig()
+        c.modules[.awake] = ModulePreferences(enabled: true, presence: .ownIcon)
+        var ledger = MigrationLedger()
+        XCTAssertEqual(c.insertingAwakeForUpgrader(modulesExisted: true, ledger: &ledger), c)
+        XCTAssertTrue(ledger.has(.awakeUpgrade))
+    }
+
+    func testTurningDisplaysOnRemovesItsCard() {
+        var c = ModulesConfig.upgradeDefaults()
+        c.newModuleCards = [.displays, .awakeMigrated]
+        c.setEnabled(true, for: .displays)
+        XCTAssertEqual(c.newModuleCards, [.awakeMigrated])
+    }
+
+    // MARK: 0.3 status items
+
+    func testStatusItemPlanDefaultsKeepTheZeroTwoCallSitesCompiling() {
+        let plan = StatusItemPlan(shared: [], ownIcon: [], showShared: true, noModulesEnabled: true, everythingHidden: false)
+        XCTAssertEqual(plan.custom, [])
+        XCTAssertFalse(plan.awakeCompactInShared)
+        XCTAssertFalse(plan.sharedActiveGlyph)
+        XCTAssertFalse(plan.sharedFooterInOwnMenus)
     }
 }

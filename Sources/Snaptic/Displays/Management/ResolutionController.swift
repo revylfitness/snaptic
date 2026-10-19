@@ -7,6 +7,8 @@ import SnapticKit
     DiagnosticsContributor {
     static var id: DisplayControllerID { .resolution }
     static var privateSymbols: [PrivateSymbol] { [] }
+    /// Resolution settings and each display's filters, favorites and remembered choice (0.3 §4.5).
+    static var observedSections: Set<DisplaysConfigSection> { [.resolution, .perDisplayResolution] }
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
 
@@ -80,11 +82,17 @@ import SnapticKit
 
     func effectiveFeaturesDidChange(_ effective: Set<DisplayFeature>) {
         self.effective = effective
-        context?.requestMenuRebuild()
+        changed()
     }
 
     func configDidChange(from old: DisplaysConfig, to new: DisplaysConfig) {
-        if old.resolution != new.resolution || old.perDisplay != new.perDisplay { context?.requestMenuRebuild() }
+        if old.resolution != new.resolution || old.perDisplay != new.perDisplay { changed() }
+    }
+
+    /// Page-visible state changed (mode lists, undo and redo, favorites): one revision bump and a menu rebuild.
+    private func changed() {
+        context?.runtime.revision(Self.id).bump()
+        context?.requestMenuRebuild()
     }
 
     func stop() {
@@ -287,7 +295,7 @@ import SnapticKit
         }
         lastSeen[key] = applied
         if let d = info(key) { ctx.osd.show(.resolution, text: label(applied, markers: false), on: d.desktopID) }
-        ctx.requestMenuRebuild()
+        changed()
     }
 
     /// "Show all modes": a hidden (CGS) mode, always a trial, never persisted or learned.
@@ -307,12 +315,14 @@ import SnapticKit
     func undo(_ key: DisplayKey) {
         guard var h = history[key], let target = h.undo.popLast() else { return }
         history[key] = h
+        changed()
         apply(target, to: key, label: L("Undo resolution change"), move: .undo)
     }
 
     func redo(_ key: DisplayKey) {
         guard var h = history[key], let target = h.redo.popLast() else { return }
         history[key] = h
+        changed()
         apply(target, to: key, label: L("Redo resolution change"), move: .redo)
     }
 
@@ -372,7 +382,7 @@ import SnapticKit
         let favs = favorites(key)
         guard favs.indices.contains(index), let d = info(key) else { return }
         guard let ref = favs[index].resolve(in: allModes(d).map(\.ref)) else {
-            context?.toasts.show(L("Favorite \(index + 1) isn't available on this display"), lifetime: lifetime)
+            context?.toasts.show(L("Favorite \(index + 1) isn’t available on this display"), lifetime: lifetime)
             return
         }
         apply(ref, to: key, label: L("Apply favorite resolution"))
@@ -413,11 +423,11 @@ import SnapticKit
         guard let ctx = context, let lifetime, effective.contains(.scaleMatch) else { return }
         let proposals = scaleMatchProposals()
         guard !proposals.isEmpty else {
-            ctx.toasts.show(L("UI sizes already match"), lifetime: lifetime)
+            ctx.toasts.show(L("Text already looks the same size on every display"), lifetime: lifetime)
             return
         }
         let summary = proposals.compactMap { p in info(p.key).map { "\($0.name): \(label(p.to, markers: false))" } }.joined(separator: "; ")
-        ctx.toasts.show(L("Match UI size: \(summary)"), action: ToastAction(title: L("Apply")) { [weak self] in
+        ctx.toasts.show(L("Match text size: \(summary)"), action: ToastAction(title: L("Apply")) { [weak self] in
             self?.applyScaleMatch(proposals)
         }, lifetime: lifetime)
     }
@@ -441,7 +451,7 @@ import SnapticKit
         var before: [DisplayKey: ModeRef] = [:]
         for p in proposals { if let d = info(p.key), let m = currentMode(d) { before[p.key] = m } }
         ctx.connectPlanner.beginUserChange()
-        let outcome = await ManagedTransactions.run(ctx, TransactionRequest(label: L("Match UI size"), risk: .trial, changes: changes,
+        let outcome = await ManagedTransactions.run(ctx, TransactionRequest(label: L("Match text size"), risk: .trial, changes: changes,
                                                                            skipConfirmation: skipConfirmation))
         let ok = outcome == .applied || outcome == .kept
         ctx.connectPlanner.endUserChange(changed: ok)
@@ -486,6 +496,8 @@ import SnapticKit
     private func observe(_ displays: [DisplayInfo]) {
         guard let ctx = context else { return }
         modeCache = [:]
+        // Mode lists, the current mode and what Undo would do may all have changed.
+        ctx.runtime.revision(Self.id).bump()
         let now = managementUptime()
         for d in displays where d.isActive {
             guard let m = currentMode(d) else { continue }
@@ -533,17 +545,17 @@ import SnapticKit
         }
         add(.dResolutionUp, L("Increase Resolution")) { $0.step($1, by: 1) }
         add(.dResolutionDown, L("Decrease Resolution")) { $0.step($1, by: -1) }
-        add(.dHiDPIToggle, L("Toggle HiDPI")) { c, k in if let m = c.hiDPIToggleTarget(k) { c.apply(m, to: k) } }
+        add(.dHiDPIToggle, ManagementText.hiDPIOnOff) { c, k in if let m = c.hiDPIToggleTarget(k) { c.apply(m, to: k) } }
         add(.dNativeMode, L("Native Resolution")) { c, k in if let m = c.native(k) { c.apply(m, to: k) } }
         add(.dDefaultMode, L("Default Resolution")) { c, k in if let m = c.defaultMode(k) { c.apply(m, to: k) } }
-        add(.dNativeHalved, L("Native-Halved HiDPI")) { c, k in if let m = c.nativeHalved(k) { c.apply(m, to: k) } }
+        add(.dNativeHalved, ManagementText.halfOfNativeResolution) { c, k in if let m = c.nativeHalved(k) { c.apply(m, to: k) } }
         add(.dResolutionUndo, L("Undo Resolution Change")) { $0.undo($1) }
         add(.dResolutionRedo, L("Redo Resolution Change")) { $0.redo($1) }
-        add(.dNotchToggle, L("Toggle Notch")) { c, k in if let m = c.notchToggleTarget(k) { c.apply(m, to: k) } }
+        add(.dNotchToggle, ManagementText.notchAreaOnOff) { c, k in if let m = c.notchToggleTarget(k) { c.apply(m, to: k) } }
         for n in 1...PerDisplayResolution.maxFavorites {
             add(.dFavorite(n), L("Favorite Resolution \(n)")) { $0.applyFavorite(n - 1, on: $1) }
         }
-        ctx.actions.register(Action(id: .dMatchUI, title: L("Match UI Size…"), feature: .scaleMatch, cliAllowed: true) { [weak self] _ in
+        ctx.actions.register(Action(id: .dMatchUI, title: ManagementText.matchTextSize, feature: .scaleMatch, cliAllowed: true) { [weak self] _ in
             self?.matchUIScale()
         }, lifetime: lifetime)
     }
@@ -551,15 +563,15 @@ import SnapticKit
     private func registerCommands(_ ctx: DisplaysContext, lifetime: Lifetime) {
         ctx.commands.register("mode", policy: .trial, offOnly: false, cliAllowed: true,
                               summary: L("mode list|up|down|hidpi|native|default|halved|undo|redo|notch [display] | mode set <display> WxH[@Hz] [hidpi|lodpi] | mode favorite N [display]"),
-                              lifetime: lifetime) { [weak self] request in
+                              lifetime: lifetime) { [weak self] request, _ in
             guard let self else { return .failure(ControlExit.unavailable, L("Resolution is off")) }
             return await self.handleMode(request)
         }
-        ctx.commands.register("match-ui", policy: .trial, offOnly: false, cliAllowed: true, summary: L("Match UI size across displays"),
-                              lifetime: lifetime) { [weak self] request in
-            guard let self, self.effective.contains(.scaleMatch) else { return .failure(ControlExit.unavailable, L("Match UI size is off")) }
+        ctx.commands.register("match-ui", policy: .trial, offOnly: false, cliAllowed: true, summary: L("Match text size across displays"),
+                              lifetime: lifetime) { [weak self] request, _ in
+            guard let self, self.effective.contains(.scaleMatch) else { return .failure(ControlExit.unavailable, L("Match text size is off")) }
             let proposals = self.scaleMatchProposals()
-            guard !proposals.isEmpty else { return .ok(L("UI sizes already match")) }
+            guard !proposals.isEmpty else { return .ok(L("Text already looks the same size on every display")) }
             // Awaited like `mode`: 0 kept, 6 declined or timed out.
             let outcome = await self.applyScaleMatchAwaiting(proposals, skipConfirmation: request.skipConfirmation)
             guard outcome == .applied || outcome == .kept else { return ManagedTransactions.response(outcome) }
@@ -624,7 +636,7 @@ import SnapticKit
                 if let n = favorite {
                     let favs = favorites(d.key)
                     guard favs.indices.contains(n - 1), let ref = favs[n - 1].resolve(in: allModes(d).map(\.ref)) else {
-                        return .failure(ControlExit.notFound, L("Favorite \(n) isn't available on \(d.name)"))
+                        return .failure(ControlExit.notFound, L("Favorite \(n) isn’t available on \(d.name)"))
                     }
                     plan.append((d, ref, L("Apply favorite resolution"), .normal))
                 } else if let t = cliTarget(sub, d) {

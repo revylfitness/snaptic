@@ -21,7 +21,6 @@ extension DisplayActionID {
     package static let dConnectAll = Self(rawValue: "d.connectAll")
     package static let dDisconnect = Self(rawValue: "d.disconnect")
     package static let dDisconnectAllButMain = Self(rawValue: "d.disconnectAllButMain")
-    package static let dSleepPreventionToggle = Self(rawValue: "d.sleepPreventionToggle")
     package static let dProtectionToggle = Self(rawValue: "d.protectionToggle")
     package static let dSmartHiDPIToggle = Self(rawValue: "d.smartHiDPIToggle")
 
@@ -35,9 +34,13 @@ extension DisplayActionID {
     package static var managementActions: [DisplayActionID] {
         [dResolutionUp, dResolutionDown, dHiDPIToggle, dNativeMode, dDefaultMode, dNativeHalved, dResolutionUndo,
          dResolutionRedo, dNotchToggle, dMatchUI, dRotate, dHDRToggle, dSetMain, dMirrorToggle, dToggleBuiltin, dConnectAll,
-         dDisconnect, dDisconnectAllButMain, dSleepPreventionToggle, dProtectionToggle, dSmartHiDPIToggle]
+         dDisconnect, dDisconnectAllButMain, dProtectionToggle, dSmartHiDPIToggle]
             + (1...5).map(dFavorite) + (1...9).map(dLayout) + (1...8).map(dVirtualToggle)
     }
+
+    /// 0.2 actions that no longer exist. Their combos stay in `keys.shortcuts` (a 0.2 downgrade still reads them) but
+    /// are never registered, counted or listed: "d.sleepPreventionToggle" moved to Awake › Pause Rules (M1, R5-12).
+    package static let retiredActions: Set<DisplayActionID> = [Self(rawValue: AwakeMigration.legacyToggleAction)]
 }
 
 extension DisplayMenuItemID {
@@ -57,7 +60,6 @@ extension DisplayMenuItemID {
     /// Tools › "Arrange…" (opens the Arrangement page).
     package static let dArrange = Self(rawValue: "d.arrange")
     package static let dUnderscanMenu = Self(rawValue: "d.underscanMenu")
-    package static let dSleepPrevention = Self(rawValue: "d.sleepPrevention")
     package static let dProtection = Self(rawValue: "d.protection")
     package static let dLayoutsMenu = Self(rawValue: "d.layoutsMenu")
     package static let dLayoutMatch = Self(rawValue: "d.layoutMatch")
@@ -66,7 +68,7 @@ extension DisplayMenuItemID {
 
     package static var managementItems: [DisplayMenuItemID] {
         [dResolutionSlider, dResolutionMenu, dMatchUI, dSetMain, dMirrorMenu, dRotationMenu, dHDRToggle, dPowerSwitch,
-         dDisconnectItem, dConnectAll, dConnectAllQuick, dDisconnectAllButMain, dArrange, dUnderscanMenu, dSleepPrevention,
-         dProtection, dLayoutsMenu, dLayoutMatch, dVirtualMenu, dSmartHiDPI]
+         dDisconnectItem, dConnectAll, dConnectAllQuick, dDisconnectAllButMain, dArrange, dUnderscanMenu, dProtection,
+         dLayoutsMenu, dLayoutMatch, dVirtualMenu, dSmartHiDPI]
     }
 }

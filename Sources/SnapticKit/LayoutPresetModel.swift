@@ -207,6 +207,25 @@ package struct LiveLayoutDisplay: Equatable, Sendable {
     }
 }
 
+/// A presented display's live arrangement, for `LayoutPresetModel.isCurrent`.
+package struct LayoutLiveState: Equatable, Sendable {
+    package var mode: ModeRef?
+    package var x: Int32
+    package var y: Int32
+    package var isMain: Bool
+    package var rotation: Int
+    package var mirrorOf: DisplayKey?
+
+    package init(mode: ModeRef?, x: Int32, y: Int32, isMain: Bool, rotation: Int, mirrorOf: DisplayKey?) {
+        self.mode = mode
+        self.x = x
+        self.y = y
+        self.isMain = isMain
+        self.rotation = rotation
+        self.mirrorOf = mirrorOf
+    }
+}
+
 package struct LayoutMatch: Equatable, Sendable {
     package var layoutID: StableID
     package var exact: Bool
@@ -262,6 +281,51 @@ package enum LayoutPresetModel {
             return a.0.id.rawValue < b.0.id.rawValue
         }
         return candidates.first.map { (layout: $0.0, match: $0.1) }
+    }
+
+    /// The menu's "Apply Matching Layout" (0.3 §5.2): every matching layout, whatever its auto-apply setting, by the
+    /// same order as `select` (priority, most displays, exact, name, id).
+    package static func bestMatch(_ layouts: [SavedLayout], live: [LiveLayoutDisplay]) -> SavedLayout? {
+        let manual = layouts.map { l -> SavedLayout in
+            var copy = l
+            copy.autoApply = .whenIncludes
+            return copy
+        }
+        guard let picked = select(manual, live: live) else { return nil }
+        return layouts.first { $0.id == picked.layout.id }
+    }
+
+    /// Whether the displays are arranged as `layout` says right now (the menu's checkmark). Every referenced display
+    /// must be present; only the fields the layout saved are compared (mode by shape, origin unless mirrored, main,
+    /// rotation, mirroring). A layout that saves nothing comparable is never current.
+    package static func isCurrent(_ layout: SavedLayout, states: [DisplayKey: LayoutLiveState]) -> Bool {
+        let saved = layout.displays.values
+        guard !saved.isEmpty else { return false }
+        var compared = false
+        for (key, s) in saved {
+            guard let now = states[key] else { return false }
+            if let m = s.mode {
+                guard let live = now.mode, live.sameShape(as: m) else { return false }
+                compared = true
+            }
+            if let x = s.x, let y = s.y, !(s.mirrorSet && s.mirrorOf != nil) {
+                guard now.x == x && now.y == y else { return false }
+                compared = true
+            }
+            if s.isMain == true {
+                guard now.isMain else { return false }
+                compared = true
+            }
+            if let r = s.rotation {
+                guard now.rotation == r else { return false }
+                compared = true
+            }
+            if s.mirrorSet {
+                guard now.mirrorOf == s.mirrorOf else { return false }
+                compared = true
+            }
+        }
+        return compared
     }
 
     /// Canonical bytes the trust digest covers: the layout content (without name, trust,
@@ -320,5 +384,36 @@ package enum LayoutPresetModel {
             }
         }
         return layout
+    }
+}
+
+/// Reordering a stored list from a list UI (Saved Layouts, Virtual Displays): the UI hands back the ids in their new
+/// order; anything the UI didn't know about (added meanwhile, from an import or the CLI) keeps its relative order after
+/// them, and ids that no longer exist or repeat are ignored. Nothing is lost or duplicated.
+package enum ListReorder {
+    package static func reordered<T, ID: Hashable>(_ items: [T], id: (T) -> ID, order: [ID]) -> [T] {
+        var byID: [ID: [T]] = [:]
+        for item in items { byID[id(item), default: []].append(item) }
+        var used = Set<ID>()
+        var result: [T] = []
+        result.reserveCapacity(items.count)
+        for key in order where used.insert(key).inserted {
+            result += byID[key] ?? []
+        }
+        for item in items where !used.contains(id(item)) {
+            result.append(item)
+        }
+        return result
+    }
+
+    /// The order after moving `id` by `delta` places (clamped to the ends); unknown ids leave it unchanged.
+    package static func moving<ID: Equatable>(_ id: ID, by delta: Int, in order: [ID]) -> [ID] {
+        guard let i = order.firstIndex(of: id) else { return order }
+        let j = min(order.count - 1, max(0, i + delta))
+        guard i != j else { return order }
+        var list = order
+        let element = list.remove(at: i)
+        list.insert(element, at: j)
+        return list
     }
 }

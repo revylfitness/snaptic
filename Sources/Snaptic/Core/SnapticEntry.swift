@@ -13,7 +13,7 @@ enum SnapticEntry {
         switch KitArgs.mode(arguments: arguments) {
         case .displayGuard: DisplayGuardMain.run(arguments)
         case .virtualHost: VirtualHostMain.run(arguments)
-        case .selftestHelpers, .selftestChild: SelfTest.run(arguments)
+        case .selftestHelpers, .selftestChild, .selftestControls, .selftestControlServer: SelfTest.run(arguments)
         case .cli: CLIClient.run(arguments)
         case .app: break
         }
@@ -33,14 +33,14 @@ enum SnapticEntry {
         let denied = KitArgs.deniedEnvironmentVariables(environment)
         if !denied.isEmpty {
             let names = denied.prefix(8).map { TextSanitizer.clean($0, maxScalars: 64) }.joined(separator: ", ")
-            refuse(L("Snaptic doesn't start with these environment variables set: ") + names
+            refuse(L("Snaptic doesn’t start with these environment variables set: ") + names
                    + L(". Unset them, or open Snaptic from Finder."), showAlert: true)
         }
         guard let home = AccountPaths.home else {
-            refuse(L("Snaptic couldn't look up your account's home folder."), showAlert: true)
+            refuse(L("Snaptic couldn’t look up your account’s home folder."), showAlert: true)
         }
         guard KitArgs.homeMatches(environmentHome: environment["HOME"], accountHome: home) else {
-            refuse(L("HOME doesn't match your account's home folder, so Snaptic won't start."), showAlert: true)
+            refuse(L("HOME doesn’t match your account’s home folder, so Snaptic won’t start."), showAlert: true)
         }
         redirectStandardStreams()
 
@@ -72,7 +72,7 @@ enum SnapticEntry {
             app.activate()
             let alert = NSAlert()
             alert.alertStyle = .critical
-            alert.messageText = L("Snaptic can't start")
+            alert.messageText = L("Snaptic can’t start")
             alert.informativeText = message
             alert.addButton(withTitle: L("Quit"))
             _ = alert.runModal()

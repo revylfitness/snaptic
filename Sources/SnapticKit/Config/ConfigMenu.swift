@@ -1,7 +1,8 @@
 import Foundation
 
-// Displays menu presentation (owner: F). The Menu customization page (A) edits these
-// fields; DisplaysMenuBuilder, DisplayMenuBlock and the floating Displays panel read them.
+// Displays menu presentation (owner: M; PLAN 0.3 §4.3 Menu Bar page, §5.2). The Menu Bar page and the Customize
+// Displays Menu sheet edit these fields; DisplaysMenuBuilder, DisplayMenuBlock and the floating Displays panel read
+// them. The 0.2 shortcut fields stay decoded and encoded until 0.4 (migration M4 copied them into `keys.shortcuts`).
 
 /// The top-level sections of the Displays menu, in the user's order.
 package enum DisplaysMenuSection: String, Codable, CaseIterable, Sendable {
@@ -9,6 +10,19 @@ package enum DisplaysMenuSection: String, Codable, CaseIterable, Sendable {
     case displays
     /// The Tools section (`MenuSlot.tools` items).
     case tools
+}
+
+/// The Menu Bar page's "Style" (0.3): Compact shows one slider per display and device rows without subtitles.
+package enum MenuStyle: String, CaseIterable, Sendable {
+    case standard, compact
+}
+
+/// What a "Restore … Defaults…" button resets (§4.3 footers).
+package enum MenuRestoreScope: CaseIterable, Sendable {
+    /// Customize Displays Menu: item choices, display order and visibility, section order, badges, header row.
+    case displaysMenu
+    /// Menu Bar: everything above plus Style and "Scroll over a slider to adjust it".
+    case menuBar
 }
 
 package struct MenuConfig: ConfigModel {
@@ -38,7 +52,7 @@ package struct MenuConfig: ConfigModel {
     package var showBadges: Bool
     /// Show the header row even when only one display is connected.
     package var headerForSingleDisplay: Bool
-    /// Scrolling over a menu slider adjusts it (read by MenuSliderItem).
+    /// Scrolling over a menu slider adjusts it (read by MenuSliderRow).
     package var scrollAdjustsSliders: Bool
     /// Global shortcut that opens the floating Displays panel at the pointer (macOS 27:
     /// the status item may sit in the overflow, where it can't be opened).
@@ -152,6 +166,54 @@ package struct MenuConfig: ConfigModel {
         displayOrder = d.displayOrder
         hiddenDisplays = d.hiddenDisplays
         collapsedDisplays = d.collapsedDisplays
+    }
+
+    /// The Menu Bar page's Style, stored as the 0.2 `compact` flag.
+    package var style: MenuStyle {
+        get { compact ? .compact : .standard }
+        set { compact = newValue == .compact }
+    }
+
+    /// A page's "Restore … Defaults…": the scope's fields back to their defaults. The 0.2 shortcut fields are never
+    /// touched (they are kept only for 0.2 downgrades; the live shortcuts are `keys.shortcuts`).
+    package func restoringDefaults(scope: MenuRestoreScope) -> MenuConfig {
+        let d = MenuConfig()
+        var c = self
+        c.resetLayout()
+        c.mainFirst = d.mainFirst
+        c.showBadges = d.showBadges
+        c.headerForSingleDisplay = d.headerForSingleDisplay
+        if scope == .menuBar {
+            c.compact = d.compact
+            c.scrollAdjustsSliders = d.scrollAdjustsSliders
+        }
+        return c
+    }
+
+    // MARK: Sliders (0.3: never in a submenu)
+
+    /// The menu sliders (§4.8 "0.2 menu"): top-level `MenuSliderRow`s with Show / Hide only.
+    package static let sliderItemIDs: Set<DisplayMenuItemID> = Set(
+        ["c.brightness.slider", "c.ddc.volume", "c.ddc.contrast", "c.ddc.custom", "d.resolutionSlider"]
+            .map { DisplayMenuItemID(rawValue: $0) })
+
+    package static func isSlider(_ id: DisplayMenuItemID) -> Bool { sliderItemIDs.contains(id) }
+
+    /// Whether a slider shows. A 0.2 "In submenu" choice shows it at the top level: a slider is never in a submenu,
+    /// and the user had asked to keep it in the menu.
+    package func isSliderShown(_ id: DisplayMenuItemID, default fallback: MenuItemVisibility) -> Bool {
+        visibility(of: id, default: fallback) != .hidden
+    }
+
+    /// The Customize sheet's slider checkbox.
+    package mutating func setSliderShown(_ shown: Bool, for id: DisplayMenuItemID, default fallback: MenuItemVisibility) {
+        setVisibility(shown ? .visible : .hidden, for: id, default: fallback == .inSubmenu ? .visible : fallback)
+    }
+
+    /// The choices the Customize sheet offers for an item: sliders Show / Hide, everything else all three
+    /// (per-display items; the sheet shows the rest as checkboxes).
+    package static func choices(for id: DisplayMenuItemID) -> [MenuItemVisibility] {
+        isSlider(id) ? [.visible, .hidden] : MenuItemVisibility.allCases
     }
 
     /// Splits items into first-level and "More" (submenu) lists, dropping hidden ones.

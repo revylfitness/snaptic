@@ -32,15 +32,6 @@ enum ModifierConversion {
         return flags
     }
 
-    static func eventFlags(fromCarbon carbon: UInt32) -> CGEventFlags {
-        var flags: CGEventFlags = []
-        if carbon & HotkeyRules.command != 0 { flags.insert(.maskCommand) }
-        if carbon & HotkeyRules.shift != 0 { flags.insert(.maskShift) }
-        if carbon & HotkeyRules.option != 0 { flags.insert(.maskAlternate) }
-        if carbon & HotkeyRules.control != 0 { flags.insert(.maskControl) }
-        return flags
-    }
-
     /// A combo from a key-down event in a recorder.
     static func combo(from event: NSEvent) -> HotkeyCombo {
         HotkeyCombo(keyCode: UInt32(event.keyCode), carbonModifiers: carbon(from: event.modifierFlags))

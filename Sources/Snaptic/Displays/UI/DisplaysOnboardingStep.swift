@@ -5,22 +5,28 @@ import SnapticKit
 /// The Displays step of onboarding (PLAN §3.7, R5.8): multi-select chips; the selection is
 /// the union of the chips' flags closed over the feature graph, written exactly (features
 /// not chosen are switched off). Permissions are requested afterwards, only for what was
-/// chosen. Team A's Onboarding embeds this view; it saves and resumes the step itself.
-struct DisplaysOnboardingStep: View {
+/// chosen. H's Onboarding embeds this view and owns the single primary button (0.3 §4.7): bumping `applyToken`
+/// applies the chips and calls `onApply`.
+struct DisplaysOnboardingStep: View, ControlDeclaring {
+    typealias Controls = DisplaysOnboardingStepControls
+
     @ObservedObject private var env: DisplaysPageEnvironment
     /// "Hide the menu-bar icon", offered with the keys chip (A owns menu placement).
     private let hideMenuIcon: Binding<Bool>?
     /// Called after the choices are saved, with the permissions they need. When nil, the
     /// step requests them itself (if the module runs).
     private let onApply: ((Set<Permission>) -> Void)?
+    /// Changed by the Onboarding footer's primary button: apply now.
+    private let applyToken: Int
     @State private var chips: Set<OnboardingChip> = DisplaysOnboardingPlan.defaultChips
     @State private var useSmartHiDPI = false
     @State private var applied = false
 
-    init(env: DisplaysPageEnvironment, hideMenuIcon: Binding<Bool>? = nil,
+    init(env: DisplaysPageEnvironment, hideMenuIcon: Binding<Bool>? = nil, applyToken: Int = 0,
          onApply: ((Set<Permission>) -> Void)? = nil) {
         _env = ObservedObject(wrappedValue: env)
         self.hideMenuIcon = hideMenuIcon
+        self.applyToken = applyToken
         self.onApply = onApply
     }
 
@@ -34,11 +40,11 @@ struct DisplaysOnboardingStep: View {
         Set(DisplayFeature.allCases.filter { env.runtime.availability[$0]?.isAvailable ?? true })
     }
 
-    /// External displays with no HiDPI mode near their native width (Smart HiDPI helps them).
+    /// External displays with no HiDPI mode near their native width (Sharper text, `smartHiDPI`, helps them).
     private var displaysWantingSmartHiDPI: [DisplayInfo] {
         env.runtime.displays.filter { d in
             guard !d.isBuiltin, d.isActive, d.transport == .wired || d.transport == .displayLink else { return false }
-            let modes = DisplayControlModel.systemModes(d.desktopID)
+            let modes = ManagedModes.modes(for: d.desktopID).map(\.ref)
             let native = modes.filter { !$0.isHiDPI }.map(\.pixelWidth).max() ?? 0
             return !DisplayModeChoices.hasHiDPINearNative(modes, nativePixelWidth: native)
         }
@@ -54,7 +60,8 @@ struct DisplaysOnboardingStep: View {
             Section {
                 Text(L("What do you want Snaptic to do with your displays?"))
                     .font(.headline)
-                Text(L("Pick any. You can change this later on the Display Features page."))
+                    .modifier(SettingsAnchor(ControlID("onboarding.displays.chips")))
+                Text(L("Pick any. You can change this later in Settings › Displays."))
                     .foregroundStyle(.secondary)
             }
             Section {
@@ -65,9 +72,9 @@ struct DisplaysOnboardingStep: View {
             }
             if chips.contains(.keys), let hideMenuIcon {
                 Section {
-                    Toggle(L("Hide the menu-bar icon"), isOn: hideMenuIcon)
+                    Toggle(L("Hide the menu bar icon"), isOn: hideMenuIcon)
                     Text(L("The keys keep working. Open Snaptic again from Finder or Spotlight to get to Settings."))
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -77,6 +84,10 @@ struct DisplaysOnboardingStep: View {
             summarySection
         }
         .formStyle(.grouped)
+        .onChange(of: applyToken) { _, _ in
+            let raw = plan
+            apply(raw, permissions: DisplaysOnboardingPlan.permissions(raw))
+        }
     }
 
     private func chipRow(_ chip: OnboardingChip) -> some View {
@@ -91,7 +102,7 @@ struct DisplaysOnboardingStep: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(DisplaysOnboardingPlan.title(chip)).font(.body.weight(.medium))
-                    Text(DisplaysOnboardingPlan.summary(chip)).font(.caption).foregroundStyle(.secondary)
+                    Text(DisplaysOnboardingPlan.summary(chip)).font(.subheadline).foregroundStyle(.secondary)
                 }
                 Spacer()
             }
@@ -110,9 +121,9 @@ struct DisplaysOnboardingStep: View {
             Section {
                 Toggle(isOn: $useSmartHiDPI) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(L("Turn on Smart HiDPI (Beta)"))
-                        Text(L("\(candidates.map(\.name).joined(separator: ", ")) has no sharp HiDPI mode at a usable size. Smart HiDPI renders at twice the resolution and scales down. It turns off HDR on that display and uses more GPU memory."))
-                            .font(.caption)
+                        Text(L("Turn on Sharper Text (Beta)"))
+                        Text(DisplaysOnboardingPlan.sharperTextNote(candidates.map(\.name)))
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -127,21 +138,18 @@ struct DisplaysOnboardingStep: View {
         let osMajor = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
         return Section(L("Summary")) {
             if on.isEmpty {
-                Text(L("Only the Displays panel, display names and diagnostics stay on."))
+                Text(L("Only the Displays panel, display names, and Display Information stay on."))
                     .foregroundStyle(.secondary)
             } else {
-                Text(L("Turns on: \(on.map(DisplaysUIText.title).joined(separator: ", ")).")).font(.callout)
+                Text(L("Turns on: \(DisplaysUIText.list(on)).")).font(.callout)
             }
             if !permissions.isEmpty {
-                Text(L("Needs afterwards: \(Permission.allCases.filter { permissions.contains($0) }.map { DisplaysUIText.permissionName($0, osMajor: osMajor) }.joined(separator: ", ")).")).font(.callout)
+                let names = Permission.allCases.filter { permissions.contains($0) }
+                    .map { DisplaysUIText.permissionName($0, osMajor: osMajor) }
+                Text(L("Needs afterwards: \(SentenceText.list(names)).")).font(.callout)
             }
-            HStack {
-                Spacer()
-                if applied {
-                    Label(L("Saved"), systemImage: "checkmark.circle").foregroundStyle(.secondary)
-                }
-                Button(L("Use These Features")) { apply(raw, permissions: permissions) }
-                    .keyboardShortcut(.defaultAction)
+            if applied {
+                Label(L("Saved"), systemImage: "checkmark.circle").foregroundStyle(.secondary)
             }
         }
     }

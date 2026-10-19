@@ -10,6 +10,19 @@ struct ColorProfileInfo: Hashable, Identifiable, Sendable {
     var id: URL { url }
 }
 
+/// A profile a display can use: its factory profile or an installed one (menus, recents).
+enum ProfileChoice: Hashable, Sendable {
+    case factory
+    case profile(URL)
+
+    init(_ url: URL?) { self = url.map { .profile($0) } ?? .factory }
+
+    var url: URL? {
+        if case .profile(let url) = self { return url }
+        return nil
+    }
+}
+
 /// ColorSync profiles per display (PLAN §6.5): list, current, set (nil → factory via
 /// kCFNull), custom-profile detection for the safeguard, and the global ColorSync restore.
 @MainActor final class ColorSyncService: DisplayServiceLifecycle {
@@ -24,6 +37,8 @@ struct ColorProfileInfo: Hashable, Identifiable, Sendable {
     private var refreshWork: DispatchWorkItem?
     /// Profiles Snaptic replaced this session, by display, so "Restore previous" works.
     private var previous: [DisplayKey: URL?] = [:]
+    /// Profiles chosen through Snaptic this session, most recent first (≤ 3 per display; menus only, never saved).
+    private var recent: [DisplayKey: [ProfileChoice]] = [:]
 
     /// Called after display profiles changed (ours or anyone's).
     var onProfilesChanged: (@MainActor () -> Void)?
@@ -46,6 +61,7 @@ struct ColorProfileInfo: Hashable, Identifiable, Sendable {
         refreshWork = nil
         installed = []
         previous = [:]
+        recent = [:]
         context = nil
     }
 
@@ -80,6 +96,19 @@ struct ColorProfileInfo: Hashable, Identifiable, Sendable {
         return ColorProfileInfo(name: p.name, url: p.url)
     }
 
+    /// What the display uses now.
+    func currentChoice(for key: DisplayKey) -> ProfileChoice {
+        hasCustomProfile(for: key) ? ProfileChoice(currentProfile(for: key)?.url) : .factory
+    }
+
+    /// The profile Snaptic replaced on this display this session, if any.
+    func previousChoice(for key: DisplayKey) -> ProfileChoice? {
+        guard let entry = previous[key] else { return nil }
+        return ProfileChoice(entry)
+    }
+
+    func recentChoices(for key: DisplayKey) -> [ProfileChoice] { recent[key] ?? [] }
+
     func hasCustomProfile(for key: DisplayKey) -> Bool {
         guard let id = hardwareID(key) else { return false }
         return SNColorSync.hasCustomProfile(forDisplay: id)
@@ -101,6 +130,7 @@ struct ColorProfileInfo: Hashable, Identifiable, Sendable {
         }
         do {
             try SNColorSync.setProfile(url, forDisplay: id)
+            recent[key] = ProfileMenuOrder.remembering(ProfileChoice(url), in: recent[key] ?? [])
             EventLog.shared.record(.gamma, url == nil ? "Display profile reset to factory" : "Display profile changed")
             scheduleRefresh()
             return true

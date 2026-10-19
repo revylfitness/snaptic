@@ -112,6 +112,20 @@ package enum Fingerprint {
         return out
     }
 
+    /// Whether a stored record and a live one name the same display (Awake's display criterion, which has no
+    /// `DisplayKey` map). Only tiers present on **both** sides are compared: a stored tier the live side can't
+    /// compute (t1 needs the EDID, t4 the IORegistry location) neither matches nor conflicts. The most specific
+    /// shared tier decides, exactly like `match(_:in:)`: equal there is a match, different there is another
+    /// display even when a weaker tier agrees (two identical monitors share t5). No shared tier is no match, so
+    /// empty records never match anything.
+    package static func matches(_ stored: FingerprintRecord, _ live: FingerprintRecord) -> Bool {
+        for tier in FingerprintTier.allCases {
+            guard let a = stored[tier], let b = live[tier] else { continue }
+            return a == b
+        }
+        return false
+    }
+
     /// The tier a new key derives from: the best one available.
     package static func bestTier(_ f: DisplayIdentityFacts) -> FingerprintTier {
         canonical(f).keys.min() ?? .vendorModel

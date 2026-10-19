@@ -15,9 +15,15 @@ package struct VirtualMode: Codable, Hashable, Sendable {
         self.refreshMilliHz = refreshMilliHz
     }
 
-    /// Backing pixels (2× points for HiDPI).
-    package var pixelWidth: Int { hiDPI ? width * 2 : width }
-    package var pixelHeight: Int { hiDPI ? height * 2 : height }
+    /// Backing pixels (2× points for HiDPI). Saturates instead of trapping on an out-of-range stored size.
+    package var pixelWidth: Int { hiDPI ? Self.doubled(width) : width }
+    package var pixelHeight: Int { hiDPI ? Self.doubled(height) : height }
+
+    /// 2 × `v`, saturating at the Int bounds (decoded values aren't trusted until `sanitized`).
+    package static func doubled(_ v: Int) -> Int {
+        let (r, overflow) = v.multipliedReportingOverflow(by: 2)
+        return overflow ? (v < 0 ? Int.min : Int.max) : r
+    }
     package var refreshHz: Double { Double(refreshMilliHz) / 1000 }
     package var label: String {
         let base = "\(width) × \(height)"
@@ -176,17 +182,17 @@ package struct VirtualScreenSpec: Codable, Equatable, Sendable {
     package init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(StableID.self, forKey: .id)
-        name = c.lossy(.name, L("Virtual Screen"))
+        name = c.lossy(.name, ManagementText.newVirtualDisplayName)
         aspectWidth = c.lossy(.aspectWidth, 16)
         aspectHeight = c.lossy(.aspectHeight, 9)
         sizeInches = c.lossy(.sizeInches, 27)
         hiDPI = c.lossy(.hiDPI, true)
-        modes = c.lossy(.modes, [])
+        modes = c.lossyArray(.modes, [])
         portrait = c.lossy(.portrait, false)
         recreateOnLaunch = c.lossy(.recreateOnLaunch, false)
         headlessPrimary = c.lossy(.headlessPrimary, false)
         primaries = c.lossy(.primaries, nil)
-        associations = (try? c.decodeIfPresent(TolerantArray<VirtualAssociation>.self, forKey: .associations))?.values ?? []
+        associations = c.lossyArray(.associations, [])
         hdr = c.lossy(.hdr, false)
         placement = c.lossy(.placement, .automatic)
         wantsPIP = c.lossy(.wantsPIP, false)
@@ -198,20 +204,23 @@ package struct VirtualScreenSpec: Codable, Equatable, Sendable {
     package var initialMode: VirtualMode? { modes.first }
 
     package var largestMode: VirtualMode? {
-        modes.max { ($0.pixelWidth * $0.pixelHeight, $0.width) < ($1.pixelWidth * $1.pixelHeight, $1.width) }
+        modes.max { Self.area($0) < Self.area($1) || (Self.area($0) == Self.area($1) && $0.width < $1.width) }
     }
+
+    /// Backing pixel count as a Double (exact for every sanitized mode; never overflows on a hostile one).
+    private static func area(_ m: VirtualMode) -> Double { Double(m.pixelWidth) * Double(m.pixelHeight) }
 
     /// Backing size the descriptor reserves: 2 × the largest mode's points (R5.6), or the
     /// largest mode's pixels for LoDPI-only screens.
     package var maxPixels: (wide: Int, high: Int) {
         guard let m = largestMode else { return (0, 0) }
-        return hiDPI ? (m.width * 2, m.height * 2) : (m.width, m.height)
+        return hiDPI ? (VirtualMode.doubled(m.width), VirtualMode.doubled(m.height)) : (m.width, m.height)
     }
 
     /// Fallback when the HiDPI check fails: backing for the initial mode only.
     package var fallbackMaxPixels: (wide: Int, high: Int) {
         guard let m = initialMode else { return (0, 0) }
-        return hiDPI ? (m.width * 2, m.height * 2) : (m.width, m.height)
+        return hiDPI ? (VirtualMode.doubled(m.width), VirtualMode.doubled(m.height)) : (m.width, m.height)
     }
 
     /// Physical size reported to macOS (sets DPI and the default scale). Portrait swaps.
@@ -242,19 +251,12 @@ package struct VirtualScreenSpec: Codable, Equatable, Sendable {
 
     package var serial: UInt32 { Self.serial(for: id.rawValue) }
 
-    /// Modes sorted largest first, deduplicated (used by the UI and the slider).
-    package var sortedModes: [VirtualMode] {
-        var seen = Set<VirtualMode>()
-        return modes.filter { seen.insert($0).inserted }
-            .sorted { ($0.width, $0.height, $0.refreshMilliHz) > ($1.width, $1.height, $1.refreshMilliHz) }
-    }
-
     /// Clamps everything to what the editor can produce and the chip can drive. Modes that
     /// don't fit are dropped; if none survives, a default ladder for the aspect is used.
     package func sanitized(soc: SoCClass = .appleEntry) -> VirtualScreenSpec {
         var s = self
         let cleanName = TextSanitizer.clean(name, maxScalars: Self.maxNameScalars).trimmingCharacters(in: .whitespaces)
-        s.name = cleanName.isEmpty ? L("Virtual Screen") : cleanName
+        s.name = cleanName.isEmpty ? ManagementText.newVirtualDisplayName : cleanName
         s.aspectWidth = min(Self.maxAspectComponent, max(1, aspectWidth))
         s.aspectHeight = min(Self.maxAspectComponent, max(1, aspectHeight))
         s.sizeInches = sizeInches.isFinite ? min(Self.maxSizeInches, max(Self.minSizeInches, sizeInches)) : 27
@@ -289,7 +291,7 @@ package struct VirtualScreenSpec: Codable, Equatable, Sendable {
     /// number of points at least 360, within the chip limit. Portrait swaps the axes.
     package static func ladder(aspectWidth: Int, aspectHeight: Int, hiDPI: Bool, soc: SoCClass = .appleEntry,
                                portrait: Bool = false, refreshMilliHz: Int = 60_000) -> [VirtualMode] {
-        let aw = max(1, aspectWidth), ah = max(1, aspectHeight)
+        let aw = min(maxAspectComponent, max(1, aspectWidth)), ah = min(maxAspectComponent, max(1, aspectHeight))
         let limit = SoCCaps.maxBackingDimension(soc) / (hiDPI ? 2 : 1)
         var result: [VirtualMode] = []
         for w in ladderWidths.reversed() {
@@ -318,24 +320,60 @@ package struct VirtualScreenSpec: Codable, Equatable, Sendable {
     }
 }
 
-/// An array that decodes element by element, dropping the ones that fail.
-package struct TolerantArray<Element: Decodable>: Decodable {
-    package var values: [Element]
-    package init(from decoder: Decoder) throws {
-        var c = try decoder.unkeyedContainer()
-        var out: [Element] = []
-        while !c.isAtEnd {
-            if let v = try? c.decode(Element.self) {
-                out.append(v)
-            } else {
-                do { _ = try c.decode(SkipValue.self) } catch { break }
-            }
-            if out.count >= 4096 { break }
-        }
-        values = out
+/// Edits the virtual display editor makes to a draft (Settings › Virtual Displays › Details…). Every mode shares the
+/// spec's HiDPI flag and one refresh rate; `sanitized(soc:)` still runs when the draft is saved.
+package enum VirtualSpecEdit {
+    package static let defaultRefreshMilliHz = 60_000
+    /// The refresh rates the editor offers (millihertz); a stored rate outside the list is offered too.
+    package static let refreshChoices = [24_000, 30_000, 48_000, 50_000, 60_000, 75_000, 90_000, 100_000, 120_000, 144_000]
+
+    /// The draft's refresh rate: the first mode's, else 60 Hz.
+    package static func refreshMilliHz(_ spec: VirtualScreenSpec) -> Int {
+        spec.modes.first?.refreshMilliHz ?? defaultRefreshMilliHz
     }
 
-    private struct SkipValue: Decodable {
-        init(from decoder: Decoder) throws {}
+    /// The choices for a draft, with its own rate included and sorted.
+    package static func refreshOptions(_ spec: VirtualScreenSpec) -> [Int] {
+        let current = refreshMilliHz(spec)
+        return refreshChoices.contains(current) ? refreshChoices : (refreshChoices + [current]).sorted()
+    }
+
+    package static func settingRefresh(_ spec: VirtualScreenSpec, milliHz: Int) -> VirtualScreenSpec {
+        let hz = min(VirtualScreenSpec.maxRefreshMilliHz, max(VirtualScreenSpec.minRefreshMilliHz, milliHz))
+        var s = spec
+        s.modes = s.modes.map { VirtualMode(width: $0.width, height: $0.height, hiDPI: $0.hiDPI, refreshMilliHz: hz) }
+        return s
+    }
+
+    package static func settingHiDPI(_ spec: VirtualScreenSpec, _ on: Bool) -> VirtualScreenSpec {
+        var s = spec
+        s.hiDPI = on
+        s.modes = s.modes.map { VirtualMode(width: $0.width, height: $0.height, hiDPI: on, refreshMilliHz: $0.refreshMilliHz) }
+        return s
+    }
+
+    /// Appends a size (points) unless it is already there or below the minimum; the spec's HiDPI and refresh apply.
+    package static func addingSize(_ spec: VirtualScreenSpec, width: Int, height: Int) -> VirtualScreenSpec {
+        guard width >= VirtualScreenSpec.minModeDimension, height >= VirtualScreenSpec.minModeDimension,
+              width <= VirtualScreenSpec.maxAspectComponent, height <= VirtualScreenSpec.maxAspectComponent,
+              !spec.modes.contains(where: { $0.width == width && $0.height == height }) else { return spec }
+        var s = spec
+        s.modes.append(VirtualMode(width: width, height: height, hiDPI: spec.hiDPI, refreshMilliHz: refreshMilliHz(spec)))
+        return s
+    }
+
+    package static func removingSize(_ spec: VirtualScreenSpec, at index: Int) -> VirtualScreenSpec {
+        guard spec.modes.indices.contains(index) else { return spec }
+        var s = spec
+        s.modes.remove(at: index)
+        return s
+    }
+
+    /// The standard ladder for the draft's aspect, HiDPI flag, orientation and refresh rate.
+    package static func fillingSizes(_ spec: VirtualScreenSpec, soc: SoCClass) -> VirtualScreenSpec {
+        var s = spec
+        s.modes = VirtualScreenSpec.ladder(aspectWidth: spec.aspectWidth, aspectHeight: spec.aspectHeight, hiDPI: spec.hiDPI,
+                                           soc: soc, portrait: spec.portrait, refreshMilliHz: refreshMilliHz(spec))
+        return s
     }
 }

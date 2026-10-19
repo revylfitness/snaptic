@@ -16,7 +16,7 @@ package struct LayoutsConfig: ConfigModel {
 
     package init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        layouts = (try? c.decodeIfPresent(TolerantArray<SavedLayout>.self, forKey: .layouts))?.values ?? []
+        layouts = c.lossyArray(.layouts, [])
         undoToast = c.lossy(.undoToast, true)
     }
 

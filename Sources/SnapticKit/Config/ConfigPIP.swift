@@ -185,7 +185,7 @@ package struct PIPConfiguration: Codable, Equatable, Sendable, Identifiable {
         scaling = c.lossy(.scaling, d.scaling)
         underscanPercent = c.lossy(.underscanPercent, d.underscanPercent)
         nativeModeWhileStreaming = c.lossy(.nativeModeWhileStreaming, d.nativeModeWhileStreaming)
-        filters = c.lossy(.filters, PIPLossyList<FilterInstance>([])).items
+        filters = c.lossyArray(.filters, [])
         lutID = c.lossy(.lutID, nil)
         autoStart = c.lossy(.autoStart, d.autoStart)
     }
@@ -274,8 +274,8 @@ package struct PIPConfig: ConfigModel {
     package init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = PIPConfig()
-        windowConfigurations = c.lossy(.windowConfigurations, PIPLossyList<PIPConfiguration>([])).items
-        luts = c.lossy(.luts, PIPLossyList<PIPLUTReference>([])).items
+        windowConfigurations = c.lossyArray(.windowConfigurations, [])
+        luts = c.lossyArray(.luts, [])
         protectedBundlePrefixes = c.lossy(.protectedBundlePrefixes, d.protectedBundlePrefixes)
         firstRunAcknowledged = c.lossy(.firstRunAcknowledged, d.firstRunAcknowledged)
         pauseWhenOccluded = c.lossy(.pauseWhenOccluded, d.pauseWhenOccluded)
@@ -288,12 +288,7 @@ package struct PIPConfig: ConfigModel {
         var seen = Set<StableID>()
         c.luts = luts.compactMap { $0.sanitized() }.filter { seen.insert($0.id).inserted }
         c.luts = Array(c.luts.prefix(Self.maxLUTs))
-        var prefixes: [String] = []
-        for p in protectedBundlePrefixes where PIPPrivacy.isValidPrefix(p) && !prefixes.contains(p) {
-            prefixes.append(p)
-            if prefixes.count == Self.maxProtectedPrefixes { break }
-        }
-        c.protectedBundlePrefixes = prefixes
+        c.protectedBundlePrefixes = PIPPrivacy.sanitizedPrefixes(protectedBundlePrefixes)
         return c
     }
 
@@ -422,7 +417,7 @@ package struct PerDisplayPIP: ConfigModel {
 
     package init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        configurations = c.lossy(.configurations, PIPLossyList<PIPConfiguration>([])).items
+        configurations = c.lossyArray(.configurations, [])
     }
 
     package func sanitized() -> PerDisplayPIP {
@@ -432,31 +427,67 @@ package struct PerDisplayPIP: ConfigModel {
     }
 }
 
-/// An array that decodes element by element, dropping the ones that fail.
-package struct PIPLossyList<Element: Codable>: Codable {
-    package var items: [Element]
+// MARK: - Settings (0.3 §4.3 "Picture in Picture")
 
-    package init(_ items: [Element]) { self.items = items }
-
-    private struct Attempt: Decodable {
-        let value: Element?
-        init(from decoder: Decoder) throws { value = try? Element(from: decoder) }
-    }
-
-    package init(from decoder: Decoder) throws {
-        var container = try decoder.unkeyedContainer()
-        var out: [Element] = []
-        // Bounded: never more than 256 attempts, whatever the input claims.
-        while !container.isAtEnd, out.count < 256 {
-            guard let attempt = try? container.decode(Attempt.self) else { break }
-            if let v = attempt.value { out.append(v) }
+/// Names, subtitles and limits the Picture in Picture page and editor show. Plain text, so it's tested here.
+package enum PIPSettingsText {
+    /// A new configuration's name: "Built-in Display Picture in Picture", "Window Picture in Picture",
+    /// "Built-in Display → DELL U2720Q" (0.3 vocabulary: never "PIP").
+    package static func defaultName(sourceName: String?, kind: PIPKind, targetName: String?) -> String {
+        let source = sourceName.map { PIPConfiguration.cleanName($0) } ?? L("Window")
+        if kind == .fullScreen, let targetName {
+            return PIPConfiguration.cleanName(L("\(source) → \(PIPConfiguration.cleanName(targetName))"))
         }
-        items = out
+        return PIPConfiguration.cleanName(L("\(source) Picture in Picture"))
     }
 
-    package func encode(to encoder: Encoder) throws {
-        var container = encoder.unkeyedContainer()
-        for item in items { try container.encode(item) }
+    /// The saved list's subtitle: where it comes from, then what's special about it, in a fixed order.
+    /// `sourceName` nil = a window picked when it starts; `targetName` nil for a stream = nowhere to stream yet.
+    package static func subtitle(_ c: PIPConfiguration, sourceName: String?, targetName: String?) -> String {
+        var parts: [String] = []
+        parts.append(sourceName ?? L("A window you choose"))
+        if c.kind == .fullScreen {
+            parts.append(targetName.map { L("Full screen on \($0)") } ?? L("Choose a display to stream onto"))
+        }
+        if c.fps != 0 { parts.append(L("\(c.fps) fps")) }
+        if c.crop != nil { parts.append(L("Cropped")) }
+        if c.rotation != 0 { parts.append(L("Rotated \(c.rotation)°")) }
+        if c.flipHorizontal || c.flipVertical { parts.append(L("Flipped")) }
+        if !c.filters.filter(\.enabled).isEmpty || c.lutID != nil { parts.append(L("Filters")) }
+        if c.autoStart { parts.append(L("Offers to start")) }
+        return parts.joined(separator: " · ")
+    }
+
+    /// "50% × 40% at 10%, 20%" for a crop, "None" without one.
+    package static func crop(_ crop: PIPRect?) -> String {
+        guard let c = crop?.normalizedCrop() else { return L("None") }
+        func pct(_ v: Double) -> Int { Int((v * 100).rounded()) }
+        return L("\(pct(c.width))% × \(pct(c.height))% at \(pct(c.x))%, \(pct(c.y))%")
+    }
+
+    /// Room for one more saved configuration of this source.
+    package static func canAdd(source: PIPSourceRef, in config: DisplaysConfig) -> Bool {
+        switch source {
+        case .display(let key):
+            return (config.perDisplay[key]?.pip.configurations.count ?? 0) < PerDisplayPIP.maxConfigurations
+        case .window:
+            return config.pip.windowConfigurations.count < PIPConfig.maxWindowConfigurations
+        }
+    }
+
+    /// Why a new configuration can't be added as drafted, or nil: the source is full, or a stream has nowhere to
+    /// go (no target, or the target is its own source).
+    package static func addRefusal(_ c: PIPConfiguration, source: PIPSourceRef, in config: DisplaysConfig) -> String? {
+        guard canAdd(source: source, in: config) else {
+            return L("This source already has the most saved pictures in picture. Delete one first.")
+        }
+        if c.kind == .fullScreen {
+            guard let target = c.target else { return L("Choose a display to stream onto.") }
+            if case .display(let key) = source, key == target {
+                return L("A display can’t stream onto itself.")
+            }
+        }
+        return nil
     }
 }
 
@@ -495,6 +526,22 @@ package enum PIPPrivacy {
             ($0.value >= 0x61 && $0.value <= 0x7A) || ($0.value >= 0x41 && $0.value <= 0x5A)
                 || ($0.value >= 0x30 && $0.value <= 0x39) || $0 == "." || $0 == "-" || $0 == "_"
         }
+    }
+
+    /// Valid entries only, each once, in order, at most `PIPConfig.maxProtectedPrefixes` (the config's sanitizer and
+    /// Settings' "Never capture these apps" list).
+    package static func sanitizedPrefixes(_ list: [String]) -> [String] {
+        var prefixes: [String] = []
+        for p in list where isValidPrefix(p) && !prefixes.contains(p) {
+            prefixes.append(p)
+            if prefixes.count == PIPConfig.maxProtectedPrefixes { break }
+        }
+        return prefixes
+    }
+
+    /// The list holds exactly the default entries (any order): Settings then hides "Restore Default Apps".
+    package static func isDefaultList(_ list: [String]) -> Bool {
+        Set(list) == Set(defaultProtectedPrefixes) && list.count == defaultProtectedPrefixes.count
     }
 
     /// The id itself, or anything under it (`com.lastpass` matches `com.lastpass.LastPass`).
@@ -604,6 +651,85 @@ package enum PIPLookup {
     /// first window PIP, else the first stream. Nothing is ever created from the CLI.
     package static func preferredForDisplay(_ items: [PIPConfiguration]) -> PIPConfiguration? {
         items.first { $0.kind == .window } ?? items.first
+    }
+}
+
+// MARK: - Menu (0.3 §5.2: the Displays section's "Picture in Picture ›" submenu)
+
+/// What the "Picture in Picture ›" submenu lists: saved configurations with a checkmark on the running ones (a
+/// click starts or stops one), then Stop All. The submenu exists only while something is saved; it keeps to
+/// `maxRows` saved rows (§5.1: ≤ ~12 items) and then ends with one "More…" that opens Settings.
+package enum PIPMenuPlan {
+    package static let maxRows = 10
+
+    package struct Row: Equatable, Sendable {
+        package let id: StableID
+        package let name: String
+        package let kind: PIPKind
+        package let running: Bool
+        /// False while its source (or a stream's target) display isn't connected and it isn't running.
+        package let available: Bool
+
+        package init(id: StableID, name: String, kind: PIPKind, running: Bool, available: Bool) {
+            self.id = id
+            self.name = name
+            self.kind = kind
+            self.running = running
+            self.available = available
+        }
+    }
+
+    package struct Plan: Equatable, Sendable {
+        package let rows: [Row]
+        /// Some saved configurations were left out: the submenu ends with "More…".
+        package let truncated: Bool
+        /// Stop All is enabled.
+        package let anyRunning: Bool
+
+        package init(rows: [Row], truncated: Bool, anyRunning: Bool) {
+            self.rows = rows
+            self.truncated = truncated
+            self.anyRunning = anyRunning
+        }
+    }
+
+    /// The submenu for `entries` (`PIPConfig.entries(in:)` order); nil when nothing is saved (no submenu).
+    /// With more than `limit` entries the running ones are always kept (up to `limit`), the rest fill up in
+    /// saved order, and the rows stay in saved order.
+    package static func plan(entries: [PIPEntry], running: Set<StableID>, connected: Set<DisplayKey>,
+                             limit: Int = maxRows) -> Plan? {
+        guard !entries.isEmpty else { return nil }
+        let limit = max(1, limit)
+        var keep = Set<Int>()
+        for (i, e) in entries.enumerated() where running.contains(e.configuration.id) && keep.count < limit {
+            keep.insert(i)
+        }
+        for i in entries.indices where keep.count < limit { keep.insert(i) }
+        let rows = entries.enumerated().filter { keep.contains($0.offset) }.map { pair -> Row in
+            let c = pair.element.configuration
+            let isRunning = running.contains(c.id)
+            return Row(id: c.id, name: c.name, kind: c.kind, running: isRunning,
+                       available: isRunning || isAvailable(pair.element, connected: connected))
+        }
+        let anyRunning = entries.contains { running.contains($0.configuration.id) }
+        return Plan(rows: rows, truncated: rows.count < entries.count, anyRunning: anyRunning)
+    }
+
+    /// A saved configuration can start from the menu: its source display (if any) is connected, and a stream's
+    /// target is connected and isn't its source. Deeper checks (mirroring, the session limit) run at start.
+    package static func isAvailable(_ entry: PIPEntry, connected: Set<DisplayKey>) -> Bool {
+        let c = entry.configuration
+        if case .display(let key) = entry.source {
+            guard connected.contains(key) else { return false }
+            if c.kind == .fullScreen {
+                guard let target = c.target, target != key, connected.contains(target) else { return false }
+            }
+            return true
+        }
+        if c.kind == .fullScreen {
+            guard let target = c.target, connected.contains(target) else { return false }
+        }
+        return true
     }
 }
 

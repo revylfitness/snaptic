@@ -63,7 +63,7 @@ final class VirtualScreenSpecTests: XCTestCase {
         let c = s.sanitized()
         XCTAssertFalse(c.modes.isEmpty)
         XCTAssertTrue(c.modes.allSatisfy { !$0.hiDPI })
-        XCTAssertEqual(c.name, L("Virtual Screen"))
+        XCTAssertEqual(c.name, ManagementText.newVirtualDisplayName)
     }
 
     func testLadder() {
@@ -93,7 +93,7 @@ final class VirtualScreenSpecTests: XCTestCase {
          "placement":"nowhere"}
         """
         let s = try JSONDecoder().decode(VirtualScreenSpec.self, from: Data(json.utf8))
-        XCTAssertEqual(s.name, L("Virtual Screen"))
+        XCTAssertEqual(s.name, ManagementText.newVirtualDisplayName)
         XCTAssertEqual(s.aspectWidth, 16)
         XCTAssertFalse(s.hiDPI)
         XCTAssertEqual(s.modes.count, 1)
@@ -116,5 +116,59 @@ final class VirtualScreenSpecTests: XCTestCase {
                                                          whiteX: 0.3127, whiteY: 0.3290)))
         XCTAssertNil(VirtualPrimaries(edid: Chromaticity(redX: 1, redY: 0.3, greenX: 0.3, greenY: 0.6, blueX: 0.15, blueY: 0.06,
                                                          whiteX: 0.3127, whiteY: 0.3290)))
+    }
+}
+
+final class VirtualSpecEditTests: XCTestCase {
+    private func spec(_ modes: [VirtualMode], hiDPI: Bool = true) -> VirtualScreenSpec {
+        VirtualScreenSpec(name: "Edit", aspectWidth: 16, aspectHeight: 10, sizeInches: 27, hiDPI: hiDPI, modes: modes)
+    }
+
+    func testRefreshReadsTheFirstModeAndAppliesToAll() {
+        XCTAssertEqual(VirtualSpecEdit.refreshMilliHz(spec([])), 60_000)
+        let s = spec([VirtualMode(width: 1920, height: 1200, hiDPI: true, refreshMilliHz: 120_000),
+                      VirtualMode(width: 1440, height: 900, hiDPI: true)])
+        XCTAssertEqual(VirtualSpecEdit.refreshMilliHz(s), 120_000)
+        let changed = VirtualSpecEdit.settingRefresh(s, milliHz: 75_000)
+        XCTAssertEqual(changed.modes.map(\.refreshMilliHz), [75_000, 75_000])
+        XCTAssertEqual(VirtualSpecEdit.settingRefresh(s, milliHz: 1).modes.first?.refreshMilliHz,
+                       VirtualScreenSpec.minRefreshMilliHz)
+        XCTAssertEqual(VirtualSpecEdit.settingRefresh(s, milliHz: Int.max).modes.first?.refreshMilliHz,
+                       VirtualScreenSpec.maxRefreshMilliHz)
+    }
+
+    func testRefreshOptionsIncludeACustomRate() {
+        let custom = spec([VirtualMode(width: 1920, height: 1200, hiDPI: true, refreshMilliHz: 59_940)])
+        let options = VirtualSpecEdit.refreshOptions(custom)
+        XCTAssertTrue(options.contains(59_940))
+        XCTAssertEqual(options, options.sorted())
+        XCTAssertEqual(VirtualSpecEdit.refreshOptions(spec([])), VirtualSpecEdit.refreshChoices)
+    }
+
+    func testHiDPIFollowsTheSpec() {
+        let s = spec([VirtualMode(width: 1920, height: 1200, hiDPI: true)])
+        let off = VirtualSpecEdit.settingHiDPI(s, false)
+        XCTAssertFalse(off.hiDPI)
+        XCTAssertEqual(off.modes.map(\.hiDPI), [false])
+    }
+
+    func testAddingAndRemovingSizes() {
+        var s = spec([VirtualMode(width: 1920, height: 1200, hiDPI: true, refreshMilliHz: 50_000)])
+        s = VirtualSpecEdit.addingSize(s, width: 1440, height: 900)
+        XCTAssertEqual(s.modes.last, VirtualMode(width: 1440, height: 900, hiDPI: true, refreshMilliHz: 50_000))
+        XCTAssertEqual(VirtualSpecEdit.addingSize(s, width: 1440, height: 900).modes.count, 2)   // duplicate
+        XCTAssertEqual(VirtualSpecEdit.addingSize(s, width: 100, height: 900).modes.count, 2)    // too small
+        XCTAssertEqual(VirtualSpecEdit.addingSize(s, width: 99_999, height: 900).modes.count, 2) // too large
+        XCTAssertEqual(VirtualSpecEdit.removingSize(s, at: 0).modes.map(\.width), [1440])
+        XCTAssertEqual(VirtualSpecEdit.removingSize(s, at: 7).modes.count, 2)
+        XCTAssertEqual(VirtualSpecEdit.removingSize(s, at: -1).modes.count, 2)
+    }
+
+    func testFillingSizesUsesTheLadderWithTheDraftsRate() {
+        let s = spec([VirtualMode(width: 1920, height: 1200, hiDPI: true, refreshMilliHz: 120_000)])
+        let filled = VirtualSpecEdit.fillingSizes(s, soc: .appleEntry)
+        XCTAssertEqual(filled.modes, VirtualScreenSpec.ladder(aspectWidth: 16, aspectHeight: 10, hiDPI: true,
+                                                              soc: .appleEntry, refreshMilliHz: 120_000))
+        XCTAssertFalse(filled.modes.isEmpty)
     }
 }

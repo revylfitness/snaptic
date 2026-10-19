@@ -6,12 +6,12 @@ import SnapticKit
 /// delta, with offsets, a 2% deadband, DDC writes ≥ 3 s apart and a 10 s pause after a
 /// manual change on a target. ⇧ on the brightness keys skips sync. External changes on
 /// a DDC source are seen only with readback on (R5.8).
-@MainActor final class SyncController: DisplayFeatureController, DiagnosticsContributor, DisplayMenuContributor {
+@MainActor final class SyncController: DisplayFeatureController, DiagnosticsContributor {
     static var id: DisplayControllerID { .sync }
     static var privateSymbols: [PrivateSymbol] { [] }
 
     static let toggleAction = DisplayActionID(rawValue: "c.syncToggle")
-    static let toggleItem = DisplayMenuItemID(rawValue: "c.sync.toggle")
+    static var observedSections: Set<DisplaysConfigSection> { [.brightness, .perDisplayBrightness] }
 
     /// Weak: controllers outlive module restarts; never keep the context strongly.
     weak var context: DisplaysContext?
@@ -20,6 +20,7 @@ import SnapticKit
     private var states: [DisplayKey: SyncTargetState] = [:]
     private var lastSource: Double?
     private var trailing: [DisplayKey: DispatchWorkItem] = [:]
+    private var menuItems: ColorMenuItems?
 
     init() {}
 
@@ -31,11 +32,13 @@ import SnapticKit
         self.context = context
         self.lifetime = lifetime
         context.diagnostics.register(self, section: L("Brightness sync"), lifetime: lifetime)
-        context.menus.register(self, lifetime: lifetime)
-        context.actions.register(Action(id: Self.toggleAction, title: L("Toggle Brightness Sync"), feature: .sync,
+        let items = ColorMenuItems(context: context, part: .sync, owner: self)
+        menuItems = items
+        context.menus.register(items, lifetime: lifetime)
+        context.actions.register(Action(id: Self.toggleAction, title: DisplaysToggleText.syncBrightness, feature: .sync,
                                         cliAllowed: true) { [weak self] _ in self?.togglePaused() }, lifetime: lifetime)
         context.commands.register("toggle sync", policy: .low, offOnly: false, cliAllowed: true,
-                                  summary: L("Pause or resume brightness sync"), lifetime: lifetime) { [weak self] _ in
+                                  summary: L("Pause or resume brightness sync"), lifetime: lifetime) { [weak self] _, _ in
             guard let self else { return DisplayTargets.notRunning() }
             let paused = self.togglePaused()
             return .ok(paused ? L("Brightness sync paused") : L("Brightness sync on"))
@@ -52,8 +55,12 @@ import SnapticKit
         if old.brightness.syncSource != new.brightness.syncSource || old.brightness.syncMode != new.brightness.syncMode {
             states.removeAll()
             lastSource = sourceKey().flatMap { context?.brightness.value(for: $0) }
+            context?.runtime.revision(.sync).bump()
         }
-        if old.brightness.syncPaused != new.brightness.syncPaused { context?.requestMenuRebuild() }
+        if old.brightness.syncPaused != new.brightness.syncPaused {
+            context?.runtime.revision(.sync).bump()
+            context?.requestMenuRebuild()
+        }
     }
 
     func stop() {
@@ -62,6 +69,7 @@ import SnapticKit
         trailing.removeAll()
         states.removeAll()
         lastSource = nil
+        menuItems = nil
         lifetime = nil
         context = nil
     }
@@ -145,16 +153,6 @@ import SnapticKit
 
     // MARK: Menu
 
-    var descriptors: [DisplayMenuItemDescriptor] {
-        [DisplayMenuItemDescriptor(id: Self.toggleItem, title: L("Brightness sync"), slot: .tools, defaultVisibility: .visible)]
-    }
-
-    func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)] { [] }
-
-    func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)] {
-        guard slot == .tools else { return [] }
-        return [(Self.toggleItem, CMenu.item(L("Sync Brightness"), on: !isPaused) { [weak self] in self?.togglePaused() })]
-    }
 
     func diagnostics() -> [(String, String)] {
         guard let context else { return [] }

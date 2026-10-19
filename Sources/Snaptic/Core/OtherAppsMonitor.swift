@@ -24,6 +24,11 @@ import SnapticKit
         paused[feature].map(OtherDisplayApps.pauseReason)
     }
 
+    /// The same reason in Title Case for a menu status row, e.g. "Paused While MonitorControl Runs".
+    func menuPauseReason(for feature: DisplayFeature) -> String? {
+        paused[feature].map(OtherDisplayApps.menuPauseReason)
+    }
+
     /// Set by DisplaysModule; called when the paused set changes.
     var onChange: (@MainActor () -> Void)?
     /// Set by the host: apps that just started (banner/toast), and any change at all.

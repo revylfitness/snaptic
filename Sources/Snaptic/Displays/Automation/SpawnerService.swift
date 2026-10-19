@@ -15,9 +15,11 @@ import SnapticKit
     private var running: [UInt64: HelperHandle] = [:]
     private var serial: UInt64 = 0
     private var throttle = HookThrottle()
-    /// Last refusal or failure, for the Automation page (no paths or arguments).
+    /// Last refusal or failure, for Displays › Automations (no paths or arguments).
     private(set) var lastProblem: String?
     var onChange: (@MainActor () -> Void)?
+    /// Bumped with every page-visible change (problem, running count), so the page re-renders (0.3 §4.5).
+    private weak var revision: ControllerRevision?
 
     init() {}
 
@@ -26,6 +28,7 @@ import SnapticKit
     func activate(_ context: DisplaysContext, lifetime: Lifetime) {
         self.context = context
         self.lifetime = lifetime
+        revision = context.runtime.revision(.automation)
     }
 
     func deactivate() {
@@ -40,7 +43,7 @@ import SnapticKit
     @discardableResult
     func run(_ command: CommandSpec, environment: [String: String], throttleKey: String?) async -> String? {
         guard let ctx = context, let lifetime, !lifetime.isEnded else { return report(L("Automation is off.")) }
-        guard !ctx.safeMode.isActive else { return report(L("Hooks and actions don't run in Safe Mode.")) }
+        guard !ctx.safeMode.isActive else { return report(L("Hooks and actions don’t run in Safe Mode.")) }
         guard !ctx.panic.isLatched else { return report(L("Hooks and actions are paused until display automation resumes.")) }
         if let key = throttleKey, !throttle.allow(key, now: ProcessInfo.processInfo.systemUptime) {
             return report(L("Skipped: this hook already ran in the last 10 seconds."))
@@ -53,7 +56,7 @@ import SnapticKit
                 guard let self else { return }
                 self.running[id] = nil
                 if status != 0 { EventLog.shared.record(.automation, "Command exited with status \(status)") }
-                self.onChange?()
+                self.changed()
             }
             // Deactivated, or panic latched, while the command was being checked.
             guard context === ctx, self.lifetime === lifetime, !lifetime.isEnded else {
@@ -66,28 +69,40 @@ import SnapticKit
             }
             if handle.isReaped { running[id] = nil } else { running[id] = handle }
             lastProblem = nil
-            onChange?()
+            changed()
             return nil
         } catch HelperSpawnError.refused(let refusal) {
             return report(refusal.message)
         } catch HelperSpawnError.unavailable(let reason) {
             return report(reason)
         } catch {
-            return report(L("The command couldn't be started."))
+            return report(L("The command couldn’t be started."))
         }
+    }
+
+    /// The page's "Clear" on the problem row: the problem stays cleared until the next refusal or failure.
+    func clearProblem() {
+        guard lastProblem != nil else { return }
+        lastProblem = nil
+        changed()
     }
 
     /// Panic and deactivation: every running command's process group is killed.
     func stopAll() {
         for handle in running.values { handle.signalGroup(SIGKILL) }
         running = [:]
-        onChange?()
+        changed()
     }
 
     private func report(_ problem: String) -> String {
         lastProblem = problem
         EventLog.shared.record(.automation, "Command not run")
-        onChange?()
+        changed()
         return problem
+    }
+
+    private func changed() {
+        revision?.bump()
+        onChange?()
     }
 }

@@ -4,6 +4,19 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# 0.3 options: --write-ratchet regenerates scripts/lint-legacy.tsv from the tree (lead only);
+# --strict also fails on ratchet rows whose count went down (CI from the 0.3 step-3 exit on).
+LINT_MODE=check
+LINT_STRICT=0
+for arg in "$@"; do
+    case "$arg" in
+        --write-ratchet) LINT_MODE=write ;;
+        --strict) LINT_STRICT=1 ;;
+        *) echo "usage: lint.sh [--strict] [--write-ratchet]" >&2; exit 64 ;;
+    esac
+done
+export LINT_MODE LINT_STRICT
+
 status=0
 fail() { echo "lint: $*" >&2; status=1; }
 
@@ -73,7 +86,8 @@ PY
 if grep -rnE 'FileHandle|readLine\(|waitpid\(-1|waitUntilExit|DispatchQueue\.main\.sync|main\.sync\b' Sources --include='*.swift'; then
     fail "banned blocking/exception-prone API (see above); use HelperPipeWriter / LineSplitter / HelperSpawner"
 fi
-if grep -rnE 'static let shared' Sources/Snaptic/Displays --include='*.swift'; then
+# Any spelling of a shared instance: `static let shared`, `static var shared: T`, `class var sharedInstance`, ….
+if grep -rnE '\b(static|class)[[:space:]]+(let|var)[[:space:]]+(shared|sharedInstance|instance)\b' Sources/Snaptic/Displays --include='*.swift'; then
     fail "no singletons in Displays (rule 7); reach services through DisplaysContext"
 fi
 if grep -rnE 'passUnretained\(self\)' Sources/Snaptic/Displays --include='*.swift'; then
@@ -98,8 +112,11 @@ done
 #     SharedExtensions.swift is the shared home; PrivateSymbol ids are open by design.
 python3 - <<'PY' || status=1
 import os, re, sys
-decl = re.compile(r'^\s*(?:@\w+(?:\([^)]*\))?\s+)*(?:public |package |internal |fileprivate |private )?(?:final )?(?:class|struct|enum|protocol|actor)\s+(\w+)')
-ext = re.compile(r'^\s*(?:@\w+\s+)*(?:(fileprivate|private)\s+|(?:public|package|internal)\s+)?extension\s+([\w.]+)')
+# Only top-level declarations count (a nested `struct State` must not exempt `extension State` of another type);
+# attributes may take arguments (`@available(macOS 14.4, *) extension NSMenuItem`).
+attrs = r'(?:@\w+(?:\([^)]*\))?\s+)*'
+decl = re.compile(r'^' + attrs + r'(?:public |package |internal |fileprivate |private )?(?:final )?(?:class|struct|enum|protocol|actor)\s+(\w+)')
+ext = re.compile(r'^\s*' + attrs + r'(?:(fileprivate|private)\s+|(?:public|package|internal)\s+)?extension\s+([\w.]+)')
 exempt = {"PrivateSymbol"}
 bad = 0
 for dirpath, _, files in os.walk("Sources/Snaptic"):
@@ -135,8 +152,12 @@ if grep -rnE '\bProcess\(|NSTask|posix_spawn|\bpopen\(|[^.]\bsystem\(|\bfork\(|e
 fi
 
 # 13. No traps or ad-hoc logging (rule 8, R5.7).
-if grep -rnE '\bfatalError\(|\bdebugPrint\(|\bdump\(|os_log|\bLogger\(' Sources --include='*.swift'; then
-    fail "fatalError/debugPrint/dump/os_log/Logger are banned (use safe returns and EventLog)"
+if grep -rnE '\bfatalError\(|\bpreconditionFailure\(|\btry!|\bdebugPrint\(|\bdump\(|os_log|\bLogger\(' Sources --include='*.swift'; then
+    fail "fatalError/preconditionFailure/try!/debugPrint/dump/os_log/Logger are banned (use safe returns and EventLog)"
 fi
+
+# 14. PLAN 0.3 §6.3 lints L1–L17 (L3, L8, L11 were dropped). L1–L14 are ratcheted by
+#     scripts/lint-legacy.tsv (rule, path, occurrences, permanent|step); L15–L17 have no ratchet.
+python3 scripts/lint03.py || status=1
 
 exit $status

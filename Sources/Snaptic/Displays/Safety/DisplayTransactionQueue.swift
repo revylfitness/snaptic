@@ -9,12 +9,14 @@ import SnapticShims
 // CAS undo → journal + guard ack for trial/restore → apply (HDR, rotation, re-resolved modes,
 // CG batches by scope) → trial panel → Keep (re-apply with final scope, never skipping) or
 // Revert (CAS, single undo order). Also keeps the guard's long-armed set current.
+// 0.3 §4.5: a trial appearing or ending and every journal change bump `revision(.diagnostics)` (Display
+// Information shows "Pending confirmation" and the undo journal; the menu shows Restore All while pending).
 
 @MainActor final class DisplayTransactionQueue: DisplayServiceLifecycle, DiagnosticsContributor {
     static var serviceID: DisplayServiceID { .transactions }
     static var privateSymbols: [PrivateSymbol] {
         [.cgsConfigureDisplayEnabled, .mpDisplay, .cgsGetNumberOfDisplayModes, .cgsGetDisplayModeDescription,
-         .cgsGetCurrentDisplayMode, .cgsConfigureDisplayMode]
+         .cgsConfigureDisplayMode]
     }
     weak var context: DisplaysContext?
 
@@ -51,7 +53,9 @@ import SnapticShims
     private var epoch: UInt64 = 0
     private var running = false
     private var waiting: [CheckedContinuation<Void, Never>] = []
-    private var pending: PendingTrial?
+    private var pending: PendingTrial? {
+        didSet { if (oldValue == nil) != (pending == nil) { noteStatus() } }
+    }
     private var trialSerial: UInt64 = 0
     private var supersession = TrialSupersession()
     /// How `stop()` resolved the last trial it interrupted (for that trial's own task).
@@ -72,10 +76,12 @@ import SnapticShims
     private(set) var lastReports: [TransactionReport] = []
     private var longArmWork: DispatchWorkItem?
     private var lifetime: Lifetime?
+    /// Kept after deactivate (it outlives module starts) so the last change still reaches open pages.
+    private weak var runtime: DisplaysRuntimeState?
+    private var lastStatus: QueueStatus?
 
     var isBusy: Bool { running || !waiting.isEmpty }
     var hasPendingTrial: Bool { pending != nil }
-    var isConfirmPanelVisible: Bool { panel.isShowing }
     var isSuppressingAutomatic: Bool { SessionGate.uptime() < suppressAutomaticUntil }
     var permanentJournalCount: Int { journal?.permanentCount ?? 0 }
     var hasSessionJournal: Bool { journal?.hasSessionJournal ?? false }
@@ -88,7 +94,9 @@ import SnapticShims
         epoch &+= 1
         self.context = context
         self.lifetime = lifetime
+        runtime = context.runtime
         journal = RevertJournal()
+        journal?.onChange = { [weak self] in self?.noteStatus() }
         journaledLong = nil
         journalMayBeStale = true
         context.guardClient.onReverted = { [weak self] trial, _, _ in
@@ -101,7 +109,7 @@ import SnapticShims
             guard let self else { return }
             self.requestTrialRevert(.guardLost, log: "safety helper lost")
             if context.guardClient.isUnprotected {
-                context.toasts.show(L("Snaptic's safety helper stopped. Restart Snaptic to stay protected."))
+                context.toasts.show(L("Snaptic’s safety helper stopped. Restart Snaptic to stay protected."))
             }
         }
         context.sessionGate.observeEvents(lifetime: lifetime) { [weak self] event in
@@ -168,6 +176,22 @@ import SnapticShims
         context?.guardClient.onLost = nil
         context = nil
         lifetime = nil
+        noteStatus()
+    }
+
+    // MARK: Observability (0.3 §4.5)
+
+    private struct QueueStatus: Equatable {
+        let pending: Bool
+        let sessionJournal: Bool
+        let permanentOps: Int
+    }
+
+    private func noteStatus() {
+        let now = QueueStatus(pending: pending != nil, sessionJournal: hasSessionJournal, permanentOps: permanentJournalCount)
+        guard now != lastStatus else { return }
+        lastStatus = now
+        runtime?.revision(.diagnostics).bump()
     }
 
     private func isCurrent(_ epoch: UInt64) -> Bool { active && epoch == self.epoch }
@@ -224,11 +248,6 @@ import SnapticShims
     /// Resolves a pending trial as Revert (sleep, lock, quit, new request, panic), in any
     /// phase before Keep; panic also overrides a Keep in progress. False when none counted.
     @discardableResult
-    func revertPendingTrial(reason: String, cause: TrialRevertReason = .session) -> Bool {
-        requestTrialRevert(cause, log: reason)
-    }
-
-    @discardableResult
     private func requestTrialRevert(_ cause: TrialRevertReason, log: String) -> Bool {
         guard var p = pending else { return false }
         guard p.life.requestRevert(cause) else { return false }
@@ -254,7 +273,7 @@ import SnapticShims
             if !consumeRate(req, ctx: ctx) { return .busy }
         }
         if let prepare = req.prepare {
-            do { try await prepare() } catch { return .failed(L("Couldn't prepare the change.")) }
+            do { try await prepare() } catch { return .failed(L("Couldn’t prepare the change.")) }
             guard isCurrent(epoch) else { return off }
         }
         guard let before = ctx.registry.snapshot() else { return off }
@@ -271,7 +290,7 @@ import SnapticShims
         // MonitorPanel changes need a helper that can revert them (R5.2).
         for c in changes where c.isMonitorPanel {
             guard ctx.privateAPI.monitorPanelSupports(Self.monitorPanelGroup(c)) else {
-                return .failed(L("This macOS version doesn't let Snaptic change that."))
+                return .failed(L("This macOS version doesn’t let Snaptic change that."))
             }
         }
 
@@ -285,7 +304,7 @@ import SnapticShims
         if risk == .trial, changes.contains(where: \.isMonitorPanel) {
             let ok = await ctx.guardClient.ensureRunning()
             guard isCurrent(epoch) else { return off }
-            guard ok, ctx.guardClient.canMonitorPanel else { return .failed(L("Safety helper can't revert this.")) }
+            guard ok, ctx.guardClient.canMonitorPanel else { return .failed(L("Safety helper can’t revert this.")) }
         }
 
         // Invariants on the predicted layout.
@@ -327,7 +346,7 @@ import SnapticShims
                 let ops = UndoPlanner.merge(long.undo, undo)
                 guard journal?.writeSession(undo: ops, restoreColorSync: long.restoreColorSync, trialID: nil,
                                             live: before) == true else {
-                    return .failed(L("Couldn't save the undo information."))
+                    return .failed(L("Couldn’t save the undo information."))
                 }
                 journaledLong = ops
             }
@@ -396,7 +415,7 @@ import SnapticShims
             journaledLong = nil
             pending = nil
             layoutFactsChanged()
-            return .failed(L("Couldn't save the undo information."))
+            return .failed(L("Couldn’t save the undo information."))
         }
         journaledLong = nil
         let panelSeconds = Double(ctx.config.value.safety.confirmSeconds)
@@ -697,7 +716,7 @@ import SnapticShims
             let target = Invariants.normalizedRotation(degrees)
             let start = SessionGate.uptime()
             while Invariants.normalizedRotation(Int(CGDisplayRotation(id).rounded())) != target {
-                if SessionGate.uptime() - start > 10 { return ApplyResult(failure: L("The display didn't rotate.")) }
+                if SessionGate.uptime() - start > 10 { return ApplyResult(failure: L("The display didn’t rotate.")) }
                 try? await Task.sleep(nanoseconds: 200_000_000)
                 if shouldStop() { return ApplyResult(stopped: true) }
             }

@@ -15,6 +15,11 @@ import SnapticKit
     @Published var input: UInt16?
     @Published var powerOn: Bool?
     @Published var statusText: String?
+    /// 0.3 §4.5: the full brightness range incl. XDR (C writes it; pages never read BrightnessService.states).
+    @Published var brightnessPosition: Double?
+    @Published var brightnessRange: ClosedRange<Double> = 0...1
+    @Published var contrastRange: ClosedRange<Double> = 0...1
+    @Published var volumeRange: ClosedRange<Double> = 0...1
 
     init(key: DisplayKey) { self.key = key }
 }
@@ -27,11 +32,18 @@ import SnapticKit
     @Published var moduleState: ModuleState = .stopped
     @Published var isPanicLatched = false
     @Published var lastPanicSummary: String?
-    /// True while Snaptic holds a sleep-prevention assertion (set by PowerController; menu badge).
-    @Published var sleepPreventionActive = false
     private var perDisplay: [DisplayKey: DisplayRuntime] = [:]
+    private var revisions: [DisplayControllerID: ControllerRevision] = [:]
 
     init() {}
+
+    /// One revision object per controller id (0.3 §4.5), kept across module starts.
+    func revision(_ id: DisplayControllerID) -> ControllerRevision {
+        if let r = revisions[id] { return r }
+        let r = ControllerRevision()
+        revisions[id] = r
+        return r
+    }
 
     func runtime(for key: DisplayKey) -> DisplayRuntime {
         if let r = perDisplay[key] { return r }
@@ -53,7 +65,6 @@ import SnapticKit
         availability = [:]
         perDisplay = [:]
         isPanicLatched = false
-        sleepPreventionActive = false
         lastPanicSummary = nil
     }
 }
@@ -73,7 +84,6 @@ import SnapticKit
         self.config = config
         self.runtime = runtime
         self.enableFeature = enableFeature
-        forward.append(config.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() })
         forward.append(runtime.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() })
     }
 

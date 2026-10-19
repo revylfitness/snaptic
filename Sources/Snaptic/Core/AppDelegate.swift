@@ -88,9 +88,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         host.bootstrap()
 
         if safeMode.isActive {
-            toasts.show(L("Snaptic started in Safe Mode. Display automation is paused."),
-                        action: ToastAction(title: L("Leave")) { [weak self] in
-                            self?.relauncher.relaunch(reason: "leave safe mode")
+            toasts.show(L("Snaptic started in Safe Mode. Automation is paused."),
+                        action: ToastAction(title: L("Leave…")) { [weak self] in
+                            // The same question as every other "Leave Safe Mode…" (review round 3 ui N3).
+                            guard let self else { return }
+                            SafeModeLeave.confirm(relauncher: self.relauncher)
                         })
         }
         // Nothing in the menu bar (everything hidden): show Settings. A first launch gets
@@ -158,7 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate()
         let alert = NSAlert()
         alert.messageText = L("Snaptic is already running")
-        var detail = L("Another copy of Snaptic holds its lock, so this one won't start.")
+        var detail = L("Another copy of Snaptic holds its lock, so this one won’t start.")
         var canQuitOther = false
         if let pid = holder, pid > 0, kill(pid, 0) == 0 {
             let path = SNProcess.path(for: pid).map { TextSanitizer.clean($0, maxScalars: 300) } ?? L("unknown path")
@@ -174,7 +176,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if canQuitOther, response == .alertFirstButtonReturn, let pid = holder {
             NSRunningApplication(processIdentifier: pid)?.terminate()
             waitForLock(seconds: 10) { [weak self] in
-                self?.failClosed(L("The other copy didn't quit."))
+                self?.failClosed(L("The other copy didn’t quit."))
             }
         } else {
             exit(0)
@@ -184,7 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func failClosed(_ reason: String) {
         NSApp.activate()
         let alert = NSAlert()
-        alert.messageText = L("Snaptic couldn't start")
+        alert.messageText = L("Snaptic couldn’t start")
         alert.informativeText = reason
         alert.runModal()
         exit(1)
@@ -217,11 +219,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let appItem = NSMenuItem()
         let appMenu = NSMenu(title: "Snaptic")
-        appMenu.addItem(ClosureMenuItem(title: L("About Snaptic")) { [weak self] in
+        appMenu.addItem(MenuKit.action(L("About Snaptic")) { [weak self] in
             self?.host?.openSettings(page: GeneralPages.aboutID)
         })
         appMenu.addItem(.separator())
-        appMenu.addItem(ClosureMenuItem(title: L("Settings…"), keyEquivalent: ",") { [weak self] in
+        appMenu.addItem(MenuKit.action(L("Settings…"), key: ",") { [weak self] in
             self?.host?.openSettings()
         })
         appMenu.addItem(.separator())
@@ -240,6 +242,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editMenu.addItem(withTitle: L("Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: L("Paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(withTitle: L("Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: L("Find"), action: nil, keyEquivalent: "").submenu = Self.findMenu()
         editItem.submenu = editMenu
         main.addItem(editItem)
 
@@ -252,6 +256,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         NSApp.mainMenu = main
         NSApp.windowsMenu = windowMenu
+    }
+
+    /// Edit › Find, as in Apple's apps. Every item sends `performFindPanelAction:` with the standard
+    /// `NSFindPanelAction` tag through the responder chain: in Settings, Find… (⌘F) puts the focus in the search
+    /// field; text views handle the rest; with nothing to search the items are disabled.
+    private static func findMenu() -> NSMenu {
+        let findMenu = NSMenu(title: L("Find"))
+        let rows: [(String, String, NSEvent.ModifierFlags, NSFindPanelAction)] = [
+            (L("Find…"), "f", [.command], .showFindPanel),
+            (L("Find Next"), "g", [.command], .next),
+            (L("Find Previous"), "g", [.command, .shift], .previous),
+            (L("Use Selection for Find"), "e", [.command], .setFindString),
+        ]
+        for (title, key, modifiers, action) in rows {
+            let item = findMenu.addItem(withTitle: title, action: #selector(NSTextView.performFindPanelAction(_:)),
+                                        keyEquivalent: key)
+            item.keyEquivalentModifierMask = modifiers
+            item.tag = Int(action.rawValue)
+        }
+        return findMenu
     }
 }
 
@@ -270,22 +294,22 @@ struct InstanceLock {
     mutating func acquire() -> Outcome {
         if fd >= 0 { return .acquired }
         guard let folder = AccountPaths.supportDirectory() else {
-            return .failed(L("Snaptic can't use its folder in ~/Library/Application Support."))
+            return .failed(L("Snaptic can’t use its folder in ~/Library/Application Support."))
         }
         let path = folder + "/instance.lock"
         // Never follow a symlink planted at this path; only lock a regular file we own.
         let fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW | O_NOCTTY, 0o600)
-        guard fd >= 0 else { return .failed(L("Snaptic can't open its lock file at ") + path) }
+        guard fd >= 0 else { return .failed(L("Snaptic can’t open its lock file at ") + path) }
         var info = stat()
         guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, info.st_uid == getuid() else {
             close(fd)
-            return .failed(L("Snaptic's lock file isn't a regular file you own: ") + path)
+            return .failed(L("Snaptic’s lock file isn’t a regular file you own: ") + path)
         }
         guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
             let error = errno
             let holder = Self.readPID(fd)
             close(fd)
-            guard error == EWOULDBLOCK else { return .failed(L("Snaptic can't lock ") + path) }
+            guard error == EWOULDBLOCK else { return .failed(L("Snaptic can’t lock ") + path) }
             return .busy(holder: holder)
         }
         _ = ftruncate(fd, 0)

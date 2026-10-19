@@ -51,10 +51,6 @@ enum AX {
         AXUIElementSetAttributeValue(element, attribute as CFString, NSNumber(value: value))
     }
 
-    static func setElement(_ element: AXUIElement, _ attribute: String, _ value: AXUIElement) {
-        AXUIElementSetAttributeValue(element, attribute as CFString, value)
-    }
-
     @discardableResult
     static func setPosition(_ element: AXUIElement, _ point: CGPoint) -> Bool {
         var value = point

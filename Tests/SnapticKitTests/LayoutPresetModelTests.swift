@@ -136,6 +136,53 @@ final class LayoutPresetModelTests: XCTestCase {
         XCTAssertEqual(l.trust, TrustStamp(digest: "abc", osMajor: 26))
         XCTAssertEqual(try JSONDecoder().decode(SavedLayout.self, from: JSONEncoder().encode(l)), l)
     }
+
+    // MARK: Menu (0.3 §5.2)
+
+    func testBestMatchIgnoresAutoApply() {
+        let a = layout(1, [key("a"): SavedDisplaySettings(identity: ident("t1a"))], auto: .never, name: "Desk")
+        let b = layout(2, [key("a"): SavedDisplaySettings(identity: ident("t1a")), key("b"): SavedDisplaySettings(identity: ident("t1b"))],
+                       auto: .never, name: "Dock")
+        let live = [LiveLayoutDisplay(key: key("a"), identity: ident("t1a")), LiveLayoutDisplay(key: key("b"), identity: ident("t1b"))]
+        // Never auto-applies, but the menu still offers the most specific match, unchanged.
+        XCTAssertNil(LayoutPresetModel.select([a, b], live: live))
+        XCTAssertEqual(LayoutPresetModel.bestMatch([a, b], live: live), b)
+        XCTAssertEqual(LayoutPresetModel.bestMatch([a, b], live: [live[0]]), a)
+        XCTAssertNil(LayoutPresetModel.bestMatch([b], live: [live[0]]))
+        XCTAssertNil(LayoutPresetModel.bestMatch([], live: live))
+    }
+
+    func testIsCurrentComparesOnlySavedFields() {
+        let s = SavedDisplaySettings(mode: mode, x: 0, y: 0, isMain: true, rotation: 0, identity: ident("t1a"))
+        let mirrored = SavedDisplaySettings(x: 99, y: 99, mirrorOf: key("a"), mirrorSet: true, identity: ident("t1b"))
+        let l = layout(1, [key("a"): s, key("b"): mirrored])
+        let otherRefresh = ModeRef(ioModeID: 9, pixelWidth: 3024, pixelHeight: 1964, pointWidth: 1512, pointHeight: 982,
+                                   refreshMilliHz: 120_005)
+        var states: [DisplayKey: LayoutLiveState] = [
+            key("a"): LayoutLiveState(mode: otherRefresh, x: 0, y: 0, isMain: true, rotation: 0, mirrorOf: nil),
+            // A mirrored display's saved origin is not compared.
+            key("b"): LayoutLiveState(mode: nil, x: 5, y: 5, isMain: false, rotation: 0, mirrorOf: key("a")),
+        ]
+        XCTAssertTrue(LayoutPresetModel.isCurrent(l, states: states))
+        states[key("b")]?.mirrorOf = nil
+        XCTAssertFalse(LayoutPresetModel.isCurrent(l, states: states))
+        states[key("b")]?.mirrorOf = key("a")
+        states[key("a")]?.x = 1
+        XCTAssertFalse(LayoutPresetModel.isCurrent(l, states: states))
+        states[key("a")]?.x = 0
+        states[key("a")]?.rotation = 90
+        XCTAssertFalse(LayoutPresetModel.isCurrent(l, states: states))
+        states[key("a")]?.rotation = 0
+        states[key("a")]?.isMain = false
+        XCTAssertFalse(LayoutPresetModel.isCurrent(l, states: states))
+        states[key("a")]?.isMain = true
+        states[key("a")]?.mode = nil
+        XCTAssertFalse(LayoutPresetModel.isCurrent(l, states: states))
+        // A missing display, an empty layout, or one that saves nothing comparable is never current.
+        XCTAssertFalse(LayoutPresetModel.isCurrent(l, states: [:]))
+        XCTAssertFalse(LayoutPresetModel.isCurrent(layout(2, [:]), states: states))
+        XCTAssertFalse(LayoutPresetModel.isCurrent(layout(3, [key("a"): SavedDisplaySettings(identity: ident("t1a"))]), states: states))
+    }
 }
 
 private extension SavedLayout {
@@ -143,5 +190,46 @@ private extension SavedLayout {
         var c = self
         c.trust = t
         return c
+    }
+}
+
+final class ListReorderTests: XCTestCase {
+    private struct Item: Equatable { let id: String; let n: Int }
+
+    func testReorderFollowsTheGivenOrder() {
+        let items = [Item(id: "a", n: 1), Item(id: "b", n: 2), Item(id: "c", n: 3)]
+        XCTAssertEqual(ListReorder.reordered(items, id: \.id, order: ["c", "a", "b"]).map(\.id), ["c", "a", "b"])
+    }
+
+    func testUnknownMissingAndRepeatedIDs() {
+        let items = [Item(id: "a", n: 1), Item(id: "b", n: 2), Item(id: "c", n: 3)]
+        // "x" doesn't exist, "a" repeats, "b" wasn't listed: kept after the listed ones.
+        XCTAssertEqual(ListReorder.reordered(items, id: \.id, order: ["x", "c", "a", "a"]).map(\.id), ["c", "a", "b"])
+        XCTAssertEqual(ListReorder.reordered(items, id: \.id, order: []).map(\.id), ["a", "b", "c"])
+        XCTAssertEqual(ListReorder.reordered([Item](), id: \.id, order: ["a"]), [])
+    }
+
+    func testDuplicateIDsInTheStoreAreNeverDropped() {
+        let items = [Item(id: "a", n: 1), Item(id: "a", n: 2), Item(id: "b", n: 3)]
+        XCTAssertEqual(ListReorder.reordered(items, id: \.id, order: ["b", "a"]).map(\.n), [3, 1, 2])
+    }
+
+    func testMoving() {
+        XCTAssertEqual(ListReorder.moving("b", by: -1, in: ["a", "b", "c"]), ["b", "a", "c"])
+        XCTAssertEqual(ListReorder.moving("b", by: 5, in: ["a", "b", "c"]), ["a", "c", "b"])
+        XCTAssertEqual(ListReorder.moving("a", by: -1, in: ["a", "b"]), ["a", "b"])
+        XCTAssertEqual(ListReorder.moving("z", by: 1, in: ["a", "b"]), ["a", "b"])
+    }
+
+    func testReorderFuzzKeepsEveryItemOnce() {
+        var rng = SeededGenerator(seed: 0x1A70)
+        func pick(_ range: ClosedRange<Int>) -> Int { range.lowerBound + Int(rng.next() % UInt64(range.count)) }
+        for _ in 0..<300 {
+            let count = pick(0...10)
+            let items: [Item] = (0..<count).map { Item(id: String(pick(0...6)), n: $0) }
+            let order: [String] = (0..<pick(0...12)).map { _ in String(pick(0...8)) }
+            let result: [Item] = ListReorder.reordered(items, id: { $0.id }, order: order)
+            XCTAssertEqual(result.map { $0.n }.sorted(), items.map { $0.n })
+        }
     }
 }

@@ -93,7 +93,6 @@ package enum FeatureGraph {
         .hdrToggle: FeatureSpec(.experimental, uses: [.monitorPanel, .transactions], controller: .panelProps, page: "arrangement"),
         .disconnect: FeatureSpec(.optIn, beta: true, uses: [.transactions, .guardProcess], controller: .power, page: "arrangement"),
         .autoDisconnectBuiltin: FeatureSpec(.optIn, all: [.disconnect], uses: [.guardProcess, .ddc], controller: .power, page: "arrangement"),
-        .sleepPrevention: FeatureSpec(.optIn, controller: .power, page: "arrangement"),
 
         .protection: FeatureSpec(.optIn, uses: [.transactions], controller: .protection, page: "protection"),
         .layouts: FeatureSpec(.optIn, uses: [.transactions], controller: .layouts, page: "protection"),
@@ -129,7 +128,7 @@ package enum FeatureGraph {
 
     /// Features removed from the effective set in Safe Mode (R5.4). Everything else is gated internally.
     package static let safeModeRemoves: Set<DisplayFeature> = [
-        .xdr, .sync, .dimOnLock, .sleepPrevention, .protection, .autoDisconnectBuiltin, .hooks, .customActions,
+        .xdr, .sync, .dimOnLock, .protection, .autoDisconnectBuiltin, .hooks, .customActions,
     ]
 
     /// Features removed while panic is latched (R5.4).

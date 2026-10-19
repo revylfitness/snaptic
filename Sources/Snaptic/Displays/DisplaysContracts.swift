@@ -3,13 +3,6 @@ import SnapticKit
 
 // Displays protocols and value types (lead-owned contract; R5.1: no classes here).
 
-enum FeatureAvailability: Equatable {
-    case available
-    case unavailable(String)
-
-    var isAvailable: Bool { self == .available }
-}
-
 /// One controller per DisplayControllerID (PLAN §2.1). Constructed once by
 /// DisplaysModule with init(); started when any of its features becomes effective.
 @MainActor protocol DisplayFeatureController: AnyObject {
@@ -26,6 +19,53 @@ enum FeatureAvailability: Equatable {
     func configDidChange(from old: DisplaysConfig, to new: DisplaysConfig)
     /// Synchronous, idempotent, never shows UI.
     func stop()
+    /// The config sections this controller reads (0.3 §4.5): it hears `configDidChange` only when one of them
+    /// changed. A requirement (so a conformer's narrower set dispatches) with a default of every section.
+    static var observedSections: Set<DisplaysConfigSection> { get }
+}
+
+extension DisplayFeatureController {
+    static var observedSections: Set<DisplaysConfigSection> { Set(DisplaysConfigSection.allCases) }
+}
+
+// MARK: - 0.3 live-update contracts (PLAN 0.3 §4.5)
+
+/// One per DisplayControllerID (`DisplaysRuntimeState.revision(_:)`): sections observe only the ids they show.
+/// `bump()` is coalesced to one publish per main-queue turn, at most 15 per second, trailing edge (the last bump in
+/// a window always publishes). Delivered with `DispatchQueue.main`, so it also runs while a menu is open (N15).
+@MainActor final class ControllerRevision: ObservableObject {
+    static let minimumInterval: TimeInterval = 1.0 / 15
+    @Published private(set) var count: UInt64 = 0
+    private var scheduled = false
+    private var lastPublish: TimeInterval = 0
+
+    init() {}
+
+    func bump() {
+        guard !scheduled else { return }
+        scheduled = true
+        let now = ProcessInfo.processInfo.systemUptime
+        let wait = max(0, lastPublish + Self.minimumInterval - now)
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
+            MainActor.assumeIsolated { self?.publish() }
+        }
+    }
+
+    private func publish() {
+        scheduled = false
+        lastPublish = ProcessInfo.processInfo.systemUptime
+        count &+= 1
+    }
+}
+
+enum LiveControl: Hashable { case brightness, contrast, volume, custom(UInt8) }
+
+enum DragPhase { case began, changed, ended }
+
+/// The only route from a `.live` slider to hardware (C implements it): a latest-wins mailbox per (display,
+/// control), `.ended` always delivered.
+@MainActor protocol DisplayLiveControlling: AnyObject {
+    func set(_ control: LiveControl, _ value: Double, for display: DisplayKey, phase: DragPhase)
 }
 
 /// Internal services, activated by reference count. Nonisolated services conform in
@@ -60,8 +100,6 @@ enum MenuSlot: String, CaseIterable, Sendable {
     case header
     /// The Tools section (layouts, virtual screens, Match UI size, Connect All, Restore All…).
     case tools
-    /// The right-click quick menu.
-    case quick
 }
 
 struct DisplayMenuItemDescriptor {
@@ -75,8 +113,14 @@ struct DisplayMenuItemDescriptor {
     var descriptors: [DisplayMenuItemDescriptor] { get }
     /// Items for the `.display` and `.header` slots of one display.
     func menuItems(for display: DisplayInfo) -> [(DisplayMenuItemID, NSMenuItem)]
-    /// Items for the global `.tools` and `.quick` slots.
+    /// Items for the global `.tools` slot.
     func globalItems(slot: MenuSlot) -> [(DisplayMenuItemID, NSMenuItem)]
+    /// Every item id this contributor can ever produce (static, for the controls self-test, R5-13).
+    static var menuItemIDs: [DisplayMenuItemID] { get }
+}
+
+extension DisplayMenuContributor {
+    static var menuItemIDs: [DisplayMenuItemID] { [] }
 }
 
 /// A display as the rest of the app sees it. A Smart HiDPI pair is one entry:

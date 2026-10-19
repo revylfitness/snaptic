@@ -106,7 +106,7 @@ enum HostInfo {
         context.appleBrightness.onChange = { [weak self] key in self?.hardwareInfoChanged(key) }
         context.gamma.observeGiveUp(lifetime: lifetime) { [weak self] key in
             guard let self, let context = self.context else { return }
-            context.toasts.show(L("Another app keeps changing this display's colors. Snaptic switched to overlay dimming."),
+            context.toasts.show(L("Another app keeps changing this display’s colors. Snaptic switched to overlay dimming."),
                                 lifetime: self.lifetime)
             self.reevaluate(key)
         }
@@ -251,13 +251,23 @@ enum HostInfo {
         set(s.position + delta, for: key, source: source)
     }
 
+    /// A live drag began (DisplayLiveController): read-backs and the Apple poll hold off as after a change.
+    func holdReadbacks(for key: DisplayKey) {
+        guard states[key] != nil else { return }
+        states[key]?.lastSetAt = ProcessInfo.processInfo.systemUptime
+    }
+
     /// The hardware level changed outside Snaptic (DDC readback, macOS keys, auto-brightness).
     func noteHardwareChanged(_ key: DisplayKey, hardware: Double) {
         guard var s = states[key], let context, s.hardware != nil else { return }
         if let last = s.lastHardware, abs(last - hardware) < 0.02 { return }
-        s.lastHardware = hardware
         let sc = scale(for: key, state: s, context: context)
         let out = sc.split(s.position)
+        // 0.3 §4.5: right after a user change the monitor may still report the old level; don't snap back.
+        let now = ProcessInfo.processInfo.systemUptime
+        guard LiveReadback.accepts(hardware, setValue: out.hardware, setAt: s.lastSetAt > 0 ? s.lastSetAt : nil, now: now)
+        else { return }
+        s.lastHardware = hardware
         let p = sc.position(hardware: hardware, software: out.software, xdr: out.xdr)
         guard abs(p - s.position) > 0.005 else {
             states[key] = s
@@ -265,7 +275,7 @@ enum HostInfo {
         }
         s.position = p
         states[key] = s
-        context.runtime.runtime(for: key).brightness = min(1, p)
+        publishLive(key)
         publish(key, p, .automation)
     }
 
@@ -276,8 +286,10 @@ enum HostInfo {
         s.xdrMax = s.xdrEnabled ? max : 1
         s.xdrMethod = method
         if !s.xdrEnabled { s.position = Swift.min(s.position, 1) }
+        let changed = states[key]?.xdrEnabled != s.xdrEnabled || states[key]?.xdrMax != s.xdrMax
         states[key] = s
         apply(key, animated: false, interactive: true)
+        if changed { context?.runtime.revision(.brightness).bump() }
     }
 
     /// Panic and Restore All: overlays removed, gamma restored, XDR off, software neutral.
@@ -294,7 +306,7 @@ enum HostInfo {
             if s.hardware != nil, out.software < 1 { s.position = sc.position(hardware: out.hardware, software: 1) }
             if s.hardware == nil { s.position = 1 }
             states[key] = s
-            context.runtime.runtime(for: key).brightness = min(1, s.position)
+            publishLive(key)
             context.runtime.runtime(for: key).xdrScale = 1
         }
         context.edr.removeAll()
@@ -373,13 +385,13 @@ enum HostInfo {
                 reason = display.isBuiltin ? L("Built-in display") : L("Apple display")
             } else if usable.contains(.ddc) {
                 hardware = .ddc
-                reason = L("The monitor answers DDC")
+                reason = L("The display answers hardware controls")
             } else {
                 reason = display.isBuiltin || display.transport == .wired
                     ? L("No hardware control; software dimming") : L("Software dimming for this connection")
             }
             if let override {
-                reason = L("The chosen method isn't available: ") + override.title
+                reason = L("The chosen method isn’t available: \(override.title)")
             }
         }
         if override == nil || override?.isHardware == true {
@@ -438,6 +450,8 @@ enum HostInfo {
                 s.awaitingSince = now
                 s.reason = L("Reading brightness…")
                 states[key] = s
+                publishLive(key)
+                context.runtime.revision(.brightness).bump()
                 context.requestMenuRebuild()
             }
             return
@@ -455,6 +469,7 @@ enum HostInfo {
         }
         if oldSoftware == .gamma, software != .gamma { context.gamma.setSoftwareBrightness(1, for: key) }
         let firstTime = !s.initialized
+        let reasonChanged = states[key]?.reason != reason
         states[key] = s
         if finishedWaiting { context.requestMenuRebuild() }
         if firstTime {
@@ -463,6 +478,8 @@ enum HostInfo {
             apply(key, animated: false, interactive: false)
             EventLog.shared.record(.brightness, "Brightness method: \(hardware?.rawValue ?? "-") + \(software?.rawValue ?? "-")")
         }
+        publishLive(key)
+        if changed || finishedWaiting || reasonChanged || firstTime { context.runtime.revision(.brightness).bump() }
     }
 
     /// First sight: restore the saved value, or start from the hardware's current level.
@@ -489,7 +506,7 @@ enum HostInfo {
         let sc = scale(for: key, state: s, context: context)
         s.position = hw.map { sc.position(hardware: $0, software: 1) } ?? 1
         states[key] = s
-        context.runtime.runtime(for: key).brightness = min(1, s.position)
+        publishLive(key)
         publish(key, s.position, .automation)
     }
 
@@ -539,7 +556,7 @@ enum HostInfo {
             context.edr.setBoost(1, for: key)
         }
         states[key] = s
-        context.runtime.runtime(for: key).brightness = min(1, s.position)
+        publishLive(key)
         if let display = context.registry.info(for: key) {
             report(display.desktopID, software: s.software == .gamma ? software : nil,
                    overlay: s.software == .overlay ? software : nil)
@@ -602,6 +619,23 @@ enum HostInfo {
 
     private func publish(_ key: DisplayKey, _ value: Double, _ source: Source) {
         subject.send(Change(key: key, value: value, source: source))
+    }
+
+    /// Writes the live values pages and menus show (0.3 §4.5): `brightnessRange` first, then the position (full
+    /// range incl. XDR), then the 0…1 level. Nil while the display isn't managed or waits for its first read.
+    /// Only changed values are assigned, so observers hear each change once.
+    private func publishLive(_ key: DisplayKey) {
+        guard let context else { return }
+        let live = context.runtime.runtime(for: key)
+        guard let s = states[key], s.awaitingSince == nil, s.initialized, s.hardware != nil || s.software != nil else {
+            if live.brightnessPosition != nil { live.brightnessPosition = nil }
+            return
+        }
+        let range = scale(for: key, state: s, context: context).range
+        if live.brightnessRange != range { live.brightnessRange = range }
+        if live.brightnessPosition != s.position { live.brightnessPosition = s.position }
+        let level = Swift.min(1, s.position)
+        if live.brightness != level { live.brightness = level }
     }
 
     /// Tells the registry (invariants, long-arm) how dim a display is; 1 = none.
