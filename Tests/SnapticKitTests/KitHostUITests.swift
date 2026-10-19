@@ -47,10 +47,33 @@ final class KitHostUITests: XCTestCase {
 
     // MARK: Re-add guidance (W5)
 
-    func testReAddStepsShowAtOnceOnlyForAMissingAccessibilityGrantAfterAnEarlierLaunch() {
-        XCTAssertTrue(HostUIRules.showsReAddStepsAtOnce(.accessibility, launchedBefore: true, granted: false))
-        XCTAssertFalse(HostUIRules.showsReAddStepsAtOnce(.accessibility, launchedBefore: false, granted: false))
-        XCTAssertFalse(HostUIRules.showsReAddStepsAtOnce(.accessibility, launchedBefore: true, granted: true))
-        XCTAssertFalse(HostUIRules.showsReAddStepsAtOnce(.screenRecording, launchedBefore: true, granted: false))
+    /// 0.3.1 E2: the switch to Developer ID resets Screen Recording as well as Accessibility, so both guides show the
+    /// steps at once.
+    func testReAddStepsShowAtOnceForAMissingGrantAfterAnEarlierLaunch() {
+        for permission in Permission.allCases {
+            XCTAssertTrue(HostUIRules.showsReAddStepsAtOnce(permission, launchedBefore: true, granted: false))
+            XCTAssertFalse(HostUIRules.showsReAddStepsAtOnce(permission, launchedBefore: false, granted: false))
+            XCTAssertFalse(HostUIRules.showsReAddStepsAtOnce(permission, launchedBefore: true, granted: true))
+            XCTAssertFalse(HostUIRules.showsReAddStepsAtOnce(permission, launchedBefore: false, granted: true))
+        }
+    }
+
+    // MARK: 0.3.1 welcome card (E1a)
+
+    func testRegrantRowsAreTheNeededPermissionsMacOSNoLongerGrantsInOrder() {
+        XCTAssertEqual(HostUIRules.regrantRows(needed: [], granted: []), [])
+        XCTAssertEqual(HostUIRules.regrantRows(needed: [.screenRecording, .accessibility], granted: []),
+                       [.accessibility, .screenRecording])
+        XCTAssertEqual(HostUIRules.regrantRows(needed: [.screenRecording, .accessibility], granted: [.accessibility]),
+                       [.screenRecording])
+        XCTAssertEqual(HostUIRules.regrantRows(needed: [.accessibility], granted: [.screenRecording]), [.accessibility])
+        XCTAssertEqual(HostUIRules.regrantRows(needed: [.accessibility], granted: [.accessibility, .screenRecording]), [])
+    }
+
+    func testWelcomeCardFinishesOnlyWithTheChoiceMadeAndNothingToGrant() {
+        XCTAssertTrue(HostUIRules.welcomeFinished(updateChoiceMade: true, regrantRows: []))
+        XCTAssertFalse(HostUIRules.welcomeFinished(updateChoiceMade: false, regrantRows: []))
+        XCTAssertFalse(HostUIRules.welcomeFinished(updateChoiceMade: true, regrantRows: [.screenRecording]))
+        XCTAssertFalse(HostUIRules.welcomeFinished(updateChoiceMade: false, regrantRows: [.accessibility]))
     }
 }
