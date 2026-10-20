@@ -118,9 +118,10 @@ import SnapticKit
         let awakeHistory = ConfigStore<AwakeHistory>(key: Self.awakeHistoryKey)
         let ledger = ConfigStore<MigrationLedger>(key: Self.ledgerKey)
         let disabled = KillSwitches.read(domain, prefix: "Modules", as: ModuleID.self)
-        let firstV031 = !ledger.value.has(.v031Welcome) && modulesExisted
-        let m1 = Self.runMigrations(modules: store, modulesExisted: modulesExisted, displays: displaysConfig,
-                                    awake: awakeConfig, ledger: ledger, toasts: toasts)
+        let v031Upgrader = MigrationLedger.isV031Upgrader(modulesExisted: modulesExisted, launchedBefore: launchedBefore)
+        let firstV031 = !ledger.value.has(.v031Welcome) && v031Upgrader
+        let m1 = Self.runMigrations(modules: store, modulesExisted: modulesExisted, v031Upgrader: v031Upgrader,
+                                    displays: displaysConfig, awake: awakeConfig, ledger: ledger, toasts: toasts)
         isFirstV031Launch = firstV031
         if let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String {
             UserDefaults.standard.set(build, forKey: Self.lastRunVersionKey)
@@ -148,15 +149,16 @@ import SnapticKit
     /// off for upgraders (§2.13, once: marker `awakeUpgrade.v1`) → M1 → forced saves: modules, displays, Awake, then the ledger last (the commit
     /// point; a crash before it re-runs migrations that are idempotent over what that run wrote). Returns M1's
     /// result when it ran in this launch.
-    private static func runMigrations(modules: ConfigStore<ModulesConfig>, modulesExisted: Bool,
+    private static func runMigrations(modules: ConfigStore<ModulesConfig>, modulesExisted: Bool, v031Upgrader: Bool,
                                       displays: ConfigStore<DisplaysConfig>, awake: ConfigStore<AwakeConfig>,
                                       ledger: ConfigStore<MigrationLedger>, toasts: ToastPresenter) -> AwakeMigrationResult? {
         var marks = ledger.value
         modules.value = modules.value.migrated(ledger: &marks)
         displays.value = displays.value.migrated(ledger: &marks)
         modules.value = modules.value.insertingAwakeForUpgrader(modulesExisted: modulesExisted, ledger: &marks)
-        // 0.3.1 E1a: an upgrader's module settings existed before this launch (0.3.0 stored no last-run version).
-        marks.recordV031Welcome(upgrader: modulesExisted)
+        // 0.3.1 E1a: an upgrader's module settings existed before this launch (0.3.0 stored no last-run version), or
+        // an earlier version ran (0.1 and 0.2 users skip onboarding; r2 C2-1).
+        marks.recordV031Welcome(upgrader: v031Upgrader)
         // M1 (§4.6, R5-12): G's pure migration over the raw 0.2 JSON; the marker is recorded whatever it found.
         var m1: AwakeMigrationResult?
         if !marks.has(.fromDisplays) {
@@ -251,6 +253,8 @@ import SnapticKit
             updaterController = controller
             relauncher.updater = controller
             revision &+= 1
+            // A first launch opened onboarding inside bootstrap(), before the updater existed (r2 C2-1).
+            onboarding.updaterDidStart()
         } else {
             EventLog.shared.record(.modules, "Updater unavailable: \(UpdaterController.gate)")
         }

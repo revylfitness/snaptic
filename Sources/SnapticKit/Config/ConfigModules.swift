@@ -113,6 +113,28 @@ package enum OnboardingPage: Hashable, Sendable {
     case updates
 }
 
+/// 0.3.1 E1a: whether this onboarding run has the Keep Snaptic Up to Date page (r1 U6; r2 C2-1). On a first launch
+/// the window opens inside `bootstrap()`, before `startUpdater()` creates the updater, so the question is asked again
+/// when the updater starts and at every Continue. Once the page is in, it stays in for the run, so answering doesn't
+/// renumber Done.
+package struct OnboardingUpdatesPage: Equatable, Sendable {
+    package private(set) var included = false
+
+    package init() {}
+
+    /// The question is open: a build that updates itself, and the user hasn't answered.
+    package static func asks(updaterExists: Bool, consentDecided: Bool) -> Bool {
+        updaterExists && !consentDecided
+    }
+
+    /// The window opens (not while it already shows): a new run starts from whether the question is open now.
+    package mutating func windowOpened(asks: Bool) { included = asks }
+
+    /// The updater started, or Continue was pressed: the page joins the run if the question is open now, and a page
+    /// already in stays in.
+    package mutating func refresh(asks: Bool) { included = included || asks }
+}
+
 /// Host settings under `SnapticModulesV1`: which modules run, where their menus go, and
 /// the other General settings (R5.1). Per-item Displays menu choices live in
 /// `DisplaysConfig.menu` (MenuConfig), the single source of truth.
@@ -312,8 +334,8 @@ package struct ModulesConfig: ConfigModel {
     }
 
     /// E1a: the pages in order (the progress dots and "Step 5 of 6"), with the updates page before Done when
-    /// `includesUpdates`. The caller decides that once per run, when the window opens, so answering the question
-    /// doesn't drop its page and renumber Done (r1 U6).
+    /// `includesUpdates` (`OnboardingUpdatesPage.included`, which never drops the page during a run, so answering
+    /// doesn't renumber Done; r1 U6).
     package func onboardingPages(includesUpdates: Bool) -> [OnboardingPage] {
         var pages = onboardingSteps().map(OnboardingPage.step)
         if includesUpdates, let done = pages.firstIndex(of: .step(.done)) { pages.insert(.updates, at: done) }

@@ -12,11 +12,12 @@
   `SU…` key strings only in SnapticKit/UpdatePolicy.swift (UpdateDefaultsKeys), and, once anything imports Sparkle,
   exactly one Package.swift dependency (sparkle-project/Sparkle, `exact:`, under `#if os(macOS)`) with
   Package.resolved committed;
-- workflow rules (E3, E6): no `pull_request_target`, `workflow_run` or `set -x`; no `actions/cache` in `build`,
-  `sign`, `publish` or any job they need (the signed bundle is built in `build`; r1 S6); no `${{` inside a `run:`
-  script (values reach scripts through `env:`, so a tag name or release field is never spliced into shell; r1 S6);
-  and `gh release` only in the `publish` job (checked once a `publish` job exists: until T-update's pipeline lands,
-  the 0.3 `release` job still publishes).
+- workflow rules (E3, E6), on the parsed YAML (PyYAML; r2 S2-4): no anchors, aliases, merge keys, explicit tags or
+  repeated keys; no `pull_request_target`, `workflow_run` or `set -x`; no cache (an action named for one, a `cache…`
+  input, setup-go's default) in `build`, `sign`, `publish` or any job they need (the signed bundle is built in
+  `build`; r1 S6); no `${{` inside a `run:` script or `actions/github-script`'s inputs (values reach scripts through
+  `env:`, so a tag name or release field is never spliced into code; r1 S6); and `gh release` only in the `publish`
+  job (checked once a `publish` job exists: until T-update's pipeline lands, the 0.3 `release` job still publishes).
 
 Run by scripts/lint.sh (which passes LINT_MODE=check|write and LINT_STRICT=0|1). Comments are stripped before
 matching (string literals are kept); counts are occurrences, not lines.
@@ -323,7 +324,38 @@ def self_check_031():
                     "        run: |\n          echo \"$TAG\"\n      - uses: actions/upload-artifact@abc\n"
                     "        with:\n          path: ${{ runner.temp }}/out\n"), False),
         (wf.replace("jobs:\n", "defaults:\n  run:\n    shell: bash\njobs:\n"), False),
+        # r2 S2-4: the rules read the parsed YAML, so no spelling of the same workflow gets past them.
+        (wf.replace("run: echo", "run: |2-\n          echo ${{ github.ref_name }}"), True),
+        (wf.replace("run: echo", "run: >\n          echo ${{ github.head_ref }}"), True),
+        (wf.replace("run: echo", "run: echo start\n          ${{ github.ref_name }}"), True),
+        (wf.replace("run: echo", "run: \"echo start\n          ${{ github.ref_name }}\""), True),
+        (wf.replace("run: echo", "run: |\n          echo \"${{\n            github.head_ref }}\""), True),
+        (wf.replace("run: echo", "\"run\": echo ${{ github.ref_name }}"), True),
+        (wf.replace("      - run: echo\n", "      - { run: \"echo ${{ github.ref_name }}\" }\n"), True),
+        (wf.replace("run: echo", "run: &a |\n          echo ok"), True),
+        (wf.replace("run: echo", "run: !!str |\n          echo ok"), True),
+        (wf.replace("      - run: echo\n", "      - <<: {run: \"echo ok\"}\n"), True),
+        (wf.replace("      - run: echo\n", "      - run: echo ${{ github.head_ref }}\n        run: echo\n"), True),
+        (wf + "---\n" + wf, True),
+        (wf.replace("on:\n  push:\n", "on: [push, pull_request_target]\n"), True),
+        (wf.replace("run: echo", "run: |\n          set -o xtrace"), True),
+        (wf.replace("      - run: echo\n", "      - uses: actions/github-script@abc\n        with:\n"
+                    "          script: core.info('${{ github.head_ref }}')\n"), True),
+        (wf.replace("      - run: echo\n", "      - uses: actions/github-script@abc\n        env:\n"
+                    "          REF: ${{ github.head_ref }}\n        with:\n          script: core.info(process.env.REF)\n"),
+         False),
+        (wf.replace("      - run: echo\n", "      - uses: Actions/Cache@abc\n"), True),
+        (wf.replace("      - run: echo\n", "      - uses: actions/setup-python@abc\n        with:\n          cache: pip\n"),
+         True),
+        (wf + "  lint:\n    steps:\n      - uses: actions/setup-python@abc\n        with:\n          cache: pip\n", False),
+        (wf.replace("      - run: echo\n", "      - uses: actions/setup-go@abc\n"), True),
+        (wf.replace("      - run: echo\n", "      - uses: actions/setup-go@abc\n        with:\n          cache: false\n"),
+         False),
+        (wf + "  compile:\n    steps:\n      - uses: actions/cache@abc\n"
+              "  sign:\n    needs: \"compile\"\n    steps:\n      - run: echo\n", True),
     ]
+    if yaml is None:
+        return problems
     for text, flagged in workflow_cases:
         if bool(workflow_file("selfcheck.yml", text)) != flagged:
             problems.append(f"self-check: workflow rules {'missed' if flagged else 'wrongly reported'} {text!r}")
@@ -603,50 +635,108 @@ def l19_package(manifest, imports, resolved):
     return problems
 
 
-# PLAN 0.3.1 E3, E6: workflow hygiene.
+# PLAN 0.3.1 E3, E6: workflow hygiene, checked on the parsed YAML (r2 S2-4: line patterns missed block-scalar headers
+# such as `|2-`, multi-line plain and quoted scalars, flow-style steps, quoted keys, anchors and tags). PyYAML isn't in
+# the standard library: kit-linux installs python3-yaml and sets LINT_REQUIRE_YAML=1, so a missing PyYAML fails there;
+# elsewhere (a Mac without it) these rules are skipped with a warning.
 WORKFLOWS = ".github/workflows"
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
+SET_X = re.compile(r"\bset\s+(?:-[A-Za-z]*x[A-Za-z]*|-o\s+xtrace)\b|\b(?:ba)?sh\s+-[A-Za-z]*x")
+FORBIDDEN_TRIGGERS = {"pull_request_target", "workflow_run"}
 
 
-def workflow_jobs(text):
-    """{job name: its lines} for a GitHub Actions workflow (jobs are the two-space keys under `jobs:`)."""
-    jobs, current, in_jobs = {}, None, False
-    for line in text.split("\n"):
-        if re.match(r"^jobs:\s*(?:#.*)?$", line):
-            in_jobs = True
-            continue
-        if in_jobs and re.match(r"^\S", line) and not line.startswith("#"):
-            in_jobs, current = False, None
-        if not in_jobs:
-            continue
-        m = re.match(r"^  ([A-Za-z0-9_-]+):\s*(?:#.*)?$", line)
-        if m:
-            current = m.group(1)
-            jobs[current] = []
-        elif current:
-            jobs[current].append(line)
-    return jobs
+def yaml_missing():
+    """The problem (or warning) when PyYAML isn't there; None when it is."""
+    if yaml is not None:
+        return None
+    if os.environ.get("LINT_REQUIRE_YAML") == "1":
+        return "the workflow rules need PyYAML (python3-yaml), which isn't installed"
+    print("lint warning: PyYAML isn't installed, so the workflow rules were skipped (kit-linux runs them)",
+          file=sys.stderr)
+    return ""
 
 
-def job_needs(lines):
-    """The jobs a job's `needs:` names: `needs: a`, `needs: [a, b]` or a block list."""
-    needs, in_block = [], False
-    for line in lines:
-        m = re.match(r"^    needs:\s*(.*?)\s*(?:#.*)?$", line)
-        if m:
-            value = m.group(1)
-            if value.startswith("["):
-                needs += [x.strip().strip("'\"") for x in value.strip("[]").split(",") if x.strip()]
-            elif value:
-                needs.append(value.strip("'\""))
-            in_block = not value
-            continue
-        if in_block:
-            item = re.match(r"^      -\s*([A-Za-z0-9_-]+)", line)
-            if item:
-                needs.append(item.group(1))
-            elif line.strip() and not line.strip().startswith("#"):
-                in_block = False
-    return needs
+def yaml_line(node):
+    return node.start_mark.line + 1
+
+
+def yaml_items(node):
+    """(key, value node) pairs of a mapping node's text keys; [] for anything else."""
+    if not isinstance(node, yaml.MappingNode):
+        return []
+    return [(k.value, v) for k, v in node.value if isinstance(k, yaml.ScalarNode)]
+
+
+def yaml_get(node, key):
+    for k, v in yaml_items(node):
+        if k == key:
+            return v
+    return None
+
+
+def yaml_scalars(node):
+    """Every scalar under `node`, mapping keys included."""
+    if isinstance(node, yaml.ScalarNode):
+        yield node
+    elif isinstance(node, yaml.SequenceNode):
+        for item in node.value:
+            yield from yaml_scalars(item)
+    elif isinstance(node, yaml.MappingNode):
+        for k, v in node.value:
+            yield from yaml_scalars(k)
+            yield from yaml_scalars(v)
+
+
+def workflow_tree(path, text):
+    """(problems, root node). The tree must read the way GitHub reads it: one document; no anchors, aliases or merge
+    keys (a step reused out of sight); no explicit tags (`!!binary` hides text); text keys, each once (PyYAML keeps
+    the last of a repeated key)."""
+    problems = []
+    try:
+        for event in yaml.parse(text, Loader=yaml.SafeLoader):
+            where = f"{path}:{event.start_mark.line + 1}"
+            if isinstance(event, yaml.AliasEvent) or getattr(event, "anchor", None):
+                problems.append(f"{where}: YAML anchors and aliases are forbidden in workflows (r2 S2-4)")
+            elif getattr(event, "tag", None):
+                problems.append(f"{where}: explicit YAML tags are forbidden in workflows (r2 S2-4)")
+        root = yaml.compose(text, Loader=yaml.SafeLoader)
+    except yaml.YAMLError as error:
+        return problems + [f"{path}: not a single valid YAML document ({str(error).splitlines()[0]})"], None
+    if root is None:
+        return problems + [f"{path}: empty workflow"], None
+
+    def walk(node):
+        if isinstance(node, yaml.SequenceNode):
+            for item in node.value:
+                walk(item)
+        elif isinstance(node, yaml.MappingNode):
+            seen = set()
+            for k, v in node.value:
+                if not isinstance(k, yaml.ScalarNode):
+                    problems.append(f"{path}:{yaml_line(k)}: a mapping key must be text (r2 S2-4)")
+                elif k.value == "<<":
+                    problems.append(f"{path}:{yaml_line(k)}: YAML merge keys are forbidden in workflows (r2 S2-4)")
+                elif k.value in seen:
+                    problems.append(f"{path}:{yaml_line(k)}: repeated key {k.value!r} (r2 S2-4)")
+                seen.add(getattr(k, "value", None))
+                walk(v)
+
+    walk(root)
+    return problems, root
+
+
+def job_needs(job):
+    """The jobs a job's `needs:` names (one name or a list)."""
+    needs = yaml_get(job, "needs")
+    if isinstance(needs, yaml.ScalarNode):
+        return [needs.value]
+    if isinstance(needs, yaml.SequenceNode):
+        return [n.value for n in needs.value if isinstance(n, yaml.ScalarNode)]
+    return []
 
 
 def signed_chain(jobs):
@@ -657,42 +747,50 @@ def signed_chain(jobs):
         if name in chain:
             continue
         chain.add(name)
-        todo += job_needs(jobs.get(name, []))
+        todo += job_needs(jobs.get(name))
     return chain
 
 
-def run_expression_lines(text):
-    """Line numbers of `${{` inside `run:` scripts (inline, or a `|`/`>` block scalar, comments included: Actions
-    expands them there too)."""
-    found, block_indent = [], None
-    for n, line in enumerate(text.split("\n"), 1):
-        if block_indent is not None:
-            if not line.strip() or len(line) - len(line.lstrip(" ")) > block_indent:
-                if "${{" in line:
-                    found.append(n)
-                continue
-            block_indent = None
-        m = re.match(r"^(\s*)(-\s+)?run:(?:\s+(.*))?$", line)
-        if not m:
-            continue
-        key_indent = len(m.group(1)) + (len(m.group(2)) if m.group(2) else 0)
-        value = (m.group(3) or "").strip()
-        if re.match(r"^[|>][+-]?[0-9]?\s*(?:#.*)?$", value):
-            block_indent = key_indent
-        elif value and "${{" in value:
-            found.append(n)
-    return found
-
-
-def without_yaml_comment(line):
-    """The line without a trailing `# …` comment (a `#` at the start or after whitespace)."""
-    return re.sub(r"(?:^|\s)#.*$", "", line)
+def step_problems(path, job, step, signed):
+    """One step: no `${{` in its `run:` script or in `actions/github-script`'s inputs (values reach scripts through
+    `env:`; r1 S6); in the signed chain, no cache (an action named for one, a `cache…` input, or setup-go's default)."""
+    problems = []
+    run = yaml_get(step, "run")
+    if run is not None:
+        if not isinstance(run, yaml.ScalarNode):
+            problems.append(f"{path}:{yaml_line(run)}: run: must be a script (text)")
+        elif "${{" in run.value:
+            problems.append(f"{path}:{yaml_line(run)}: ${{{{ }}}} inside a run: script; pass the value through env: (E3)")
+    uses_node = yaml_get(step, "uses")
+    uses = uses_node.value if isinstance(uses_node, yaml.ScalarNode) else ""
+    # GitHub resolves an action's owner and repository without case.
+    action = uses.split("@")[0].lower()
+    inputs = yaml_items(yaml_get(step, "with"))
+    if action == "actions/github-script":
+        for key, value in inputs:
+            if any("${{" in s.value for s in yaml_scalars(value)):
+                problems.append(f"{path}:{yaml_line(value)}: ${{{{ }}}} in actions/github-script's {key}; "
+                                "pass the value through env: (r2 S2-4)")
+    if signed:
+        where = f"{path}:{yaml_line(step)}"
+        if "cache" in action:
+            problems.append(f"{where}: job {job} must not use a cache ({uses}): its output is signed or published")
+        for key, value in inputs:
+            if key.lower().startswith("cache") and not (isinstance(value, yaml.ScalarNode) and value.value == "false"):
+                problems.append(f"{where}: job {job} must not turn on a cache (with: {key}): its output is signed or "
+                                "published")
+        if action == "actions/setup-go" and not any(k == "cache" for k, _ in inputs):
+            problems.append(f"{where}: job {job} must set cache: false for actions/setup-go (it caches by default)")
+    return problems
 
 
 def workflows():
-    problems = []
     if not os.path.isdir(WORKFLOWS):
-        return problems
+        return []
+    missing = yaml_missing()
+    if missing is not None:
+        return [missing] if missing else []
+    problems = []
     for f in sorted(os.listdir(WORKFLOWS)):
         if f.endswith((".yml", ".yaml")):
             path = os.path.join(WORKFLOWS, f)
@@ -701,25 +799,31 @@ def workflows():
 
 
 def workflow_file(path, text):
-    problems = []
-    lines = [without_yaml_comment(l) for l in text.split("\n")]
-    for n, line in enumerate(lines, 1):
-        if re.search(r"\b(?:pull_request_target|workflow_run)\b", line):
-            problems.append(f"{path}:{n}: workflow trigger pull_request_target / workflow_run is forbidden (E3)")
-        if re.search(r"\bset\s+(?:-[A-Za-z]*x[A-Za-z]*|-o\s+xtrace)\b", line) or re.search(r"\b(?:ba)?sh\s+-[A-Za-z]*x", line):
-            problems.append(f"{path}:{n}: set -x (xtrace) is forbidden in workflows (E3: it prints secrets' derivations)")
-    jobs = workflow_jobs(text)
-    for name in sorted(signed_chain(jobs)):
-        for line in jobs.get(name, []):
-            if re.search(r"\bactions/cache\b", without_yaml_comment(line)):
-                problems.append(f"{path}: job {name} must not use actions/cache (its output is signed or published)")
-    for n in run_expression_lines(text):
-        problems.append(f"{path}:{n}: ${{{{ }}}} inside a run: script; pass the value through env: (E3)")
+    problems, root = workflow_tree(path, text)
+    if root is None:
+        return problems
+    for scalar in yaml_scalars(root):
+        if SET_X.search(scalar.value):
+            problems.append(f"{path}:{yaml_line(scalar)}: set -x (xtrace) is forbidden in workflows (E3: it prints "
+                            "secrets' derivations)")
+    triggers = yaml_get(root, "on")
+    if triggers is not None:
+        for scalar in yaml_scalars(triggers):
+            if scalar.value in FORBIDDEN_TRIGGERS:
+                problems.append(f"{path}:{yaml_line(scalar)}: workflow trigger pull_request_target / workflow_run is "
+                                "forbidden (E3)")
+    jobs = dict(yaml_items(yaml_get(root, "jobs")))
+    chain = signed_chain(jobs)
+    for name, job in jobs.items():
+        steps = yaml_get(job, "steps")
+        for step in steps.value if isinstance(steps, yaml.SequenceNode) else []:
+            if isinstance(step, yaml.MappingNode):
+                problems += step_problems(path, name, step, name in chain)
     # "Only publish runs gh release": active once T-update's pipeline has a publish job (until then the 0.3 release
     # job still publishes).
     if "publish" in jobs:
-        for name, body in jobs.items():
-            if name != "publish" and any(re.search(r"\bgh\s+release\b", without_yaml_comment(l)) for l in body):
+        for name, job in jobs.items():
+            if name != "publish" and any(re.search(r"\bgh\s+release\b", s.value) for s in yaml_scalars(job)):
                 problems.append(f"{path}: job {name} runs gh release; only the publish job may (E3)")
     return problems
 

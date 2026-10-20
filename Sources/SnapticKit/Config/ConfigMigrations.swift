@@ -30,6 +30,13 @@ extension MigrationLedger {
         return true
     }
 
+    /// E1a: who counts as an upgrader at the first 0.3.1 launch: module settings existed (0.3.0), or an earlier
+    /// version ran (`SnapticDidLaunchBefore`: 0.1 and 0.2 users, whose upgrade defaults skip onboarding, so the card
+    /// is the only place they're asked; r2 C2-1).
+    package static func isV031Upgrader(modulesExisted: Bool, launchedBefore: Bool) -> Bool {
+        modulesExisted || launchedBefore
+    }
+
     /// E1a: the welcome card is due (an upgrader who isn't done with it).
     package var showsV031Welcome: Bool { has(.v031Welcome) && !has(.v031WelcomeDone) }
 }

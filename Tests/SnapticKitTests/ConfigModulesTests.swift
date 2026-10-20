@@ -140,6 +140,33 @@ final class ConfigModulesTests: XCTestCase {
                        [.step(.welcome), .step(.modules), .step(.permissions), .updates, .step(.done)])
     }
 
+    /// r2 C2-1: on a first launch the window opens before the updater exists; the page joins when the updater starts
+    /// and stays after the answer.
+    func testTheUpdatesPageJoinsWhenTheUpdaterStartsAfterTheWindowOpened() {
+        XCTAssertTrue(OnboardingUpdatesPage.asks(updaterExists: true, consentDecided: false))
+        XCTAssertFalse(OnboardingUpdatesPage.asks(updaterExists: true, consentDecided: true))
+        XCTAssertFalse(OnboardingUpdatesPage.asks(updaterExists: false, consentDecided: false))
+
+        var page = OnboardingUpdatesPage()
+        page.windowOpened(asks: false)      // bootstrap(): no updater yet
+        XCTAssertFalse(page.included)
+        page.refresh(asks: true)            // startUpdater(): the question is open
+        XCTAssertTrue(page.included)
+        page.refresh(asks: false)           // answered: the page keeps its place (U6)
+        XCTAssertTrue(page.included)
+        page.windowOpened(asks: false)      // a later run, after the answer
+        XCTAssertFalse(page.included)
+
+        var adHoc = OnboardingUpdatesPage()  // a build that can't update itself
+        adHoc.windowOpened(asks: false)
+        adHoc.refresh(asks: false)
+        XCTAssertFalse(adHoc.included)
+
+        var resumed = OnboardingUpdatesPage() // reopened later in the run, still unanswered
+        resumed.windowOpened(asks: true)
+        XCTAssertTrue(resumed.included)
+    }
+
     func testOnboardingPermissionsAreDedupedAndClearedWhenDone() throws {
         var c = ModulesConfig()
         c.onboarding = .permissions

@@ -125,6 +125,42 @@ final class UpdatePolicyTests: XCTestCase {
         XCTAssertTrue(used.installWaits)
     }
 
+    /// r2 C2-4: Skip This Version on a waiting install cancels Sparkle's installer (SPUCoreBasedUpdateDriver
+    /// `finishInstallationWithResponse:` → `cancelUpdate`), and its cycle then ends without an error.
+    func testSkippingAWaitingInstallEndsTheWait() {
+        var session = UpdateSession()
+        session.apply(.installsOnQuit(version: "0.3.2"))
+        session.apply(.cycleFinished(failed: false))
+        session.apply(.found(version: "0.3.2", installing: true))
+        session.apply(.userChose(.skip, installing: true))
+        XCTAssertFalse(session.installWaits)
+        XCTAssertFalse(session.hasInstallBlock)
+        XCTAssertNil(session.offer)
+        session.apply(.attentionOrFinished)
+        session.apply(.cycleFinished(failed: false))
+        XCTAssertNil(session.offer)
+        XCTAssertEqual(UpdatePolicy.relaunchRoute(safeMode: false, session: session), .normal)
+        XCTAssertEqual(UpdatePolicy.relaunchRoute(safeMode: true, session: session), .normal)
+
+        // Install on Quit (dismiss) and Install and Relaunch leave the installer waiting.
+        for choice in [UpdateSession.UserChoice.dismiss, .install] {
+            var waiting = UpdateSession()
+            waiting.apply(.found(version: "0.3.2", installing: true))
+            waiting.apply(.userChose(choice, installing: true))
+            waiting.apply(.attentionOrFinished)
+            waiting.apply(.cycleFinished(failed: false))
+            XCTAssertTrue(waiting.installWaits, "\(choice)")
+            XCTAssertEqual(waiting.offer, UpdateOffer(version: "0.3.2", readyToRestart: true), "\(choice)")
+        }
+
+        // Skipping an update that wasn't installing leaves a waiting install from before alone.
+        var other = UpdateSession()
+        other.apply(.installsOnQuit(version: "0.3.2"))
+        other.apply(.userChose(.skip, installing: false))
+        XCTAssertTrue(other.installWaits)
+        XCTAssertTrue(other.hasInstallBlock)
+    }
+
     // MARK: Relauncher (r1 C3, S9)
 
     func testRelaunchRoutes() {
@@ -254,6 +290,12 @@ final class UpdatePolicyTests: XCTestCase {
         XCTAssertEqual(S.state(S.Facts(failed: true, offer: offer)), .available("0.3.2"))
         XCTAssertEqual(S.state(S.Facts(offer: ready)), .ready("0.3.2"))
         XCTAssertEqual(S.state(S.Facts(offer: ready, policy: lid)), .waiting(.lidClosed, "0.3.2"))
+        // r2 C2-3: an update that hasn't downloaded doesn't install when the mode ends; Sparkle's window still opens.
+        XCTAssertEqual(S.state(S.Facts(offer: offer, policy: lid)), .available("0.3.2"))
+        XCTAssertEqual(S.state(S.Facts(offer: offer, policy: Facts(lidModeOn: false, displayTrialPending: true,
+                                                                      safeMode: false))), .available("0.3.2"))
+        XCTAssertEqual(S.state(S.Facts(offer: ready, policy: Facts(lidModeOn: false, displayTrialPending: true,
+                                                                      safeMode: false))), .waiting(.displayTrial, "0.3.2"))
         XCTAssertEqual(S.state(S.Facts(offer: ready, policy: safe)), .ready("0.3.2"))
         XCTAssertEqual(S.state(S.Facts(failed: true, automaticChecks: true, lastCheck: last, policy: safe)), .failed)
         XCTAssertEqual(S.state(S.Facts(automaticChecks: true, lastCheck: last, policy: safe)), .safeMode)

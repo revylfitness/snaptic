@@ -41,6 +41,14 @@ package struct UpdateSession: Equatable, Sendable {
         case cycleFinished(failed: Bool)
         /// Snaptic ran the install-now block.
         case installStarted
+        /// `updater(_:userDidMake:forUpdate:state:)`: the user's choice in Sparkle's window; `installing` when the
+        /// window offered an install that already waits (`state.stage == .installing`).
+        case userChose(UserChoice, installing: Bool)
+    }
+
+    /// Sparkle's `SPUUserUpdateChoice`.
+    package enum UserChoice: Equatable, Sendable {
+        case install, skip, dismiss
     }
 
     package init() {}
@@ -68,6 +76,14 @@ package struct UpdateSession: Equatable, Sendable {
             }
         case .installStarted:
             hasInstallBlock = false
+        case .userChose(let choice, let installing):
+            // Skip This Version on a waiting install cancels Sparkle's installer, and the cycle then ends without an
+            // error (r2 C2-4). Install on Quit (dismiss) and Install and Relaunch leave it waiting.
+            if choice == .skip && installing {
+                installWaits = false
+                hasInstallBlock = false
+                offer = nil
+            }
         }
     }
 }
@@ -297,7 +313,7 @@ package enum UpdateStatusText {
         case lastChecked(LastCheck)
         /// The offered version, nil when the feed's isn't a plain version (U5).
         case available(String?), ready(String?)
-        /// An offer waits for lid-closed mode or a display trial.
+        /// A downloaded update waits for lid-closed mode or a display trial.
         case waiting(UpdatePolicy.Wait, String?)
     }
 
@@ -307,8 +323,11 @@ package enum UpdateStatusText {
         if facts.fromSource { return .fromSource }
         if facts.checking { return .checking }
         if let offer = facts.offer {
+            // Only a downloaded update installs once the wait ends; one that isn't downloaded still offers Sparkle's
+            // window, which a user check may always open (r2 C2-3).
+            guard offer.readyToRestart else { return .available(offer.version) }
             if case .wait(let wait) = UpdatePolicy.decide(.installNow, facts.policy) { return .waiting(wait, offer.version) }
-            return offer.readyToRestart ? .ready(offer.version) : .available(offer.version)
+            return .ready(offer.version)
         }
         if facts.failed { return .failed }
         if facts.policy.safeMode && facts.automaticChecks { return .safeMode }

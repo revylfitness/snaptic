@@ -64,6 +64,8 @@ nil; `startScript(_:prompt:) -> AdminScript?` → nil; `restoreScript(prompt:) -
 **App**
 - `ModuleContracts.swift`: `SnapticModule.menuSection(tabbed:)` (default: `menuSection()`), `menuAttention` (default
   false); `CustomItemRow.leftover` and `.updateAvailable` (`var … = false`, so 0.3 call sites compile unchanged).
+  Removed by the lead in f618aa6: Awake's menu calls `leftoverItems` and `updateItems` on every open, so nothing
+  read them.
 - `StatusMenu.swift`: `static func leftoverItems(host:) -> [NSMenuItem]` (built from `host.lidRecovery.showsRows`, with
   Turn Sleep Back On… calling `turnSleepBackOn()`; empty in step 0) and `static func updateItems(host:) ->
   [NSMenuItem]` (from `host.updater?.availableUpdate`; "Update Available: Snaptic 0.3.2…" or "Restart to Update
