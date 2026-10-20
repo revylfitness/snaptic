@@ -46,6 +46,7 @@ package enum AwakeLogEvent: Equatable, Sendable {
         case .driveAliveError(let e): return "Drive Alive skipped a write (" + e.rawValue + ")."
         case .holdRefused: return "A command-line hold was refused."
         case .restoreDropped: return "A saved Awake session couldn't be restored."
+        case .lidFailed(.restore): return "Turn Sleep Back On's script reported an error."
         case .lidFailed(let stage): return "Lid-closed mode couldn't turn on (" + stage.rawValue + ")."
         case .lidLeftover: return "Sleep was found turned off after an earlier lid-closed session."
         }

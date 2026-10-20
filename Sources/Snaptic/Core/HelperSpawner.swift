@@ -343,6 +343,9 @@ final class HelperHandle: @unchecked Sendable {
     /// Single flight: a kind is busy from the call until its child is reaped (or the spawn failed).
     private var lidBusy: Set<HelperKind> = []
 
+    /// `kind`'s single flight is taken: a lid request asks before any journal or beacon work (r2 A2-3).
+    func isLidBusy(_ kind: HelperKind) -> Bool { lidBusy.contains(kind) }
+
     /// Runs `LidWatchdog.osascriptPath -e <script.source>`: a suspended, disclaimed spawn with the minimal environment,
     /// checked to be stopped and to satisfy `LidWatchdog.osascriptRequirement` before SIGCONT; stdout through a reply
     /// pipe (LineSplitter's 64 KB line cap); exit observed on main; SIGTERM to osascript's pid only after 120 s

@@ -377,8 +377,8 @@ enum LidRecovery {
         let outcome = LidWatchdog.parseRestoreResult(output)
         if outcome == .canceled { return }
         if AwakeLidPolicy.restoreFailed(outcome) {
-            // The rows stay; say why nothing changed (r1 C4).
-            EventLog.shared.record(AwakeLogEvent.lidFailed(.spawn))
+            // The rows stay; say why nothing changed (r1 C4). Logged apart from a spawn failure (r2 C2-5).
+            EventLog.shared.record(AwakeLogEvent.lidFailed(.restore))
             toasts?.show(AwakeLidText.couldNotTurnSleepBackOn)
         }
         // powerd applies the preference to the kernel asynchronously: wait a little for 0.

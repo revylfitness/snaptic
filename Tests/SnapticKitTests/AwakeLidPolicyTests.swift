@@ -27,7 +27,8 @@ final class AwakeLidPolicyTests: XCTestCase {
         XCTAssertEqual(modes.map(\.token), [nil, token, token, token, token, nil])
         XCTAssertEqual(modes.map(\.rowState), [.off, .authorizing, .verifying, .on, .stopping, .off])
         XCTAssertEqual(AwakeLidEnd.allCases.count, 12)
-        XCTAssertEqual(AwakeLidFailStage.allCases.map(\.rawValue), ["beacon", "spawn", "args", "verify", "timeout"])
+        XCTAssertEqual(AwakeLidFailStage.allCases.map(\.rawValue), ["beacon", "spawn", "args", "verify", "timeout",
+                                                                       "restore"])
     }
 
     // MARK: Floor, cap
@@ -152,11 +153,11 @@ final class AwakeLidPolicyTests: XCTestCase {
 
     func testStartRefusals() {
         func refusal(battery: Int? = 80, discharging: Bool = false, floor: Int = 20, hot: Bool = false,
-                     override: Bool = false, translocated: Bool = false,
-                     recovery: AwakeLidRecovery = .nothing) -> AwakeLidRefusal? {
+                     override: Bool = false, translocated: Bool = false, recovery: AwakeLidRecovery = .nothing,
+                     busy: Bool = false) -> AwakeLidRefusal? {
             AwakeLidPolicy.startRefusal(batteryPercent: battery, discharging: discharging, floor: floor,
                                         thermalSerious: hot, overrideGuards: override, translocated: translocated,
-                                        recovery: recovery)
+                                        recovery: recovery, adminBusy: busy)
         }
         XCTAssertNil(refusal())
         XCTAssertNil(refusal(recovery: .clear))
@@ -179,6 +180,12 @@ final class AwakeLidPolicyTests: XCTestCase {
                        .journalPending)
         XCTAssertEqual(refusal(battery: 1, discharging: true, hot: true, override: true), .startAnywaySession)
         XCTAssertEqual(refusal(battery: 1, discharging: true, hot: true), .tooHot)
+        // r2 A2-3: an earlier request's osascript isn't reaped yet (a superseded one): refused before any journal or
+        // beacon work, so its stop file stays.
+        XCTAssertEqual(refusal(busy: true), .journalPending)
+        XCTAssertEqual(refusal(battery: 1, discharging: true, hot: true, override: true, busy: true), .journalPending)
+        XCTAssertEqual(refusal(recovery: .leftover, busy: true), .leftover)
+        XCTAssertEqual(refusal(translocated: true, busy: true), .translocated)
     }
 
     func testRefusalTexts() {
@@ -307,11 +314,61 @@ final class AwakeLidPolicyTests: XCTestCase {
                        [true, true, false, false, false, false])
         XCTAssertEqual(modes.map { AwakeLidPolicy.customToggleShown(effective: false, mode: $0) },
                        [false, false, false, false, false, false])
-        XCTAssertEqual(modes.map { AwakeLidPolicy.customStart(lidToggle: true, mode: $0) },
+        XCTAssertEqual(modes.map { AwakeLidPolicy.customStart(lidToggle: true, effective: true, mode: $0) },
                        [.request, .request, .pending(.authorizing), .pending(.verifying), .plain, .pending(.stopping)])
-        XCTAssertEqual(modes.map { AwakeLidPolicy.customStart(lidToggle: false, mode: $0) },
+        XCTAssertEqual(modes.map { AwakeLidPolicy.customStart(lidToggle: false, effective: true, mode: $0) },
+                       [.plain, .plain, .plain, .plain, .plain, .plain])
+        // r2 A2-2: the feature turned off (or its kill switch, or Safe Mode) while the panel was open.
+        XCTAssertEqual(modes.map { AwakeLidPolicy.customStart(lidToggle: true, effective: false, mode: $0) },
+                       [.unavailable, .unavailable, .pending(.authorizing), .pending(.verifying), .plain,
+                        .pending(.stopping)])
+        XCTAssertEqual(modes.map { AwakeLidPolicy.customStart(lidToggle: false, effective: false, mode: $0) },
                        [.plain, .plain, .plain, .plain, .plain, .plain])
         XCTAssertEqual(AwakeLidText.rowTitle(.authorizing), "Waiting for Password…")
+        XCTAssertEqual(AwakeLidText.customUnavailable,
+                       "Lid-closed mode isn’t available right now. To start without it, turn off “Keep awake with the lid closed”.")
+        // The pending toast is a sentence, not the bare row title.
+        XCTAssertEqual(AwakeLidText.pendingToast(.authorizing),
+                       "Lid-closed mode is waiting for a password. Try again in a moment.")
+        XCTAssertEqual(AwakeLidText.pendingToast(.verifying), "Lid-closed mode is turning on. Try again in a moment.")
+        XCTAssertEqual(AwakeLidText.pendingToast(.stopping), "Lid-closed mode is turning off. Try again in a moment.")
+        XCTAssertEqual(AwakeLidText.pendingToast(.finishingEarlier),
+                       "Snaptic is finishing an earlier lid-closed session. Try again in a minute.")
+        XCTAssertNil(AwakeLidText.pendingToast(.off))
+        XCTAssertNil(AwakeLidText.pendingToast(.on))
+    }
+
+    /// r2 A2-1: the watchdog gone is named by the app's own facts when they explain it.
+    func testLostReason() {
+        let cap = Double(LidWatchdog.capSeconds)
+        func reason(battery: Int? = 80, discharging: Bool = false, hot: Bool = false, now: Double = 5_000) -> AwakeLidEnd {
+            AwakeLidPolicy.lostReason(batteryPercent: battery, discharging: discharging, floor: 20, thermalSerious: hot,
+                                      capStart: 1_000, now: now)
+        }
+        XCTAssertEqual(reason(), .watchdogLost)
+        XCTAssertEqual(reason(battery: 20, discharging: true), .battery)
+        XCTAssertEqual(reason(battery: 21, discharging: true), .watchdogLost)
+        XCTAssertEqual(reason(battery: 20, discharging: false), .watchdogLost, "on power")
+        XCTAssertEqual(reason(battery: nil, discharging: true), .watchdogLost, "unknown level")
+        XCTAssertEqual(reason(hot: true), .heat)
+        XCTAssertEqual(reason(battery: 5, discharging: true, hot: true), .heat, "heat first")
+        XCTAssertEqual(reason(now: 1_000 + cap), .cap)
+        XCTAssertEqual(reason(now: 1_000 + cap + 90), .cap)
+        XCTAssertEqual(reason(now: 1_000 + cap - 1), .watchdogLost, "the watchdog's cap is never before the app's")
+        XCTAssertEqual(reason(battery: 10, discharging: true, now: 1_000 + cap), .battery)
+    }
+
+    /// r2 A2-4: "Snaptic quit" only for the resumed session that had the mode.
+    func testQuitEndShown() {
+        let s = StableID(), other = StableID()
+        XCTAssertTrue(AwakeLidPolicy.quitEndShown(launchJournal: true, leftover: false, lidSession: s, resumed: s))
+        XCTAssertFalse(AwakeLidPolicy.quitEndShown(launchJournal: true, leftover: false, lidSession: nil, resumed: s),
+                       "a failed request's journal survived the quit; the session never had the mode")
+        XCTAssertFalse(AwakeLidPolicy.quitEndShown(launchJournal: true, leftover: false, lidSession: other, resumed: s))
+        XCTAssertFalse(AwakeLidPolicy.quitEndShown(launchJournal: false, leftover: false, lidSession: s, resumed: s),
+                       "the mode had already ended before the quit")
+        XCTAssertFalse(AwakeLidPolicy.quitEndShown(launchJournal: true, leftover: true, lidSession: s, resumed: s),
+                       "the leftover rows explain it")
     }
 
     /// r1 C4 and U7: Turn Sleep Back On… says when it failed, and the menus' row waits like the Awake page's.

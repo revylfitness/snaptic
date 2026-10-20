@@ -53,9 +53,10 @@ package enum AwakeLidEnd: String, Codable, CaseIterable, Sendable {
          moduleStopped
 }
 
-/// Where turning lid-closed mode on failed (B5; logged, never shown).
+/// Where turning lid-closed mode on failed (B5; logged, never shown). `restore`: Turn Sleep Back On…'s script ran and
+/// reported an error, told apart from a spawn that failed (r2 C2-5).
 package enum AwakeLidFailStage: String, Codable, CaseIterable, Sendable {
-    case beacon, spawn, args, verify, timeout
+    case beacon, spawn, args, verify, timeout, restore
 }
 
 /// `~/Library/Application Support/Snaptic/awake/lid.json` (B3.1 step 2): one slot, 0600, written atomically. No field
@@ -185,8 +186,11 @@ package enum AwakeLidCustomStart: Equatable, Sendable {
     case request
     /// Start the session as usual: the toggle is off, or the mode is on and carries over (B2 "keep").
     case plain
-    /// Another lid request is under way: its B0 text as a toast, and the panel stays open.
+    /// Another lid request is under way: `AwakeLidText.pendingToast`, and the panel stays open.
     case pending(LidRowState)
+    /// The feature stopped being effective while the panel was open (turned off, the kill switch, Safe Mode):
+    /// `AwakeLidText.customUnavailable`, and the panel stays open (r2 A2-2).
+    case unavailable
 }
 
 /// A value that belongs to one turn-on request: a superseded request's late callback can't read or clear the next
@@ -401,12 +405,34 @@ package enum AwakeLidPolicy {
         effective && !mode.isOn && !mode.isPending
     }
 
-    /// The Custom… panel's Start… (r1 A4): never a silent no-op.
-    package static func customStart(lidToggle: Bool, mode: AwakeLidMode) -> AwakeLidCustomStart {
+    /// The Custom… panel's Start… (r1 A4, r2 A2-2): never a silent no-op. `effective`: the feature now, not when the
+    /// panel opened.
+    package static func customStart(lidToggle: Bool, effective: Bool, mode: AwakeLidMode) -> AwakeLidCustomStart {
         guard lidToggle else { return .plain }
         if mode.isOn { return .plain }
         if mode.isPending { return .pending(mode.rowState) }
-        return .request
+        return effective ? .request : .unavailable
+    }
+
+    /// Why the mode ends when the watchdog is gone (r2 A2-1). Root ends it on its own at the battery floor, on heat
+    /// and at its cap, often a lap before the app sees the same fact; the app's own facts name that reason (heat first,
+    /// as `guardEnd`). The watchdog's cap is never earlier than the app's (`capStart` + 24 h), so it counts only from
+    /// there. Anything else is `.watchdogLost`.
+    package static func lostReason(batteryPercent: Int?, discharging: Bool, floor: Int, thermalSerious: Bool,
+                                   capStart: Double, now: Double) -> AwakeLidEnd {
+        if let reason = guardEnd(batteryPercent: batteryPercent, discharging: discharging, floor: floor,
+                                 thermalSerious: thermalSerious) {
+            return reason
+        }
+        return now >= until(sessionEnd: nil, capStart: capStart) ? .cap : .watchdogLost
+    }
+
+    /// "Lid-closed mode ended at …: Snaptic quit." for a session resumed at launch (B2, r2 A2-4): only when an earlier
+    /// run's journal was found (the mode may have been on at the quit), the resumed session is the one that had the
+    /// mode (the snapshot's `lidSession`), and the leftover rows don't already explain the state.
+    package static func quitEndShown(launchJournal: Bool, leftover: Bool, lidSession: StableID?,
+                                     resumed: StableID) -> Bool {
+        launchJournal && !leftover && lidSession == resumed
     }
 
     /// Turn Sleep Back On… failed in a way the user should hear about (r1 C4): its script reported an error. Cancel
@@ -417,17 +443,20 @@ package enum AwakeLidPolicy {
     }
 
     /// The first B2 refusal that applies, or nil, most fundamental first: translocated, a leftover, a pending
-    /// journal, a Start Anyway session, heat, then the battery (discharging below `floor + 5`, or discharging at an
-    /// unknown level). `batteryPercent` is nil when unknown or on power.
+    /// journal or an earlier request's osascript not yet reaped (`adminBusy`), a Start Anyway session, heat, then the
+    /// battery (discharging below `floor + 5`, or discharging at an unknown level). `batteryPercent` is nil when
+    /// unknown or on power. `adminBusy` is checked before any journal or beacon work: a superseded request's stop file
+    /// must outlive its osascript, and the spawn would refuse anyway (r2 A2-3).
     package static func startRefusal(batteryPercent: Int?, discharging: Bool, floor: Int, thermalSerious: Bool,
-                                     overrideGuards: Bool, translocated: Bool,
-                                     recovery: AwakeLidRecovery) -> AwakeLidRefusal? {
+                                     overrideGuards: Bool, translocated: Bool, recovery: AwakeLidRecovery,
+                                     adminBusy: Bool) -> AwakeLidRefusal? {
         if translocated { return .translocated }
         switch recovery {
         case .leftover: return .leftover
         case .pending: return .journalPending
         case .nothing, .clear: break
         }
+        if adminBusy { return .journalPending }
         if overrideGuards { return .startAnywaySession }
         if thermalSerious { return .tooHot }
         let needed = AwakeMath.clamp(floor, LidWatchdog.floorRange) + startMarginPercent

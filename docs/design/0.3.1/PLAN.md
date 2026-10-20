@@ -287,6 +287,7 @@ New Kit row cases are `.lidClosed(LidRowState)` and `.lidSubmenu([presets])`. Th
 In Start mode only (not in Add Time…):
 - `ToggleSetting(L("Keep awake with the lid closed"), help: L("Asks for an administrator password when you click Start."))`.
 - While it is on, the button reads "Start…".
+- Start… never closes the panel silently (r1 A4, r2 A2-2). While another lid request is under way, a toast says so in a sentence ("Lid-closed mode is turning off. Try again in a moment.", and likewise for the password and turning on), and the panel stays open. If the feature stopped being effective while the panel was open (turned off, the kill switch, Safe Mode, or the request is refused without a toast), the toast is "Lid-closed mode isn’t available right now. To start without it, turn off “Keep awake with the lid closed”." and the panel stays open.
 
 #### Awake status section (Settings)
 
@@ -321,6 +322,7 @@ If verification takes longer than 2 s, a toast shows: "Turning on lid-closed mod
   - "…: time limit reached."
   - "…: another app turned sleep back on."
   - "…: Snaptic quit."
+  - "…: it stopped unexpectedly." (the watchdog exited for a reason the app's own facts don't show, r2 A2-1)
 
   It is cleared at the next turn-on.
 - **Cap warning.** When the cap will end before the session, a toast shows 5 minutes ahead: "Lid-closed mode turns off in 5 minutes. If the lid is closed then, your Mac goes to sleep."
@@ -355,7 +357,7 @@ LidClosedController asks SessionController to set or clear `lidRequested` throug
   - a trigger or hold takes over;
   - the module stops, or Safe Mode starts;
   - the feature is turned off, or the kill switch `Awake.disable.lidClosed` is set;
-  - restore or resume. The header then says "Lid-closed mode ended at …: Snaptic quit." That line is left out when the B3.4 leftover rows already explain the state.
+  - restore or resume. The header then says "Lid-closed mode ended at …: Snaptic quit." That line shows only when an earlier run's journal was found and the resumed session is the snapshot's `lidSession` (a journal also survives a quit during a failed request's wait, r2 A2-4), and is left out when the B3.4 leftover rows already explain the state.
 
 **CLI**
 - `awake extend` is refused while the mode is on. The refusal is `.lidClosedSession` with exit code 4 and the text "Lid-closed sessions can’t be extended from the command line. Use Add 1 Hour in the menu."
@@ -369,7 +371,7 @@ LidClosedController asks SessionController to set or clear `lidRequested` throug
 | Thermal `serious` or worse | "Your Mac is too hot for lid-closed mode right now." |
 | A Start Anyway session (`overrideGuards`) | "Lid-closed mode isn’t available in a Start Anyway session." |
 | Translocated bundle | The B1 translocated row's text |
-| Journal pending (B3.4) | "Snaptic is finishing an earlier lid-closed session. Try again in a minute." |
+| Journal pending (B3.4), or an earlier request's osascript isn't reaped yet (checked before any journal or beacon work, so a superseded request's stop file outlives it, r2 A2-3) | "Snaptic is finishing an earlier lid-closed session. Try again in a minute." |
 | Leftover (B3.4) | "Turn sleep back on first. It may have been left off by an earlier lid-closed session." with **Turn Sleep Back On…** and **Open Awake Settings…** |
 
 Low Power Mode does **not** block the mode. It follows the session's `endOnLowPowerMode` like everything else, and the README recommends Low Power Mode with the lid closed.
@@ -473,7 +475,7 @@ echo $!
 
 ```sh
 unset IFS; PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH
-umask 077; trap '' HUP TSTP TTIN TTOU
+umask 077; trap '' HUP INT QUIT TSTP TTIN TTOU      # as started (& ignores INT, QUIT): no terminal ends or stops it
 MODE=$1; U=$2; P=$3; T=$4; C=$5; F=$6; D=$7
 case "$MODE" in check|run) ;; *) exit 64;; esac
 num() { case "$1" in ''|*[!0-9]*) return 1;; esac; }
@@ -497,14 +499,17 @@ key() { rd | /usr/bin/awk -v k="\"$1\" = " 'index($0,k){print $NF; exit}'; }
 owned() { [ "$(/usr/bin/stat -f '%HT %u' "$1" 2>/dev/null)" = "Regular File $U" ]; }
 [ "$(sd)" = 0 ] && [ "$(ksd)" = 0 ] || exit 3      # someone else holds it, or unreadable: never take it
 [ "$MODE" = check ] && exit 0
+A=$(/bin/date +%s)
 # D, entered once: U's own 0700 directory on the volume of /var/folders (no network or user mount). Every later
 # lookup is one name inside it, so replacing D or a parent of it can't redirect one
 V=$(/usr/bin/stat -f %d /var/folders) && cd -P "$D" &&
   [ "$(/usr/bin/stat -f '%HT %u %Lp %d' .)" = "Directory $U 700 $V" ] || exit 0
 owned "stop-$T" && exit 0                            # stopped before we started (late password)
+# Over 5 s to get here (a stalled lookup): Snaptic's 10 s verify has given up and may have dropped its journal
+N=$(/bin/date +%s); num "$A" && num "$N" && [ $((N-A)) -le 5 ] || exit 0
 WESET=0; HALT=0
 cleanup() {
-  trap '' TERM INT QUIT
+  trap '' TERM
   [ "$WESET" = 1 ] || return
   i=0; while [ $i -lt 3 ]; do [ "$(sd)" = 0 ] && break
     /usr/bin/pmset -a disablesleep 0; /bin/sleep 1; i=$((i+1)); done
@@ -515,8 +520,8 @@ cleanup() {
     [ "$(key AppleClamshellCausesSleep)" = Yes ] && { /usr/bin/pmset sleepnow; return; }
     /bin/sleep 1; j=$((j+1)); done
 }
-trap 'cleanup' EXIT; trap 'HALT=1; exit 0' TERM; trap 'exit 0' INT QUIT
-/usr/bin/pmset -a disablesleep 1; WESET=1
+trap 'cleanup' EXIT; trap 'HALT=1; exit 0' TERM
+WESET=1; /usr/bin/pmset -a disablesleep 1          # WESET first: a TERM during the set still restores
 i=0; until [ "$(sd)" = 1 ] && [ "$(ksd)" = 1 ]; do       # post-set check, up to 3 s
   i=$((i+1)); [ $i -ge 6 ] && exit 0; /bin/sleep 0.5; done
 # The beacon, read in a child each lap: a lookup that stalls holds the child, never the cap, battery or heat checks
@@ -560,9 +565,11 @@ done
   It is needed because the kernel doesn't re-check a closed lid when `SleepDisabled` clears (xnu IOPMrootDomain.cpp:8386-8389).
 - It never writes, deletes, follows symlinks in, or reads the contents of user-controlled files. It only `stat`s them (`lstat`) for owner, type and mtime.
 - **User paths can't stall it** (r1 S3). `D` is entered once, before anything is set, and only if it is a 0700 directory owned by `U` on the same volume as `/var/folders` (so not a network or user mount). After that every lookup is a single name inside that directory, so renaming or replacing `D` or one of its parents can't redirect it. Each lap reads the stop file and the beacon in a child process; the cap, battery, heat and `SleepDisabled` checks run in the main shell meanwhile. A child still reading 5 s after those checks (for example, a name replaced by a stalled mount) counts as "beacon gone", so the stop file is still seen within one lap. `cleanup` touches no user path.
+- **Nor delay it past the app's verify** (r2 S2-3). The three lookups before the set (entering `D`, its `stat`, the first stop-file check) run in the main shell. If getting through them took more than 5 s from the start of `run`, the app's 10 s verify (which starts when osascript prints `ok`, after `run` started) has already given up and may have dropped the journal, so the watchdog exits without setting anything. Otherwise the set lands inside the verify window, and the journal is kept.
 
 **Every exit restores.**
-- The EXIT trap runs `cleanup`. TERM and INT exit through it. `cleanup` ignores further TERM and INT, so a second signal can't cut it short.
+- The EXIT trap runs `cleanup`. TERM exits through it. `cleanup` ignores a further TERM, so a second one can't cut it short.
+- `WESET=1` comes just before `pmset -a disablesleep 1`, not after it (r2 S2-1). A shell runs a trap only once the foreground command returns, so a TERM during that pmset is handled after `SleepDisabled 1` is stored; `cleanup` then still restores. Setting it first is safe: the check just read 0, and `cleanup` runs pmset only while the preference isn't 0.
 - Every arithmetic operand is checked with `num`.
 - An unreadable value or a disagreement between the preference and the kernel counts toward a restore, and so do an unreadable battery level and an unreadable heat level (each twice in a row).
 - The one deliberate non-restoring exit clears `WESET` first. It needs both the preference and the kernel to read 0, twice.
@@ -575,7 +582,7 @@ done
 
 **Detachment**
 - `nohup` and `&`, with all three standard streams redirected.
-- osascript's own process group (B3.1 step 4), and the script ignores TSTP, TTIN and TTOU, so a terminal can't stop the watchdog. Stock macOS has no `setsid(1)` and `set -m` needs a terminal, so the script can't leave the group itself. `&` already starts it with INT and QUIT ignored (POSIX, for a shell without job control), and a signal ignored on entry can't be trapped; the INT and QUIT traps only matter when the script runs in the foreground, as in the shell test.
+- osascript's own process group (B3.1 step 4), and the script ignores TSTP, TTIN and TTOU, so a terminal can't stop the watchdog. Stock macOS has no `setsid(1)` and `set -m` needs a terminal, so the script can't leave the group itself. `&` already starts it with INT and QUIT ignored (POSIX, for a shell without job control), and a signal ignored on entry can't be trapped. The script ignores both itself too, so a direct run (as in the shell test) behaves like the real launch: neither ends it (r2 S2-2).
 - The app signals only osascript's pid.
 - HW-31 checks:
   - osascript returns within 1 s of the password;
@@ -590,8 +597,9 @@ done
 - a `check` exit of 3 or 64 becomes the command's exit status;
 - `$!` is the `run` process's pid;
 - the command returns at once;
-- the EXIT trap restores sleep after these exits: stop file, missing beacon, stale beacon, induced arithmetic error, TERM, QUIT, unreadable heat twice, a beacon lookup that never returns;
-- TSTP doesn't stop it, and a `D` that isn't U's own 0700 directory on `/var/folders`'s volume is never taken;
+- the EXIT trap restores sleep after these exits: stop file, missing beacon, stale beacon, induced arithmetic error, TERM (also one that arrives while `pmset -a disablesleep 1` runs), unreadable heat twice, a beacon lookup that never returns;
+- INT and QUIT don't end it, whether the generated command starts it or it runs directly, and TSTP doesn't stop it; the stop file still restores afterwards;
+- a `D` that isn't U's own 0700 directory on `/var/folders`'s volume is never taken, and nothing is set when the first stop-file check stalls for more than 5 s;
 - `sleepnow` runs only under its conditions;
 - `WESET=0` only on a double agreement of the preference and the kernel.
 
@@ -605,7 +613,7 @@ done
 - The fd is closed in the timer's cancel handler on the same queue, so a reused fd number is never touched.
 - **Liveness.** Each tick runs `kill(pid, 0)`, where ESRCH means gone, and compares `SNProcess.instanceID(for: pid)` with the value recorded at verify. It also reads IORegistry `SleepDisabled`.
 - State changes hop to main with `DispatchQueue.main.async { MainActor.assumeIsolated … }` (rule 2).
-- **Gone, or 0 twice:** the mode ends (`watchdogLost` or `otherApp`). A lost watchdog gets the same 15 s turn-off wait as any other end, because powerd may apply its restore a moment after it exits; if `SleepDisabled` still reads 1 after that, the leftover rows show (B3.4, r1 A3).
+- **Gone, or 0 twice:** the mode ends (`watchdogLost` or `otherApp`). The watchdog ends on its own at the floor, on heat and at its cap, often a lap before the app sees the same fact, so a lost watchdog is named by the app's own facts when they explain it (`AwakeLidPolicy.lostReason`: battery, heat, then the cap) and is `watchdogLost` otherwise, which has its own toast ("Lid-closed mode stopped unexpectedly. Awake is still on; your Mac sleeps if you close the lid.") and Last end phrase (r2 A2-1). A lost watchdog gets the same 15 s turn-off wait as any other end, because powerd may apply its restore a moment after it exits; if `SleepDisabled` still reads 1 after that, the leftover rows show (B3.4, r1 A3).
 
 **Display while the lid is shut**
 - **`lidShut`.** `AwakeArbiterInput.lidShut`, which defaults to `false`, is true only while the mode is on, the lid is closed (`SystemEventsMonitor.lidClosed == true`, now published as `AwakeRuntimeState.lidClosed`) **and no external display is attached**. It is re-evaluated on screen changes.
@@ -677,7 +685,7 @@ The watchdog's `sleepnow` covers a hung app.
 
 | Where | Rows |
 |---|---|
-| **Every Snaptic menu** (shared, own and Awake's custom one) | First group, above the tab bar: a status row "Sleep Is Turned Off", then "Turn Sleep Back On…". `CustomItemRow` gains `leftover: Bool`, and `IndicatorController` calls a static `StatusMenu.leftoverItems(host:)` on each build, because a menu item can belong to only one menu. **Keep Sleep Off** has no undo except Terminal, so it never appears in a menu. |
+| **Every Snaptic menu** (shared, own and Awake's custom one) | First group, above the tab bar: a status row "Sleep Is Turned Off", then "Turn Sleep Back On…". `IndicatorController` calls a static `StatusMenu.leftoverItems(host:)` each time its menu opens (`menuNeedsUpdate` rebuilds it on every open), because a menu item can belong to only one menu; `CustomItemRow` carries no flag for it. **Keep Sleep Off** has no undo except Terminal, so it never appears in a menu. |
 | **Awake page and Advanced › Other Apps** | "Your Mac can’t sleep. This may be from an earlier lid-closed session that didn’t finish." with **Turn Sleep Back On…**, **Keep Sleep Off** and **Not Now** |
 | **When Awake isn't running** | A toast with the same text. Toasts allow at most two buttons, so it has **Turn Sleep Back On…** and **Open Awake Settings…**. The leftover rows show on the Awake page **even while Awake is turned off**, because they come from the host's `LidRecovery`, not from the module. |
 
@@ -840,7 +848,7 @@ These are numbered after 0.3's HW-23. The list lives here and in README's testin
 | HW-28 | The osascript admin dialog from a Developer ID-signed **and** an ad-hoc Snaptic, each disclaimed and not:<br>• requester name, icon and title;<br>• prompt text;<br>• Touch ID;<br>• Cancel → `err -128`;<br>• no Automation consent;<br>• Displays' dimming overlays move behind it. |
 | HW-29 | Captured output of `notifyutil -g com.apple.system.thermalpressurelevel`, `pmset -g batt`, `pmset -g` and `ioreg -r -n IOPMrootDomain -d 1`, on Apple silicon and Intel, macOS 14, 15, 26 and 27. These are golden fixtures for the parsers. |
 | HW-30 | Lid closed on battery:<br>(a) a Keep Display On session with no external display;<br>(b) `caffeinate -d` running in another app;<br>(c) one external display with Keep Display On.<br>Check that:<br>• the Mac stays awake;<br>• the built-in panel goes dark within 35 s in (a), and the external display stays on in (c);<br>• Apple menu › Sleep is greyed out;<br>• the panel wakes on lid open;<br>• the keyboard backlight is recorded;<br>• the indicator's lid glyph is recorded. |
-| HW-31 | Watchdog behaviour:<br>• osascript returns within 1 s;<br>• `ps -p <pid> -o comm,ruid,uid` shows `sh 0 0`;<br>• it survives osascript's exit and a SIGTERM to osascript;<br>• `ps -o pgid` of the watchdog is osascript's pid, not Snaptic's group, and ^Z in the terminal that started a debug build doesn't stop it;<br>• `/usr/bin/stat -f '%HT %u'` prints `Regular File <uid>` for the beacon, and `stat -f %d` of `/var/folders` and of `D` match (else the mode never turns on).<br>Each of these restores sleep (`pmset -g`):<br>• quit;<br>• `kill -9` of Snaptic;<br>• SIGSTOP of Snaptic for 30 s;<br>• the stop file;<br>• the cap;<br>• deleting the beacon in a tight loop (within 10 s);<br>• an induced script error;<br>• `sudo kill -TERM` of the watchdog. |
+| HW-31 | Watchdog behaviour:<br>• osascript returns within 1 s;<br>• `ps -p <pid> -o comm,ruid,uid` shows `sh 0 0`;<br>• it survives osascript's exit and a SIGTERM to osascript;<br>• `ps -o pgid` of the watchdog is osascript's pid, not Snaptic's group, and ^Z in the terminal that started a debug build doesn't stop it;<br>• `/usr/bin/stat -f '%HT %u'` prints `Regular File <uid>` for the beacon, and `stat -f %d` of `/var/folders` and of `D` match (else the mode never turns on).<br>Each of these restores sleep (`pmset -g`):<br>• quit;<br>• `kill -9` of Snaptic;<br>• SIGSTOP of Snaptic for 30 s;<br>• the stop file;<br>• the cap;<br>• deleting the beacon in a tight loop (within 10 s);<br>• an induced script error;<br>• `sudo kill -TERM` of the watchdog.<br>Restart with the lid shut (Apple menu › Restart… over Screen Sharing, mode on): the Mac restarts and doesn't go to sleep on the way. Snaptic's quit writes the stop file before launchd's SIGTERM, so the watchdog may take its normal exit and run `sleepnow` (r2 A2-5). If it sleeps, the fix is a `halt-<token>` file written at quit after `NSWorkspace.willPowerOffNotification`, which the script treats like TERM (`HALT=1`), checked before `kill -0 P`, plus a shell-test row. |
 | HW-32 | Restart while on: `SleepDisabled` persists; the leftover rows appear in every menu with Awake turned off; Turn Sleep Back On… and Keep Sleep Off both work. |
 | HW-33 | The battery floor restores sleep while Snaptic is SIGSTOPped. |
 | HW-34 | The cap, the battery floor and heat, each ending with the lid closed on battery and no display: the Mac is asleep within 30 s (`pmset -g log`), including right after a cap end. |
@@ -872,8 +880,7 @@ These are numbered after 0.3's HW-23. The list lives here and in README's testin
      - `AwakeHost.lidModeOn` (the N11 suffix);
      - `ModuleHost.updater: UpdaterControlling?` (Part E).
    - **Cross-team menu hooks** (code r4 M2):
-     - `CustomItemRow.leftover: Bool` and `CustomItemRow.updateAvailable: Bool`;
-     - `static StatusMenu.leftoverItems(host:) -> [NSMenuItem]` and `static StatusMenu.updateItems(host:) -> [NSMenuItem]`, which T-lid-app's `IndicatorController` calls;
+     - `static StatusMenu.leftoverItems(host:) -> [NSMenuItem]` and `static StatusMenu.updateItems(host:) -> [NSMenuItem]`, which T-lid-app's `IndicatorController` calls from `menuNeedsUpdate` on every open (`CustomItemRow`'s `leftover` and `updateAvailable` flags were removed in f618aa6: nothing needs them);
      - `ModuleHost.lidRecovery` and `ModuleHost.updater` are declared by the lead in Step 0. After that, T-lid-app fills in the recovery and T-update fills in the updater.
    - **Self-test:** the `--selftest-launch` flag (`KitArgs`, `SnapticEntry`, `SelfTest`) and its token gate.
 4. **Every A6, B7 and E7 control**, each with a stub use. The `ControlRegistry` changes (`ControlKind.menuTabBar` and the new `ControlState`s), `SettingsIndex`, every `Controls/*` table and `ControlRegistryTests` are the lead's in Step 0, then frozen.
@@ -1357,7 +1364,7 @@ New `ControlState` cases: `updaterAvailable`, `updateAvailable` and `v031Welcome
 | code nm6 ("status" kind) | B7 |
 | code nm7 (requirement compile, responsibility, 4 KB) | B3.1 step 4 |
 | code nm8 (VO state at build) | Live refresh |
-| code nm9 (second TERM) | `cleanup` ignores TERM and INT |
+| code nm9 (second TERM) | `cleanup` ignores a further TERM (INT and QUIT are ignored throughout, r2 S2-2) |
 | code nm10 (lid availability) | Synchronous IORegistry read; recomputed on wake |
 
 ---

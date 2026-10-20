@@ -108,14 +108,19 @@ final class LidWatchdogShellTests: XCTestCase {
             Scenario(name: "beacon owned by someone else", act: { e, _ in e.ctl("owner", "4242") }),
             Scenario(name: "stale beacon", act: { e, _ in e.ctl("mtime", String(Int(Date().timeIntervalSince1970) - 100)) }),
             Scenario(name: "unreadable clock", act: { e, _ in e.ctl("date_text", "12abc") }),
-            Scenario(name: "induced arithmetic error", setup: { e in e.ctl("date_once", "12abc") }, act: { _, _ in }),
+            // START is the third clock read (after the start and the 5 s limit before the set).
+            Scenario(name: "induced arithmetic error", setup: { e in
+                e.ctl("date_skip", "2")
+                e.ctl("date_once", "12abc")
+            }, act: { _, _ in }),
             Scenario(name: "unreadable beacon time", act: { e, _ in e.ctl("mtime", "x1") }),
             Scenario(name: "TERM (shutdown: no sleepnow)", setup: { e in e.ctl("clamshell", "Yes") },
                      act: { _, p in p.terminate() }),
-            Scenario(name: "INT", setup: { e in e.ctl("clamshell", "Yes") }, act: { _, p in p.interrupt() },
-                     sleepnow: true),
-            Scenario(name: "QUIT", setup: { e in e.ctl("clamshell", "Yes") },
-                     act: { _, p in _ = kill(p.processIdentifier, SIGQUIT) }, sleepnow: true),
+            // A TERM while `pmset -a disablesleep 1` runs is handled once it returns: WESET is already 1 (r2 S2-1).
+            Scenario(name: "TERM while setting", setup: { e in
+                e.ctl("clamshell", "Yes")
+                e.ctl("set_delay", "6")
+            }, act: { _, p in p.terminate() }),
             // A terminal's ^Z can't stop it (r1 S4): still answers the stop file.
             Scenario(name: "TSTP ignored", act: { e, p in
                 _ = kill(p.processIdentifier, SIGTSTP)
@@ -152,6 +157,12 @@ final class LidWatchdogShellTests: XCTestCase {
             // Never taken, and the late password (B3.2).
             Scenario(name: "stop file before the start", setup: { e in e.touch(e.stopFile) }, act: { _, _ in },
                      sets: false),
+            // The stop-file lookup stalls past the app's verify while the stop file is taken away (r2 S2-3): over 5 s
+            // after it started, it never sets.
+            Scenario(name: "stalled before the start", setup: { e in
+                e.touch(e.stopFile)
+                e.ctl("stop_hang", "8")
+            }, act: { e, _ in e.remove(e.stopFile) }, sets: false),
             Scenario(name: "already turned off", setup: { e in e.ctl("pref", "1") }, act: { _, _ in }, sets: false),
             Scenario(name: "preference odd", setup: { e in e.ctl("pref", "2") }, act: { _, _ in }, sets: false),
             Scenario(name: "no root domain", setup: { e in e.ctl("kernel", "none") }, act: { _, _ in }, sets: false),
@@ -197,6 +208,36 @@ final class LidWatchdogShellTests: XCTestCase {
                 }
                 XCTAssertEqual(r.env.log.contains("pmset sleepnow"), r.scenario.sleepnow, "\(label): sleepnow")
                 r.env.cleanup()
+            }
+        }
+    }
+
+    /// INT and QUIT never end it (r2 S2-2). Its real launch (`&` in a shell without job control) starts it with both
+    /// ignored, and the script ignores them itself, so a direct run behaves the same; the stop file still restores.
+    func testIntAndQuitDontEndIt() throws {
+        for shell in shells {
+            for viaCommand in [true, false] {
+                let label = "\(shell), \(viaCommand ? "launched by the command" : "run directly")"
+                let e = try env(shell)
+                e.ctl("clamshell", "Yes")
+                let pid: Int32
+                if viaCommand {
+                    let r = try e.runCommand()
+                    pid = try XCTUnwrap(Int32(r.stdout.trimmingCharacters(in: .whitespacesAndNewlines)), "\(label): \(r.stdout)")
+                    e.watch(pid)
+                } else {
+                    pid = try e.runScript(mode: "run").processIdentifier
+                }
+                XCTAssertTrue(e.waitFor("pref", "1"), label)
+                _ = kill(pid, SIGINT)
+                _ = kill(pid, SIGQUIT)
+                Thread.sleep(forTimeInterval: 1)
+                XCTAssertFalse(StubEnv.isGone(pid), "\(label): still running")
+                XCTAssertEqual(e.sets.map(\.value), ["1"], label)
+                e.touch(e.stopFile)
+                XCTAssertTrue(e.waitGone(pid), "\(label): the stop file ends it")
+                XCTAssertEqual(e.sets.map(\.value), ["1", "0"], label)
+                XCTAssertTrue(e.log.contains("pmset sleepnow"), "\(label): through the stop path, not a signal's")
             }
         }
     }
@@ -401,7 +442,9 @@ private final class StubEnv {
         -a)
           [ "$2" = disablesleep ] || exit 1
           echo "$3 $PPID" >> "$S/sets"
-          echo "$3" > "$S/ctl/pref";;
+          echo "$3" > "$S/ctl/pref"
+          [ "$3" = 1 ] && [ -f "$S/ctl/set_delay" ] && \#(t["sleep"] ?? "/bin/sleep") "$(cat "$S/ctl/set_delay")"
+          exit 0;;
         sleepnow) ;;
         *) exit 1;;
         esac
@@ -421,13 +464,17 @@ private final class StubEnv {
         try stub("awk", "echo awk >> \"$S/log\"\nexec " + (t["awk"] ?? "/usr/bin/awk") + " \"$@\"")
         try stub("sed", "echo sed >> \"$S/log\"\nexec " + (t["sed"] ?? "/usr/bin/sed") + " \"$@\"")
         // BSD stat without -L (lstat), run from inside D: names are relative. The type is real, owners, modes and
-        // devices come from ctl; `stat_hang` makes a beacon lookup never return.
+        // devices come from ctl; `stat_hang` makes a beacon lookup never return, `stop_hang` makes a stop-file lookup
+        // take that many seconds and then find nothing.
         try stub("stat", #"""
         echo "stat $*" >> "$S/log"
         [ "$1" = -f ] || exit 1
         case "$2" in
         '%HT %u')
-          case "$3" in beat-*) [ -f "$S/ctl/stat_hang" ] && { echo $$ >> "$S/hung"; exec \#(t["sleep"] ?? "/bin/sleep") 60; };; esac
+          case "$3" in
+          beat-*) [ -f "$S/ctl/stat_hang" ] && { echo $$ >> "$S/hung"; exec \#(t["sleep"] ?? "/bin/sleep") 60; };;
+          stop-*) [ -f "$S/ctl/stop_hang" ] && { echo $$ >> "$S/hung"; \#(t["sleep"] ?? "/bin/sleep") "$(cat "$S/ctl/stop_hang")"; exit 1; };;
+          esac
           if [ -L "$3" ]; then y='Symbolic Link'; elif [ -f "$3" ]; then y='Regular File'; elif [ -d "$3" ]; then y=Directory; else exit 1; fi
           echo "$y $(cat "$S/ctl/owner")";;
         '%HT %u %Lp %d')
@@ -440,7 +487,11 @@ private final class StubEnv {
         """#)
         try stub("date", #"""
         echo "date $*" >> "$S/log"
-        if [ -f "$S/ctl/date_once" ]; then cat "$S/ctl/date_once"; rm -f "$S/ctl/date_once"; exit 0; fi
+        if [ -f "$S/ctl/date_once" ]; then
+          n=$(cat "$S/ctl/date_skip" 2>/dev/null); n=${n:-0}
+          if [ "$n" -gt 0 ]; then echo $((n-1)) > "$S/ctl/date_skip"
+          else cat "$S/ctl/date_once"; rm -f "$S/ctl/date_once"; exit 0; fi
+        fi
         if [ -f "$S/ctl/date_text" ]; then cat "$S/ctl/date_text"; exit 0; fi
         echo \#(now)
         """#)

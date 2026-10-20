@@ -124,7 +124,7 @@ package enum LidWatchdog {
     /// names in it, from a child each lap, so a stalled lookup can't hold up its own limits (r1 S3).
     package static let defaultScript = #"""
 unset IFS; PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH
-umask 077; trap '' HUP TSTP TTIN TTOU
+umask 077; trap '' HUP INT QUIT TSTP TTIN TTOU      # as started (& ignores INT, QUIT): no terminal ends or stops it
 MODE=$1; U=$2; P=$3; T=$4; C=$5; F=$6; D=$7
 case "$MODE" in check|run) ;; *) exit 64;; esac
 num() { case "$1" in ''|*[!0-9]*) return 1;; esac; }
@@ -148,14 +148,17 @@ key() { rd | /usr/bin/awk -v k="\"$1\" = " 'index($0,k){print $NF; exit}'; }
 owned() { [ "$(/usr/bin/stat -f '%HT %u' "$1" 2>/dev/null)" = "Regular File $U" ]; }
 [ "$(sd)" = 0 ] && [ "$(ksd)" = 0 ] || exit 3      # someone else holds it, or unreadable: never take it
 [ "$MODE" = check ] && exit 0
+A=$(/bin/date +%s)
 # D, entered once: U's own 0700 directory on the volume of /var/folders (no network or user mount). Every later
 # lookup is one name inside it, so replacing D or a parent of it can't redirect one
 V=$(/usr/bin/stat -f %d /var/folders) && cd -P "$D" &&
   [ "$(/usr/bin/stat -f '%HT %u %Lp %d' .)" = "Directory $U 700 $V" ] || exit 0
 owned "stop-$T" && exit 0                            # stopped before we started (late password)
+# Over 5 s to get here (a stalled lookup): Snaptic's 10 s verify has given up and may have dropped its journal
+N=$(/bin/date +%s); num "$A" && num "$N" && [ $((N-A)) -le 5 ] || exit 0
 WESET=0; HALT=0
 cleanup() {
-  trap '' TERM INT QUIT
+  trap '' TERM
   [ "$WESET" = 1 ] || return
   i=0; while [ $i -lt 3 ]; do [ "$(sd)" = 0 ] && break
     /usr/bin/pmset -a disablesleep 0; /bin/sleep 1; i=$((i+1)); done
@@ -166,8 +169,8 @@ cleanup() {
     [ "$(key AppleClamshellCausesSleep)" = Yes ] && { /usr/bin/pmset sleepnow; return; }
     /bin/sleep 1; j=$((j+1)); done
 }
-trap 'cleanup' EXIT; trap 'HALT=1; exit 0' TERM; trap 'exit 0' INT QUIT
-/usr/bin/pmset -a disablesleep 1; WESET=1
+trap 'cleanup' EXIT; trap 'HALT=1; exit 0' TERM
+WESET=1; /usr/bin/pmset -a disablesleep 1          # WESET first: a TERM during the set still restores
 i=0; until [ "$(sd)" = 1 ] && [ "$(ksd)" = 1 ]; do       # post-set check, up to 3 s
   i=$((i+1)); [ $i -ge 6 ] && exit 0; /bin/sleep 0.5; done
 # The beacon, read in a child each lap: a lookup that stalls holds the child, never the cap, battery or heat checks

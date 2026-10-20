@@ -63,6 +63,7 @@ extension AwakeLogEventTests {
         XCTAssertEqual(AwakeLogEvent.lidOn.text, "awake.lid.on")
         XCTAssertEqual(AwakeLogEvent.lidOff(.otherApp).text, "awake.lid.off.otherApp")
         XCTAssertEqual(AwakeLogEvent.lidFailed(.verify).text, "Lid-closed mode couldn't turn on (verify).")
+        XCTAssertEqual(AwakeLogEvent.lidFailed(.restore).text, "Turn Sleep Back On's script reported an error.")
         XCTAssertEqual(AwakeLogEvent.lidLeftover.text, "Sleep was found turned off after an earlier lid-closed session.")
         let texts = (every + lid).map(\.text)
         XCTAssertEqual(Set(texts).count, texts.count, "every case has its own text")

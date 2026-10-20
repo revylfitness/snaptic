@@ -269,8 +269,8 @@ import SnapticKit
         providerFacts = facts
         for module in host.modules {
             guard let provider = module as? StatusItemProvider else { continue }
-            // The leftover and update rows come from StatusMenu's builders each time the provider's menu opens;
-            // re-sending the row on a change to `facts` marks that menu for a rebuild.
+            // The leftover and update rows aren't part of the row: the provider's `menuNeedsUpdate` rebuilds its
+            // whole menu on every open and asks StatusMenu's builders then, so they are always current.
             provider.applyStatusItem(CustomItemRow(exists: plan.custom.contains(module.id),
                                                    presence: config.presence(module.id),
                                                    footer: plan.sharedFooterInOwnMenus, recentNotices: facts.notices))
@@ -563,8 +563,9 @@ import SnapticKit
     // MARK: 0.3.1 cross-team hooks (lead, step 0)
 
     /// B3.4: "Sleep Is Turned Off" and "Turn Sleep Back On…", first in every Snaptic menu while a leftover shows.
-    /// Static and fresh on each call, because a menu item belongs to one menu: IndicatorController builds Awake's own
-    /// menu from it too (`CustomItemRow.leftover`). No Keep Sleep Off here: it has no undo but Terminal.
+    /// Static and fresh on each call, because a menu item belongs to one menu: IndicatorController's
+    /// `menuNeedsUpdate` puts them first in Awake's own menu too, on every open. No Keep Sleep Off here: it has no
+    /// undo but Terminal.
     static func leftoverItems(host: ModuleHost) -> [NSMenuItem] {
         guard host.lidRecovery.showsRows else { return [] }
         // Disabled, with the B0 pending text, while a restore waits for its password (as the Awake page's buttons).
