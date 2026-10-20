@@ -292,6 +292,22 @@ jobs:
           SNAPTIC_SELFTEST_TOKEN="$token" SNAPTIC_SELFTEST_EXPECT_SPARKLE=absent \
             build/Snaptic.app/Contents/MacOS/Snaptic --selftest-launch "$dir/token" 2>&1 | tee -a selftest.log
 
+      # The app's startup checks and launch, optimized and under AddressSanitizer: a read of freed memory is caught on
+      # macOS 15 too, where the freed bytes usually survive (0.3.1 shipped one that macOS 26 and later expose).
+      - name: Launch self-test under AddressSanitizer (optimized)
+        if: github.event_name == 'push'
+        timeout-minutes: 30
+        run: |
+          set -o pipefail
+          swift build -c release -Xswiftc -sanitize=address --product Snaptic
+          BIN="$(swift build -c release -Xswiftc -sanitize=address --show-bin-path)/Snaptic"
+          dir=$(mktemp -d)
+          token=$(od -An -N30 -tx1 /dev/urandom | tr -d ' \n')
+          printf '%s\n' "$token" > "$dir/token"
+          chmod 600 "$dir/token"
+          ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 SNAPTIC_SELFTEST_TOKEN="$token" \
+            "$BIN" --selftest-launch "$dir/token" 2>&1 | tee -a selftest.log
+
       - name: Helper self-test (universal, and under Rosetta when available)
         if: github.event_name == 'push'
         timeout-minutes: 3
@@ -1082,22 +1098,32 @@ jobs:
           DMG_SHA256: ${{ needs.sign.outputs.dmg_sha256 }}
         run: |
           set -euo pipefail
+          # Validating a stapled ticket asks Apple's CloudKit service; a dropped connection (error 68) is retried
+          # rather than failing the release (v0.3.1's first verify).
+          validate() {
+            local try
+            for try in 1 2 3 4 5; do
+              xcrun stapler validate "$1" && return 0
+              [ "$try" = 5 ] || { echo "stapler validate failed (try $try of 5); retrying in 20 s" >&2; sleep 20; }
+            done
+            return 1
+          }
           [ "$(shasum -a 256 "$RUNNER_TEMP/signed/Snaptic.zip" | awk '{print $1}')" = "$ZIP_SHA256" ] || { echo "Snaptic.zip changed." >&2; exit 1; }
           [ "$(shasum -a 256 "$RUNNER_TEMP/signed/Snaptic.dmg" | awk '{print $1}')" = "$DMG_SHA256" ] || { echo "Snaptic.dmg changed." >&2; exit 1; }
           ditto -x -k "$RUNNER_TEMP/signed/Snaptic.zip" "$RUNNER_TEMP/app"
           APP="$RUNNER_TEMP/app/Snaptic.app"
           codesign --verify --strict --deep "$APP"
-          xcrun stapler validate "$APP"
+          validate "$APP"
           spctl -a -t exec -vv "$APP"
           # E2 (r1 S7): the disk image is signed and stapled, and the app inside it carries its own ticket.
           codesign --verify --strict "$RUNNER_TEMP/signed/Snaptic.dmg"
-          xcrun stapler validate "$RUNNER_TEMP/signed/Snaptic.dmg"
+          validate "$RUNNER_TEMP/signed/Snaptic.dmg"
           MOUNT="$RUNNER_TEMP/dmg-mount"
           mkdir -p "$MOUNT"
           hdiutil attach -readonly -nobrowse -noautoopen -mountpoint "$MOUNT" "$RUNNER_TEMP/signed/Snaptic.dmg" >/dev/null
           STATUS=0
           codesign --verify --strict --deep "$MOUNT/Snaptic.app" || STATUS=1
-          xcrun stapler validate "$MOUNT/Snaptic.app" || STATUS=1
+          validate "$MOUNT/Snaptic.app" || STATUS=1
           hdiutil detach "$MOUNT" >/dev/null || hdiutil detach -force "$MOUNT" >/dev/null
           [ "$STATUS" = "0" ] || { echo "The app inside Snaptic.dmg isn't signed and stapled." >&2; exit 1; }
 

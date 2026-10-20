@@ -37,12 +37,7 @@ enum SnapticEntry {
             refuse(L("Snaptic doesn’t start with these environment variables set: ") + names
                    + L(". Unset them, or open Snaptic from Finder."), showAlert: true)
         }
-        guard let home = AccountPaths.home else {
-            refuse(L("Snaptic couldn’t look up your account’s home folder."), showAlert: true)
-        }
-        guard KitArgs.homeMatches(environmentHome: environment["HOME"], accountHome: home) else {
-            refuse(L("HOME doesn’t match your account’s home folder, so Snaptic won’t start."), showAlert: true)
-        }
+        if let refusal = accountRefusal(environment: environment) { refuse(refusal, showAlert: true) }
         redirectStandardStreams()
 
         // Snaptic runs as a menu-bar ("accessory") app: no Dock icon, no main window.
@@ -54,6 +49,18 @@ enum SnapticEntry {
             app.run()
             withExtendedLifetime(delegate) {}
         }
+    }
+
+    /// Startup step 2's account checks, shared with `--selftest-launch` so CI runs them on the release binary (app
+    /// mode itself never runs in CI). nil: Snaptic may start.
+    static func accountRefusal(environment: [String: String]) -> String? {
+        guard let home = AccountPaths.home else {
+            return L("Snaptic couldn’t look up your account’s home folder.")
+        }
+        guard KitArgs.homeMatches(environmentHome: environment["HOME"], accountHome: home) else {
+            return L("HOME doesn’t match your account’s home folder, so Snaptic won’t start.")
+        }
+        return nil
     }
 
     /// Explains on stderr (before it is redirected) and exits 64. App mode only, with
@@ -100,11 +107,17 @@ enum AccountPaths {
         var size = sysconf(Int32(_SC_GETPW_R_SIZE_MAX))
         if size <= 0 || size > 1 << 20 { size = 16_384 }
         var buffer = [CChar](repeating: 0, count: size)
-        let capacity = buffer.count
-        let status = getpwuid_r(getuid(), &record, &buffer, capacity, &result)
-        guard status == 0, result != nil, let directory = record.pw_dir else { return nil }
-        let path = String(cString: directory)
-        return path.hasPrefix("/") ? path : nil
+        // `pw_dir` points into `buffer`, so it's copied out while the buffer is still borrowed. Passing `&buffer`
+        // gives the call a pointer that is valid only during the call, and an optimized build may free the array
+        // right after it: 0.3.1 then read freed memory here and refused to start.
+        let path: String? = buffer.withUnsafeMutableBufferPointer { storage in
+            guard let base = storage.baseAddress,
+                  getpwuid_r(getuid(), &record, base, storage.count, &result) == 0, result != nil,
+                  let directory = record.pw_dir else { return nil }
+            return String(cString: directory)
+        }
+        guard let path, path.hasPrefix("/") else { return nil }
+        return path
     }
 
     /// ~/Library/Application Support/Snaptic, created 0700 if missing.
