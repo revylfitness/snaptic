@@ -163,7 +163,7 @@ package enum UpdatePolicy {
     }
 
     package static func quitFirstText(safeMode: Bool) -> String {
-        safeMode ? L("Quit Snaptic to finish installing the update first, then hold ⇧ while you open it to start in Safe Mode.")
+        safeMode ? L("Quit Snaptic to finish installing the update first, then hold Shift while you open it to start in Safe Mode.")
             : L("Quit Snaptic to finish installing the update, then open it again.")
     }
 

@@ -127,7 +127,7 @@ StatusMenu keeps three references: `tabBarItem`, `sectionItems: [NSMenuItem]` (e
 The switch uses no timers and no `RunLoop.main.perform` (N15, L14). The removed items are never under the pointer, so R2C c12 doesn't apply.
 
 **Width**
-- At build, StatusMenu measures every tab's section in a scratch `NSMenu` (`menu.size.width` after adding the items) and sets `minimumWidth = max(MenuKit.width, widest)`. Switching then never widens the open menu, and the segment never moves under the pointer.
+- At build, StatusMenu measures every tab's section in a scratch `NSMenu` together with the host safety rows and the shared footer (including the Show … Tab items in the visibility they'll have, so the key column counts; r1 U1) (`menu.size.width` after adding the items) and sets `minimumWidth = max(MenuKit.width, widest)`. Switching then never widens the open menu, and the segment never moves under the pointer.
 - After reading the width, StatusMenu calls `scratch.removeAllItems()`. Otherwise Awake's header list would hold scratch items whose `menu` isn't nil, and would keep refreshing them.
 - `menuSection(tabbed:)` must be cheap and free of side effects, and each module confirms this in Step 0. The selected section is built twice on each open (once to measure, once to show), which is accepted.
 
@@ -150,9 +150,10 @@ The switch uses no timers and no `RunLoop.main.perform` (N15, L14). The removed 
 - They are hidden (`isHidden = true`, `allowsKeyEquivalentWhenHidden = true`) unless an assistive input is in use, in which case they show:
   - `NSWorkspace.shared.isVoiceOverEnabled`;
   - `isSwitchControlEnabled`;
-  - Full Keyboard Access (`NSApp.isFullKeyboardAccessEnabled`).
+  - Keyboard navigation (`NSApp.isFullKeyboardAccessEnabled`);
+  - Accessibility › Full Keyboard Access, which has no public API: `FullKeyboardAccessEnabled` in `com.apple.Accessibility` (r1 U2; HW-25 confirms the key). Unreadable counts as off.
 
-  Full Keyboard Access posts no change notification, so `menuNeedsUpdate` sets the items' `isHidden` on **every** open, even when the slot isn't dirty. It's a property change, not a rebuild.
+  Neither posts a change notification, so `menuNeedsUpdate` sets the items' `isHidden` on **every** open that has tabs, even when the slot isn't dirty, reading the preferences at most once per open (r2 U2-2). It's a property change, not a rebuild.
 - `StatusMenu.menuHasKeyEquivalent` returns true with that item's target and action when `openMenus > 0` and the event is ⌘1–⌘n. Otherwise it returns false, as today.
 - The item's action stores the choice and sets `shared.dirty = true`. It never changes the menu in place.
 - The expected result is that **the menu closes and the next open shows the chosen tab**. If HW-26 finds that tracking continues, the action switches in place instead.
@@ -162,7 +163,7 @@ The switch uses no timers and no `RunLoop.main.perform` (N15, L14). The removed 
 - The README says "⌘1–⌘3 choose a tab (⌘1–⌘2 with two tabs)".
 
 **VoiceOver**
-- The segmented control is an accessibility element. VoiceOver users reach it and choose a segment with VO-Space, and `.layoutChanged` refreshes the menu's children (HW-25).
+- The tab bar view is the accessibility container: role tab group, label "Menu tabs", with one element per segment as its children and tabs (title plus ", on" / ", needs attention"; help "Command-n", r1 U3). The segmented control and its cell (`MenuTabSegmentedCell`, which draws nothing of its own) are ignored, so AppKit's own segment elements never reach VoiceOver (r1 U8). VoiceOver users choose a segment with VO-Space, and `.layoutChanged` refreshes the menu's children (HW-25).
 
 **Other keys**
 - Type-select reaches only the visible tab.
@@ -832,8 +833,8 @@ These are numbered after 0.3's HW-23. The list lives here and in README's testin
 
 | ID | Check |
 |---|---|
-| HW-24 | Tab switching in an open menu on macOS 14, 15, 26 and 27:<br>• resize and highlight;<br>• a switch with a submenu open (no `cancelTracking`);<br>• `isEnabled = false` clicks;<br>• hover look in light, dark, Increase Contrast and Reduce Transparency;<br>• a 13″ display at the largest text size, on the Displays tab with 3 external displays: switch away and back, with no stuck scroll arrows. |
-| HW-25 | VoiceOver, Switch Control and Full Keyboard Access:<br>• the segments are reachable;<br>• ", needs attention" and ", on" are read;<br>• VO-Down after a switch reaches the new section;<br>• the Show … Tab items appear without a relaunch;<br>• the tab row with `isEnabled = false` vs `true`. |
+| HW-24 | Tab switching in an open menu on macOS 14, 15, 26 and 27:<br>• resize and highlight;<br>• a switch with a submenu open (no `cancelTracking`);<br>• `isEnabled = false` clicks;<br>• hover look in light, dark, Increase Contrast and Reduce Transparency;<br>• a 13″ display at the largest text size, on the Displays tab with 3 external displays: switch away and back, with no stuck scroll arrows;<br>• the tab bar draws and animates the selection exactly like a stock `NSSegmentedControl` (custom cell class), in light, dark and Increase Contrast;<br>• switching tabs never changes the open menu's width (footer key column included). |
+| HW-25 | VoiceOver, Switch Control and Full Keyboard Access:<br>• the segments are reachable;<br>• ", needs attention" and ", on" are read;<br>• VO-Down after a switch reaches the new section;<br>• the Show … Tab items appear without a relaunch;<br>• the tab row with `isEnabled = false` vs `true`;<br>• toggle Keyboard navigation alone, then Accessibility › Full Keyboard Access alone: the Show … Tab items appear for each (confirms the `com.apple.Accessibility` key);<br>• Accessibility Inspector shows the bar as a tab group "Menu tabs" with one child per segment, and no `NSSegmentedControl` or AppKit segment elements;<br>• VO-Space on a segment switches the tab. |
 | HW-26 | ⌘1–⌘3 in an open menu: does tracking end, and does the next open show the chosen tab? ⌘, and ⌘Q still fire. |
 | HW-27 | Sliders and switch headers in a newly shown tab work without reopening. |
 | HW-28 | The osascript admin dialog from a Developer ID-signed **and** an ad-hoc Snaptic, each disclaimed and not:<br>• requester name, icon and title;<br>• prompt text;<br>• Touch ID;<br>• Cancel → `err -128`;<br>• no Automation consent;<br>• Displays' dimming overlays move behind it. |
@@ -846,7 +847,7 @@ These are numbered after 0.3's HW-23. The list lives here and in README's testin
 | HW-35 | Watchdog cost: `powermetrics` wakeups at a 5 s period. |
 | HW-36 | Updates (Part E):<br>• Sparkle loads in a Developer ID build;<br>• update 0.3.1 → 0.3.2 from a user-owned and from a root-owned copy;<br>• Accessibility and Screen Recording survive;<br>• no Gatekeeper prompt after relaunch;<br>• an update is refused with a wrong EdDSA signature and with a non-Developer-ID build;<br>• deferral works while lid-closed mode is on and while a display trial is pending. |
 | HW-37 | An ad-hoc local build (`build-app.sh` without an identity) launches without Sparkle, and Check for Updates… opens the Releases page. CI covers part of this with `--selftest-launch`. |
-| HW-38 | Updates, continued:<br>• Open at Login across the ad-hoc → Developer ID switch (no stale or duplicate Login Items entry);<br>• a tampered `appcast.xml` (edited release asset) is rejected by the client;<br>• a root-owned copy stays `root:wheel` after an update;<br>• record the authorization right Sparkle registers for root-owned installs;<br>• gentle reminders: the menu row appears and brings Sparkle's window forward;<br>• no Sparkle window during onboarding or Safe Mode;<br>• a manual check works in Safe Mode;<br>• Relauncher with a pending install-on-quit installs and relaunches once;<br>• the 0.3.0 → 0.3.1 re-grant for Accessibility and Screen Recording. |
+| HW-38 | Updates, continued:<br>• Open at Login across the ad-hoc → Developer ID switch (no stale or duplicate Login Items entry);<br>• a tampered `appcast.xml` (edited release asset) is rejected by the client;<br>• a root-owned copy stays `root:wheel` after an update;<br>• record the authorization right Sparkle registers for root-owned installs;<br>• gentle reminders: the menu row appears and brings Sparkle's window forward;<br>• no Sparkle window during onboarding or Safe Mode;<br>• a manual check works in Safe Mode;<br>• Relauncher with a pending install-on-quit installs and relaunches once; record how often Sparkle's install block is already gone at relaunch time (then the quit-first toast shows);<br>• the 0.3.0 → 0.3.1 re-grant for Accessibility and Screen Recording. |
 
 ## Part D: Teams, file ownership and order
 
@@ -1142,7 +1143,7 @@ Publishing a release in GitHub's UI, as for 0.3.0, also works. CI attaches the f
   - **`Relauncher`** (which opens the new copy before the old one quits) asks `UpdatePolicy.relaunchRoute` (fix round r1 C3, S9):
     - nothing waits → relaunch as today;
     - an install waits, a live block, not Safe Mode → run the block: Sparkle installs and opens the new version. If Snaptic is still running 10 s later, Relauncher takes the relaunch back (`inFlight` clears) and routes again;
-    - an install waits and it's a Safe Mode relaunch, or the block is gone → **nothing relaunches**, and a toast says "Quit Snaptic to finish installing the update first, then hold ⇧ while you open it to start in Safe Mode." (or "…, then open it again."). Sparkle's installer waits for this process's pid and then replaces the bundle, so a new instance opened first would run from the copy being replaced, and a Safe Mode relaunch must never install the update.
+    - an install waits and it's a Safe Mode relaunch, or the block is gone → **nothing relaunches**, and a toast says "Quit Snaptic to finish installing the update first, then hold Shift while you open it to start in Safe Mode." (or "…, then open it again."). Sparkle's installer waits for this process's pid and then replaces the bundle, so a new instance opened first would run from the copy being replaced, and a Safe Mode relaunch must never install the update.
   - Installing at quit can't be postponed. That's acceptable, because quitting ends lid-closed mode and display trials anyway.
 - **Gentle reminders and consent.** Implement `standardUserDriverShouldHandleShowingScheduledUpdate(_:andInImmediateFocus:)` (return false; Snaptic shows its rows), `standardUserDriverWillHandleShowingUpdate(_:forUpdate:state:)` (set `updateAvailable`), and `standardUserDriverDidReceiveUserAttention(forUpdate:)` / `standardUserDriverWillFinishUpdateSession`, which clear it. `updaterShouldPromptForPermissionToCheck(forUpdates:)` returns **false**, so Sparkle's consent prompt never appears.
 - **Matrix test.** `UpdatePolicyTests` covers the whole matrix as `UpdatePolicy.Event`s, as a hand-written table with count anchors (fix round r1 C9), plus the session, the relaunch routes and the gate.

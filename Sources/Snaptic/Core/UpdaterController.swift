@@ -188,7 +188,7 @@ import SnapticKit
             EventLog.shared.record(.modules, "Installing the downloaded update")
             block()
         case .wait(let wait):
-            toast(UpdatePolicy.text(wait, version: availableUpdate?.version ?? ""))
+            toast(UpdatePolicy.text(wait, version: availableUpdate?.version.flatMap { $0.isEmpty ? nil : $0 }))
         case .refuse:
             break
         }

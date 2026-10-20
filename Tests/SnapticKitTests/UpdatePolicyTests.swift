@@ -147,7 +147,7 @@ final class UpdatePolicyTests: XCTestCase {
         XCTAssertEqual(UpdatePolicy.quitFirstText(safeMode: false),
                        "Quit Snaptic to finish installing the update, then open it again.")
         XCTAssertEqual(UpdatePolicy.quitFirstText(safeMode: true),
-                       "Quit Snaptic to finish installing the update first, then hold ⇧ while you open it to start in Safe Mode.")
+                       "Quit Snaptic to finish installing the update first, then hold Shift while you open it to start in Safe Mode.")
     }
 
     // MARK: The updater gate (r1 C8)

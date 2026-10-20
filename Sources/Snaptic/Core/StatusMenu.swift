@@ -312,6 +312,10 @@ import SnapticKit
     func menuNeedsUpdate(_ menu: NSMenu) {
         host?.permissions.refresh()
         guard let slot = slot(for: menu) else { return }
+        // The assistive-input check reads another process's preferences (a cfprefsd round trip): at most once per
+        // open, and only when there are tabs (r2 U2-2).
+        updatingMenu = true
+        defer { updatingMenu = false; assistiveThisOpen = nil }
         if slot.dirty {
             build(slot)
             slot.dirty = false
@@ -618,7 +622,7 @@ import SnapticKit
         let scratch = NSMenu()
         scratch.autoenablesItems = false
         let showTabs = makeShowTabItems(tabs, selected: selected, host: host)
-        let assistive = Self.assistiveInputInUse()
+        let assistive = assistiveInputInUse()
         for item in showTabs { item.isHidden = !assistive }
         let head = hostSafetyRows(host)
         let footer = sharedFooter(host: host, config: config, plan: plan, showTabItems: showTabs)
@@ -663,8 +667,20 @@ import SnapticKit
 
     /// A3: the Show … Tab items show only while an assistive input is in use; hidden, their ⌘n still works.
     private func updateShowTabItems() {
-        let assistive = Self.assistiveInputInUse()
+        guard !showTabItems.isEmpty else { return }
+        let assistive = assistiveInputInUse()
         for item in showTabItems { item.isHidden = !assistive }
+    }
+
+    /// Cached only inside `menuNeedsUpdate`, so one open reads the preferences once (r2 U2-2).
+    private var updatingMenu = false
+    private var assistiveThisOpen: Bool?
+
+    private func assistiveInputInUse() -> Bool {
+        if let assistiveThisOpen { return assistiveThisOpen }
+        let value = Self.assistiveInputInUse()
+        if updatingMenu { assistiveThisOpen = value }
+        return value
     }
 
     /// VoiceOver, Switch Control, Keyboard navigation (`isFullKeyboardAccessEnabled`, `AppleKeyboardUIMode`) or
