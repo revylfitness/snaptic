@@ -532,7 +532,7 @@ extension AwakePresentationTests {
         XCTAssertEqual(AwakeLidText.setting, "Keep awake with the lid closed")
         XCTAssertEqual(AwakeLidText.settingHelp,
                        "Choose Keep Awake with the Lid Closed in the Awake menu. Asks for an administrator password each time.")
-        XCTAssertEqual(AwakeLidText.customHelp, "Asks for an administrator password when you click Start.")
+        XCTAssertEqual(AwakeLidText.customHelp, "Start… asks for an administrator password.")
         XCTAssertEqual(AwakeLidText.customStart, "Start…")
         XCTAssertEqual(AwakeLidText.advancedFooter,
                        "While lid-closed mode is on, your Mac can’t sleep for low battery or heat. Awake turns it off at the Awake page’s battery level (at least 10%), when your Mac gets hot, or after 24 hours. Use it on a hard surface, not in a bag.")
@@ -621,7 +621,7 @@ extension AwakePresentationTests {
             .battery: "Lid-closed mode turned off at 20% battery.",
             .heat: "Lid-closed mode turned off because your Mac got hot.",
             .otherApp: "Another app turned sleep back on, so lid-closed mode stopped.",
-            .watchdogLost: "Lid-closed mode stopped unexpectedly. Awake is still on; your Mac sleeps if you close the lid.",
+            .watchdogLost: "Lid-closed mode stopped unexpectedly. Awake is still on.",
         ]
         for end in AwakeLidEnd.allCases {
             XCTAssertEqual(AwakeLidText.endToast(end, floor: 20), toasts[end], "\(end)")

@@ -160,6 +160,9 @@ final class LidBeacon: @unchecked Sendable {
     private var lastDisplaySleep: Double?
     private var displaySleepRunning = false
     private var screenObserver: NSObjectProtocol?
+    /// A restart, shut down or log out was announced (r2 A2-5): the quit that follows writes the halt file.
+    private var powerOffObserver: NSObjectProtocol?
+    private var poweringOff = false
     /// The session SessionController is replacing keeps the mode (B2 "keep"): its id, until the new one starts.
     private var keepAcross: StableID?
     /// The controller is starting its own session (an idle start that just verified): not a superseding start.
@@ -203,11 +206,22 @@ final class LidBeacon: @unchecked Sendable {
         // Ahead of the session's own guards (B3.3): SessionController starts this controller before it observes.
         context.power.observe(lifetime) { [weak self] in self?.powerChanged() }
         context.system.observeEvents(lifetime) { [weak self] event in self?.systemEvent(event) }
+        powerOffObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willPowerOffNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.poweringOff = true }
+        }
     }
 
     /// Module stop or quit: a pending request is abandoned and the mode ends; the stop file is written at once and
     /// the host-level LidRecoveryState finishes the kernel check (this controller is going away).
     func stop(_ reason: AwakeLidEnd) {
+        // Before the stop file: the watchdog then restores without `sleepnow`, as for launchd's TERM.
+        if let beacon, AwakeLidPolicy.writesHalt(reason, poweringOff: poweringOff) {
+            LidSystem.requestHalt(dir: beacon.directory, token: beacon.token)
+        }
+        if let powerOffObserver { NSWorkspace.shared.notificationCenter.removeObserver(powerOffObserver) }
+        powerOffObserver = nil
+        poweringOff = false
         if let p = pending {
             admin.value(for: p.token)?.interrupt()
             abandon(p.token, failure: nil, toast: nil)
@@ -222,23 +236,25 @@ final class LidBeacon: @unchecked Sendable {
 
     // MARK: Requests (B1, B2)
 
-    /// A direct user action in Snaptic's UI asks for the mode. Settings requests check the focus guard here. False
-    /// when it did nothing and said nothing (the feature isn't effective, no lid, the module stopped, the gate said
-    /// no), so the Custom… panel can stay open and say why (r2 A2-2).
+    /// A direct user action in Snaptic's UI asks for the mode. Settings requests check the focus guard here. The
+    /// Custom… panel stays open unless the request started (r2 A2-2, r3 U3-6): after a refusal its toast said why,
+    /// and after `.nothing` the panel says it.
     @discardableResult
-    func request(_ request: LidRequest, source: AwakeSessionSource) -> Bool {
-        guard let ctx = context, lifetime != nil, case .off = mode, ctx.runtime.isEffective(.lidClosed) else { return false }
+    func request(_ request: LidRequest, source: AwakeSessionSource) -> AwakeLidRequestResult {
+        guard let ctx = context, lifetime != nil, case .off = mode, ctx.runtime.isEffective(.lidClosed) else {
+            return .nothing
+        }
         let mayStart = source != .settings || SettingsShell.shared.mayStart()
         var running: AwakeSession?
         if request == .add {
             // Only a menu or Settings session started in this process takes the mode (restored ones don't).
             guard case .manual(let s) = ctx.runtime.governing, s.id == ctx.sessions.manual?.id,
                   AwakeLidGate.addsToSession(source: s.source, startedInProcess: ctx.sessions.startedInProcess(s.id))
-            else { return false }
+            else { return .nothing }
             running = s
         }
         guard AwakeLidGate.decide(source: source, mayStart: mayStart, event: .request(running: running?.source))
-                == .allowed, LidSystem.hasLid() else { return false }
+                == .allowed, LidSystem.hasLid() else { return .nothing }
         let facts = ctx.power.facts
         let discharging = facts?.discharging ?? false
         let floor = AwakeLidPolicy.floor(awakeGuards: ctx.config.value.guards)
@@ -250,18 +266,18 @@ final class LidBeacon: @unchecked Sendable {
                                                      recovery: ctx.host.lidRecovery?.recovery ?? .nothing,
                                                      adminBusy: ctx.host.spawner.isLidBusy(.adminScript)) {
             refuse(refusal)
-            return true
+            return .refused
         }
         guard let token = LidSystem.newToken() else {
             ctx.host.toasts.show(AwakeLidText.couldNotTurnOn)
-            return true
+            return .refused
         }
         pending = Pending(token: token, request: request, source: source, sessionID: running?.id, floor: floor)
         liveness = AwakeLidLiveness()
         capWarned = false
         set(.authorizing(token: token))
         Task { @MainActor [weak self] in await self?.authorize(token) }
-        return true
+        return .started
     }
 
     /// "✓ Keep Awake with the Lid Closed": off without a password.
@@ -511,9 +527,11 @@ final class LidBeacon: @unchecked Sendable {
 
     private func tick(_ token: String, _ t: LidTick) {
         guard let a = active, a.token == token else { return }
+        // Read before this tick: a 0 seen while the watchdog still ran is another app's (r3 A3-1).
+        let zeroReadWhileAlive = liveness.zeroReads > 0
         switch liveness.tick(watchdogAlive: t.watchdogGone != true, sleepDisabled: t.sleepDisabled) {
         case .watchdogLost?:
-            return end(lostReason(a))
+            return end(lostReason(a, zeroReadWhileAlive: zeroReadWhileAlive))
         case let reason?:
             return end(reason)
         case nil:
@@ -531,11 +549,12 @@ final class LidBeacon: @unchecked Sendable {
 
     /// The watchdog exited on its own: often at the floor, on heat or at its cap a lap before the app saw it, so the
     /// app's own facts name the reason when they can (r2 A2-1).
-    private func lostReason(_ a: Active) -> AwakeLidEnd {
+    private func lostReason(_ a: Active, zeroReadWhileAlive: Bool) -> AwakeLidEnd {
         let facts = context?.power.facts
         return AwakeLidPolicy.lostReason(batteryPercent: facts?.percent, discharging: facts?.discharging ?? false,
                                          floor: a.floor, thermalSerious: (facts?.thermal ?? .nominal) >= .serious,
-                                         capStart: a.capStart, now: AwakeModule.clockNow().continuous)
+                                         capStart: a.capStart, now: AwakeModule.clockNow().continuous,
+                                         zeroReadWhileAlive: zeroReadWhileAlive)
     }
 
     /// Battery at or below the floor while discharging, or `serious` heat: the mode ends first (B3.3), then the

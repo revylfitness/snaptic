@@ -341,9 +341,10 @@ final class AwakeLidPolicyTests: XCTestCase {
     /// r2 A2-1: the watchdog gone is named by the app's own facts when they explain it.
     func testLostReason() {
         let cap = Double(LidWatchdog.capSeconds)
-        func reason(battery: Int? = 80, discharging: Bool = false, hot: Bool = false, now: Double = 5_000) -> AwakeLidEnd {
+        func reason(battery: Int? = 80, discharging: Bool = false, hot: Bool = false, now: Double = 5_000,
+                    zero: Bool = false) -> AwakeLidEnd {
             AwakeLidPolicy.lostReason(batteryPercent: battery, discharging: discharging, floor: 20, thermalSerious: hot,
-                                      capStart: 1_000, now: now)
+                                      capStart: 1_000, now: now, zeroReadWhileAlive: zero)
         }
         XCTAssertEqual(reason(), .watchdogLost)
         XCTAssertEqual(reason(battery: 20, discharging: true), .battery)
@@ -356,6 +357,43 @@ final class AwakeLidPolicyTests: XCTestCase {
         XCTAssertEqual(reason(now: 1_000 + cap + 90), .cap)
         XCTAssertEqual(reason(now: 1_000 + cap - 1), .watchdogLost, "the watchdog's cap is never before the app's")
         XCTAssertEqual(reason(battery: 10, discharging: true, now: 1_000 + cap), .battery)
+        // r3 A3-1: root left first after another app turned sleep back on; the app had read that 0 already.
+        XCTAssertEqual(reason(zero: true), .otherApp)
+        XCTAssertEqual(reason(battery: 20, discharging: true, zero: true), .battery, "the floor first")
+        XCTAssertEqual(reason(hot: true, zero: true), .heat, "heat first")
+        XCTAssertEqual(reason(now: 1_000 + cap, zero: true), .cap, "the cap first")
+    }
+
+    /// r2 A2-5: only a quit after a restart, shut down or log out writes the halt file.
+    func testWritesHalt() {
+        XCTAssertTrue(AwakeLidPolicy.writesHalt(.quit, poweringOff: true))
+        XCTAssertFalse(AwakeLidPolicy.writesHalt(.quit, poweringOff: false), "a plain quit with the lid shut sleeps")
+        XCTAssertFalse(AwakeLidPolicy.writesHalt(.moduleStopped, poweringOff: true))
+        XCTAssertFalse(AwakeLidPolicy.writesHalt(.safeMode, poweringOff: true))
+        XCTAssertFalse(AwakeLidPolicy.writesHalt(.user, poweringOff: true))
+    }
+
+    /// r3 S3-1: a new request keeps stop files younger than 3 minutes; beacons and halt files always go.
+    func testClearsBeaconFile() {
+        let t = "0123456789abcdef0123456789abcdef"
+        XCTAssertFalse(AwakeLidPolicy.clearsBeaconFile("stop-" + t, ageSeconds: 0))
+        XCTAssertFalse(AwakeLidPolicy.clearsBeaconFile("stop-" + t, ageSeconds: 179))
+        XCTAssertFalse(AwakeLidPolicy.clearsBeaconFile("stop-" + t, ageSeconds: -600), "clock stepped back")
+        XCTAssertTrue(AwakeLidPolicy.clearsBeaconFile("stop-" + t, ageSeconds: 180))
+        XCTAssertTrue(AwakeLidPolicy.clearsBeaconFile("stop-" + t, ageSeconds: .infinity), "unreadable")
+        XCTAssertTrue(AwakeLidPolicy.clearsBeaconFile("beat-" + t, ageSeconds: 0))
+        XCTAssertTrue(AwakeLidPolicy.clearsBeaconFile("halt-" + t, ageSeconds: 0))
+        XCTAssertFalse(AwakeLidPolicy.clearsBeaconFile("stop-" + t + "0", ageSeconds: 1_000))
+        XCTAssertFalse(AwakeLidPolicy.clearsBeaconFile("beat-xyz", ageSeconds: 1_000))
+        XCTAssertFalse(AwakeLidPolicy.clearsBeaconFile("note.txt", ageSeconds: 1_000))
+        XCTAssertFalse(AwakeLidPolicy.clearsBeaconFile(t, ageSeconds: 1_000))
+    }
+
+    /// r3 U3-6: the Custom… panel stays open after a refusal, as when the feature is unavailable.
+    func testCustomPanelClosesOnlyOnceStarted() {
+        XCTAssertTrue(AwakeLidRequestResult.started.closesCustomPanel)
+        XCTAssertFalse(AwakeLidRequestResult.refused.closesCustomPanel)
+        XCTAssertFalse(AwakeLidRequestResult.nothing.closesCustomPanel)
     }
 
     /// r2 A2-4: "Snaptic quit" only for the resumed session that had the mode.

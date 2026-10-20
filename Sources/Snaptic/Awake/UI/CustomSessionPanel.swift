@@ -212,11 +212,11 @@ struct CustomSessionPanel: View, ControlDeclaring {
         switch AwakeLidPolicy.customStart(lidToggle: lid, effective: ctx.runtime.isEffective(.lidClosed),
                                           mode: ctx.lid.mode) {
         case .request:
-            // B3.1: the password first; the session starts once the mode is verified on (Cancel starts nothing).
-            guard ctx.lid.request(.custom(kind, options), source: source) else {
-                ctx.host.toasts.show(AwakeLidText.customUnavailable)
-                return
-            }
+            // B3.1: the password first; the session starts once the mode is verified on (Cancel starts nothing). A
+            // refusal's toast said why; the panel stays open so the session needn't be set up again (r3 U3-6).
+            let result = ctx.lid.request(.custom(kind, options), source: source)
+            if result == .nothing { ctx.host.toasts.show(AwakeLidText.customUnavailable) }
+            guard result.closesCustomPanel else { return }
         case .plain:
             // With the mode on, this menu or Settings start replaces the session and the mode carries over (B2).
             _ = ctx.sessions.start(kind, options: options, presetID: nil, source: source, overrideGuards: false)
