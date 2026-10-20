@@ -63,27 +63,35 @@ enum LidSystem {
         return true
     }
 
-    /// Old stop files and beacons go (B3.1 step 3): only names `LidWatchdog` gives a token; `unlink` never follows a
-    /// link.
+    /// Old beacons, halt files and stop files go (B3.1 step 3, `AwakeLidPolicy.clearsBeaconFile`): a stop file
+    /// younger than 3 minutes stays, as a late watchdog may still need it (r3 S3-1). Only a regular stop file is
+    /// `lstat`ed for its age (nothing can be mounted on one), and `unlink` never follows a link.
     static func clearBeacons(_ dir: String) {
         guard let handle = opendir(dir) else { return }
         var names: [String] = []
         var seen = 0
+        let now = Double(time(nil))
         while let entry = readdir(handle), seen < 1_024 {
             seen += 1
             let name = withUnsafePointer(to: entry.pointee.d_name) {
                 $0.withMemoryRebound(to: CChar.self, capacity: 256) { String(cString: $0) }
             }
-            if isBeaconFile(name) { names.append(name) }
+            var age = Double.infinity
+            var info = stat()
+            if name.hasPrefix("stop-"), Int32(entry.pointee.d_type) == DT_REG, lstat(dir + "/" + name, &info) == 0 {
+                age = now - Double(info.st_mtimespec.tv_sec)
+            }
+            if AwakeLidPolicy.clearsBeaconFile(name, ageSeconds: age) { names.append(name) }
         }
         closedir(handle)
         for name in names { unlink(dir + "/" + name) }
     }
 
-    /// `stop-<token>` or `beat-<token>` for some token.
-    private static func isBeaconFile(_ name: String) -> Bool {
-        let token = String(name.dropFirst(5))
-        return LidWatchdog.stopFileName(token: token) == name || LidWatchdog.beatFileName(token: token) == name
+    /// The halt file (r2 A2-5): O_CREAT|O_NOFOLLOW, 0600, like the stop file.
+    static func requestHalt(dir: String, token: String) {
+        guard let halt = LidWatchdog.haltFileName(token: token) else { return }
+        let fd = open(dir + "/" + halt, O_WRONLY | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        if fd >= 0 { close(fd) }
     }
 
     /// The stop file: O_CREAT|O_NOFOLLOW, 0600 (B3.3 "Turning off" step 1). The beacon goes too, so a watchdog

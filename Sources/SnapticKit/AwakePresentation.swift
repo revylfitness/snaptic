@@ -860,7 +860,7 @@ package enum AwakeLidText {
     /// The Advanced setting and the Custom… panel's toggle.
     package static let setting = L("Keep awake with the lid closed")
     package static let settingHelp = L("Choose Keep Awake with the Lid Closed in the Awake menu. Asks for an administrator password each time.")
-    package static let customHelp = L("Asks for an administrator password when you click Start.")
+    package static let customHelp = L("Start… asks for an administrator password.")
     /// The Custom… panel's button while the toggle is on.
     package static let customStart = L("Start…")
     /// The Advanced section's title.
@@ -967,7 +967,8 @@ package enum AwakeLidText {
         case .heat: return L("Lid-closed mode turned off because your Mac got hot.")
         case .otherApp: return L("Another app turned sleep back on, so lid-closed mode stopped.")
         case .watchdogLost:
-            return L("Lid-closed mode stopped unexpectedly. Awake is still on; your Mac sleeps if you close the lid.")
+            // Nothing has checked yet that sleep is back on: the leftover rows follow if it isn't (r3 U3-1).
+            return L("Lid-closed mode stopped unexpectedly. Awake is still on.")
         case .user, .sessionEnded, .replaced, .quit, .safeMode, .featureOff, .moduleStopped: return nil
         }
     }

@@ -116,6 +116,13 @@ final class LidWatchdogShellTests: XCTestCase {
             Scenario(name: "unreadable beacon time", act: { e, _ in e.ctl("mtime", "x1") }),
             Scenario(name: "TERM (shutdown: no sleepnow)", setup: { e in e.ctl("clamshell", "Yes") },
                      act: { _, p in p.terminate() }),
+            // Restart, shut down or log out (r2 A2-5): Snaptic's quit writes the halt file, then the stop file, and
+            // exits, all before launchd's TERM; still no sleepnow.
+            Scenario(name: "quit at power off (no sleepnow)", setup: { e in e.ctl("clamshell", "Yes") }, act: { e, _ in
+                e.touch(e.haltFile)
+                e.touch(e.stopFile)
+                e.ctl("alive", nil)
+            }),
             // A TERM while `pmset -a disablesleep 1` runs is handled once it returns: WESET is already 1 (r2 S2-1).
             Scenario(name: "TERM while setting", setup: { e in
                 e.ctl("clamshell", "Yes")
@@ -163,6 +170,9 @@ final class LidWatchdogShellTests: XCTestCase {
                 e.touch(e.stopFile)
                 e.ctl("stop_hang", "8")
             }, act: { e, _ in e.remove(e.stopFile) }, sets: false),
+            // The 5 s limit counts from the start of `run`, so slow first preference and kernel reads count too
+            // (r3 S3-1): the app's verify may have given up meanwhile.
+            Scenario(name: "slow first reads", setup: { e in e.ctl("pref_delay", "8") }, act: { _, _ in }, sets: false),
             Scenario(name: "already turned off", setup: { e in e.ctl("pref", "1") }, act: { _, _ in }, sets: false),
             Scenario(name: "preference odd", setup: { e in e.ctl("pref", "2") }, act: { _, _ in }, sets: false),
             Scenario(name: "no root domain", setup: { e in e.ctl("kernel", "none") }, act: { _, _ in }, sets: false),
@@ -388,6 +398,7 @@ private final class StubEnv {
 
     var stopFile: String { beacon + "/stop-" + token }
     var beatFile: String { beacon + "/beat-" + token }
+    var haltFile: String { beacon + "/halt-" + token }
     var argv: [String] { [String(getuid()), String(getpid()), token, String(LidWatchdog.capSeconds), "20", beacon] }
 
     init(shell: Shell) throws {
@@ -430,11 +441,15 @@ private final class StubEnv {
     private func writeStubs() throws {
         let t = Self.realTools
         let now = #"$(( $(\#(t["date"] ?? "/bin/date") +%s) + $(cat "$S/ctl/date_jump") ))"#
+        // `pref_delay` makes the next preference read take that many seconds.
         try stub("pmset", #"""
         echo "pmset $*" >> "$S/log"
         case "$1" in
         -g)
           if [ "$2" = batt ]; then cat "$S/ctl/batt"; exit 0; fi
+          if [ -f "$S/ctl/pref_delay" ]; then
+            d=$(cat "$S/ctl/pref_delay"); rm -f "$S/ctl/pref_delay"; \#(t["sleep"] ?? "/bin/sleep") "$d"
+          fi
           [ -f "$S/ctl/pref_fail" ] && exit 1
           printf 'System-wide power settings:\n'
           [ -f "$S/ctl/pref_absent" ] || printf ' SleepDisabled\t\t%s\n' "$(cat "$S/ctl/pref")"

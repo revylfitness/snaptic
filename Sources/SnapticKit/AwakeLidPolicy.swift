@@ -193,6 +193,20 @@ package enum AwakeLidCustomStart: Equatable, Sendable {
     case unavailable
 }
 
+/// What a turn-on request did (r3 U3-6).
+package enum AwakeLidRequestResult: Equatable, Sendable {
+    /// Under way: the password prompt follows.
+    case started
+    /// Refused or failed before the prompt, with its toast: nothing started.
+    case refused
+    /// Nothing done and nothing said (the feature isn't effective, no lid, the module stopped, the gate said no).
+    case nothing
+
+    /// The Custom… panel closes only once a request is under way: after a refusal it stays open, so the user can
+    /// turn the toggle off (or plug in) and start without setting the session up again.
+    package var closesCustomPanel: Bool { self == .started }
+}
+
 /// A value that belongs to one turn-on request: a superseded request's late callback can't read or clear the next
 /// request's (r1 A2: osascript's handle and its first line).
 package struct AwakeLidTokenSlot<Value> {
@@ -417,14 +431,37 @@ package enum AwakeLidPolicy {
     /// Why the mode ends when the watchdog is gone (r2 A2-1). Root ends it on its own at the battery floor, on heat
     /// and at its cap, often a lap before the app sees the same fact; the app's own facts name that reason (heat first,
     /// as `guardEnd`). The watchdog's cap is never earlier than the app's (`capStart` + 24 h), so it counts only from
-    /// there. Anything else is `.watchdogLost`.
+    /// there. Root also leaves, without restoring, once another app turned sleep back on; when the app read that 0
+    /// while the watchdog was still alive (`zeroReadWhileAlive`), it is `.otherApp` (r3 A3-1). Anything else is
+    /// `.watchdogLost`.
     package static func lostReason(batteryPercent: Int?, discharging: Bool, floor: Int, thermalSerious: Bool,
-                                   capStart: Double, now: Double) -> AwakeLidEnd {
+                                   capStart: Double, now: Double, zeroReadWhileAlive: Bool) -> AwakeLidEnd {
         if let reason = guardEnd(batteryPercent: batteryPercent, discharging: discharging, floor: floor,
                                  thermalSerious: thermalSerious) {
             return reason
         }
-        return now >= until(sessionEnd: nil, capStart: capStart) ? .cap : .watchdogLost
+        if now >= until(sessionEnd: nil, capStart: capStart) { return .cap }
+        return zeroReadWhileAlive ? .otherApp : .watchdogLost
+    }
+
+    /// Restart, shut down or log out, then the quit (r2 A2-5): the quit writes the halt file first, so the watchdog
+    /// restores without `sleepnow` even when the quit reaches it before launchd's TERM.
+    package static func writesHalt(_ reason: AwakeLidEnd, poweringOff: Bool) -> Bool {
+        reason == .quit && poweringOff
+    }
+
+    /// A new request keeps a stop file younger than this (r3 S3-1): a watchdog sets only within 5 s of its start,
+    /// and its start comes at most osascript's 120 s plus the 5 s kill grace after the spawn, so a younger stop file
+    /// may still be the only thing that stops a late one.
+    package static let stopFileKeepSeconds: Double = 180
+
+    /// What a new request removes from the beacon directory (B3.1 step 3): every beacon and halt file, and stop files
+    /// at least `stopFileKeepSeconds` old (`ageSeconds`: from their mtime; negative after a clock step back). Only
+    /// names `LidWatchdog` gives a token.
+    package static func clearsBeaconFile(_ name: String, ageSeconds: Double) -> Bool {
+        let token = String(name.dropFirst(5))
+        if LidWatchdog.stopFileName(token: token) == name { return ageSeconds >= stopFileKeepSeconds }
+        return LidWatchdog.beatFileName(token: token) == name || LidWatchdog.haltFileName(token: token) == name
     }
 
     /// "Lid-closed mode ended at …: Snaptic quit." for a session resumed at launch (B2, r2 A2-4): only when an earlier

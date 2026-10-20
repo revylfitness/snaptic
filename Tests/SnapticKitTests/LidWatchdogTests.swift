@@ -31,6 +31,7 @@ case "$D" in /var/folders/*/snaptic-lid) ;; *) exit 64;; esac
 case "$D" in *..*|*[!A-Za-z0-9_/+.-]*) exit 64;; esac
 [ "$F" -ge 10 ] && [ "$F" -le 50 ] && [ "$C" -ge 3600 ] && [ "$C" -le 86400 ] || exit 64
 C=$((C+60))
+[ "$MODE" = run ] && A=$(/bin/date +%s)          # the 5 s start limit counts from here (r3 S3-1)
 # Stored preference: the "System-wide power settings:" block only, first match; 1, 0 (absent) or ? (odd/unreadable)
 sd() { O=$(/usr/bin/pmset -g 2>/dev/null) || { echo '?'; return; }
   printf '%s\n' "$O" | /usr/bin/awk '/^System-wide power settings:/{s=1;next} s&&/^[^ \t]/{s=0}
@@ -45,7 +46,6 @@ key() { rd | /usr/bin/awk -v k="\"$1\" = " 'index($0,k){print $NF; exit}'; }
 owned() { [ "$(/usr/bin/stat -f '%HT %u' "$1" 2>/dev/null)" = "Regular File $U" ]; }
 [ "$(sd)" = 0 ] && [ "$(ksd)" = 0 ] || exit 3      # someone else holds it, or unreadable: never take it
 [ "$MODE" = check ] && exit 0
-A=$(/bin/date +%s)
 # D, entered once: U's own 0700 directory on the volume of /var/folders (no network or user mount). Every later
 # lookup is one name inside it, so replacing D or a parent of it can't redirect one
 V=$(/usr/bin/stat -f %d /var/folders) && cd -P "$D" &&
@@ -59,7 +59,7 @@ cleanup() {
   [ "$WESET" = 1 ] || return
   i=0; while [ $i -lt 3 ]; do [ "$(sd)" = 0 ] && break
     /usr/bin/pmset -a disablesleep 0; /bin/sleep 1; i=$((i+1)); done
-  [ "$HALT" = 1 ] && return                          # shutting down: never sleepnow
+  { [ "$HALT" = 1 ] || owned "halt-$T"; } && return  # shutting down (TERM, or Snaptic saw it first): never sleepnow
   i=0; while [ $i -lt 5 ] && [ "$(ksd)" != 0 ]; do /bin/sleep 1; i=$((i+1)); done   # powerd → kernel
   j=0; while [ $j -lt 3 ]; do
     [ "$(key AppleClamshellState)" = Yes ] || return
@@ -231,6 +231,8 @@ done
         XCTAssertEqual(LidWatchdog.beatFileName(token: token), "beat-" + token)
         XCTAssertNil(LidWatchdog.stopFileName(token: "../x"))
         XCTAssertNil(LidWatchdog.beatFileName(token: ""))
+        XCTAssertEqual(LidWatchdog.haltFileName(token: token), "halt-" + token)
+        XCTAssertNil(LidWatchdog.haltFileName(token: "../x"))
         XCTAssertEqual(LidWatchdog.token(randomBytes: [0x00, 0x01, 0x7f, 0x80, 0xab, 0xff] + Array(repeating: 0x10, count: 10)),
                        "00017f80abff" + String(repeating: "10", count: 10))
         XCTAssertNil(LidWatchdog.token(randomBytes: Array(repeating: 0, count: 15)))
