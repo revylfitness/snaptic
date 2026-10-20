@@ -570,18 +570,19 @@ jobs:
           import sys
           path, signature = sys.argv[1], sys.argv[2]
           text = open(path, encoding="utf-8").read()
-          enclosures = re.findall(r"<enclosure\b[^>]*>", text)
-          if len(enclosures) != 1 or not enclosures[0].endswith("/>"):
+          # XMLDocument writes it as <enclosure …></enclosure> or <enclosure …/>.
+          enclosures = list(re.finditer(r"<enclosure\b([^>]*?)\s*(/?)>", text))
+          if len(enclosures) != 1:
               sys.exit("the feed must have exactly one enclosure")
           enclosure = enclosures[0]
-          found = re.findall(r'\ssparkle:edSignature="([^"]*)"', enclosure)
+          found = re.findall(r'\ssparkle:edSignature="([^"]*)"', enclosure.group(1))
           if found:
               if found != [signature]:
                   sys.exit("generate_appcast's archive signature isn't sign_update's")
               print("no")
           else:
-              signed = enclosure[:-2].rstrip() + ' sparkle:edSignature="' + signature + '"/>'
-              open(path, "w", encoding="utf-8").write(text.replace(enclosure, signed, 1))
+              signed = "<enclosure" + enclosure.group(1) + ' sparkle:edSignature="' + signature + '"' + enclosure.group(2) + ">"
+              open(path, "w", encoding="utf-8").write(text[:enclosure.start()] + signed + text[enclosure.end():])
               print("yes")
           PY
           )
@@ -669,31 +670,6 @@ jobs:
           xcrun swift "$RUNNER_TEMP/verify-appcast.swift" "$SU_PUBLIC_ED_KEY" "$RUNNER_TEMP/feed/appcast.xml" \
             "$RUNNER_TEMP/signed/$SPARKLE_ARCHIVE" "https://github.com/revylfitness/snaptic/releases/download/$TAG/$SPARKLE_ARCHIVE" \
             "$VERSION" "$BUILD"
-
-      - name: DEBUG feed (temporary)
-        if: failure()
-        env:
-          SPARKLE_ED_PRIVATE_KEY: ${{ env.REHEARSAL_ED_SEED }}
-          TAG: ${{ env.REHEARSAL_TAG }}
-        run: |
-          T="$RUNNER_TEMP/sparkle-tools/bin"
-          D="$RUNNER_TEMP/feed-debug"
-          OUT=$({
-            ls -la "$RUNNER_TEMP/feed" "$RUNNER_TEMP/signed"
-            rm -rf "$D"; mkdir -p "$D"
-            cp "$RUNNER_TEMP/signed/$SPARKLE_ARCHIVE" "$D/"; cp "$NOTES" "$D/Snaptic.md"
-            printf '%s\n' "$SPARKLE_ED_PRIVATE_KEY" | "$T/generate_appcast" --ed-key-file - \
-              --download-url-prefix "https://github.com/revylfitness/snaptic/releases/download/$TAG/" --embed-release-notes \
-              --full-release-notes-url "https://github.com/revylfitness/snaptic/releases/tag/$TAG" \
-              --link https://github.com/revylfitness/snaptic "$D"
-            echo "generate rc=$?"
-            printf '%s\n' "$SPARKLE_ED_PRIVATE_KEY" | "$T/sign_update" -p --ed-key-file - "$D/$SPARKLE_ARCHIVE"
-            echo "sign rc=$?"
-            grep -n 'enclosure\|sparkle-signatures\|edSignature' "$D/appcast.xml" "$RUNNER_TEMP/feed/appcast.xml"
-            tail -c 600 "$RUNNER_TEMP/feed/appcast.xml"
-          } 2>&1)
-          printf '%s\n' "$OUT" | sed 's/%/%25/g' | split -l 40 - "$RUNNER_TEMP/dbg."
-          for f in "$RUNNER_TEMP"/dbg.*; do echo "::error title=debug::$(cut -c1-300 "$f" | awk 'BEGIN{ORS="%0A"} {print}')"; done
 
       - name: Report errors as annotations
         if: failure()
@@ -1295,18 +1271,19 @@ jobs:
           import sys
           path, signature = sys.argv[1], sys.argv[2]
           text = open(path, encoding="utf-8").read()
-          enclosures = re.findall(r"<enclosure\b[^>]*>", text)
-          if len(enclosures) != 1 or not enclosures[0].endswith("/>"):
+          # XMLDocument writes it as <enclosure …></enclosure> or <enclosure …/>.
+          enclosures = list(re.finditer(r"<enclosure\b([^>]*?)\s*(/?)>", text))
+          if len(enclosures) != 1:
               sys.exit("the feed must have exactly one enclosure")
           enclosure = enclosures[0]
-          found = re.findall(r'\ssparkle:edSignature="([^"]*)"', enclosure)
+          found = re.findall(r'\ssparkle:edSignature="([^"]*)"', enclosure.group(1))
           if found:
               if found != [signature]:
                   sys.exit("generate_appcast's archive signature isn't sign_update's")
               print("no")
           else:
-              signed = enclosure[:-2].rstrip() + ' sparkle:edSignature="' + signature + '"/>'
-              open(path, "w", encoding="utf-8").write(text.replace(enclosure, signed, 1))
+              signed = "<enclosure" + enclosure.group(1) + ' sparkle:edSignature="' + signature + '"' + enclosure.group(2) + ">"
+              open(path, "w", encoding="utf-8").write(text[:enclosure.start()] + signed + text[enclosure.end():])
               print("yes")
           PY
           )
