@@ -73,6 +73,11 @@ enum SelfTestLaunch {
             if host.onboarding.includesUpdatesPage { problems.append("onboarding has the updates page before the updater exists") }
             host.startUpdater()
             if host.updater == nil { problems.append("startUpdater() made no updater although the gate is open") }
+            // r3 C3-4: Sparkle refuses a misconfigured bundle only in a log line and a delayed alert.
+            if let updater = host.updaterController, !updater.started {
+                problems.append("Sparkle's updater didn't start (canCheckForUpdates is false; see the log)")
+            }
+            report.append("selftest-launch: Sparkle's updater " + (host.updaterController?.started == true ? "started" : "not started"))
             if !host.onboarding.includesUpdatesPage {
                 problems.append("onboarding has no updates page after startUpdater() (a new user is never asked)")
             }

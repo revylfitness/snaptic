@@ -311,7 +311,7 @@ private struct OnboardingView: View {
                 .accessibilityHidden(true)
             Text(L("Keep Snaptic Up to Date"))
                 .font(.largeTitle.weight(.semibold))
-            Text(L("Snaptic can check GitHub once a day and install updates when you quit it. GitHub sees your IP address and macOS version, nothing more."))
+            Text(UpdatePolicy.consentDetail)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 420)

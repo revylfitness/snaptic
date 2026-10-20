@@ -161,6 +161,56 @@ final class UpdatePolicyTests: XCTestCase {
         XCTAssertTrue(other.hasInstallBlock)
     }
 
+    /// r3 U3-4: Install and Relaunch in Sparkle's window while lid-closed mode is on. Sparkle's window then reports
+    /// attention and may end its session, but the update stays in About and the menu with the held line until the
+    /// relaunch goes ahead.
+    func testAHeldRelaunchKeepsTheUpdateVisible() {
+        let lid = Facts(lidModeOn: true, displayTrialPending: false, safeMode: false)
+        let trial = Facts(lidModeOn: false, displayTrialPending: true, safeMode: false)
+        let clear = Facts(lidModeOn: false, displayTrialPending: false, safeMode: false)
+        var session = UpdateSession()
+        session.apply(.found(version: "0.3.2", installing: false))
+        session.apply(.relaunchHeld(version: "0.3.2"))
+        session.apply(.attentionOrFinished)
+        XCTAssertTrue(session.relaunchHeld)
+        XCTAssertEqual(session.offer, UpdateOffer(version: "0.3.2", readyToRestart: true, relaunchHeld: true))
+        XCTAssertFalse(session.installWaits)
+        XCTAssertEqual(UpdatePolicy.waitText(session.offer, lid),
+                       "Snaptic will restart and install version 0.3.2 when lid-closed mode ends.")
+        XCTAssertEqual(UpdatePolicy.waitText(session.offer, trial),
+                       "Snaptic will restart and install version 0.3.2 when the display change is kept or undone.")
+        XCTAssertNil(UpdatePolicy.waitText(session.offer, clear))
+        typealias S = UpdateStatusText
+        XCTAssertEqual(S.state(S.Facts(offer: session.offer, policy: lid)), .relaunchWaits(.lidClosed, "0.3.2"))
+        XCTAssertEqual(S.state(S.Facts(offer: session.offer, policy: clear)), .ready("0.3.2"))
+        // A reminder arriving meanwhile doesn't drop the hold.
+        session.apply(.found(version: "0.3.2", installing: false))
+        XCTAssertEqual(session.offer, UpdateOffer(version: "0.3.2", readyToRestart: true, relaunchHeld: true))
+        session.apply(.relaunchReleased)
+        XCTAssertFalse(session.relaunchHeld)
+        XCTAssertEqual(session.offer, UpdateOffer(version: "0.3.2", readyToRestart: true))
+
+        // Without an earlier reminder the held version still shows; a failed cycle ends the hold.
+        var bare = UpdateSession()
+        bare.apply(.relaunchHeld(version: nil))
+        XCTAssertEqual(UpdatePolicy.waitText(bare.offer, lid),
+                       "Snaptic will restart and install the update when lid-closed mode ends.")
+        bare.apply(.cycleFinished(failed: true))
+        XCTAssertFalse(bare.relaunchHeld)
+        XCTAssertNil(bare.offer)
+    }
+
+    /// The menu row's wait line for an update that installs at quit (r3 A3-2), and none for one still to download.
+    func testWaitTextForTheMenuRow() {
+        let lid = Facts(lidModeOn: true, displayTrialPending: false, safeMode: false)
+        let clear = Facts(lidModeOn: false, displayTrialPending: false, safeMode: false)
+        XCTAssertEqual(UpdatePolicy.waitText(UpdateOffer(version: "0.3.2", readyToRestart: true), lid),
+                       "Version 0.3.2 will install when you quit or restart Snaptic after lid-closed mode ends.")
+        XCTAssertNil(UpdatePolicy.waitText(UpdateOffer(version: "0.3.2", readyToRestart: true), clear))
+        XCTAssertNil(UpdatePolicy.waitText(UpdateOffer(version: "0.3.2", readyToRestart: false), lid))
+        XCTAssertNil(UpdatePolicy.waitText(nil, lid))
+    }
+
     // MARK: Relauncher (r1 C3, S9)
 
     func testRelaunchRoutes() {
@@ -215,15 +265,36 @@ final class UpdatePolicyTests: XCTestCase {
         XCTAssertEqual(UpdateOffer(version: "0.3.2", readyToRestart: false).version, "0.3.2")
     }
 
+    /// r3 A3-2: nothing installs a waiting update when the wait ends; the next quit or restart does.
     func testWaitTexts() {
-        XCTAssertEqual(UpdatePolicy.text(.lidClosed, version: "0.3.2"), "Version 0.3.2 will install when lid-closed mode ends.")
-        XCTAssertEqual(UpdatePolicy.text(.lidClosed, version: nil), "The update will install when lid-closed mode ends.")
+        XCTAssertEqual(UpdatePolicy.text(.lidClosed, version: "0.3.2"),
+                       "Version 0.3.2 will install when you quit or restart Snaptic after lid-closed mode ends.")
+        XCTAssertEqual(UpdatePolicy.text(.lidClosed, version: nil),
+                       "The update will install when you quit or restart Snaptic after lid-closed mode ends.")
         XCTAssertEqual(UpdatePolicy.text(.displayTrial, version: "0.3.2"),
-                       "Version 0.3.2 will install when the display change is kept or undone.")
+                       "Version 0.3.2 will install when you quit or restart Snaptic after the display change is kept or undone.")
         XCTAssertEqual(UpdatePolicy.text(.displayTrial, version: nil),
-                       "The update will install when the display change is kept or undone.")
+                       "The update will install when you quit or restart Snaptic after the display change is kept or undone.")
         XCTAssertEqual(UpdatePolicy.text(.safeMode, version: "0.3.2"),
                        "Updates are paused in Safe Mode. Choose Check for Updates… to update anyway.")
+    }
+
+    /// r3 U3-4: a relaunch held after Install and Relaunch in Sparkle's window does go ahead by itself.
+    func testRelaunchTexts() {
+        XCTAssertEqual(UpdatePolicy.relaunchText(.lidClosed, version: "0.3.2"),
+                       "Snaptic will restart and install version 0.3.2 when lid-closed mode ends.")
+        XCTAssertEqual(UpdatePolicy.relaunchText(.lidClosed, version: nil),
+                       "Snaptic will restart and install the update when lid-closed mode ends.")
+        XCTAssertEqual(UpdatePolicy.relaunchText(.displayTrial, version: "0.3.2"),
+                       "Snaptic will restart and install version 0.3.2 when the display change is kept or undone.")
+        XCTAssertEqual(UpdatePolicy.relaunchText(.displayTrial, version: nil),
+                       "Snaptic will restart and install the update when the display change is kept or undone.")
+    }
+
+    /// r3 U3-3: the 0.3.1 card's update question explains itself the way onboarding does.
+    func testConsentDetail() {
+        XCTAssertEqual(UpdatePolicy.consentDetail,
+                       "Snaptic can check GitHub once a day and install updates when you quit it. GitHub sees your IP address and macOS version, nothing more.")
     }
 
     // MARK: Versions, URLs, errors, ownership
@@ -323,9 +394,12 @@ final class UpdatePolicyTests: XCTestCase {
         XCTAssertEqual(S.text(.available(nil), uses24Hour: false), "A new version is available.")
         XCTAssertEqual(S.text(.ready(nil), uses24Hour: false), "A new version is ready to install.")
         XCTAssertEqual(S.text(.waiting(.lidClosed, nil), uses24Hour: false),
-                       "The update will install when lid-closed mode ends.")
+                       "The update will install when you quit or restart Snaptic after lid-closed mode ends.")
         XCTAssertEqual(S.text(.waiting(.displayTrial, "0.3.2"), uses24Hour: false),
-                       "Version 0.3.2 will install when the display change is kept or undone.")
+                       "Version 0.3.2 will install when you quit or restart Snaptic after the display change is kept or undone.")
+        XCTAssertEqual(S.text(.relaunchWaits(.lidClosed, "0.3.2"), uses24Hour: false),
+                       "Snaptic will restart and install version 0.3.2 when lid-closed mode ends.")
+        XCTAssertFalse(S.offersInstall(.relaunchWaits(.lidClosed, "0.3.2")))
         XCTAssertEqual(S.text(.lastChecked(last), uses24Hour: false), "Last checked today at 9:12 AM")
         XCTAssertEqual(S.text(.lastChecked(last), uses24Hour: true), "Last checked today at 09:12")
         XCTAssertTrue(S.offersInstall(.available("0.3.2")))

@@ -23,8 +23,8 @@ import SnapticKit
     /// The menu row and About's Install and Relaunch…: Sparkle's window comes forward, or the pending install runs
     /// once UpdatePolicy allows it (otherwise a toast says why it waits).
     func installUpdate()
-    /// 0.3.1 (T-update, additive): while a downloaded update waits for lid-closed mode or a display trial, the line
-    /// the "Restart to Update Snaptic…" row shows instead (E4); nil when it can install now.
+    /// 0.3.1 (T-update, additive): while a downloaded update or Sparkle's relaunch waits for lid-closed mode or a
+    /// display trial, the line the update row shows instead (E4; r3 U3-4); nil when it can go ahead now.
     var waitText: String? { get }
     /// 0.3.1: Relauncher is about to quit (E4; r1 C3, S9). `.throughUpdate`: the waiting update took over the relaunch
     /// (Sparkle installs it, then opens the new version); `.normal`: relaunch as usual; `.quitFirst`: an update waits
@@ -81,6 +81,9 @@ import SnapticKit
     var hasPendingQuitInstall: Bool { session.installWaits }
     /// Read once: Sparkle's own decision follows the same test (SUInstallerLauncher).
     let needsAdministrator: Bool
+    /// Sparkle's updater started (r3 C3-4): `SPUStandardUpdaterController.startUpdater()` only logs a configuration
+    /// error and shows its alert a second later, so `canCheckForUpdates` (set only on success) is what tells.
+    private(set) var started = false
 
     private var controller: SPUStandardUpdaterController?
     private let userDriverDelegate: UpdaterUserDriverDelegate
@@ -130,6 +133,11 @@ import SnapticKit
         // Root-owned copies only install after an explicit Install and Relaunch (E1).
         if needsAdministrator && updater.automaticallyDownloadsUpdates { updater.automaticallyDownloadsUpdates = false }
         standard.startUpdater()
+        started = updater.canCheckForUpdates
+        guard started else {
+            EventLog.shared.record(.modules, "Updater failed to start")
+            return
+        }
         EventLog.shared.record(.modules, "Updater started" + (needsAdministrator ? " (installs need a password)" : ""))
     }
 
@@ -194,11 +202,7 @@ import SnapticKit
         }
     }
 
-    var waitText: String? {
-        guard let offer = availableUpdate, offer.readyToRestart,
-              case .wait(let wait) = UpdatePolicy.decide(.installNow, facts()) else { return nil }
-        return UpdatePolicy.text(wait, version: offer.version)
-    }
+    var waitText: String? { UpdatePolicy.waitText(availableUpdate, facts()) }
 
     func prepareRelaunch(safeMode: Bool) -> UpdatePolicy.RelaunchRoute {
         var route = UpdatePolicy.relaunchRoute(safeMode: safeMode, session: session)
@@ -312,6 +316,10 @@ import SnapticKit
         }
         EventLog.shared.record(.modules, "Update relaunch held: \(wait)")
         heldRelaunch = installHandler
+        // Sparkle's window may close or end its session meanwhile: the menu and About keep the update, with the line
+        // saying Snaptic restarts by itself once the wait ends (r3 U3-4).
+        session.apply(.relaunchHeld(version: item.displayVersionString))
+        toast(UpdatePolicy.relaunchText(wait, version: availableUpdate?.version))
         watchHeldRelaunch()
         return true
     }
@@ -360,6 +368,7 @@ import SnapticKit
         heldRelaunchTimer?.invalidate()
         heldRelaunchTimer = nil
         EventLog.shared.record(.modules, "Update relaunch released")
+        session.apply(.relaunchReleased)
         block()
     }
 

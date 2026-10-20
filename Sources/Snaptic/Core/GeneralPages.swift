@@ -158,7 +158,8 @@ private struct WelcomeV031Card: View {
                     }
                 }
                 if !updater.consentDecided {
-                    row(L("Keep Snaptic up to date"), detail: nil) {
+                    // The same disclosure onboarding gives new users (r3 U3-3).
+                    row(L("Keep Snaptic up to date"), detail: UpdatePolicy.consentDetail) {
                         Button(L("Not Now")) { answer(false) }
                             .modifier(SettingsAnchor(ControlID("general.page.card.v031.notNow")))
                         Button(L("Check Automatically")) { answer(true) }
