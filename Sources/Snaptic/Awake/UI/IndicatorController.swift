@@ -8,6 +8,8 @@ import SnapticKit
 // While the item's own menu is open it stays, and `menuDidClose` asks for a new plan. The glyph is a template SF
 // Symbol (outline idle, `.fill` active), the optional time is plain `button.title` text in the menu bar font with
 // monospaced digits (never a colored attributed title), and the spoken label and tooltip follow every countdown tick.
+// 0.3.1: while lid-closed mode is on the glyph carries a short bar and the label says so (B1); Awake's own menu opens
+// with the host's leftover rows (B3.4) and, where it carries the shared footer, the Update Available row (E1).
 
 @MainActor final class IndicatorController: NSObject, AwakeFeatureController, NSMenuDelegate {
     typealias Controls = IndicatorControllerControls
@@ -46,7 +48,12 @@ import SnapticKit
 
     /// The compact section for the Snaptic menu (§5.4): AwakeModule.menuSection() returns it.
     func compactSection() -> [NSMenuItem] {
-        rows.items(compact: true)
+        rows.items(style: .compact)
+    }
+
+    /// 0.3.1 A4: Awake's tab in the Snaptic menu (the own rows minus Awake Settings…).
+    func tabSection() -> [NSMenuItem] {
+        rows.items(style: .tab)
     }
 
     private func createItem() {
@@ -98,10 +105,17 @@ import SnapticKit
         let governing = rt?.governing ?? .inactive
         let config = context?.config.value.indicator ?? AwakeIndicatorConfig()
         let active = governing.isActive
-        let symbol = config.symbol(active: active)
         let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular, scale: .medium)
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
-            ?? NSImage(systemSymbolName: AwakeGlyphFamily.cup.idle, accessibilityDescription: nil)
+        func glyph(_ name: String) -> NSImage? {
+            NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
+        }
+        // B1: while lid-closed mode is on, the family's lid symbol, or its active glyph with Kit's bar under it.
+        let lidOn = active && (rt?.lidMode.isOn ?? false)
+        var image: NSImage?
+        if lidOn, let lid = config.lidSymbol() { image = glyph(lid) }
+        if image == nil { image = glyph(config.symbol(active: active)) }
+        if image == nil { image = NSImage(systemSymbolName: AwakeGlyphFamily.cup.idle, accessibilityDescription: nil) }
+        if lidOn, config.lidSymbol() == nil, let base = image { image = Self.lidImage(base) }
         image?.isTemplate = true
         button.image = image
 
@@ -117,9 +131,28 @@ import SnapticKit
         button.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.menuBarFont(ofSize: 0).pointSize, weight: .regular)
         button.title = title.map { " " + $0 } ?? ""
         let label = AwakeIndicatorText.accessibilityLabel(governing: governing, remaining: rt?.remaining, appName: appName,
-                                                          ruleName: ruleName(governing), holderSummary: rt?.holderSummary)
+                                                          ruleName: ruleName(governing), holderSummary: rt?.holderSummary,
+                                                          lidModeOn: lidOn)
         button.setAccessibilityLabel(label)
         button.toolTip = label
+    }
+
+    /// 0.3.1 B1: the family's active glyph with a short bar under it (Kit's ratios of the glyph's height), a template
+    /// image at the item's 15 pt, for a family without a lid symbol; visibly not N11's dot on the shared glyph.
+    private static func lidImage(_ base: NSImage) -> NSImage {
+        let bar = max(1, base.size.height * CGFloat(AwakeGlyphFamily.lidBarHeightRatio))
+        let gap = max(1, base.size.height * CGFloat(AwakeGlyphFamily.lidBarGapRatio))
+        let size = NSSize(width: base.size.width, height: base.size.height + bar + gap)
+        let image = NSImage(size: size, flipped: false) { rect in
+            base.draw(in: NSRect(x: 0, y: bar + gap, width: base.size.width, height: base.size.height))
+            let width = max(6, (rect.width * 0.6).rounded())
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: NSRect(x: ((rect.width - width) / 2).rounded(), y: 0, width: width, height: bar),
+                         xRadius: bar / 2, yRadius: bar / 2).fill()
+            return true
+        }
+        image.isTemplate = true
+        return image
     }
 
     private func ruleName(_ governing: AwakeGoverning) -> String? {
@@ -131,7 +164,17 @@ import SnapticKit
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        for item in rows.items(compact: false, footer: row.footer) { menu.addItem(item) }
+        var items: [NSMenuItem] = []
+        let host = context?.host.moduleHost
+        // 0.3.1 B3.4: the host's leftover rows head every Snaptic menu (fresh items: one item, one menu).
+        if let host {
+            let leftover = StatusMenu.leftoverItems(host: host)
+            if !leftover.isEmpty { items += leftover + [MenuKit.separator()] }
+        }
+        // E1: the Update Available row joins the footer this menu carries when the Snaptic item is absent.
+        let extras = row.footer ? host.map { StatusMenu.updateItems(host: $0) } ?? [] : []
+        items += rows.items(style: .own, footer: row.footer, footerExtras: extras)
+        for item in items { menu.addItem(item) }
         menu.minimumWidth = MenuKit.hasCustomRows(menu) ? MenuKit.width : 0
     }
 
@@ -163,6 +206,7 @@ import SnapticKit
             rt.$governing.map { _ in () }.eraseToAnyPublisher(),
             rt.$remaining.map { _ in () }.eraseToAnyPublisher(),
             rt.$holderSummary.map { _ in () }.eraseToAnyPublisher(),
+            rt.$lidMode.map { _ in () }.eraseToAnyPublisher(),
         ]
         Publishers.MergeMany(changes)
             .receive(on: DispatchQueue.main)

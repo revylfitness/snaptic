@@ -7,6 +7,8 @@ import SnapticKit
 // is running with an optional "At most" cap (§4.3, parity minor 6), with the "Keep the display on" choice; in extend
 // mode it adds time to the running session. No control has a Return binding (focus safety): Start and Add act only
 // on a click or an accessibility press; Escape cancels. A Settings start checks the focus guard (R5-8).
+// 0.3.1 B1: in Start mode, "Keep awake with the lid closed" (while the feature is effective); Start… then asks
+// LidClosedController, which starts the session only once the mode is verified on.
 
 struct CustomSessionPanel: View, ControlDeclaring {
     typealias Controls = CustomSessionPanelControls
@@ -26,7 +28,11 @@ struct CustomSessionPanel: View, ControlDeclaring {
     let initialKeepDisplayOn: Bool
     /// Running apps when the panel opened (recent first, ≤ 12).
     let apps: [App]
-    let onStart: @MainActor (_ kind: AwakeSessionKind, _ keepDisplayOn: Bool) -> Void
+    /// 0.3.1 B1: lid-closed mode is effective, so Start mode offers it; and whether it starts turned on (the lid
+    /// submenu's Custom…).
+    var lidAvailable = false
+    var initialLidClosed = false
+    let onStart: @MainActor (_ kind: AwakeSessionKind, _ keepDisplayOn: Bool, _ lidClosed: Bool) -> Void
     let onExtend: @MainActor (_ seconds: Int) -> Void
     let onCancel: @MainActor () -> Void
 
@@ -37,6 +43,7 @@ struct CustomSessionPanel: View, ControlDeclaring {
     @State private var keepDisplayOn = true
     @State private var app = ""
     @State private var capHours = 0
+    @State private var lidClosed = false
     @State private var loaded = false
 
     private var seconds: Int { hours * 3_600 + minutes * 60 }
@@ -85,6 +92,10 @@ struct CustomSessionPanel: View, ControlDeclaring {
                         ToggleSetting(L("Keep the display on"),
                                       help: L("When off, your Mac stays awake but the display can turn off."),
                                       isOn: $keepDisplayOn)
+                        if lidAvailable {
+                            ToggleSetting(AwakeLidText.setting, help: AwakeLidText.customHelp, isOn: $lidClosed)
+                                .accessibilityIdentifier(ControlID("awake.custom.lidClosed").rawValue)
+                        }
                     }
                 }
             }
@@ -95,7 +106,7 @@ struct CustomSessionPanel: View, ControlDeclaring {
                 Button(L("Cancel")) { onCancel() }
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier(ControlID("awake.custom.cancel").rawValue)
-                Button(mode == .start ? L("Start") : L("Add")) { commit() }
+                Button(mode == .extend ? L("Add") : lidAvailable && lidClosed ? AwakeLidText.customStart : L("Start")) { commit() }
                     .disabled(!valid)
                     .accessibilityIdentifier(ControlID("awake.custom.start").rawValue)
             }
@@ -110,6 +121,7 @@ struct CustomSessionPanel: View, ControlDeclaring {
             hours = s / 3_600
             minutes = (s % 3_600) / 60 / 5 * 5
             keepDisplayOn = initialKeepDisplayOn
+            lidClosed = lidAvailable && initialLidClosed
             app = apps.first?.bundleID ?? ""
         }
     }
@@ -121,14 +133,15 @@ struct CustomSessionPanel: View, ControlDeclaring {
         case (.extend, _):
             onExtend(seconds)
         case (.start, .duration):
-            onStart(.duration(seconds: seconds), keepDisplayOn)
+            onStart(.duration(seconds: seconds), keepDisplayOn, lidAvailable && lidClosed)
         case (.start, .until):
             let c = Calendar.autoupdatingCurrent.dateComponents([.hour, .minute], from: until)
             guard let unix = AwakeFormat.nextUnix(hour: c.hour ?? 0, minute: c.minute ?? 0) else { return }
-            onStart(.until(unixTime: unix), keepDisplayOn)
+            onStart(.until(unixTime: unix), keepDisplayOn, lidAvailable && lidClosed)
         case (.start, .whileApp):
             guard apps.contains(where: { $0.bundleID == app }) else { return }
-            onStart(.whileApp(bundleID: app, maxSeconds: capHours > 0 ? capHours * 3_600 : nil), keepDisplayOn)
+            onStart(.whileApp(bundleID: app, maxSeconds: capHours > 0 ? capHours * 3_600 : nil), keepDisplayOn,
+                    lidAvailable && lidClosed)
         }
     }
 }
@@ -144,23 +157,27 @@ struct CustomSessionPanel: View, ControlDeclaring {
         self.source = source
     }
 
-    func present(_ mode: CustomSessionPanel.Mode) {
+    /// `lidClosed`: the lid submenu's Custom… (the panel's lid-closed switch starts on).
+    func present(_ mode: CustomSessionPanel.Mode, lidClosed: Bool = false) {
         guard let ctx = context else { return }
         close()
         let sessions = ctx.config.value.sessions
-        let view = CustomSessionPanel(
+        var view = CustomSessionPanel(
             mode: mode, initialSeconds: mode == .start ? sessions.lastCustomSeconds : 3_600,
             initialKeepDisplayOn: sessions.defaultOptions.display != .maySleep,
             apps: mode == .start ? AwakeFormat.runningApps(recent: sessions.recentApps).map {
                 CustomSessionPanel.App(bundleID: $0.bundleID, name: $0.name)
             } : [],
-            onStart: { [weak self] kind, keepDisplayOn in self?.start(kind, keepDisplayOn: keepDisplayOn) },
+            onStart: { [weak self] kind, keepDisplayOn, lid in self?.start(kind, keepDisplayOn: keepDisplayOn, lid: lid) },
             onExtend: { [weak self] seconds in
                 guard let self, self.mayAct() else { return }
                 _ = self.context?.sessions.extend(by: seconds, source: self.source)
                 self.close()
             },
             onCancel: { [weak self] in self?.close() })
+        view.lidAvailable = mode == .start
+            && AwakeLidPolicy.customToggleShown(effective: ctx.runtime.isEffective(.lidClosed), mode: ctx.lid.mode)
+        view.initialLidClosed = lidClosed
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 220),
                             styleMask: [.titled, .closable], backing: .buffered, defer: true)
         panel.title = mode == .start ? L("Keep Awake") : L("Add Time")
@@ -184,13 +201,32 @@ struct CustomSessionPanel: View, ControlDeclaring {
         source != .settings || SettingsShell.shared.mayStart()
     }
 
-    private func start(_ kind: AwakeSessionKind, keepDisplayOn: Bool) {
+    private func start(_ kind: AwakeSessionKind, keepDisplayOn: Bool, lid: Bool) {
         guard let ctx = context, mayAct() else { return }
         if case .duration(let s) = kind { ctx.config.value.sessions.lastCustomSeconds = s }
         var options = ctx.config.value.sessions.effectiveOptions(for: kind, preset: nil,
                                                                   effective: ctx.runtime.effectiveFeatures)
         options.display = keepDisplayOn ? (options.display == .maySleep ? .keepOn : options.display) : .maySleep
-        _ = ctx.sessions.start(kind, options: options, presetID: nil, source: source, overrideGuards: false)
+        // The mode or the feature may have changed while the panel was open: never close it without starting or
+        // saying why (r1 A4, r2 A2-2).
+        switch AwakeLidPolicy.customStart(lidToggle: lid, effective: ctx.runtime.isEffective(.lidClosed),
+                                          mode: ctx.lid.mode) {
+        case .request:
+            // B3.1: the password first; the session starts once the mode is verified on (Cancel starts nothing). A
+            // refusal's toast said why; the panel stays open so the session needn't be set up again (r3 U3-6).
+            let result = ctx.lid.request(.custom(kind, options), source: source)
+            if result == .nothing { ctx.host.toasts.show(AwakeLidText.customUnavailable) }
+            guard result.closesCustomPanel else { return }
+        case .plain:
+            // With the mode on, this menu or Settings start replaces the session and the mode carries over (B2).
+            _ = ctx.sessions.start(kind, options: options, presetID: nil, source: source, overrideGuards: false)
+        case .pending(let state):
+            ctx.host.toasts.show(AwakeLidText.pendingToast(state) ?? AwakeLidText.rowTitle(state))
+            return
+        case .unavailable:
+            ctx.host.toasts.show(AwakeLidText.customUnavailable)
+            return
+        }
         close()
     }
 }

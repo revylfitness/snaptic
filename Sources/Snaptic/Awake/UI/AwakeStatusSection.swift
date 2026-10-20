@@ -7,7 +7,9 @@ import SnapticKit
 /// [Keep Awake ▾] (a click starts the default session; ▾ lists the presets, While an App Is Running ▸ and Custom…).
 /// Active: [Pause Rules ▾] [Options ▾] [Turn Off]; holds only: [Keep Awake ▾] [Turn Off] (a start joins the holds). Buttons only, no switch (N5), none a
 /// default button (r3 security L8). Every start is a `.settings` UI start and first asks `SettingsShell.mayStart()`
-/// (R5-8): right after an external open of the window it does nothing.
+/// (R5-8): right after an external open of the window it does nothing. 0.3.1 B1: both pull-downs gain the lid-closed
+/// items of the Awake menu, with its titles (the idle one lists the presets); a lid request is a `.settings` UI start
+/// and LidClosedController checks the focus guard.
 struct AwakeStatusSection: View, ControlDeclaring {
     typealias Controls = AwakePageControls
 
@@ -158,6 +160,10 @@ struct AwakeStatusSection: View, ControlDeclaring {
         if appItems.isEmpty {
             appItems = [ActionMenuItem(id: "app.none", title: L("No Apps Are Running"), enabled: false) {}]
         }
+        if !replacing {
+            let lid = lidItems()
+            if !lid.isEmpty { items += [.separator("lid.separator")] + lid }
+        }
         items.append(ActionMenuItem(id: "apps", title: L("While an App Is Running"), children: appItems))
         items.append(ActionMenuItem(id: "custom", title: L("Custom…")) { [weak env = self.env] in
             guard SettingsShell.shared.mayStart() else { return }
@@ -193,6 +199,8 @@ struct AwakeStatusSection: View, ControlDeclaring {
                     guard let sessions else { return }
                     sessions.setKeepDisplayOn(!sessions.keepsDisplayOn)
                 })
+                // B1: directly after Keep Display On, as in the menu.
+                items += lidItems()
             case .endHolds:
                 items.append(ActionMenuItem(id: "endHolds", title: L("End Command-Line Holds")) {
                     [weak sessions = context.sessions] in
@@ -204,5 +212,41 @@ struct AwakeStatusSection: View, ControlDeclaring {
             }
         }
         return items
+    }
+
+    /// The lid-closed items for the current state (Kit's `AwakeMenuModel.lidRow`, as in the menus) with the B0 titles.
+    private func lidItems() -> [ActionMenuItem] {
+        guard let row = AwakeMenuRows.lidRow(context) else { return [] }
+        let control = ControlID("awake.page.status.lidClosed")
+        let lid = context.lid
+        switch row {
+        case .lidSubmenu(let ids):
+            let presets = sessions.value.presets
+            let children = ids.compactMap { id in presets.first { $0.id == id } }.map { (preset: AwakePreset) -> ActionMenuItem in
+                let id = preset.id
+                return ActionMenuItem(id: "lid." + id.rawValue, title: AwakeLidText.presetTitle(preset.title(AwakeFormat.text)),
+                                      control: ControlID("awake.page.status.lidPreset")) { [weak lid] in
+                    lid?.request(.preset(id), source: .settings)
+                }
+            }
+            return [ActionMenuItem(id: "lid", title: AwakeLidText.title, children: children, control: control)]
+        case .lidClosed(let state):
+            let title = AwakeLidText.rowTitle(state)
+            switch state {
+            case .off:
+                return [ActionMenuItem(id: "lid", title: title, control: control) { [weak lid] in
+                    lid?.request(.add, source: .settings)
+                }]
+            case .on:
+                return [ActionMenuItem(id: "lid", title: title, checked: AwakeLidText.rowChecked(state),
+                                       control: control) { [weak lid] in
+                    lid?.turnOff()
+                }]
+            case .authorizing, .verifying, .stopping, .finishingEarlier:
+                return [ActionMenuItem(id: "lid", title: title, enabled: AwakeLidText.rowEnabled(state), control: control) {}]
+            }
+        default:
+            return []
+        }
     }
 }

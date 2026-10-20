@@ -142,8 +142,9 @@ import SnapticKit
 
     private func status(_ request: ControlRequest) -> ControlResponse {
         guard let ctx = context, case .status(let json)? = command("status", request) else { return Self.usage }
+        // 0.3.1 B1: `--json` gains `lidClosed` (the tab-separated line doesn't change).
         let facts = AwakeStatusFacts(governing: ctx.runtime.governing, holds: ctx.sessions.holds,
-                                     now: AwakeModule.clockNow())
+                                     now: AwakeModule.clockNow(), lidClosed: ctx.runtime.lidMode.isOn)
         return .ok(json || request.json ? AwakeCommandGrammar.statusJSON(facts) : AwakeCommandGrammar.statusLine(facts))
     }
 

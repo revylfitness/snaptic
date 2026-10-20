@@ -143,6 +143,10 @@ import SnapticKit
         return items
     }
 
+    /// 0.3.1 A1: the tab's attention mark while Accessibility is missing, the same condition as the section's
+    /// "Open Accessibility Settings…" row (the tap starts only with Accessibility).
+    var menuAttention: Bool { context != nil && !tapIsRunning }
+
     /// The Window Switcher root (H's `SwitcherPages.root`, 0.3 §4.3).
     func settingsRoot() -> SettingsRoot {
         SwitcherPages.root(module: self)

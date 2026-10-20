@@ -103,7 +103,8 @@ fi
 tcc='AXIsProcessTrusted|CGRequestScreenCaptureAccess|CGPreflight|SCShareableContent|SCStream|AXUIElement'
 for f in Sources/Snaptic/Safety/DisplayGuardMain.swift Sources/Snaptic/Displays/Safety/DisplayGuardMain.swift \
          Sources/Snaptic/Displays/Management/VirtualHostMain.swift Sources/Snaptic/Core/CLIClient.swift \
-         Sources/Snaptic/Core/SelfTest.swift Sources/Snaptic/Core/HelperPrologue.swift; do
+         Sources/Snaptic/Core/SelfTest.swift Sources/Snaptic/Core/SelfTestLaunch.swift \
+         Sources/Snaptic/Core/HelperPrologue.swift; do
     [ -f "$f" ] || continue
     if grep -nE "$tcc" "$f"; then fail "$f must not reference TCC-guarded APIs"; fi
 done
@@ -145,8 +146,10 @@ if grep -rnE '\bdlsym\(|\bdlopen\(|NSClassFromString|NSSelectorFromString' Sourc
     fail "private symbol lookup outside PrivateDisplayAPI.swift (see above)"
 fi
 
-# 12. Processes are spawned only by HelperSpawner (Swift) and SNSpawn (shim).
-if grep -rnE '\bProcess\(|NSTask|posix_spawn|\bpopen\(|[^.]\bsystem\(|\bfork\(|execv' Sources --include='*.swift' --include='*.m' \
+# 12. Processes are spawned only by HelperSpawner (Swift) and SNSpawn (shim); no in-process script runners either
+#     (0.3.1 B6: lid-closed mode goes through HelperSpawner.spawnAdminScript and /usr/bin/osascript only).
+if grep -rnE '\bProcess\(|NSTask|posix_spawn|\bpopen\(|[^.]\bsystem\(|\bfork\(|execv|NSAppleScript|NSUserScriptTask|OSAScript' \
+    Sources --include='*.swift' --include='*.m' \
     | grep -vE '^Sources/(Snaptic/Core/HelperSpawner\.swift|SnapticShims/SNSpawn\.m):'; then
     fail "process spawning outside HelperSpawner/SNSpawn (see above)"
 fi
@@ -156,8 +159,8 @@ if grep -rnE '\bfatalError\(|\bpreconditionFailure\(|\btry!|\bdebugPrint\(|\bdum
     fail "fatalError/preconditionFailure/try!/debugPrint/dump/os_log/Logger are banned (use safe returns and EventLog)"
 fi
 
-# 14. PLAN 0.3 §6.3 lints L1–L17 (L3, L8, L11 were dropped). L1–L14 are ratcheted by
-#     scripts/lint-legacy.tsv (rule, path, occurrences, permanent|step); L15–L17 have no ratchet.
+# 14. PLAN 0.3 §6.3 lints L1–L17 (L3, L8, L11 were dropped) and PLAN 0.3.1's L18, L19 and workflow rules. L1–L14
+#     are ratcheted by scripts/lint-legacy.tsv (rule, path, occurrences, permanent|step); L15–L19 have no ratchet.
 python3 scripts/lint03.py || status=1
 
 exit $status

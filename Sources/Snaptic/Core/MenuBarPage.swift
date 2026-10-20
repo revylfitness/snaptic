@@ -96,9 +96,8 @@ private struct MenuBarPageContent: View {
                                 anchor: ControlID("menubar.page.snapticIcon"))
                     .disabled(!hasSnapticItem)
             } footer: {
-                if !hasSnapticItem {
-                    Text(L("The Snaptic icon appears when a module is set to Show in Snaptic Menu."))
-                }
+                // 0.3.1 A3: always shown, because it is also where the tab keys are discoverable.
+                Text(L("The Snaptic icon appears when a module is set to Show in Snaptic Menu. With two or more, the Snaptic menu shows a tab for each; while it’s open, press ⌘1, ⌘2, or ⌘3 to switch tabs."))
             }
             PageFooterButtons(advanced: nil, help: SettingsRoute(SettingsRootID.menuBar),
                               restoreDefaults: RestoreDefaults(

@@ -144,8 +144,7 @@ final class ActivityPolicyTests: XCTestCase {
                                                        pointerNudgeEffective: true, accessibility: true))
         }
         let allowed = AwakeActivityGate().applying(.uiStart)
-        try XCTSkipUnless(allowed.pointer == .allowed && allowed.uiStartedInProcess,
-                          "AwakeActivityGate's truth table (G) is not built yet")
+        XCTAssertTrue(allowed.pointer == .allowed && allowed.uiStartedInProcess, "AwakeActivityGate's truth table (G)")
         XCTAssertTrue(ActivityPolicy.nudgeAllowed(governing: .manual(session(.menu)), gate: allowed,
                                                   pointerNudgeEffective: true, accessibility: true))
         XCTAssertFalse(ActivityPolicy.nudgeAllowed(governing: .manual(session(.menu)), gate: allowed,
@@ -164,7 +163,7 @@ final class ActivityPolicyTests: XCTestCase {
         // Not asking: never.
         XCTAssertFalse(ActivityPolicy.needsPointerConfirmation(inputs(nudgeAllowed: false), gate: AwakeActivityGate()))
         let ask = AwakeActivityGate().applying(.hotkeyStart)
-        try XCTSkipUnless(ask.pointer == .askOnFirstUse, "AwakeActivityGate's truth table (G) is not built yet")
+        XCTAssertEqual(ask.pointer, .askOnFirstUse, "AwakeActivityGate's truth table (G)")
         XCTAssertTrue(ActivityPolicy.needsPointerConfirmation(inputs(nudgeAllowed: false), gate: ask))
         XCTAssertFalse(ActivityPolicy.needsPointerConfirmation(inputs(mode: .declare, nudgeAllowed: false), gate: ask))
         var locked = inputs(nudgeAllowed: false)

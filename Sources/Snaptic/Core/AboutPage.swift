@@ -2,16 +2,17 @@ import AppKit
 import SwiftUI
 import SnapticKit
 
-/// Settings › About (H; PLAN 0.3 §4.3): app icon, name and version; Check for Updates…; Acknowledgements… (a sheet
-/// with the credits and the MIT License); and Display Information… while Displays runs (it says where it goes;
-/// design m14) or Diagnostics Report… (a host report sheet) when it doesn't.
+/// Settings › About (H; PLAN 0.3 §4.3): app icon, name and version; Updates (0.3.1 E1: Check for Updates…, the
+/// automatic check and install switches, and the status row); Acknowledgements… (a sheet with the credits and the MIT
+/// License); and Display Information… while Displays runs (it says where it goes; design m14) or Diagnostics Report…
+/// (a host report sheet) when it doesn't.
 struct AboutPage: View, ControlDeclaring {
     typealias Controls = AboutPageControls
     @ObservedObject var host: ModuleHost
     @State private var showingAcknowledgements = false
     @State private var showingReport = false
 
-    static let releasesURL = "https://github.com/revylfitness/snaptic/releases"
+    static let releasesURL = UpdatePolicy.releasesURL
 
     var body: some View {
         SettingsPageScaffold(route: SettingsRoute(SettingsRootID.about)) {
@@ -32,11 +33,21 @@ struct AboutPage: View, ControlDeclaring {
                 .padding(.vertical, 8)
                 .accessibilityElement(children: .combine)
             }
-            Section {
-                ButtonRow(L("Check for Updates…"), help: L("Opens the Snaptic releases page in your browser."),
-                          control: ControlID("about.page.checkUpdates")) {
-                    if let url = URL(string: Self.releasesURL) { NSWorkspace.shared.open(url) }
+            if let updater = host.updaterController {
+                UpdatesSection(updater: updater)
+            } else {
+                Section {
+                    // Built from source (ad hoc): no Sparkle, so the button opens the Releases page.
+                    StatusRow(UpdateStatusText.text(.fromSource, uses24Hour: false))
+                    ButtonRow(L("Check for Updates…"), help: L("Opens the Snaptic releases page in your browser."),
+                              control: ControlID("about.page.checkUpdates")) {
+                        if let url = URL(string: Self.releasesURL) { NSWorkspace.shared.open(url) }
+                    }
+                } header: {
+                    Text(L("Updates"))
                 }
+            }
+            Section {
                 ButtonRow(L("Acknowledgements…"), help: L("The MIT License and the projects Snaptic builds on."),
                           control: ControlID("about.page.acknowledgements")) {
                     showingAcknowledgements = true
@@ -53,7 +64,7 @@ struct AboutPage: View, ControlDeclaring {
                     }
                 }
             } footer: {
-                Text(L("Free and open source under the MIT License. Snaptic never connects to the network: no analytics and no automatic update checks."))
+                Text(L("Free and open source under the MIT License. Snaptic connects only to GitHub to check for updates, and only if you allow it. No analytics."))
                     .foregroundStyle(.secondary)
             }
         }
@@ -65,6 +76,44 @@ struct AboutPage: View, ControlDeclaring {
         let info = Bundle.main.infoDictionary
         return SettingsText.version(short: info?["CFBundleShortVersionString"] as? String,
                                     build: info?["CFBundleVersion"] as? String)
+    }
+}
+
+/// 0.3.1 E1: Settings › About › Updates in builds that carry Sparkle. Root-owned copies can't install by themselves,
+/// so their automatic-install switch is replaced by a note. The status row is Kit's `UpdateStatusText`.
+private struct UpdatesSection: View {
+    @ObservedObject var updater: UpdaterController
+
+    var body: some View {
+        Section {
+            ButtonRow(L("Check for Updates…"), help: L("Checks GitHub for a newer version of Snaptic now."),
+                      control: ControlID("about.page.checkUpdates")) {
+                updater.checkForUpdates()
+            }
+            ToggleSetting(L("Check for updates automatically"),
+                          help: L("Once a day, Snaptic checks GitHub for a newer version. GitHub sees your IP address and macOS version, nothing more."),
+                          isOn: Binding(get: { updater.automaticallyChecksForUpdates },
+                                        set: { updater.automaticallyChecksForUpdates = $0 }),
+                          anchor: ControlID("about.page.autoCheck"))
+            if updater.automaticallyChecksForUpdates {
+                if updater.needsAdministrator {
+                    SettingsRowNote(L("Only an administrator can change this copy of Snaptic, so each update asks for an administrator password."))
+                } else {
+                    ToggleSetting(L("Download and install updates automatically"),
+                                  help: L("Updates download in the background and install the next time Snaptic quits."),
+                                  isOn: Binding(get: { updater.automaticallyDownloadsUpdates },
+                                                set: { updater.automaticallyDownloadsUpdates = $0 }),
+                                  subordinate: true, anchor: ControlID("about.page.autoInstall"))
+                }
+            }
+            StatusRow(updater.statusText(), actions: updater.offersInstall ? [
+                StatusAction(title: L("Install and Relaunch…"), control: ControlID("about.page.installUpdate")) {
+                    updater.installUpdate()
+                },
+            ] : [])
+        } header: {
+            Text(L("Updates"))
+        }
     }
 }
 
@@ -124,6 +173,8 @@ private struct AcknowledgementsSheet: View {
         Credit(name: "displayplacer", detail: L("Display arrangement (MIT)")),
         Credit(name: "force-hidpi", detail: L("HiDPI virtual displays (MIT)")),
         Credit(name: "Chromium", detail: L("Process responsibility handling (BSD)")),
+        // 0.3.1: bundled in release builds; its full license ships in Contents/Resources/THIRD_PARTY_NOTICES.md.
+        Credit(name: "Sparkle", detail: L("Software updates, version 2.10.0 (MIT)")),
     ]
 
     /// Awake's behavior references (THIRD_PARTY_NOTICES.md): rules Snaptic follows, none of their code.

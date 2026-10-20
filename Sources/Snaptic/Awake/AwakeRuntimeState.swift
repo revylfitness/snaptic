@@ -8,6 +8,12 @@ struct AwakeLastEnd: Equatable {
     let at: Date
 }
 
+/// 0.3.1 B1: "Lid-closed mode ended at 3:12 AM: battery at 20%.", shown for 12 h, cleared at the next turn-on.
+struct AwakeLastLidEnd: Equatable {
+    let reason: AwakeLidEnd
+    let at: Date
+}
+
 /// Awake's live state (lead; PLAN 0.3 §2.11). Owned by AwakeModule across starts; controllers write it.
 @MainActor final class AwakeRuntimeState: ObservableObject {
     @Published var moduleState: ModuleState = .stopped
@@ -38,6 +44,13 @@ struct AwakeLastEnd: Equatable {
     @Published var drives: [DriveAliveService.VolumeState] = []
     /// nil = no lid.
     @Published var lidWillSleep: Bool?
+    /// 0.3.1 B3.3: the lid is shut (SystemEventsMonitor's `AppleClamshellState`); nil = no lid.
+    @Published var lidClosed: Bool?
+    /// 0.3.1 B3.0: lid-closed mode's state. Assigned only in LidClosedController.swift (lint L16), so `reset()`
+    /// leaves it to the controller.
+    @Published var lidMode: AwakeLidMode = .off
+    /// 0.3.1 B1: kept for 12 h, like `lastEnd`; it survives `reset()`.
+    @Published var lastLidEnd: AwakeLastLidEnd?
     /// Our status item exists and isVisible.
     @Published var indicatorVisible = false
     /// Shortcuts whose combo failed to register (conflict or system refusal; AwakeAutomation publishes it here, as
@@ -72,6 +85,7 @@ struct AwakeLastEnd: Equatable {
         activityCapped = false
         drives = []
         lidWillSleep = nil
+        lidClosed = nil
         indicatorVisible = false
         failedShortcuts = []
         keepAwakeRegistered = false

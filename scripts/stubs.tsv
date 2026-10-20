@@ -568,3 +568,21 @@ Sources/Snaptic/Displays/UI/AutomationsPage.swift	A	K18	AutomationsPage	Automati
 Sources/Snaptic/Displays/UI/HookEditorSheet.swift	A	K19	HookEditorSheet	Hook
 Sources/Snaptic/Displays/UI/ActionEditorSheet.swift	A	K19	ActionEditorSheet	Action
 Sources/Snaptic/Displays/UI/AutomationMenuItems.swift	A	K9	AutomationMenuItems	-
+# 0.3.1 step 0 (lead): new files for T-menu, T-lid-kit, T-lid-app and T-update (PLAN 0.3.1 Part D)
+Sources/Snaptic/Core/MenuTabBar.swift	T-menu	L	-	-
+Tests/SnapticKitTests/MenuTabsTests.swift	T-menu	L	-	-
+Sources/SnapticKit/LidWatchdog.swift	T-lid-kit	L	-	-
+Sources/SnapticKit/AwakeLidGate.swift	T-lid-kit	L	-	-
+Sources/SnapticKit/AwakeLidPolicy.swift	T-lid-kit	L	-	-
+Tests/SnapticKitTests/LidWatchdogTests.swift	T-lid-kit	L	-	-
+Tests/SnapticKitTests/AwakeLidGateTests.swift	T-lid-kit	L	-	-
+Tests/SnapticKitTests/AwakeLidPolicyTests.swift	T-lid-kit	L	-	-
+Sources/Snaptic/Awake/Core/LidClosedController.swift	T-lid-app	L	-	-
+Sources/Snaptic/Core/LidRecovery.swift	T-lid-app	L	-	-
+Sources/SnapticKit/BundleCopyText.swift	T-lid-app	L	-	-
+Tests/SnapticKitTests/BundleCopyTextTests.swift	T-lid-app	L	-	-
+Sources/Snaptic/Core/UpdaterController.swift	T-update	L	-	-
+Sources/SnapticKit/UpdatePolicy.swift	T-update	L	-	-
+Tests/SnapticKitTests/UpdatePolicyTests.swift	T-update	L	-	-
+Sources/Snaptic/Core/SelfTestLaunch.swift	T-update	L	-	-
+Tests/SnapticKitTests/LidWatchdogShellTests.swift	T-lid-kit	L	-	-

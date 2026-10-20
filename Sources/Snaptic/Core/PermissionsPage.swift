@@ -34,11 +34,11 @@ private struct PermissionsPageContent: View {
                                symbol: "hand.raised.fill", tint: .blue)
             Section {
                 PermissionStateRow(permission: .accessibility, granted: permissions.granted.contains(.accessibility),
-                                   neededBy: neededBy(.accessibility),
+                                   neededBy: neededBy(.accessibility), reAdd: showsReAdd(.accessibility),
                                    open: { permissions.presentGuide(.accessibility) })
                     .modifier(SettingsAnchor(ControlID("permissions.page.accessibility")))
                 PermissionStateRow(permission: .screenRecording, granted: permissions.granted.contains(.screenRecording),
-                                   neededBy: neededBy(.screenRecording),
+                                   neededBy: neededBy(.screenRecording), reAdd: showsReAdd(.screenRecording),
                                    open: { permissions.presentGuide(.screenRecording) })
                     .modifier(SettingsAnchor(ControlID("permissions.page.screenRecording")))
                 if driveAliveOn {
@@ -104,6 +104,14 @@ private struct PermissionsPageContent: View {
         host.isRunning(.awake) && awake.value.features[.driveAlive] == true
     }
 
+    /// 0.3.1 E2: a needed permission that macOS no longer grants although Snaptic ran here before: most likely the
+    /// list still holds an older copy (the switch to Developer ID resets both grants once).
+    private func showsReAdd(_ permission: Permission) -> Bool {
+        let needed = host.modules.contains { host.isRunning($0.id) && $0.requiredPermissions.contains(permission) }
+        return needed && HostUIRules.showsReAddStepsAtOnce(permission, launchedBefore: permissions.launchedBefore,
+                                                           granted: permissions.granted.contains(permission))
+    }
+
     /// The running modules whose current settings need `permission`.
     private func neededBy(_ permission: Permission) -> String {
         let names = host.modules.filter { host.isRunning($0.id) && $0.requiredPermissions.contains(permission) }.map { $0.title }
@@ -117,9 +125,19 @@ private struct PermissionStateRow: View {
     let permission: Permission
     let granted: Bool
     let neededBy: String
+    let reAdd: Bool
     let open: () -> Void
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            row
+            if reAdd && !granted {
+                SettingsRowNote(L("Remove the old Snaptic with −, then turn on the new one."))
+            }
+        }
+    }
+
+    private var row: some View {
         LabeledContent {
             if granted {
                 HStack(spacing: 4) {

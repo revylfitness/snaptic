@@ -43,6 +43,11 @@ import SnapticKit
     private var sinks: [AnyCancellable] = []
     /// Kept across starts so the item (G's) can stay while its own menu is open.
     private var indicator: IndicatorController?
+    /// 0.3.1 B3.4: the host, wired by AppDelegate before the modules start (its `lidRecovery` and the rows Awake's own
+    /// menu shares with the Snaptic menu). Weak: the host owns this module.
+    weak var moduleHost: ModuleHost?
+    /// 0.3.1 B2: "Lid-closed mode ended at …: Snaptic quit." is noted once per process, after the first restore.
+    private var lidQuitChecked = false
     /// G's Settings pages read the stores and runtime, and the context while the module runs (one per app run).
     private(set) lazy var pageEnvironment = AwakePageEnvironment(config: config, history: historyStore, runtime: runtime,
                                                                  context: { [weak self] in self?.context })
@@ -63,7 +68,7 @@ import SnapticKit
         guard context == nil else { return }
         self.moduleContext = moduleContext
         killSwitches = Self.readKillSwitches()
-        let ctx = AwakeContext(host: AwakeHost(moduleContext), config: config, state: stateStore,
+        let ctx = AwakeContext(host: AwakeHost(moduleContext, moduleHost: moduleHost), config: config, state: stateStore,
                                history: historyStore, runtime: runtime)
         context = ctx
         let snapshot = stateStore.value.sanitized(now: Self.clockNow())
@@ -81,6 +86,7 @@ import SnapticKit
         lastConfig = config.value
         apply(resolveEffective(config.value))
         ctx.sessions.restore(snapshot)
+        noteLidQuit(ctx, stop: snapshot.stop?.wall, lidSession: snapshot.lidSession)
         // §2.1 step 5: re-apply once if restore changed the needs; afterwards follow every change.
         if ctx.sessions.dynamicNeeds != dynamicNeeds {
             dynamicNeeds = ctx.sessions.dynamicNeeds
@@ -90,6 +96,10 @@ import SnapticKit
             guard let self, self.context != nil, needs != self.dynamicNeeds else { return }
             self.dynamicNeeds = needs
             self.apply(self.effective)
+        }
+        // 0.3.1 B3.1: lid presence is recomputed on wake.
+        ctx.system.observeEvents(ctx.host.lifetime) { [weak self] event in
+            if event == .didWake { self?.refreshAvailability() }
         }
         state = .running
         runtime.moduleState = .running
@@ -137,6 +147,17 @@ import SnapticKit
     /// §5.4: the compact section (G's AwakeMenuRows through the indicator).
     func menuSection() -> [NSMenuItem] { context == nil ? [] : (indicator?.compactSection() ?? []) }
 
+    /// 0.3.1 A4: Awake's tab shows the full rows (style `tab`: the own menu's rows minus Awake Settings…); otherwise
+    /// the compact section. Builds items only: no state changes beyond registering the header for live updates.
+    func menuSection(tabbed: Bool) -> [NSMenuItem] {
+        guard context != nil, let indicator else { return [] }
+        return tabbed ? indicator.tabSection() : indicator.compactSection()
+    }
+
+    /// 0.3.1 A1, N11: lid-closed mode is on (", even with the lid closed" on the shared glyph's label). What the plan
+    /// calls `AwakeHost.lidModeOn`: StatusMenu reaches Awake through the module, not through AwakeHost.
+    var lidModeOn: Bool { runtime.lidMode.isOn }
+
     /// Awake's sub-pages (§4.3). G's routes join this switch when its page lands.
     func settingsDestination(_ route: SettingsRoute) -> AnyView? {
         switch route.id {
@@ -150,7 +171,7 @@ import SnapticKit
     }
 
     /// The Awake section of the shared diagnostics report (G's AwakeDiagnostics; §3.6: no names or identifiers).
-    func diagnosticsLines() -> [String] { AwakeDiagnostics().lines(context) }
+    func diagnosticsLines() -> [String] { AwakeDiagnostics().lines(context, recovery: moduleHost?.lidRecovery) }
 
     var tint: SettingsTint { .orange }
     var highlights: [FeatureHighlight] { AwakePage.highlights }
@@ -180,6 +201,28 @@ import SnapticKit
             table[feature] = controllers[controller]?.availability(of: feature, context: ctx) ?? .available
         }
         return table
+    }
+
+    /// 0.3.1 B3.1: a changed availability (the lid read) re-resolves the effective features.
+    private func refreshAvailability() {
+        guard let ctx = context else { return }
+        let table = availabilityTable(ctx)
+        guard table != runtime.availability else { return }
+        runtime.availability = table
+        apply(resolveEffective(config.value))
+    }
+
+    /// 0.3.1 B2: a session resumed after a quit while lid-closed mode was on runs without it; its header says so
+    /// ("Snaptic quit"), unless the leftover rows already explain the state. Only the session that had the mode
+    /// (`lidSession`): a journal alone also survives a quit during a failed request's wait (r2 A2-4).
+    private func noteLidQuit(_ ctx: AwakeContext, stop: Double?, lidSession: StableID?) {
+        guard !lidQuitChecked else { return }
+        lidQuitChecked = true
+        guard let recovery = moduleHost?.lidRecovery, let resumed = ctx.sessions.manual, resumed.source != .launch,
+              AwakeLidPolicy.quitEndShown(launchJournal: recovery.launchJournal != nil,
+                                          leftover: recovery.recovery == .leftover, lidSession: lidSession,
+                                          resumed: resumed.id) else { return }
+        runtime.lastLidEnd = AwakeLastLidEnd(reason: .quit, at: stop.map { Date(timeIntervalSince1970: $0) } ?? Date())
     }
 
     private func configChanged() {

@@ -6,8 +6,9 @@ import SnapticKit
 // "Other apps keeping your Mac awake" (owner: J; PLAN 0.3 §1.1, §2.8, §3.6, §4.3 Awake › Advanced). Reads other
 // processes' power assertions (`IOPMCopyAssertionsByProcess`) and the system-wide SleepDisabled setting (the
 // "SystemPowerSettings" value of the com.apple.PowerManagement preferences, the same read the private
-// IOPMCopySystemPowerSettings() makes). Read-only: Snaptic never writes SleepDisabled and needs no root. Both reads
-// are IPC, so they run on a private utility queue; names are resolved on main through ProcessWatch. Local UI only:
+// IOPMCopySystemPowerSettings() makes). Read-only: this reader never writes SleepDisabled; only lid-closed mode changes
+// it (0.3.1 B3: LidClosedController's watchdog, the fixed root script, while the user has it on). Both reads are IPC,
+// so they run on a private utility queue; names are resolved on main through ProcessWatch. Local UI only:
 // no process name, assertion name or count is ever logged, stored, exported, put in diagnostics or sent over the CLI.
 
 @MainActor final class OtherAssertionsReader: ObservableObject {
@@ -16,7 +17,7 @@ import SnapticKit
 
     /// One line per app or process name, sorted by name.
     @Published private(set) var rows: [OtherAssertionRow] = []
-    /// "Sleep is turned off for this Mac by another app or command. Snaptic can't change this."
+    /// SleepDisabled is on (the section says whose it is: another app's, or lid-closed mode's).
     @Published private(set) var sleepDisabled = false
     /// False until the first read finished (the view shows nothing rather than "No other apps…" before it).
     @Published private(set) var hasRead = false
@@ -113,6 +114,10 @@ import SnapticKit
         }
         return OtherAssertions.holders(byProcess, ownPID: ownPID)
     }
+
+    /// 0.3.1 B3.1: the stored SleepDisabled preference, for lid-closed mode's preflight (the kernel's value is read from
+    /// IORegistry separately). IPC: call it off main.
+    nonisolated static func sleepDisabledPreference() -> Bool { readSleepDisabled() }
 
     /// kCFPreferencesAnyUser + kCFPreferencesCurrentHost, read-only: what `pmset -g` reports as "SleepDisabled 1".
     private nonisolated static func readSleepDisabled() -> Bool {

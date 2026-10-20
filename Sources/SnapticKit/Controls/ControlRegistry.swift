@@ -28,6 +28,9 @@ package enum ControlState: String, Hashable, Sendable {
     case safeMode, automationPaused, helperStopped, pendingConfirmation, screenRecordingMissing, accessibilityMissing,
          awakeActive, awakeIdle, rulesExist, rulesPaused, holdsExist, notAtDefault, commandLineOn, hiddenIconWarning,
          disconnectedDisplay, timedOrCapped
+    // 0.3.1: lid-closed mode is on; sleep was left off by an earlier lid-closed session (B3.4); the user can change
+    // Snaptic's bundle (B1, E1); Sparkle is loaded; an update is offered; the 0.3.1 welcome card shows (E1a).
+    case lidModeOn, lidLeftover, bundleWritable, updaterAvailable, updateAvailable, v031Welcome
 }
 
 /// Availability as data (the §4.2 States rules); every condition must hold for the control to exist.
@@ -43,6 +46,8 @@ package enum ControlCondition: Hashable, Sendable {
 
 package enum ControlKind: String, Hashable, Sendable {
     case setting, button, navigation, list, statusAction, shortcut, menuItem, menuSlider, menuSubmenu, menuSwitchHeader
+    /// 0.3.1 A2: the Snaptic menu's tab bar (a segmented control in a menu row).
+    case menuTabBar
 }
 
 /// The row in Customize Displays Menu.

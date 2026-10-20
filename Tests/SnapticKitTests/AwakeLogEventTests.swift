@@ -48,3 +48,28 @@ final class AwakeLogEventTests: XCTestCase {
         }
     }
 }
+
+// MARK: - 0.3.1 B5: lid-closed mode's events (owner: T-lid-kit)
+
+extension AwakeLogEventTests {
+    func testLidEvents() {
+        var lid: [AwakeLogEvent] = [.lidOn, .lidLeftover]
+        lid += AwakeLidEnd.allCases.map { .lidOff($0) }
+        lid += AwakeLidFailStage.allCases.map { .lidFailed($0) }
+        XCTAssertTrue(AwakeLogEvent.lidOn.isCounted)
+        XCTAssertTrue(AwakeLidEnd.allCases.allSatisfy { AwakeLogEvent.lidOff($0).isCounted })
+        XCTAssertFalse(AwakeLidFailStage.allCases.contains { AwakeLogEvent.lidFailed($0).isCounted })
+        XCTAssertFalse(AwakeLogEvent.lidLeftover.isCounted)
+        XCTAssertEqual(AwakeLogEvent.lidOn.text, "awake.lid.on")
+        XCTAssertEqual(AwakeLogEvent.lidOff(.otherApp).text, "awake.lid.off.otherApp")
+        XCTAssertEqual(AwakeLogEvent.lidFailed(.verify).text, "Lid-closed mode couldn't turn on (verify).")
+        XCTAssertEqual(AwakeLogEvent.lidFailed(.restore).text, "Turn Sleep Back On's script reported an error.")
+        XCTAssertEqual(AwakeLogEvent.lidLeftover.text, "Sleep was found turned off after an earlier lid-closed session.")
+        let texts = (every + lid).map(\.text)
+        XCTAssertEqual(Set(texts).count, texts.count, "every case has its own text")
+        for t in lid.map(\.text) {
+            XCTAssertFalse(t.contains("/"), "no paths, tokens or pids: \(t)")
+            XCTAssertTrue(t.unicodeScalars.allSatisfy { $0.isASCII }, t)
+        }
+    }
+}

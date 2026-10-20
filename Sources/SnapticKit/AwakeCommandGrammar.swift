@@ -61,9 +61,11 @@ package struct AwakeStatusFacts: Equatable, Sendable {
     package var remaining: Double?
     package var triggerNumber: Int?
     package var holdPIDs: [Int32]
+    /// 0.3.1 B1: lid-closed mode is on (`--json` only, its last key; the tab-separated line doesn't change).
+    package var lidClosed: Bool
 
     package init(active: Bool, source: AwakeStatusSource?, kind: AwakeHistoryKind?, display: AwakeDisplayPolicy?,
-                 endUnix: Double?, remaining: Double?, triggerNumber: Int?, holdPIDs: [Int32]) {
+                 endUnix: Double?, remaining: Double?, triggerNumber: Int?, holdPIDs: [Int32], lidClosed: Bool = false) {
         self.active = active
         self.source = source
         self.kind = kind
@@ -72,10 +74,17 @@ package struct AwakeStatusFacts: Equatable, Sendable {
         self.remaining = remaining
         self.triggerNumber = triggerNumber
         self.holdPIDs = holdPIDs
+        self.lidClosed = lidClosed
     }
 
-    /// The facts for a governing state (no names: rule numbers, kinds and pids only).
-    package init(governing: AwakeGoverning, holds: [AwakeHold], now: ClockNow) {
+    /// The facts for a governing state (no names: rule numbers, kinds and pids only). `lidClosed`: lid-closed mode is
+    /// on (0.3.1 B1); it reads false whenever nothing governs.
+    package init(governing: AwakeGoverning, holds: [AwakeHold], now: ClockNow, lidClosed: Bool = false) {
+        self.init(facts: governing, holds: holds, now: now)
+        self.lidClosed = lidClosed && governing.isActive
+    }
+
+    private init(facts governing: AwakeGoverning, holds: [AwakeHold], now: ClockNow) {
         let pids = holds.map(\.binding.pid)
         switch governing {
         case .inactive:
@@ -199,7 +208,8 @@ package enum AwakeCommandGrammar {
         return fields.joined(separator: "\t")
     }
 
-    /// One JSON object with a fixed key order; `holds` is the count and `pids` the numbers (never names).
+    /// One JSON object with a fixed key order; `holds` is the count and `pids` the numbers (never names); 0.3.1 adds
+    /// `lidClosed` last (B1).
     package static func statusJSON(_ s: AwakeStatusFacts) -> String {
         func str(_ v: String?) -> String { v.map { "\"" + $0 + "\"" } ?? "null" }
         func num(_ v: Int?) -> String { v.map { "\($0)" } ?? "null" }
@@ -217,6 +227,7 @@ package enum AwakeCommandGrammar {
         parts.append("\"rule\":" + num(shown ? s.triggerNumber : nil))
         parts.append("\"holds\":" + String(s.holdPIDs.count))
         parts.append("\"pids\":[" + pids + "]")
+        parts.append("\"lidClosed\":" + (shown && s.lidClosed ? "true" : "false"))
         return "{" + parts.joined(separator: ",") + "}"
     }
 

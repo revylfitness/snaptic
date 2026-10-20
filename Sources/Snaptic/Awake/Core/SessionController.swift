@@ -6,7 +6,8 @@ import SnapticKit
 // R5-4, R5-6, R5-7, R5-10, R5-14). The pure decisions live in Kit (AwakeStartRules, AwakeTurnOff, AwakeReminders,
 // AwakeTick, AwakePointerPrompt, AwakeSystemPolicy, AwakeGuards, AwakeArbiter, TaskQuiet); this controller performs
 // their effects: the one assertion, toasts, history ends, the snapshot. The only file that assigns `activityGate`
-// (lint L16), always through `applying(_:)`.
+// (lint L16), always through `applying(_:)`, and a session's `lidRequested` (0.3.1 B2, L16): only lid-closed mode's
+// own starts, a kept replacement (the N19 gate) and LidClosedController's `setLidRequested` set it.
 
 /// A manual session or a hold that ended.
 enum AwakeEndedItem: Equatable { case session(AwakeSession), hold(AwakeHold) }
@@ -45,6 +46,10 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
     /// "Keep the display on" applies to it at once (parity M4).
     private var usesDefaultOptions = false
     private var holdLifetimes: [StableID: Lifetime] = [:]
+    /// 0.3.1 B1: sessions that had lid-closed mode at some point (History's `lidClosed`); dropped after their end fired.
+    private var lidSessions: Set<StableID> = []
+    /// 0.3.1 B1, N19: the manual session restore resumed (not started in this process: it takes the idle lid submenu).
+    private var resumedSessionID: StableID?
     private var holderNames: [StableID: String?] = [:]
 
     private var reminders = AwakeReminders()
@@ -120,7 +125,8 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         return startPresetValue(ctx.config.value.sessions.defaultPreset, source: source)
     }
 
-    private func startPresetValue(_ preset: AwakePreset, source: AwakeSessionSource) -> Result<AwakeSession, AwakeRefusal> {
+    private func startPresetValue(_ preset: AwakePreset, source: AwakeSessionSource,
+                                  lid: Bool = false) -> Result<AwakeSession, AwakeRefusal> {
         let p = preset.sanitized()
         var until: Double?
         if case .untilTime(let h, let m) = p.kind { until = AwakeFormat.nextUnix(hour: h, minute: m) }
@@ -129,12 +135,32 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
             if case .indefinite = kind { return .failure(.notAllowedFromCLI) }
             kind = AwakeStartRules.cliCapped(kind)
         }
-        return start(kind, options: nil, presetID: p.id, source: source, overrideGuards: false, preset: p)
+        return start(kind, options: nil, presetID: p.id, source: source, overrideGuards: false, preset: p, lid: lid)
+    }
+
+    /// 0.3.1 B3.1: the idle start of lid-closed mode, once the mode verified on (`lid`: the session owns it), or when
+    /// sleep was already off (`lid == false`: the session starts without it). Menu and Settings only (N19).
+    func startWithLid(_ request: LidRequest, source: AwakeSessionSource,
+                      lid: Bool = true) -> Result<AwakeSession, AwakeRefusal> {
+        guard let ctx = context, source == .menu || source == .settings else { return .failure(.invalid) }
+        switch request {
+        case .preset(let id):
+            let sessions = ctx.config.value.sessions
+            guard let preset = sessions.preset(id) ?? (sessions.defaultPreset.id == id ? sessions.defaultPreset : nil) else {
+                return .failure(.invalid)
+            }
+            return startPresetValue(preset, source: source, lid: lid)
+        case .custom(let kind, let options):
+            return start(kind, options: options, presetID: nil, source: source, overrideGuards: false, preset: nil,
+                         lid: lid)
+        case .add:
+            return .failure(.invalid)
+        }
     }
 
     private func start(_ kind: AwakeSessionKind, options: AwakeSessionOptions?, presetID: StableID?,
                        source: AwakeSessionSource, overrideGuards: Bool,
-                       preset: AwakePreset?) -> Result<AwakeSession, AwakeRefusal> {
+                       preset: AwakePreset?, lid: Bool = false) -> Result<AwakeSession, AwakeRefusal> {
         guard let ctx = context, lifetime != nil, restored, effective.contains(.sessions) else {
             return .failure(.unavailable(.featureOff))
         }
@@ -176,8 +202,13 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
 
         startAnywayLifetime?.end()
         turnOffToastLifetime?.end()
+        // 0.3.1 B3.0: any other manual start supersedes a pending idle start of lid-closed mode.
+        ctx.lid.manualStartWillBegin()
+        var keepLid = false
         if let old = manual {
             let replacedTaskBound = old.kind.isTaskBound
+            // B2: a menu or Settings start keeps the mode (the gate decides); anything else ends it with the old one.
+            keepLid = ctx.lid.replacing(old, by: source)
             finishManual(.replaced, notify: false, arbitrateAfter: false)
             activityGate = activityGate.applying(.replaced)
             if replacedTaskBound && ui {
@@ -188,7 +219,10 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         var session = AwakeClock.start(kind, options: resolved, presetID: presetID, source: source, now: now,
                                        id: StableID())
         session.overrideGuards = override
+        session.lidRequested = lid || keepLid
+        if session.lidRequested { lidSessions.insert(session.id) }
         manual = session
+        if keepLid { ctx.lid.sessionStarted(session) }
         // After finishManual(.replaced), which resets it for the old session (F7).
         usesDefaultOptions = followsDefaults
         let life = (lifetime ?? ctx.host.lifetime).child()
@@ -319,13 +353,43 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
     /// Manual only.
     func extend(by seconds: Int, source: AwakeSessionSource) -> Result<AwakeSession, AwakeRefusal> {
         guard let m = manual else { return .failure(.invalid) }
+        // 0.3.1 B2: the command line can't lengthen a lid-closed session (it may still end it).
+        if let refusal = AwakeStartRules.extendRefusal(source: source, lidModeOn: context?.runtime.lidMode.isOn == true) {
+            return .failure(refusal)
+        }
         let now = AwakeModule.clockNow()
         guard let extended = AwakeClock.extended(m, by: seconds, now: now) else { return .failure(.invalid) }
         manual = extended
         activityGate = activityGate.applying(.unchanged)
+        context?.lid.sessionChanged()
         arbitrate()
         return .success(extended)
     }
+
+    // MARK: Lid-closed mode (0.3.1 B2; LidClosedController asks)
+
+    /// Sets or clears the running session's `lidRequested` (the mode joined it, or ended). `arbitrate: false` while
+    /// this controller is itself changing the session (it re-plans afterwards).
+    func setLidRequested(_ on: Bool, for sessionID: StableID, arbitrate replan: Bool = true) {
+        guard var m = manual, m.id == sessionID, m.lidRequested != on else { return }
+        m.lidRequested = on
+        manual = m
+        if on { lidSessions.insert(sessionID) }
+        if replan { arbitrate() }
+    }
+
+    /// B3.3: the mode ended for another reason while the lid was shut, so its session ends too (`.lidEnded`, with the
+    /// standard end toast).
+    func endLidSession(_ sessionID: StableID) {
+        guard manual?.id == sessionID else { return }
+        finishManual(.lidEnded)
+    }
+
+    /// History's `lidClosed`: the session had lid-closed mode at some point (asked while its end fires).
+    func hadLidMode(_ sessionID: StableID) -> Bool { lidSessions.contains(sessionID) }
+
+    /// The running manual session was started in this process, not resumed by restore (`AwakeLidGate.addsToSession`).
+    func startedInProcess(_ sessionID: StableID) -> Bool { manual?.id == sessionID && sessionID != resumedSessionID }
 
     /// Mid-session display toggle: the governing manual session's option, or (for a rule session) an override that
     /// lasts until that rule session ends.
@@ -358,6 +422,7 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
     /// what still keeps the Mac awake (R5-10).
     func turnOff(source: AwakeSessionSource) {
         guard let ctx = context else { return }
+        ctx.lid.turnOffWillBegin()
         startAnywayLifetime?.end()
         turnOffToastLifetime?.end()
         switch AwakeTurnOff.target(AwakeArbiter.governing(manual: manual, top: ctx.triggers.top, holds: holds)) {
@@ -490,7 +555,13 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
                 if AwakeEndText.isInterruption(reason) { ctx.runtime.lastEnd = AwakeLastEnd(reason: reason, at: Date()) }
             } else {
                 manual = m
-                resumeSegment(.session(m), stored: stored, snapshot: snapshot, now: now)
+                resumedSessionID = m.id
+                // History only (r1 A5): an entry that continues the segment keeps "Lid closed"; after a real gap the
+                // part before it got its own entry with it. The mode itself is never restored (N19).
+                if !resumeSegment(.session(m), stored: stored, snapshot: snapshot, now: now),
+                   snapshot.lidSession == m.id {
+                    lidSessions.insert(m.id)
+                }
                 reminders = snapshot.reminders
                 usesDefaultOptions = Self.followsDefaults(m, sessions: ctx.config.value.sessions,
                                                           effective: ctx.runtime.effectiveFeatures)
@@ -533,14 +604,17 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
 
     /// A resumed item after a real gap: the part before it is its own history entry and the item's history
     /// continues from now (time Snaptic wasn't running isn't counted, F1); after a short gap the segment goes on.
+    /// True when the part before the gap became its own entry.
+    @discardableResult
     private func resumeSegment(_ item: AwakeAwayEnd.Item, stored: AwakeRuntimeSnapshot, snapshot: AwakeRuntimeSnapshot,
-                               now: ClockNow) {
+                               now: ClockNow) -> Bool {
         if let before = stored.resumedSegment(item, now: now) {
             awayEnds.fire(before)
             segmentStarts[item.id] = now.wall
-        } else if let start = snapshot.segmentStarts[item.id] {
-            segmentStarts[item.id] = start
+            return true
         }
+        if let start = snapshot.segmentStarts[item.id] { segmentStarts[item.id] = start }
+        return false
     }
 
     /// Where the history entry of a running session or hold starts: its start, or where its resume began (F1).
@@ -678,7 +752,8 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
                                       realIdleSeconds: idle, keepDisplayOnWhileLocked: behavior.keepDisplayOnWhileLocked,
                                       driveAliveWriting: ctx.runtime.isEffective(.driveAlive) && ctx.driveAlive.isWriting,
                                       guardsHold: guardMemory.blocksTriggers(at: now.continuous),
-                                      sessionEnd: AwakeArbiter.sessionEnd(governing, now: now))
+                                      sessionEnd: AwakeArbiter.sessionEnd(governing, now: now),
+                                      lidShut: ctx.lid.lidShut)
         let plan = AwakeArbiter.plan(input)
         if !ctx.assertions.apply(plan, now: now) {
             assertionFailed(governing, now: now)
@@ -693,7 +768,9 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         }
         if case .manual = lastGoverning {
             switch governing {
-            case .trigger, .holds: activityGate = activityGate.applying(.takeover)
+            case .trigger, .holds:
+                activityGate = activityGate.applying(.takeover)
+                ctx.lid.takenOver()
             case .manual, .inactive: break
             }
         }
@@ -774,8 +851,10 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         quietFor = nil
         usesDefaultOptions = false
         activityGate = activityGate.applying(.ended)
+        ctx.lid.sessionEnded(s, reason: reason)
         EventLog.shared.record(AwakeLogEvent.sessionEnded(reason))
         ends.fire((.session(s), reason))
+        lidSessions.remove(s.id)
         segmentStarts.removeValue(forKey: s.id)
         if notify {
             let appName: String?
@@ -1051,7 +1130,8 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
                                     suppressions: triggers?.suppressions ?? [:], pausedUntil: triggers?.pausedUntil,
                                     guardMemory: guardMemory,
                                     stop: carried ? AwakeStopStamp(wall: now.wall, continuous: now.continuous, clean: clean) : nil,
-                                    rule: rule, segmentStarts: segmentStarts, reminders: reminders)
+                                    rule: rule, segmentStarts: segmentStarts, reminders: reminders,
+                                    lidSession: manual.flatMap { lidSessions.contains($0.id) ? $0.id : nil })
     }
 
     /// The top rule candidate as a record: its wall start is computed once per rule session (TriggerController
@@ -1086,13 +1166,21 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
 
     // MARK: AwakeFeatureController
 
-    func availability(of feature: AwakeFeature, context: AwakeContext) -> FeatureAvailability { .available }
+    /// 0.3.1 B1, B3.1: lid-closed mode needs a lid (read synchronously from IORegistry, recomputed on wake) and a
+    /// copy that isn't translocated.
+    func availability(of feature: AwakeFeature, context: AwakeContext) -> FeatureAvailability {
+        guard feature == .lidClosed else { return .available }
+        if PermissionFlow.isTranslocated { return .unavailable(AwakeLidText.translocated) }
+        return LidSystem.hasLid() ? .available : .unavailable(L("No lid"))
+    }
 
     func start(_ context: AwakeContext, lifetime: Lifetime, effective: Set<AwakeFeature>) {
         guard self.lifetime == nil else { return }   // idempotent
         self.context = context
         self.lifetime = lifetime
         self.effective = effective
+        // First: its battery and heat ends run ahead of the session's own guards (B3.3).
+        context.lid.start(context, lifetime: lifetime)
         context.power.observe(lifetime) { [weak self] in self?.evaluateGuards() }
         context.system.observeEvents(lifetime) { [weak self] event in self?.systemEvent(event) }
         context.assertions.onTimeout = { [weak self] in self?.verifyAssertion() }
@@ -1108,6 +1196,8 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
 
     func effectiveFeaturesDidChange(_ effective: Set<AwakeFeature>) {
         self.effective = effective
+        // B2: the feature turned off (its switch, a kill switch) ends lid-closed mode.
+        if !effective.contains(.lidClosed) { context?.lid.featureOff() }
         arbitrate()
     }
 
@@ -1125,6 +1215,8 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
     /// connections were already settled by their own controllers, which stop first), the gate resets.
     func stop() {
         guard let ctx = context else { return }
+        // 0.3.1 B3.3: the stop file is written now; the host-level recovery finishes the kernel check.
+        ctx.lid.stop(ctx.host.signals.isTerminating ? .quit : ctx.host.safeMode.isActive ? .safeMode : .moduleStopped)
         tickTimer?.invalidate()
         tickTimer = nil
         verifyTimer?.invalidate()
@@ -1156,6 +1248,7 @@ enum AwakeGuardNotice: Equatable { case warn(AwakeEndReason), batteryUnreadable 
         holderNames = [:]
         if let s = session { ends.fire((.session(s), .moduleStopped)) }
         for h in stack { ends.fire((.hold(h), .moduleStopped)) }
+        lidSessions = []
         ctx.assertions.releaseAll()
         activityGate = activityGate.applying(.moduleStop)
         prompt.reset()

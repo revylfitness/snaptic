@@ -167,6 +167,8 @@ private struct AwakeRootContent: View {
                     DefaultsLockRow(module: .awake)
                 }
             }
+            // 0.3.1 B3.4 (lead decision): the host's leftover rows show whatever Awake's state, also while it's off.
+            AwakeLidLeftoverSection(recovery: host.lidRecovery)
             if !enabled {
                 FeatureHighlights(AwakePage.highlights)
             } else if let context {
@@ -300,6 +302,21 @@ private struct AwakeRootContent: View {
         } footer: {
             if list.count > 1 {
                 Text(L("Higher in the list wins."))
+            }
+        }
+    }
+}
+
+/// "Your Mac can’t sleep…" with Turn Sleep Back On…, Keep Sleep Off and Not Now (0.3.1 B3.4), while a leftover shows.
+private struct AwakeLidLeftoverSection: View {
+    @ObservedObject var recovery: LidRecoveryState
+
+    var body: some View {
+        if recovery.showsRows {
+            Section {
+                LidLeftoverRow(recovery: recovery, restore: ControlID("awake.page.status.lidRestore"),
+                               keepOff: ControlID("awake.page.status.lidKeepOff"),
+                               dismiss: ControlID("awake.page.status.lidDismiss"))
             }
         }
     }

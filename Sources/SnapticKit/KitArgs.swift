@@ -12,6 +12,8 @@ package enum LaunchMode: Equatable, Sendable {
     case selftestControls
     /// 0.3 R5-5: a bare ControlServer with a test registry (token-gated, CI only).
     case selftestControlServer
+    /// 0.3.1 E3: starts the app far enough to build ModuleHost and the updater gate, then exits (token-gated, CI only).
+    case selftestLaunch
     case app
 }
 
@@ -76,6 +78,7 @@ package enum KitArgs {
             case "--selftest-child": return .selftestChild
             case "--selftest-controls": return .selftestControls
             case "--selftest-control-server": return .selftestControlServer
+            case "--selftest-launch": return .selftestLaunch
             case "cli": return .cli
             default: break
             }

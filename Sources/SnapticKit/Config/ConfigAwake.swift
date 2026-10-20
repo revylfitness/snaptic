@@ -76,8 +76,8 @@ package struct AwakeConfig: ConfigModel {
     }
 
     /// Backup export (G, security M7): nudge → declare everywhere, without `drives`, `features.pointerNudge`,
-    /// `sessions.recentApps` and `sessions.behavior.startAtLaunch`; rules only with `includeTriggers`, and then
-    /// without salted hashes (a rule that lost a condition is disabled).
+    /// `features.lidClosed` (0.3.1 B5), `sessions.recentApps` and `sessions.behavior.startAtLaunch`; rules only with
+    /// `includeTriggers`, and then without salted hashes (a rule that lost a condition is disabled).
     package func exportable(includeTriggers: Bool) -> AwakeConfig {
         var c = sanitized().strippedForBackup()
         c.triggers = includeTriggers ? c.triggers.strippingHashes() : AwakeTriggersConfig()
@@ -85,9 +85,9 @@ package struct AwakeConfig: ConfigModel {
     }
 
     /// Backup import (G, security M7/L5/L7), applied by KitBackup after its generic merge: the same stripping as
-    /// export; guards may only become stricter than `current`; `features.pointerNudge`, `drives`, the recent apps
-    /// and start-at-launch are kept from `current`, so a backup can't turn pointer movement on, pick volumes or
-    /// start a session at launch. The stripping applies to what came from the file: a rule, preset or default
+    /// export; guards may only become stricter than `current`; `features.pointerNudge`, `features.lidClosed`
+    /// (0.3.1 B5), `drives`, the recent apps and start-at-launch are kept from `current`, so a backup can't turn
+    /// pointer movement or lid-closed mode on, pick volumes or start a session at launch. The stripping applies to what came from the file: a rule, preset or default
     /// options the merge left as this Mac has them (or as this Mac exports them) keep this Mac's value, salted
     /// hashes and pointer movement included (review security S-2); nothing the Mac didn't already have gets through.
     package func importable(current: AwakeConfig) -> AwakeConfig {
@@ -106,6 +106,7 @@ package struct AwakeConfig: ConfigModel {
         }
         c.guards = c.guards.monotonic(over: now.guards)
         c.features[.pointerNudge] = now.features[.pointerNudge]
+        c.features[.lidClosed] = now.features[.lidClosed]
         c.drives = now.drives
         c.sessions.recentApps = now.sessions.recentApps
         c.sessions.behavior.startAtLaunch = now.sessions.behavior.startAtLaunch
@@ -130,10 +131,11 @@ package struct AwakeConfig: ConfigModel {
         incoming == own || incoming == own.withoutNudge()
     }
 
-    /// The fields no backup carries, and no pointer movement.
+    /// The fields no backup carries, and no pointer movement or lid-closed mode.
     private func strippedForBackup() -> AwakeConfig {
         var c = self
         c.features[.pointerNudge] = nil
+        c.features[.lidClosed] = nil
         c.drives = DriveAliveConfig()
         c.sessions = sessions.withoutNudge()
         c.sessions.recentApps = []

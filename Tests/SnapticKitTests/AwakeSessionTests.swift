@@ -325,6 +325,19 @@ final class AwakeSessionTests: XCTestCase {
         XCTAssertEqual(out?.overrideGuards, false)
     }
 
+    /// 0.3.1 B2 (N19): lid-closed mode is runtime only, like Start Anyway: never encoded, false after decoding and
+    /// after sanitizing.
+    func testLidRequestedIsNeverPersisted() throws {
+        var s = session(.duration(seconds: 3_600))
+        s.lidRequested = true
+        XCTAssertFalse(try text(s).contains("lidRequested"))
+        XCTAssertFalse(try roundTrip(s).lidRequested)
+        XCTAssertEqual(s.sanitized(now: now(10_010))?.lidRequested, false)
+        XCTAssertEqual(AwakeRefusal.lidClosedSession.exitCode, 4)
+        XCTAssertEqual(AwakeRefusal.lidClosedSession.text,
+                       "Lid-closed sessions can’t be extended from the command line. Use Add 1 Hour in the menu.")
+    }
+
     // MARK: Holds
 
     private func hold(cap: Int = 3_600, at: Double = 10_000, pid: Int32 = 500) -> AwakeHold {

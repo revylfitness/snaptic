@@ -18,6 +18,9 @@ import SnapticKit
     static let awakeStateKey = AwakeRuntimeSnapshot.key
     static let awakeHistoryKey = "SnapticAwakeHistoryV1"
     static let ledgerKey = MigrationLedger.key
+    /// 0.3.1 E1a: `CFBundleVersion`, written at every launch so later versions can tell an upgrade apart. Navigation
+    /// state: not backed up and not cleared by Reset.
+    static let lastRunVersionKey = "SnapticLastRunVersion"
     /// `Modules.disable.<id>` (N14): a module with this key set to true in Snaptic's persistent domain never starts.
     static func disableKey(_ id: ModuleID) -> String { KillSwitches.key(prefix: "Modules", id: id.rawValue) }
     /// Collapses quick on/off/on toggles into one transition.
@@ -47,8 +50,23 @@ import SnapticKit
     let displays: DisplaysModule
     let awake: AwakeModule
 
+    /// 0.3.1 B3.4: sleep left off by an earlier lid-closed session (host level: whatever Awake's state, also in Safe
+    /// Mode). StatusMenu and IndicatorController draw its rows; T-lid-app fills it in.
+    let lidRecovery = LidRecoveryState()
+    /// 0.3.1 E4: Sparkle's updater, nil when this build doesn't carry Sparkle (ad hoc, from source) or before
+    /// `startUpdater()`. Nothing else calls into Sparkle.
+    var updater: (any UpdaterControlling)? { updaterController }
+    /// The same updater, for the pages that observe it (About, onboarding, the 0.3.1 card).
+    private(set) var updaterController: UpdaterController?
+    /// Fires on main whenever `updater?.availableUpdate` or `hasPendingQuitInstall` changes. It exists before the
+    /// updater starts, so StatusMenu subscribes once at init (as it does for `lidRecovery.objectWillChange`) and only
+    /// marks menus dirty. T-update sends it; T-menu listens.
+    let updaterChanged = PassthroughSubject<Void, Never>()
+
     /// This is the first launch ever (no earlier Snaptic ran for this user).
     let isFirstLaunch: Bool
+    /// 0.3.1 E1a: this launch is an upgrader's first 0.3.1 launch (Settings opens on the welcome card).
+    let isFirstV031Launch: Bool
 
     /// Bumped whenever modules start or stop or their pages change (Settings refresh).
     @Published private(set) var revision = 0
@@ -100,8 +118,14 @@ import SnapticKit
         let awakeHistory = ConfigStore<AwakeHistory>(key: Self.awakeHistoryKey)
         let ledger = ConfigStore<MigrationLedger>(key: Self.ledgerKey)
         let disabled = KillSwitches.read(domain, prefix: "Modules", as: ModuleID.self)
-        let m1 = Self.runMigrations(modules: store, modulesExisted: modulesExisted, displays: displaysConfig,
-                                    awake: awakeConfig, ledger: ledger, toasts: toasts)
+        let v031Upgrader = MigrationLedger.isV031Upgrader(modulesExisted: modulesExisted, launchedBefore: launchedBefore)
+        let firstV031 = !ledger.value.has(.v031Welcome) && v031Upgrader
+        let m1 = Self.runMigrations(modules: store, modulesExisted: modulesExisted, v031Upgrader: v031Upgrader,
+                                    displays: displaysConfig, awake: awakeConfig, ledger: ledger, toasts: toasts)
+        isFirstV031Launch = firstV031
+        if let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String {
+            UserDefaults.standard.set(build, forKey: Self.lastRunVersionKey)
+        }
         if disabled.contains(.awake) {
             // N14: nothing restores; a snapshot left from earlier is cleared at launch, after its sessions are
             // recorded in History (review5 awake F1).
@@ -125,13 +149,16 @@ import SnapticKit
     /// off for upgraders (§2.13, once: marker `awakeUpgrade.v1`) → M1 → forced saves: modules, displays, Awake, then the ledger last (the commit
     /// point; a crash before it re-runs migrations that are idempotent over what that run wrote). Returns M1's
     /// result when it ran in this launch.
-    private static func runMigrations(modules: ConfigStore<ModulesConfig>, modulesExisted: Bool,
+    private static func runMigrations(modules: ConfigStore<ModulesConfig>, modulesExisted: Bool, v031Upgrader: Bool,
                                       displays: ConfigStore<DisplaysConfig>, awake: ConfigStore<AwakeConfig>,
                                       ledger: ConfigStore<MigrationLedger>, toasts: ToastPresenter) -> AwakeMigrationResult? {
         var marks = ledger.value
         modules.value = modules.value.migrated(ledger: &marks)
         displays.value = displays.value.migrated(ledger: &marks)
         modules.value = modules.value.insertingAwakeForUpgrader(modulesExisted: modulesExisted, ledger: &marks)
+        // 0.3.1 E1a: an upgrader's module settings existed before this launch (0.3.0 stored no last-run version), or
+        // an earlier version ran (0.1 and 0.2 users skip onboarding; r2 C2-1).
+        marks.recordV031Welcome(upgrader: v031Upgrader, canAsk: UpdaterController.gate == .ready)
         // M1 (§4.6, R5-12): G's pure migration over the raw 0.2 JSON; the marker is recorded whatever it found.
         var m1: AwakeMigrationResult?
         if !marks.has(.fromDisplays) {
@@ -205,6 +232,92 @@ import SnapticKit
     }
 
     // MARK: Lifecycle
+
+    /// 0.3.1 E4: creates the updater when dyld loaded Sparkle (GUI mode only: AppDelegate calls it after
+    /// `bootstrap()`, also in Safe Mode, where only checks the user starts run). Then the post-update notice and, on an
+    /// upgrader's first 0.3.1 launch, Settings › General with the welcome card (E1a).
+    func startUpdater() {
+        guard updaterController == nil, !isShutDown else { return }
+        if let controller = UpdaterController.make(
+            facts: { [weak self] in self?.updateFacts ?? UpdatePolicy.Facts(lidModeOn: false, displayTrialPending: false,
+                                                                           safeMode: false) },
+            toast: { [weak self] text in
+                guard let self else { return }
+                self.toasts.show(text, lifetime: self.lifetime)
+            },
+            onChange: { [weak self] in
+                guard let self else { return }
+                self.updaterChanged.send()
+                self.revision &+= 1
+            }) {
+            updaterController = controller
+            relauncher.updater = controller
+            revision &+= 1
+            // A first launch opened onboarding inside bootstrap(), before the updater existed (r2 C2-1).
+            onboarding.updaterDidStart()
+        } else {
+            EventLog.shared.record(.modules, "Updater unavailable: \(UpdaterController.gate)")
+        }
+        showUpdatedNotice()
+        if isFirstV031Launch && showsV031Welcome && !modulesStore.value.needsOnboarding && !safeMode.isActive {
+            openSettings(page: SettingsRootID.general)
+        }
+    }
+
+    /// What can hold an update back (E4): lid-closed mode (also while it turns on or off), a display change waiting for
+    /// Keep or Undo (or still being applied), Safe Mode.
+    var updateFacts: UpdatePolicy.Facts {
+        var displayBusy = false
+        if isRunning(.displays), let ctx = displays.pageEnvironment.context {
+            displayBusy = ctx.transactions.hasPendingTrial || ctx.transactions.isBusy
+        }
+        // Lid-closed mode holds updates from the password prompt until it has stopped (r1 C7).
+        return UpdatePolicy.Facts(lidModeOn: UpdatePolicy.holdsUpdates(awake.runtime.lidMode),
+                                  displayTrialPending: displayBusy, safeMode: safeMode.isActive)
+    }
+
+    /// E1: "Snaptic was updated to 0.3.2." once, on the first launch of the version Sparkle installed.
+    private func showUpdatedNotice() {
+        let defaults = UserDefaults.standard
+        let recorded = defaults.string(forKey: UpdaterController.installingVersionKey)
+        guard recorded != nil || defaults.object(forKey: UpdaterController.installingVersionKey) != nil else { return }
+        defaults.removeObject(forKey: UpdaterController.installingVersionKey)
+        let running = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        guard let text = UpdatePolicy.updatedNotice(recorded: recorded, running: running) else { return }
+        EventLog.shared.record(.modules, "Updated to \(running)")
+        var actions: [ToastAction] = []
+        if let link = UpdatePolicy.releaseNotesURL(version: running), let url = URL(string: link) {
+            actions.append(ToastAction(title: L("What’s New")) { NSWorkspace.shared.open(url) })
+        }
+        toasts.show(text, actions: actions, lifetime: lifetime)
+    }
+
+    // MARK: 0.3.1 welcome card (E1a)
+
+    /// The card shows for upgraders until they're done with it, in builds that update themselves.
+    var showsV031Welcome: Bool { updaterController != nil && ledgerStore.value.showsV031Welcome }
+
+    /// The permissions the running modules need that macOS no longer grants (the card's re-grant rows).
+    var v031RegrantRows: [Permission] {
+        let needed = Set(modules.filter { isRunning($0.id) }.flatMap { $0.requiredPermissions })
+        return HostUIRules.regrantRows(needed: needed, granted: permissions.granted)
+    }
+
+    /// The card hides itself once the update choice is made and nothing is left to grant again.
+    func finishV031WelcomeIfDone() {
+        guard showsV031Welcome,
+              HostUIRules.welcomeFinished(updateChoiceMade: updaterController?.consentDecided ?? true,
+                                          regrantRows: v031RegrantRows) else { return }
+        dismissV031Welcome()
+    }
+
+    /// Done, or finished by itself.
+    func dismissV031Welcome() {
+        guard !ledgerStore.value.has(.v031WelcomeDone) else { return }
+        ledgerStore.value.record(.v031WelcomeDone)
+        ledgerStore.flush()
+        revision &+= 1
+    }
 
     /// Startup step 11–12: modules per settings, then the status items.
     func bootstrap() {
@@ -574,6 +687,8 @@ import SnapticKit
         awakeStateStore.value = AwakeRuntimeSnapshot()
         awakeHistoryStore.value = AwakeHistory()
         switcherSettings.reset()
+        // 0.3.1 E4: Sparkle's own keys go too (the update consent is asked again).
+        for key in UpdateDefaultsKeys.all { UserDefaults.standard.removeObject(forKey: key) }
         modulesStore.flush()
         displaysStore.flush()
         awakeStore.flush()

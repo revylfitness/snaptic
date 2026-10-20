@@ -133,8 +133,11 @@ final class ControlRegistryTests: XCTestCase {
 
     func testEverySettingIsSearchableAndEntriesAreUnique() {
         var ids = Set<String>()
-        for (_, _, spec) in specs {
-            if spec.kind == .setting { XCTAssertNotNil(spec.search, spec.id.rawValue) }
+        for (_, surface, spec) in specs {
+            // Settings on surfaces outside Settings (the Custom… panel, 0.3.1 B7) have no entry.
+            if spec.kind == .setting && SettingsIndexCoverage.isSettingsSurface(surface) {
+                XCTAssertNotNil(spec.search, spec.id.rawValue)
+            }
             guard let search = spec.search else { continue }
             let entry = SettingsSearchEntry(spec, search: search)
             XCTAssertEqual(entry.id, spec.id.rawValue)

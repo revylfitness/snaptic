@@ -194,6 +194,15 @@ import SnapticKit
         return DisplaysMenuBuilder(context: ctx).build()
     }
 
+    /// 0.3.1 A1: the tab's attention mark for the section's warning rows: degraded, automation paused by the panic
+    /// latch, or no safety helper. Features paused while another app runs ("Paused While MonitorControl Runs") don't
+    /// count: that is a steady state.
+    var menuAttention: Bool {
+        guard let ctx = context else { return false }
+        if case .degraded = ctx.runtime.moduleState { return true }
+        return ctx.panic.isLatched || DisplaysLive.unprotectedReason(ctx) != nil
+    }
+
     // Settings root and sub-pages (F's DisplaysPage, §4.3).
     var tint: SettingsTint { DisplaysPage.tint }
     var highlights: [FeatureHighlight] { DisplaysPage.highlights }

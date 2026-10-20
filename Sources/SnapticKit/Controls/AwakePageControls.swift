@@ -46,6 +46,14 @@ package enum AwakePageControls: ControlTable {
                                        root: root)),
         ControlSpec("awake.page.status.resume", .statusAction,
                     when: awake + [.awakeFeature(.triggers), .state(.rulesPaused)]),
+        // 0.3.1 B1, B3.4: Keep Awake with the Lid Closed in the status row's pull-downs (a per-preset child list
+        // while idle), and the B3.4 leftover rows (`when:` as B7 states it; B3.4 also shows them while Awake is off).
+        ControlSpec("awake.page.status.lidClosed", .statusAction, when: awake + [.awakeFeature(.lidClosed)]),
+        ControlSpec("awake.page.status.lidPreset", .statusAction,
+                    when: awake + [.awakeFeature(.lidClosed), .perItem("preset")]),
+        ControlSpec("awake.page.status.lidRestore", .statusAction, when: awake + [.state(.lidLeftover)]),
+        ControlSpec("awake.page.status.lidKeepOff", .statusAction, when: awake + [.state(.lidLeftover)]),
+        ControlSpec("awake.page.status.lidDismiss", .statusAction, when: awake + [.state(.lidLeftover)]),
         // Sessions.
         ControlSpec("awake.page.defaultSession", .setting, when: awake, keys: ["sessions.defaultPresetID"],
                     search: SearchSpec("Default session", keywords: ["default duration", "keep awake for",

@@ -92,6 +92,168 @@ package enum MenuLayout {
     }
 }
 
+// MARK: - 0.3.1 Part A: tabs in the Snaptic menu (owner: T-menu)
+
+extension ModuleID {
+    /// A1: the tab label when the full titles don't fit at equal widths. The full title stays the accessibility label.
+    package var shortTitle: String {
+        switch self {
+        case .windowSwitcher: return L("Switcher")
+        case .displays: return L("Displays")
+        case .awake: return L("Awake")
+        }
+    }
+}
+
+/// The Snaptic menu's tabs (PLAN 0.3.1 A1–A5): which tabs show, which one is selected, how the labels fit, the ⌘n keys
+/// and the spoken text. Pure decisions, tested in MenuTabsTests and the MenuLayoutTests fuzz; StatusMenu and
+/// MenuTabBarView only draw them.
+package enum MenuTabs {
+    /// A5: the remembered tab, a plain `UserDefaults.standard` string holding a `ModuleID` raw value. It is navigation
+    /// state, like `settingsLastRoute`: not in ModulesConfig, not in backups or the key cross-check, and no reset
+    /// clears it.
+    package static let defaultsKey = "snapticMenuTab"
+
+    /// ⌘1…⌘9 address tabs by position; a tab past the ninth would have no key.
+    package static let maxKeyIndex = 9
+
+    /// A1: one tab per module in the Snaptic item, in `plan.shared` order, only with two or more. Empty means no tab
+    /// bar (one module keeps its 0.3 header; none shows "No Modules Are On").
+    package static func tabs(plan: StatusItemPlan) -> [ModuleID] {
+        plan.shared.count >= 2 ? plan.shared : []
+    }
+
+    /// A1/A5: the tab to show. The stored value is decoded leniently (missing, unknown or stale values fall back to the
+    /// first tab), and a module that isn't a tab now also falls back without the caller overwriting the stored
+    /// choice, so the tab comes back when its module returns. nil only without tabs.
+    package static func selected(stored: String?, tabs: [ModuleID]) -> ModuleID? {
+        guard let first = tabs.first else { return nil }
+        guard let raw = stored?.trimmingCharacters(in: .whitespacesAndNewlines),
+              let id = ModuleID(rawValue: raw), tabs.contains(id) else { return first }
+        return id
+    }
+
+    /// A1: how the segment labels fit, tried in this order so HIG's equal segment widths hold in the common case.
+    package enum LabelStyle: Equatable, CaseIterable, Sendable {
+        /// `.fillEqually` with the full titles.
+        case fullEqual
+        /// `.fillEqually` with `ModuleID.shortTitle`.
+        case shortEqual
+        /// `.fit` with the short titles (the last resort; labels may truncate).
+        case shortFit
+
+        package var usesShortTitles: Bool { self != .fullEqual }
+        package var fillsEqually: Bool { self != .shortFit }
+    }
+
+    /// A1: the first style whose labels fit. `fullWidths` and `shortWidths` are each segment's measured width with
+    /// that label (text plus the segment's own padding, without the image); `imageWidth` (the attention image and its
+    /// gap) is added to every segment whose `attention` is true. Equal widths fit when the widest segment, times the
+    /// number of segments, fits in `available`. A width that isn't a finite, non-negative number never fits.
+    /// (PLAN A4 also lists `fitWidths`: `.shortFit` is the unconditional last resort, so no width decides it.)
+    package static func labelStyle(fullWidths: [Double], shortWidths: [Double], imageWidth: Double,
+                                   attention: [Bool], available: Double) -> LabelStyle {
+        func fitsEqually(_ widths: [Double]) -> Bool {
+            guard !widths.isEmpty, available.isFinite, imageWidth.isFinite, imageWidth >= 0 else { return false }
+            var widest = 0.0
+            for (index, width) in widths.enumerated() {
+                guard width.isFinite, width >= 0 else { return false }
+                let marked = index < attention.count && attention[index]
+                widest = max(widest, width + (marked ? imageWidth : 0))
+            }
+            return widest * Double(widths.count) <= available
+        }
+        if fitsEqually(fullWidths) { return .fullEqual }
+        if fitsEqually(shortWidths) { return .shortEqual }
+        return .shortFit
+    }
+
+    /// A3: the ⌘n position of a tab (1-based), nil when it isn't a tab or is past ⌘9.
+    package static func keyIndex(for id: ModuleID, tabs: [ModuleID]) -> Int? {
+        guard let index = tabs.firstIndex(of: id), index < maxKeyIndex else { return nil }
+        return index + 1
+    }
+
+    /// A3: the tab ⌘n selects (by position), nil outside 1…min(tabs, 9).
+    package static func tab(atKeyIndex n: Int, tabs: [ModuleID]) -> ModuleID? {
+        guard n >= 1, n <= min(tabs.count, maxKeyIndex) else { return nil }
+        return tabs[n - 1]
+    }
+
+    /// A1: the tabs that show the attention mark (`SnapticModule.menuAttention`).
+    package static func attention(_ flags: [ModuleID: Bool], tabs: [ModuleID]) -> Set<ModuleID> {
+        Set(tabs.filter { flags[$0] == true })
+    }
+
+    /// The digit-row virtual key codes (kVK_ANSI_1…9), for layouts whose digit row types symbols (AZERTY's "&").
+    private static let digitRowKeyCodes: [UInt16: Int] = [18: 1, 19: 2, 20: 3, 21: 4, 23: 5, 22: 6, 26: 7, 28: 8, 25: 9]
+
+    /// A3: the ⌘n a key-down asks for, by position. `commandOnly`: ⌘ is held and ⇧, ⌥ and ⌃ aren't. A typed digit
+    /// wins; otherwise the physical digit-row key counts. nil when it isn't ⌘1…⌘n for `tabCount` tabs.
+    package static func keyIndex(characters: String?, keyCode: UInt16, commandOnly: Bool, tabCount: Int) -> Int? {
+        guard commandOnly, tabCount >= 2 else { return nil }
+        let n: Int?
+        if let characters, characters.count == 1, let digit = Int(characters) {
+            n = digit
+        } else {
+            n = digitRowKeyCodes[keyCode]
+        }
+        guard let n, n >= 1, n <= min(tabCount, maxKeyIndex) else { return nil }
+        return n
+    }
+
+    // MARK: Assistive input (A3)
+
+    /// Where macOS keeps Accessibility › Keyboard › Full Keyboard Access (macOS 12+), which has no public API.
+    /// `NSApp.isFullKeyboardAccessEnabled` reads Keyboard › Keyboard navigation (`AppleKeyboardUIMode`), a separate
+    /// setting (r1 U2). HW-25 confirms the key.
+    package static let fullKeyboardAccessDomain = "com.apple.Accessibility"
+    package static let fullKeyboardAccessKey = "FullKeyboardAccessEnabled"
+
+    /// A3: the Show … Tab items show while any assistive input is in use: VoiceOver, Switch Control, Keyboard
+    /// navigation, or Full Keyboard Access. Either keyboard setting alone is enough (r1 U2).
+    package static func showsTabItems(voiceOver: Bool, switchControl: Bool, keyboardNavigation: Bool,
+                                      fullKeyboardAccess: Bool) -> Bool {
+        voiceOver || switchControl || keyboardNavigation || fullKeyboardAccess
+    }
+
+    // MARK: Text (A1–A3)
+
+    /// The tab bar's accessibility label.
+    package static let barLabel = L("Menu tabs")
+
+    /// The tab bar's accessibility help; the range follows the tab count.
+    package static func barHelp(tabCount: Int) -> String {
+        L("Press Command-1 to Command-\(min(max(tabCount, 1), maxKeyIndex)) to switch tabs.")
+    }
+
+    /// A segment's accessibility label: always the full title, then ", on" while Awake governs, then
+    /// ", needs attention" with the attention mark.
+    package static func segmentLabel(title: String, active: Bool, attention: Bool) -> String {
+        title + (active ? L(", on") : "") + (attention ? L(", needs attention") : "")
+    }
+
+    /// A segment's tooltip: "Displays (⌘2)", or "Awake, on (⌘3)" while Awake governs.
+    package static func segmentToolTip(title: String, keyIndex: Int?, active: Bool) -> String {
+        let base = active ? title + L(", on") : title
+        guard let keyIndex else { return base }
+        return base + " (⌘\(keyIndex))"
+    }
+
+    /// A segment's VoiceOver help: only its key, spelled the way `barHelp` spells it ("Command-3"); nil past ⌘9. The
+    /// label already speaks the title and ", on", so the help repeats neither and never reads the ⌘ glyph (r1 U3).
+    package static func segmentHelp(keyIndex: Int?) -> String? {
+        guard let keyIndex, keyIndex >= 1, keyIndex <= maxKeyIndex else { return nil }
+        return L("Command-\(keyIndex)")
+    }
+
+    /// A3: the native twin of a tab, in the footer ("Show Displays Tab").
+    package static func showTabTitle(_ title: String) -> String { L("Show \(title) Tab") }
+
+    /// A2: the status row of a tab whose module has nothing to show (it stopped while the menu was open).
+    package static let emptySection = L("Nothing to Show")
+}
+
 extension ModulesConfig {
     /// The 0.3 status-item plan (§5.2, tested truth table in MenuLayoutTests).
     ///

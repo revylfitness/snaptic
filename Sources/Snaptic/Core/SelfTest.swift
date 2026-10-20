@@ -40,8 +40,21 @@ enum SelfTest {
         case "--selftest-helpers": runParent(arguments)
         case "--selftest-controls": runControls(arguments)
         case "--selftest-control-server": runControlServer(arguments)
+        case "--selftest-launch": runLaunch(arguments)
         default: exit(KitArgs.exitUsage)
         }
+    }
+
+    // MARK: --selftest-launch
+
+    /// 0.3.1 E3 (HW-37 in CI): `--selftest-launch <token-file>` starts the app far enough to build ModuleHost and the
+    /// updater gate (SelfTestLaunch), then exits 1 on any problem.
+    private static func runLaunch(_ arguments: [String]) -> Never {
+        guard arguments.count == 3, tokenMatches(file: arguments[2]) else { exit(KitArgs.exitUsage) }
+        let (problems, report) = MainActor.assumeIsolated { SelfTestLaunch.run() }
+        for line in report { say(line + "\n") }
+        for problem in problems { say("selftest: launch: " + problem + "\n") }
+        exit(problems.isEmpty ? 0 : 1)
     }
 
     // MARK: --selftest-controls

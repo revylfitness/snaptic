@@ -3,8 +3,8 @@ import SnapticKit
 
 /// The one menu item factory (PLAN 0.3 §5.1, R5-13). Every Snaptic menu item is built here: one header style
 /// (`NSMenuItem.sectionHeader`), native items for everything a keyboard or VoiceOver user needs, and AppKit-only
-/// custom rows (`MenuSliderRow`, `MenuSwitchHeaderView`; never a hosting view, lint L13) for sliders and switch
-/// headers. Each item carries its `ControlID` as its `identifier`, so the control a row belongs to is visible to
+/// custom rows (`MenuSliderRow`, `MenuSwitchHeaderView`, 0.3.1's `MenuTabBarView`; never a hosting view, lint L13)
+/// for sliders, switch headers and the Snaptic menu's tabs. Each item carries its `ControlID` as its `identifier`, so the control a row belongs to is visible to
 /// accessibility tools and UI tests (lint L15 checks the literal against the caller's control table).
 ///
 /// Item rules (§5.1): Title Case; an ellipsis only when more input follows; toggles use a checkmark or a changing
@@ -144,6 +144,31 @@ import SnapticKit
     static func update(_ item: NSMenuItem, isOn: Bool, detail: [String]) -> Bool {
         guard let view = item.view as? MenuSwitchHeaderView else { return true }
         return view.update(isOn: isOn, detail: detail)
+    }
+
+    /// 0.3.1 A2: the Snaptic menu's tab bar (`MenuTabBarView`, 28 pt), one segment per label in order. `attention` and
+    /// `active` are segment indices (the attention mark; ", on" while Awake governs); `width` is the menu's minimum
+    /// width. `onSelect` runs synchronously in the control's action with the chosen index. The item has no title, so
+    /// type-select only reaches the visible tab's items; it stays enabled and draws no highlight (HW-24, HW-25 decide
+    /// whether it becomes `isEnabled = false`). Mouse and VoiceOver only: the Show … Tab items are the keyboard path.
+    static func tabBar(labels: [MenuTabLabel], selected: Int, attention: Set<Int>, active: Int?,
+                       width: CGFloat = MenuKit.width, control: ControlID? = nil,
+                       onSelect: @escaping @MainActor (Int) -> Void) -> NSMenuItem {
+        let segments = labels.enumerated().map { index, label -> MenuTabSegment in
+            let keyIndex: Int? = index < MenuTabs.maxKeyIndex ? index + 1 : nil
+            return MenuTabSegment(label: label,
+                                  toolTip: MenuTabs.segmentToolTip(title: label.title, keyIndex: keyIndex,
+                                                                   active: index == active),
+                                  accessibilityHelp: MenuTabs.segmentHelp(keyIndex: keyIndex),
+                                  accessibilityLabel: MenuTabs.segmentLabel(title: label.title, active: index == active,
+                                                                            attention: attention.contains(index)),
+                                  attention: attention.contains(index))
+        }
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        item.view = MenuTabBarView(segments: segments, selected: selected, width: width,
+                                   help: MenuTabs.barHelp(tabCount: labels.count), onSelect: onSelect)
+        tag(item, control)
+        return item
     }
 
     /// Call from `menu(_:willHighlight:)` of a menu that holds custom rows: the rows draw the system highlight

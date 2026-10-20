@@ -1,6 +1,28 @@
 #!/usr/bin/env python3
 """PLAN 0.3 §6.3 lints (lead): L1–L14 with the ratchet, L15 control-table pairing, L16, L17, and TEAMS rule 2
-(closures run by the main queue, a main-queue observer, a timer or KVO wrap `MainActor.assumeIsolated`).
+(closures run by the main queue, a main-queue observer, a timer or KVO wrap `MainActor.assumeIsolated`). PLAN 0.3.1
+(lead, step 0) adds:
+- L16's two lid clauses: `.lidRequested =` only in SessionController.swift and SnapticKit/AwakeSession.swift, and
+  `lidMode =` only in LidClosedController.swift (B2);
+- L18 (B6): the root command's words only in string literals of SnapticKit/LidWatchdog.swift (control tables' search
+  keywords excepted: B7 lists "disablesleep"), `AdminScript(` and
+  `ToolCommand(` only there, and `spawnAdminScript(` / `spawnTool(` called only from LidClosedController.swift and
+  LidRecovery.swift (their definitions in HelperSpawner.swift are exempt);
+- L19 (E6): `import Sparkle` and `SPU…`/`SU…` identifiers (outside string literals) only in Core/UpdaterController.swift,
+  `SU…` key strings only in SnapticKit/UpdatePolicy.swift (UpdateDefaultsKeys), and, once anything imports Sparkle,
+  exactly one Package.swift dependency (sparkle-project/Sparkle, `exact:`, under `#if os(macOS)`) with
+  Package.resolved committed;
+- workflow rules (E3, E6), on the parsed YAML (PyYAML; r2 S2-4): no anchors, aliases, merge keys, explicit tags or
+  repeated keys; no `pull_request_target`, `workflow_run` or `set -x`; no cache (an action named for one, a `cache…`
+  input, setup-go's default) in `build`, `sign`, `publish` or any job they need (the signed bundle is built in
+  `build`; r1 S6); no `${{` inside a `run:` script or `actions/github-script`'s inputs (values reach scripts through
+  `env:`, so a tag name or release field is never spliced into code; r1 S6); and `gh release` only in the `publish`
+  job (checked whenever a workflow has a `publish` job).
+  Round 3 (S3-2, C3-2, C3-3): no reusable workflows or local actions anywhere, and in the signed chain only the four
+  pinned actions it uses (so no composite or Docker action is ever out of sight); no `cache` input of any spelling; no
+  `${{` in a `docker://` action's inputs; no `SHELLOPTS`, `BASHOPTS`, `BASH_ENV` or `ENV` in an `env:`; `sign` needs
+  `kit-linux` (lint, actionlint, Linux tests) and `build`; and the secret-free `rehearse` job runs sign's and
+  publish's secret-free steps with byte-identical scripts.
 
 Run by scripts/lint.sh (which passes LINT_MODE=check|write and LINT_STRICT=0|1). Comments are stripped before
 matching (string literals are kept); counts are occurrences, not lines.
@@ -225,6 +247,171 @@ def self_check():
         got = {name for _, name in contributor_conformers([("SelfCheck.swift", source)])}
         if got != expected:
             problems.append(f"self-check: menu contributors found {sorted(got)} in {source!r}, expected {sorted(expected)}")
+    problems += self_check_031()
+    return problems
+
+
+def self_check_031():
+    """Pins the 0.3.1 rules (L16 lid clauses, L18, L19, workflows) on cases each must report or let pass."""
+    q = '"'
+    problems = []
+    app = "Sources/Snaptic/Awake/UI/SelfCheck.swift"
+    cases = [
+        (l16_lid_file, app, "s.lidRequested = true", True),
+        (l16_lid_file, app, "if s.lidRequested == true {}", False),
+        (l16_lid_file, "Sources/Snaptic/Awake/Core/SessionController.swift", "s.lidRequested = true", False),
+        (l16_lid_file, app, "runtime.lidMode = .off", True),
+        (l16_lid_file, app, "@Published var lidMode: AwakeLidMode = .off", False),
+        (l16_lid_file, "Sources/Snaptic/Awake/Core/LidClosedController.swift", "rt.lidMode = .off", False),
+        (l18_file, app, f"let p = {q}/usr/bin/osascript{q}", True),
+        (l18_file, app, f"let s = {q}do shell script x{q}", True),
+        (l18_file, app, "let p = LidWatchdog.osascriptPath", False),
+        (l18_file, "Sources/SnapticKit/Controls/SelfCheckControls.swift",
+         f"SearchSpec({q}Lid{q}, keywords: [{q}disablesleep{q}], root: r)", False),
+        (l18_file, "Sources/SnapticKit/Controls/SelfCheckControls.swift", f"let k = [{q}disablesleep{q}]", True),
+        (l18_file, app, "let c = ToolCommand(argv: [])", True),
+        (l18_file, LID_WATCHDOG, f"let c = ToolCommand(argv: [{q}/usr/bin/pmset{q}, {q}displaysleepnow{q}])", False),
+        (l18_file, app, "try await spawner.spawnTool(LidWatchdog.displaySleepArgv) { _ in }", True),
+        (l18_file, LID_SPAWN_CALLERS[0], "try await spawner.spawnTool(LidWatchdog.displaySleepArgv) { _ in }", False),
+        (l18_file, LID_SPAWNER, "func spawnTool(_ command: ToolCommand) {}", False),
+        (l18_file, LID_SPAWNER, "_ = spawnAdminScript(x)", True),
+    ]
+    for rule, path, source, flagged in cases:
+        if bool(rule(path, source)) != flagged:
+            problems.append(f"self-check: {rule.__name__} {'missed' if flagged else 'wrongly reported'} {source!r} in {path}")
+    l19_cases = [
+        (app, "import Sparkle", True),
+        (UPDATER, "import Sparkle", False),
+        (app, "let d: SPUStandardUserDriver? = nil", True),
+        (app, f"let s = {q}SUPPORT is here{q}", False),
+        (app, f"let k = {q}SUFeedURL{q}", True),
+        (UPDATE_KEYS, f"let k = {q}SUFeedURL{q}", False),
+        (UPDATER, f"let k = {q}SUFeedURL{q}", True),
+        (app, "let n = EXIT_SUCCESS", False),
+    ]
+    for path, source, flagged in l19_cases:
+        if bool(l19_file(path, source)[0]) != flagged:
+            problems.append(f"self-check: l19_file {'missed' if flagged else 'wrongly reported'} {source!r} in {path}")
+    sparkle = '.package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0")'
+    package_cases = [
+        ("let package = Package(name: \"x\")", False, False, False),
+        ("let package = Package(name: \"x\")", True, False, True),
+        (f"#if os(macOS)\ndeps = [{sparkle}]\n#endif\n", True, True, False),
+        (f"#if os(macOS)\ndeps = [{sparkle}]\n#endif\n", True, False, True),
+        (f"deps = [{sparkle}]\n", True, True, True),
+        ('#if os(macOS)\ndeps = [.package(url: "https://github.com/sparkle-project/Sparkle", from: "2.10.0")]\n#endif\n',
+         True, True, True),
+    ]
+    for manifest, imports, resolved, flagged in package_cases:
+        if bool(l19_package(manifest, imports, resolved)) != flagged:
+            problems.append(f"self-check: l19_package {'missed' if flagged else 'wrongly reported'} {manifest!r}")
+    sha = "a" * 40
+    wf = "on:\n  push:\njobs:\n  build:\n    steps:\n      - run: echo\n  release:\n    steps:\n      - run: gh release view x\n"
+    workflow_cases = [
+        (wf, False),
+        (wf + "  publish:\n    steps:\n      - run: gh release edit x\n", True),
+        (wf.replace("  release:", "  publish:"), False),
+        (wf.replace("push:", "pull_request_target:"), True),
+        (wf.replace("run: echo", "run: set -euxo pipefail"), True),
+        (wf.replace("run: echo", "run: echo set -e # not set -x"), False),
+        (wf + "  sign:\n    steps:\n      - uses: actions/cache@abc\n", True),
+        # r1 S6: the job that builds the signed bundle, and anything the release chain needs, can't use a cache.
+        (wf.replace("      - run: echo\n", "      - uses: actions/cache/restore@abc\n"), True),
+        (wf + "  compile:\n    steps:\n      - uses: actions/cache@abc\n"
+              "  sign:\n    needs: [build, compile]\n    steps:\n      - run: echo\n", True),
+        (wf + "  compile:\n    steps:\n      - uses: actions/cache@abc\n"
+              "  publish:\n    needs:\n      - compile\n    steps:\n      - run: echo\n", True),
+        (wf + "  lint:\n    steps:\n      - uses: actions/cache@abc\n", False),
+        # r1 S6: no `${{` inside a run: script, inline or block, wherever it sits in the script.
+        (wf.replace("run: echo", "run: echo ${{ github.ref_name }}"), True),
+        (wf.replace("run: echo", "run: |\n          set -e\n          echo \"${{ github.event.release.name }}\""), True),
+        (wf.replace("run: echo", "run: >-\n          echo ok # ${{ github.head_ref }}"), True),
+        (wf.replace("      - run: echo\n", "      - env:\n          TAG: ${{ github.ref_name }}\n"
+                    "        run: |\n          echo \"$TAG\"\n      - uses: actions/upload-artifact@" + sha + "\n"
+                    "        with:\n          path: ${{ runner.temp }}/out\n"), False),
+        (wf.replace("jobs:\n", "defaults:\n  run:\n    shell: bash\njobs:\n"), False),
+        # r2 S2-4: the rules read the parsed YAML, so no spelling of the same workflow gets past them.
+        (wf.replace("run: echo", "run: |2-\n          echo ${{ github.ref_name }}"), True),
+        (wf.replace("run: echo", "run: >\n          echo ${{ github.head_ref }}"), True),
+        (wf.replace("run: echo", "run: echo start\n          ${{ github.ref_name }}"), True),
+        (wf.replace("run: echo", "run: \"echo start\n          ${{ github.ref_name }}\""), True),
+        (wf.replace("run: echo", "run: |\n          echo \"${{\n            github.head_ref }}\""), True),
+        (wf.replace("run: echo", "\"run\": echo ${{ github.ref_name }}"), True),
+        (wf.replace("      - run: echo\n", "      - { run: \"echo ${{ github.ref_name }}\" }\n"), True),
+        (wf.replace("run: echo", "run: &a |\n          echo ok"), True),
+        (wf.replace("run: echo", "run: !!str |\n          echo ok"), True),
+        (wf.replace("      - run: echo\n", "      - <<: {run: \"echo ok\"}\n"), True),
+        (wf.replace("      - run: echo\n", "      - run: echo ${{ github.head_ref }}\n        run: echo\n"), True),
+        (wf + "---\n" + wf, True),
+        (wf.replace("on:\n  push:\n", "on: [push, pull_request_target]\n"), True),
+        (wf.replace("run: echo", "run: |\n          set -o xtrace"), True),
+        (wf.replace("      - run: echo\n", "      - uses: actions/github-script@abc\n        with:\n"
+                    "          script: core.info('${{ github.head_ref }}')\n"), True),
+        (wf + "  lint:\n    steps:\n      - uses: actions/github-script@abc\n        env:\n"
+              "          REF: ${{ github.head_ref }}\n        with:\n          script: core.info(process.env.REF)\n",
+         False),
+        (wf.replace("      - run: echo\n", "      - uses: Actions/Cache@abc\n"), True),
+        (wf.replace("      - run: echo\n", "      - uses: actions/setup-python@abc\n        with:\n          cache: pip\n"),
+         True),
+        (wf + "  lint:\n    steps:\n      - uses: actions/setup-python@abc\n        with:\n          cache: pip\n", False),
+        (wf.replace("      - run: echo\n", "      - uses: actions/setup-go@abc\n"), True),
+        # r3 S3-2: the signed chain uses only its four pinned actions.
+        (wf.replace("      - run: echo\n", "      - uses: actions/setup-go@abc\n        with:\n          cache: false\n"),
+         True),
+        (wf + "  lint:\n    steps:\n      - uses: actions/setup-go@abc\n        with:\n          cache: false\n", False),
+        (wf.replace("      - run: echo\n", "      - uses: actions/checkout@" + sha + "\n"), False),
+        (wf.replace("      - run: echo\n", "      - uses: actions/checkout@v7\n"), True),
+        (wf.replace("      - run: echo\n", "      - uses: ruby/setup-ruby@" + sha + "\n        with:\n"
+                    "          bundler-cache: true\n"), True),
+        (wf.replace("      - run: echo\n", "      - uses: actions/setup-node@" + sha + "\n"), True),
+        (wf.replace("      - run: echo\n", "      - uses: actions/download-artifact@" + sha + "\n        with:\n"
+                    "          package-manager-cache: true\n"), True),
+        (wf + "  lint:\n    steps:\n      - uses: ./.github/actions/x\n", True),
+        (wf + "  lint:\n    uses: ./.github/workflows/x.yml\n", True),
+        (wf + "  lint:\n    uses: octo/repo/.github/workflows/x.yml@" + sha + "\n", True),
+        (wf + "  lint:\n    steps:\n      - uses: docker://alpine:3\n        with:\n"
+              "          args: sh -c \"echo ${{ github.head_ref }}\"\n", True),
+        (wf + "  lint:\n    steps:\n      - uses: docker://alpine:3\n        with:\n          args: echo ok\n", False),
+        (wf.replace("      - run: echo\n", "      - env:\n          SHELLOPTS: xtrace\n        run: echo\n"), True),
+        (wf.replace("jobs:\n", "env:\n  BASH_ENV: /tmp/x\njobs:\n"), True),
+        (wf + "  lint:\n    env:\n      ENV: /tmp/x\n    steps:\n      - run: echo\n", True),
+        (wf + "  compile:\n    steps:\n      - uses: actions/cache@abc\n"
+              "  sign:\n    needs: \"compile\"\n    steps:\n      - run: echo\n", True),
+    ]
+    # r3 C3-2, C3-3: sign needs kit-linux and build; rehearse runs the same secret-free scripts.
+    steps = {"sign": ["Check the bundle and Sparkle", "Build the disk image"],
+             "publish": ["Release notes", "Sparkle tools", "Generate the appcast",
+                         "Verify the appcast against the pinned key"]}
+
+    def chain(needs="[kit-linux, build]", rehearsed="echo same", order="for item in a b; do"):
+        text = "on:\n  push:\njobs:\n  kit-linux:\n    steps:\n      - run: echo\n  build:\n    steps:\n      - run: echo\n"
+        text += f"  sign:\n    needs: {needs}\n    steps:\n      - name: Sign the app\n        run: |\n"
+        text += "          for item in a b; do\n            echo $item\n          done\n"
+        for job in ("sign", "publish", "rehearse"):
+            if job != "sign":
+                text += f"  {job}:\n    needs: build\n    steps:\n"
+            if job == "rehearse":
+                text += f"      - name: Sign the app (ad hoc)\n        run: |\n          {order}\n            echo\n          done\n"
+            for owner, names in steps.items():
+                if job == owner or job == "rehearse":
+                    for name in names:
+                        run = rehearsed if job == "rehearse" and name == "Sparkle tools" else "echo same"
+                        text += f"      - name: {name}\n        run: {run}\n"
+        return text
+
+    workflow_cases += [
+        (chain(), False),
+        (chain(needs="build"), True),
+        (chain(needs="[kit-linux]"), True),
+        (chain(rehearsed="echo different"), True),
+        (chain(order="for item in b a; do"), True),
+        (chain().split("  rehearse:")[0], True),
+    ]
+    if yaml is None:
+        return problems
+    for text, flagged in workflow_cases:
+        if bool(workflow_file("selfcheck.yml", text)) != flagged:
+            problems.append(f"self-check: workflow rules {'missed' if flagged else 'wrongly reported'} {text!r}")
     return problems
 
 
@@ -345,6 +532,7 @@ def unratcheted_problems():
                 problems.append(f"{p}: L16 {m.group(0)!r} is only allowed in Awake/Core/SessionController.swift")
         if p == "Sources/Snaptic/Core/CLIClient.swift" and re.search(r"\bshutdown\(", t):
             problems.append(f"{p}: L16 shutdown( is banned (the client never half-closes)")
+    problems += l16_lid()
     # L17 duplicate keys never trap in Awake.
     for p in SOURCES:
         base = os.path.basename(p)
@@ -353,11 +541,413 @@ def unratcheted_problems():
         if awake and "uniqueKeysWithValues" in TEXT[p]:
             problems.append(f"{p}: L17 uniqueKeysWithValues is banned in Awake (use uniquingKeysWith: {{ first, _ in first }})")
     problems += l15()
+    problems += l18()
+    problems += l19()
+    problems += workflows()
     problems += rule2()
     problems += menu_contributors()
     problems += old_terms()
     problems += straight_apostrophes()
     problems += popup_case()
+    return problems
+
+
+def l16_lid():
+    """PLAN 0.3.1 B2: only SessionController sets a session's `lidRequested`; only LidClosedController assigns the
+    runtime's `lidMode`."""
+    problems = []
+    for p in SOURCES:
+        problems += l16_lid_file(p, TEXT[p])
+    return problems
+
+
+def l16_lid_file(p, t):
+    problems = []
+    if p not in ("Sources/Snaptic/Awake/Core/SessionController.swift", "Sources/SnapticKit/AwakeSession.swift"):
+        for m in re.finditer(r"\.lidRequested\s*=(?!=)", t):
+            problems.append(f"{p}: L16 {m.group(0)!r} is only allowed in SessionController.swift and AwakeSession.swift")
+    if p != "Sources/Snaptic/Awake/Core/LidClosedController.swift":
+        for m in re.finditer(r"(?<![\w$])lidMode\s*=(?!=)", t):
+            problems.append(f"{p}: L16 {m.group(0)!r} is only allowed in Awake/Core/LidClosedController.swift")
+    return problems
+
+
+# PLAN 0.3.1 L18 (B6): what may run as root, and who may ask for it.
+LID_WATCHDOG = "Sources/SnapticKit/LidWatchdog.swift"
+LID_SPAWN_CALLERS = ("Sources/Snaptic/Awake/Core/LidClosedController.swift", "Sources/Snaptic/Core/LidRecovery.swift")
+LID_SPAWNER = "Sources/Snaptic/Core/HelperSpawner.swift"
+L18_WORDS = ("with administrator privileges", "do shell script", "disablesleep", "displaysleepnow", "sleepnow",
+             "/usr/bin/pmset", "osascript", "nohup")
+
+
+def l18():
+    problems = []
+    for p in SOURCES:
+        problems += l18_file(p, TEXT[p])
+    # The Objective-C shims hold no such string either (they have no comment stripper: whole text).
+    for dirpath, _, files in os.walk("Sources/SnapticShims"):
+        for f in sorted(files):
+            if f.endswith((".m", ".h")):
+                path = os.path.join(dirpath, f)
+                text = open(path, encoding="utf-8").read()
+                for word in L18_WORDS:
+                    if word in text:
+                        problems.append(f"{path}: L18 “{word}” is only allowed in {LID_WATCHDOG}")
+    return problems
+
+
+def without_search_specs(t):
+    """`t` with every `SearchSpec(…)` call removed: search keywords are data users type ("disablesleep", B7)."""
+    out, i = [], 0
+    for m in re.finditer(r"\bSearchSpec\(", t):
+        if m.start() < i:
+            continue
+        out.append(t[i:m.start()])
+        i = code_end(t, m.end())
+    out.append(t[i:])
+    return "".join(out)
+
+
+def l18_file(p, t):
+    problems = []
+    if p != LID_WATCHDOG:
+        scanned = without_search_specs(t) if p.startswith("Sources/SnapticKit/Controls/") else t
+        for text, nested, _ in literals_in(scanned):
+            for s in [text] + [n for n, _ in nested]:
+                for word in L18_WORDS:
+                    if word in s.lower():
+                        problems.append(f"{p}: L18 the string “{word}” is only allowed in {LID_WATCHDOG}")
+        for m in re.finditer(r"\b(?:AdminScript|ToolCommand)\(", t):
+            problems.append(f"{p}: L18 {m.group(0)!r} is only allowed in {LID_WATCHDOG}")
+    if p not in LID_SPAWN_CALLERS:
+        for m in re.finditer(r"\b(spawnAdminScript|spawnTool)\(", t):
+            if p == LID_SPAWNER and re.search(r"\bfunc\s+$", t[max(0, m.start() - 16):m.start()]):
+                continue
+            problems.append(f"{p}: L18 {m.group(1)}( may only be called from LidClosedController.swift and "
+                            "LidRecovery.swift")
+    return sorted(set(problems))
+
+
+# PLAN 0.3.1 L19 (E6): Sparkle stays behind one file.
+UPDATER = "Sources/Snaptic/Core/UpdaterController.swift"
+UPDATE_KEYS = "Sources/SnapticKit/UpdatePolicy.swift"
+
+
+def l19():
+    problems = []
+    imports = False
+    for p in SOURCES:
+        file_problems, imported = l19_file(p, TEXT[p])
+        problems += file_problems
+        imports = imports or imported
+    problems += l19_package(open("Package.swift", encoding="utf-8").read() if os.path.exists("Package.swift") else "",
+                            imports, os.path.exists("Package.resolved"))
+    return problems
+
+
+def l19_file(p, t):
+    """(problems, whether `p` imports Sparkle)."""
+    problems = []
+    imported = re.search(r"^\s*(?:@\w+\s+)*import\s+(?:\w+\s+)?Sparkle\b", t, re.M) is not None
+    if p != UPDATER:
+        if imported:
+            problems.append(f"{p}: L19 import Sparkle is only allowed in {UPDATER}")
+        for m in sorted(set(re.findall(r"\b(?:SPU|SU)[A-Z]\w*", without_string_text(t)))):
+            problems.append(f"{p}: L19 Sparkle identifier {m} is only allowed in {UPDATER}")
+    if p != UPDATE_KEYS:
+        for text, nested, _ in literals_in(t):
+            for s in [text] + [n for n, _ in nested]:
+                for m in re.findall(r"(?<![A-Za-z0-9_])SU[A-Z][a-z]\w*", s):   # SUFeedURL, not SUPPORT
+                    problems.append(f"{p}: L19 the Sparkle key “{m}” is only allowed in UpdateDefaultsKeys ({UPDATE_KEYS})")
+    return sorted(set(problems)), imported
+
+
+def l19_package(manifest, imports, resolved):
+    """Once Sparkle is imported (or any dependency declared): exactly one, Sparkle with `exact:`, under
+    `#if os(macOS)`, and Package.resolved committed."""
+    code = strip_comments(manifest)
+    deps = [m.start() for m in re.finditer(r"\.package\(", code)]
+    if not imports and not deps:
+        return []
+    problems = []
+    if len(deps) != 1:
+        problems.append(f"Package.swift: L19 declares {len(deps)} dependencies; exactly one (Sparkle) is allowed")
+    for at in deps:
+        call = code[at:code_end(code, at + len(".package("))]
+        if "sparkle-project/Sparkle" not in call or not re.search(r"\bexact:", call):
+            problems.append("Package.swift: L19 the dependency must be sparkle-project/Sparkle pinned with exact:")
+        inside = False
+        for m in re.finditer(r"^\s*#if\s+os\(macOS\)\s*$", code, re.M):
+            end = code.find("#endif", m.end())
+            if m.end() <= at and (end < 0 or at < end):
+                inside = True
+        if not inside:
+            problems.append("Package.swift: L19 the Sparkle dependency must be declared under #if os(macOS)")
+    if not resolved:
+        problems.append("Package.resolved: L19 must be committed with the Sparkle dependency")
+    return problems
+
+
+# PLAN 0.3.1 E3, E6: workflow hygiene, checked on the parsed YAML (r2 S2-4: line patterns missed block-scalar headers
+# such as `|2-`, multi-line plain and quoted scalars, flow-style steps, quoted keys, anchors and tags). PyYAML isn't in
+# the standard library: kit-linux installs python3-yaml and sets LINT_REQUIRE_YAML=1, so a missing PyYAML fails there;
+# elsewhere (a Mac without it) these rules are skipped with a warning.
+WORKFLOWS = ".github/workflows"
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
+# What the signed chain uses, nothing else (r3 S3-2): a composite or Docker action's own steps are out of the rules'
+# sight, so none is allowed there.
+SIGNED_CHAIN_ACTIONS = {"actions/checkout", "actions/upload-artifact", "actions/download-artifact",
+                        "actions/attest-build-provenance"}
+PINNED = re.compile(r"@[0-9a-f]{40}$")
+# Shell start-up variables that turn on xtrace or run a file before every script (r3 S3-2).
+SHELL_ENV = {"SHELLOPTS", "BASHOPTS", "BASH_ENV", "ENV"}
+# The secret-free rehearsal (r3 C3-3): these steps of sign and publish run in `rehearse` with the same script.
+REHEARSED = [("sign", "Check the bundle and Sparkle"), ("sign", "Build the disk image"), ("publish", "Release notes"),
+             ("publish", "Sparkle tools"), ("publish", "Generate the appcast"),
+             ("publish", "Verify the appcast against the pinned key")]
+SIGN_LOOP = re.compile(r"^\s*for item in [^\n]*; do$", re.M)
+SET_X = re.compile(r"\bset\s+(?:-[A-Za-z]*x[A-Za-z]*|-o\s+xtrace)\b|\b(?:ba)?sh\s+-[A-Za-z]*x")
+FORBIDDEN_TRIGGERS = {"pull_request_target", "workflow_run"}
+
+
+def yaml_missing():
+    """The problem (or warning) when PyYAML isn't there; None when it is."""
+    if yaml is not None:
+        return None
+    if os.environ.get("LINT_REQUIRE_YAML") == "1":
+        return "the workflow rules need PyYAML (python3-yaml), which isn't installed"
+    print("lint warning: PyYAML isn't installed, so the workflow rules were skipped (kit-linux runs them)",
+          file=sys.stderr)
+    return ""
+
+
+def yaml_line(node):
+    return node.start_mark.line + 1
+
+
+def yaml_items(node):
+    """(key, value node) pairs of a mapping node's text keys; [] for anything else."""
+    if not isinstance(node, yaml.MappingNode):
+        return []
+    return [(k.value, v) for k, v in node.value if isinstance(k, yaml.ScalarNode)]
+
+
+def yaml_get(node, key):
+    for k, v in yaml_items(node):
+        if k == key:
+            return v
+    return None
+
+
+def yaml_scalars(node):
+    """Every scalar under `node`, mapping keys included."""
+    if isinstance(node, yaml.ScalarNode):
+        yield node
+    elif isinstance(node, yaml.SequenceNode):
+        for item in node.value:
+            yield from yaml_scalars(item)
+    elif isinstance(node, yaml.MappingNode):
+        for k, v in node.value:
+            yield from yaml_scalars(k)
+            yield from yaml_scalars(v)
+
+
+def workflow_tree(path, text):
+    """(problems, root node). The tree must read the way GitHub reads it: one document; no anchors, aliases or merge
+    keys (a step reused out of sight); no explicit tags (`!!binary` hides text); text keys, each once (PyYAML keeps
+    the last of a repeated key)."""
+    problems = []
+    try:
+        for event in yaml.parse(text, Loader=yaml.SafeLoader):
+            where = f"{path}:{event.start_mark.line + 1}"
+            if isinstance(event, yaml.AliasEvent) or getattr(event, "anchor", None):
+                problems.append(f"{where}: YAML anchors and aliases are forbidden in workflows (r2 S2-4)")
+            elif getattr(event, "tag", None):
+                problems.append(f"{where}: explicit YAML tags are forbidden in workflows (r2 S2-4)")
+        root = yaml.compose(text, Loader=yaml.SafeLoader)
+    except yaml.YAMLError as error:
+        return problems + [f"{path}: not a single valid YAML document ({str(error).splitlines()[0]})"], None
+    if root is None:
+        return problems + [f"{path}: empty workflow"], None
+
+    def walk(node):
+        if isinstance(node, yaml.SequenceNode):
+            for item in node.value:
+                walk(item)
+        elif isinstance(node, yaml.MappingNode):
+            seen = set()
+            for k, v in node.value:
+                if not isinstance(k, yaml.ScalarNode):
+                    problems.append(f"{path}:{yaml_line(k)}: a mapping key must be text (r2 S2-4)")
+                elif k.value == "<<":
+                    problems.append(f"{path}:{yaml_line(k)}: YAML merge keys are forbidden in workflows (r2 S2-4)")
+                elif k.value in seen:
+                    problems.append(f"{path}:{yaml_line(k)}: repeated key {k.value!r} (r2 S2-4)")
+                seen.add(getattr(k, "value", None))
+                walk(v)
+
+    walk(root)
+    return problems, root
+
+
+def job_needs(job):
+    """The jobs a job's `needs:` names (one name or a list)."""
+    needs = yaml_get(job, "needs")
+    if isinstance(needs, yaml.ScalarNode):
+        return [needs.value]
+    if isinstance(needs, yaml.SequenceNode):
+        return [n.value for n in needs.value if isinstance(n, yaml.ScalarNode)]
+    return []
+
+
+def signed_chain(jobs):
+    """`build` (it makes the bundle sign signs), `sign`, `publish`, and every job those need, transitively."""
+    chain, todo = set(), ["build", "sign", "publish"]
+    while todo:
+        name = todo.pop()
+        if name in chain:
+            continue
+        chain.add(name)
+        todo += job_needs(jobs.get(name))
+    return chain
+
+
+def step_problems(path, job, step, signed):
+    """One step: no `${{` in its `run:` script or in `actions/github-script`'s inputs (values reach scripts through
+    `env:`; r1 S6); in the signed chain, no cache (an action named for one, a `cache…` input, or setup-go's default)."""
+    problems = []
+    run = yaml_get(step, "run")
+    if run is not None:
+        if not isinstance(run, yaml.ScalarNode):
+            problems.append(f"{path}:{yaml_line(run)}: run: must be a script (text)")
+        elif "${{" in run.value:
+            problems.append(f"{path}:{yaml_line(run)}: ${{{{ }}}} inside a run: script; pass the value through env: (E3)")
+    uses_node = yaml_get(step, "uses")
+    uses = uses_node.value if isinstance(uses_node, yaml.ScalarNode) else ""
+    # GitHub resolves an action's owner and repository without case.
+    action = uses.split("@")[0].lower()
+    inputs = yaml_items(yaml_get(step, "with"))
+    if action == "actions/github-script" or action.startswith("docker://"):
+        for key, value in inputs:
+            if any("${{" in s.value for s in yaml_scalars(value)):
+                problems.append(f"{path}:{yaml_line(value)}: ${{{{ }}}} in {action}'s {key}; "
+                                "pass the value through env: (r2 S2-4, r3 S3-2)")
+    if uses.startswith("./"):
+        problems.append(f"{path}:{yaml_line(step)}: local action {uses}: the workflow rules can't see into it (r3 S3-2)")
+    if signed:
+        where = f"{path}:{yaml_line(step)}"
+        if "cache" in action:
+            problems.append(f"{where}: job {job} must not use a cache ({uses}): its output is signed or published")
+        for key, value in inputs:
+            if "cache" in key.lower() and not (isinstance(value, yaml.ScalarNode) and value.value == "false"):
+                problems.append(f"{where}: job {job} must not turn on a cache (with: {key}): its output is signed or "
+                                "published")
+        if action == "actions/setup-go" and not any(k == "cache" for k, _ in inputs):
+            problems.append(f"{where}: job {job} must set cache: false for actions/setup-go (it caches by default)")
+        if uses and (action not in SIGNED_CHAIN_ACTIONS or not PINNED.search(uses)):
+            problems.append(f"{where}: job {job} may use only {', '.join(sorted(SIGNED_CHAIN_ACTIONS))}, pinned to a "
+                            f"full commit SHA, not {uses} (r3 S3-2)")
+    return problems
+
+
+def env_mappings(node):
+    """Every `env:` mapping in the tree (workflow, job, step, container)."""
+    for key, value in yaml_items(node):
+        if key == "env":
+            yield value
+        yield from env_mappings(value)
+    if isinstance(node, yaml.SequenceNode):
+        for item in node.value:
+            yield from env_mappings(item)
+
+
+def step_run(job, name):
+    """The `run:` text of the job's step with this name, or None."""
+    steps = yaml_get(job, "steps")
+    for step in steps.value if isinstance(steps, yaml.SequenceNode) else []:
+        title = yaml_get(step, "name")
+        run = yaml_get(step, "run")
+        if isinstance(title, yaml.ScalarNode) and title.value == name and isinstance(run, yaml.ScalarNode):
+            return run.value
+    return None
+
+
+def release_chain_problems(path, jobs):
+    """r3 C3-2: sign gates on kit-linux (the workflow lint, actionlint, the Linux tests) as well as build. r3 C3-3: the
+    rehearsal runs sign's and publish's secret-free steps byte for byte, and signs in sign's order."""
+    problems = []
+    needs = set(job_needs(jobs["sign"]))
+    for required in ("build", "kit-linux"):
+        if required not in needs:
+            problems.append(f"{path}: job sign must need {required} (r3 C3-2)")
+    rehearse = jobs.get("rehearse")
+    if rehearse is None:
+        return problems + [f"{path}: the release chain needs its secret-free rehearse job (r3 C3-3)"]
+    for job, name in REHEARSED:
+        original = step_run(jobs.get(job), name)
+        if original is None:
+            problems.append(f"{path}: job {job} has no step {name!r} with a run: script (r3 C3-3)")
+        elif step_run(rehearse, name) != original:
+            problems.append(f"{path}: rehearse's {name!r} must run exactly {job}'s script (r3 C3-3)")
+    loop = SIGN_LOOP.search(step_run(jobs["sign"], "Sign the app") or "")
+    if loop is None or loop.group(0).strip() not in (step_run(rehearse, "Sign the app (ad hoc)") or ""):
+        problems.append(f"{path}: rehearse's 'Sign the app (ad hoc)' must sign in sign's order (r3 C3-3)")
+    return problems
+
+
+def workflows():
+    if not os.path.isdir(WORKFLOWS):
+        return []
+    missing = yaml_missing()
+    if missing is not None:
+        return [missing] if missing else []
+    problems = []
+    for f in sorted(os.listdir(WORKFLOWS)):
+        if f.endswith((".yml", ".yaml")):
+            path = os.path.join(WORKFLOWS, f)
+            problems += workflow_file(path, open(path, encoding="utf-8").read())
+    return problems
+
+
+def workflow_file(path, text):
+    problems, root = workflow_tree(path, text)
+    if root is None:
+        return problems
+    for scalar in yaml_scalars(root):
+        if SET_X.search(scalar.value):
+            problems.append(f"{path}:{yaml_line(scalar)}: set -x (xtrace) is forbidden in workflows (E3: it prints "
+                            "secrets' derivations)")
+    triggers = yaml_get(root, "on")
+    if triggers is not None:
+        for scalar in yaml_scalars(triggers):
+            if scalar.value in FORBIDDEN_TRIGGERS:
+                problems.append(f"{path}:{yaml_line(scalar)}: workflow trigger pull_request_target / workflow_run is "
+                                "forbidden (E3)")
+    for node in env_mappings(root):
+        for key, value in yaml_items(node):
+            if key in SHELL_ENV:
+                problems.append(f"{path}:{yaml_line(value)}: env: {key} changes how every shell starts (r3 S3-2)")
+    jobs = dict(yaml_items(yaml_get(root, "jobs")))
+    chain = signed_chain(jobs)
+    for name, job in jobs.items():
+        if yaml_get(job, "uses") is not None:
+            problems.append(f"{path}:{yaml_line(job)}: job {name} calls a reusable workflow, which the workflow rules "
+                            "can't see into (r3 S3-2)")
+        steps = yaml_get(job, "steps")
+        for step in steps.value if isinstance(steps, yaml.SequenceNode) else []:
+            if isinstance(step, yaml.MappingNode):
+                problems += step_problems(path, name, step, name in chain)
+    if "sign" in jobs:
+        problems += release_chain_problems(path, jobs)
+    # "Only publish runs gh release": checked in every workflow that has a publish job.
+    if "publish" in jobs:
+        for name, job in jobs.items():
+            if name != "publish" and any(re.search(r"\bgh\s+release\b", s.value) for s in yaml_scalars(job)):
+                problems.append(f"{path}: job {name} runs gh release; only the publish job may (E3)")
     return problems
 
 

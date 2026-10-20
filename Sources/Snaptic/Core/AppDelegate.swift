@@ -18,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lock = InstanceLock()
     private var lockRetry: Timer?
     private var didFinishStartup = false
+    /// 0.3.1 B3.4: what step 7 found about lid-closed mode, handed to the host's LidRecoveryState once it exists.
+    private var lidLaunch = LidLaunchFacts(journal: nil, recovery: .nothing)
 
     init(launch: AppLaunchOptions) {
         self.launch = launch
@@ -61,6 +63,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 7. Undo unfinished display changes from a previous run (runs in Safe Mode too).
         let recovery = RevertJournal.recoverAtLaunch(safeMode: safeMode)
         if let message = recovery.message { toasts.show(message) }
+        // Sleep left off by an earlier lid-closed session (0.3.1 B3.4): whatever Awake's state, also in Safe Mode.
+        lidLaunch = LidRecovery.atLaunch(safeMode: safeMode)
         // 8. Signals: give ⌘⇥ back and run emergency actions even if main is hung.
         handleTerminationSignals()
         // 9. Heartbeat (also the hang guard's beat) and helper preparation.
@@ -85,7 +89,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let host = ModuleHost(safeMode: safeMode, toasts: toasts, permissions: permissions, spawner: spawner,
                               relauncher: relauncher)
         self.host = host
+        // 0.3.1 B3.4: the leftover state exists before any menu is built; Awake reaches it (and the shared menu rows)
+        // through its host.
+        host.awake.moduleHost = host
+        host.lidRecovery.start(lidLaunch, spawner: spawner, toasts: toasts,
+                               awakeRunning: { [weak host] in host?.isRunning(.awake) ?? false },
+                               openAwakeSettings: { [weak host] in host?.openSettings(page: SettingsRootID.awake) })
         host.bootstrap()
+        // 0.3.1 Part E: Sparkle, when this build carries it (the host's own; created in GUI mode only).
+        host.startUpdater()
+
+        host.lidRecovery.launchFinished()
 
         if safeMode.isActive {
             toasts.show(L("Snaptic started in Safe Mode. Automation is paused."),
@@ -111,6 +125,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Stops Awake first if it runs: lid-closed mode writes its stop file synchronously there (0.3.1 B3.3); the
+        // signal path has the same write as an EmergencyActions action.
         host?.shutdown()
         SystemHotkeys.restore()
         HotkeyGuard.shared.releaseAll()

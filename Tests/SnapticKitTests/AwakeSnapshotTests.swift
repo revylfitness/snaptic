@@ -270,6 +270,35 @@ final class AwakeSnapshotTests: XCTestCase {
         XCTAssertEqual(r.keeping(session: nil), AwakeReminders())
     }
 
+    /// 0.3.1 B1, r1 A5: a session that had lid-closed mode keeps "Lid closed" in History across a quit or crash.
+    func testLidSessionMarksHistoryAcrossARelaunch() throws {
+        let m = session(.indefinite)
+        var raw = snapshot(manual: m)
+        raw.lidSession = m.id
+        raw.stop = stamp(9_000, clean: false)
+        let decoded = try JSONDecoder().decode(AwakeRuntimeSnapshot.self, from: JSONEncoder().encode(raw))
+        XCTAssertEqual(decoded.lidSession, m.id, "persisted")
+        XCTAssertEqual(decoded.sanitized(now: now(20_000)).lidSession, m.id, "carried with its session")
+        // The part before a gap, a dropped session, another boot's: each entry says "Lid closed".
+        let before = try XCTUnwrap(raw.resumedSegment(.session(m), now: now(20_000)))
+        XCTAssertTrue(before.lidClosed)
+        XCTAssertTrue(AwakeHistoryEntry(before).lidClosed)
+        XCTAssertTrue(raw.restoreEnd(.session(m), reason: .moduleStopped, now: now(20_000)).lidClosed)
+        let away = try XCTUnwrap(raw.awayEnds(now: now(50, boot: "BOOT-2")).first)
+        XCTAssertEqual(away.reason, .reboot)
+        XCTAssertTrue(AwakeHistoryEntry(away).lidClosed)
+        // Without the marker, or for another session, nothing changes.
+        raw.lidSession = nil
+        XCTAssertFalse(AwakeHistoryEntry(try XCTUnwrap(raw.resumedSegment(.session(m), now: now(20_000)))).lidClosed)
+        raw.lidSession = id("other")
+        XCTAssertFalse(raw.restoreEnd(.session(m), reason: .moduleStopped, now: now(20_000)).lidClosed)
+        XCTAssertNil(raw.sanitized().lidSession, "a marker for another session is dropped")
+        XCTAssertNil(snapshot().sanitized(now: now(20_000)).lidSession)
+        // An old snapshot (no key) decodes without it, and a snapshot without it encodes no key.
+        let plain = String(decoding: try JSONEncoder().encode(snapshot(manual: m)), as: UTF8.self)
+        XCTAssertFalse(plain.contains("lidSession"))
+    }
+
     func testContentIgnoresTheStamp() {
         var a = snapshot(manual: session())
         var b = a

@@ -39,7 +39,8 @@ import SnapticKit
             if case .whileApp(let b, _) = s.kind { bundleID = b }
             let start = ctx.sessions.historyStart(s.id, startedAt: s.startedAt)
             entry = AwakeHistoryEntry(start: min(start, now), end: now, kind: s.kind.historyKind, source: s.source,
-                                      presetID: s.presetID, triggerID: nil, bundleID: bundleID, endReason: reason)
+                                      presetID: s.presetID, triggerID: nil, bundleID: bundleID, endReason: reason,
+                                      lidClosed: ctx.sessions.hadLidMode(s.id))
         case .hold(let h):
             if h.binding.isProcess && skipsForResume(reason) { return }
             let start = ctx.sessions.historyStart(h.id, startedAt: h.startedAt)

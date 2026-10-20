@@ -177,10 +177,12 @@ enum SystemEvent: Equatable, Sendable {
         publishLid()
     }
 
-    /// The runtime's "closing the lid will sleep" fact (nil = no lid), for the Awake menu's lid notice (§2.12).
+    /// The runtime's "closing the lid will sleep" fact (nil = no lid), for the Awake menu's lid notice (§2.12), and
+    /// whether the lid is shut (0.3.1 B3.3: lid-closed mode's `lidShut`).
     private func publishLid() {
-        guard let runtime = context?.runtime, runtime.lidWillSleep != lidWillSleep else { return }
-        runtime.lidWillSleep = lidWillSleep
+        guard let runtime = context?.runtime else { return }
+        if runtime.lidWillSleep != lidWillSleep { runtime.lidWillSleep = lidWillSleep }
+        if runtime.lidClosed != lidClosed { runtime.lidClosed = lidClosed }
     }
 
     private static func boolProperty(_ entry: io_registry_entry_t, _ key: String) -> Bool? {

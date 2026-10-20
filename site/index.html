@@ -398,7 +398,7 @@ footer .links a:hover { color: var(--ink); }
         <span class="gray"><span class="word">Every display.</span></span>
         <span><span class="word">Awake on demand.</span></span>
       </h1>
-      <p class="lede">The window switcher your Mac should have shipped with, the display tools you’d usually pay for, and a keep-awake switch that needs no password. Free and open source. Turn on only what you want.</p>
+      <p class="lede">The window switcher your Mac should have shipped with, the display tools you’d usually pay for, and a keep-awake switch that works even with the lid closed. Free and open source. Turn on only what you want.</p>
       <div class="ctas">
         <a class="btn light big" href="#get">Get Snaptic</a>
         <a class="btn big" href="https://github.com/revylfitness/snaptic">View on GitHub</a>
@@ -499,7 +499,7 @@ footer .links a:hover { color: var(--ink); }
             <svg viewBox="0 0 96 96" aria-hidden="true"><rect x="22" y="42" width="52" height="40" rx="10" fill="currentColor"/><path d="M32 42V32a16 16 0 0 1 32 0v10" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"/><circle cx="48" cy="60" r="5" fill="#18181b"/><rect x="46" y="61" width="4" height="10" rx="2" fill="#18181b"/></svg>
           </div>
           <h3>Private.</h3>
-          <p>No network. No tracking. Thumbnails stay in memory and vanish when your Mac locks.</p>
+          <p>No tracking. Network only for updates you allow. Thumbnails stay in memory and vanish when your Mac locks.</p>
         </div>
         <div class="card span-3">
           <div class="art">
@@ -597,7 +597,7 @@ footer .links a:hover { color: var(--ink); }
   <section class="block stagger" id="awake">
     <div class="wrap">
       <h2 class="huge"><span>Stay</span><span>awake.</span></h2>
-      <p>Awake keeps your Mac from sleeping for a while, until a time, while an app runs, or until downloads and tasks finish. No administrator password, nothing installed, and nothing left behind if Snaptic quits.</p>
+      <p>Awake keeps your Mac from sleeping for a while, until a time, while an app runs, or until downloads and tasks finish. Nothing installed, and nothing left behind if Snaptic quits. Only lid-closed mode asks for an administrator password, each time.</p>
 
       <div class="bento">
         <div class="card span-4">
@@ -634,7 +634,7 @@ footer .links a:hover { color: var(--ink); }
         <div><h3>Shortcuts.</h3><p>Keep Awake, Keep Display On, and your own sessions, from any app.</p></div>
         <div><h3>Appear active.</h3><p>Keeps apps from marking you away. Opt-in.</p></div>
         <div><h3>Only when needed.</h3><p>Its icon shows up while your Mac is kept awake, then steps aside.</p></div>
-        <div><h3>Lid closed?</h3><p>Connect power and a display, and macOS stays awake on its own. No root tricks.</p></div>
+        <div><h3>Lid closed on battery?</h3><p>Turn on lid-closed mode with an administrator password. It stops at low battery, on heat, and after 24 hours.</p></div>
       </div>
     </div>
   </section>
@@ -646,7 +646,7 @@ footer .links a:hover { color: var(--ink); }
         <div><span class="k"><span class="key wide-key">7</span></span><span><strong>Seven pages.</strong> General, Menu Bar, one page per module, Permissions, and About.</span></div>
         <div><span class="k"><span class="key wide-key">Search</span></span><span><strong>Find anything.</strong> Search by name, even for settings in Advanced sheets.</span></div>
         <div><span class="k"><span class="key">?</span></span><span><strong>Every option explained.</strong> Each one says what it does, and (?) opens its section of the guide.</span></div>
-        <div><span class="k"><span class="key wide-key">Menu</span></span><span><strong>Live menus.</strong> Sliders, values, and countdowns update while a menu is open. Each module picks its own place in the menu bar.</span></div>
+        <div><span class="k"><span class="key wide-key">Menu</span></span><span><strong>Live menus.</strong> Sliders, values, and countdowns update while a menu is open. Each module picks its own place in the menu bar, and the shared menu gives each one a tab.</span></div>
       </div>
     </div>
   </section>
@@ -696,8 +696,8 @@ footer .links a:hover { color: var(--ink); }
       <div class="download">
         <div>
           <h3>Download Snaptic.</h3>
-          <p>Version 0.3.0 for Apple silicon and Intel. Unzip it and drag Snaptic to Applications.</p>
-          <p>Snaptic isn’t notarized by Apple yet, so the first time you open it, go to System Settings, Privacy &amp; Security, and click Open Anyway.</p>
+          <p>Version 0.3.1 for Apple silicon and Intel. Unzip it and drag Snaptic to Applications.</p>
+          <p>Signed by its developer and notarized by Apple, and it keeps itself up to date if you allow it. On 0.3.0 or earlier? Download it one last time; after that, updates come to you.</p>
         </div>
         <a class="btn big" href="https://github.com/revylfitness/snaptic/releases/latest/download/Snaptic.zip">
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10m0 0-4-4m4 4 4-4M4 16h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -715,7 +715,7 @@ footer .links a:hover { color: var(--ink); }
         </li>
         <li>
           <h3>Build it.</h3>
-          <p>Downloads the source, builds it, and puts Snaptic in Applications.</p>
+          <p>Downloads the source, builds it, and puts Snaptic in Applications. A copy you build yourself doesn’t update itself.</p>
           <div class="code"><div class="bar"><span>Terminal</span><button class="copy" type="button">Copy</button></div><pre><code>git clone https://github.com/revylfitness/snaptic.git
 cd snaptic
 INSTALL=1 ./scripts/build-app.sh</code></pre></div>
@@ -733,7 +733,7 @@ INSTALL=1 ./scripts/build-app.sh</code></pre></div>
 <footer>
   <div class="wrap">
     <p class="made">Made with &lt;/3 by revyl fitness technology, Inc.</p>
-    <p>Snaptic is free, open-source software under the MIT license. It asks for Accessibility access for the window switcher, media keys, and Awake’s optional pointer movement, and Screen Recording access for thumbnails and Picture in Picture, only when those features are on. It makes no network connections.</p>
+    <p>Snaptic is free, open-source software under the MIT license. It asks for Accessibility access for the window switcher, media keys, and Awake’s optional pointer movement, and Screen Recording access for thumbnails and Picture in Picture, only when those features are on. It connects only to GitHub to check for updates, and only if you allow it. No analytics.</p>
     <p>Snaptic is an independent project, not affiliated with or endorsed by Apple Inc. Mac and macOS are trademarks of Apple Inc. App names and window contents in the demo are fictional.</p>
     <p>Snaptic isn’t affiliated with BetterDisplay, MonitorControl, Lunar, Amphetamine, or Insomnia.</p>
     <div class="links">

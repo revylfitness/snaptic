@@ -441,6 +441,29 @@ final class MenuLayoutTests: XCTestCase {
             XCTAssertEqual(session.ownIcon, rest.ownIcon)
             XCTAssertEqual(session.shared.filter { $0 != .awake }, rest.shared.filter { $0 != .awake })
             if rest.awakeCompactInShared { XCTAssertTrue(session.awakeCompactInShared) }
+
+            // 0.3.1 A4: tabs are absent or two or more, the selection is always a tab, and ⌘n is a bijection.
+            let storedChoices: [String?] = [nil, "", "junk"] + ModuleID.allCases.map(\.rawValue)
+            let stored = storedChoices[Int(rng.next() % UInt64(storedChoices.count))]
+            let tabs = MenuTabs.tabs(plan: p)
+            XCTAssertTrue(tabs.isEmpty || tabs.count >= 2)
+            XCTAssertEqual(tabs.isEmpty, p.shared.count < 2)
+            XCTAssertTrue(tabs.isEmpty || tabs == p.shared)
+            let selected = MenuTabs.selected(stored: stored, tabs: tabs)
+            if tabs.isEmpty {
+                XCTAssertNil(selected)
+            } else {
+                XCTAssertTrue(selected.map { tabs.contains($0) } == true)
+                if let stored, let id = ModuleID(rawValue: stored), tabs.contains(id) { XCTAssertEqual(selected, id) }
+                XCTAssertEqual(tabs.compactMap { MenuTabs.keyIndex(for: $0, tabs: tabs) }, Array(1...tabs.count))
+                for n in 1...tabs.count {
+                    let tab = MenuTabs.tab(atKeyIndex: n, tabs: tabs)
+                    XCTAssertEqual(tab, tabs[n - 1])
+                    XCTAssertEqual(tab.flatMap { MenuTabs.keyIndex(for: $0, tabs: tabs) }, n)
+                }
+            }
+            XCTAssertNil(MenuTabs.tab(atKeyIndex: 0, tabs: tabs))
+            XCTAssertNil(MenuTabs.tab(atKeyIndex: tabs.count + 1, tabs: tabs))
         }
     }
 }

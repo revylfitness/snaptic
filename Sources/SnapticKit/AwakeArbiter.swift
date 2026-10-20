@@ -37,9 +37,13 @@ package struct AwakeArbiterInput: Equatable, Sendable {
     package var guardsHold: Bool
     /// AwakeClock.continuousEnd of the governing manual session, or the latest deadline of the hold stack.
     package var sessionEnd: Double?
+    /// 0.3.1 B3.3: lid-closed mode is on, the lid is shut and no external display is attached, so the session's
+    /// display policy counts as `maySleep` (Snaptic's own assertion never keeps the closed panel lit).
+    package var lidShut: Bool
 
     package init(governing: AwakeGoverning, screenLocked: Bool, consoleActive: Bool, realIdleSeconds: Double?,
-                 keepDisplayOnWhileLocked: Bool, driveAliveWriting: Bool, guardsHold: Bool, sessionEnd: Double?) {
+                 keepDisplayOnWhileLocked: Bool, driveAliveWriting: Bool, guardsHold: Bool, sessionEnd: Double?,
+                 lidShut: Bool = false) {
         self.governing = governing
         self.screenLocked = screenLocked
         self.consoleActive = consoleActive
@@ -48,6 +52,7 @@ package struct AwakeArbiterInput: Equatable, Sendable {
         self.driveAliveWriting = driveAliveWriting
         self.guardsHold = guardsHold
         self.sessionEnd = sessionEnd
+        self.lidShut = lidShut
     }
 }
 
@@ -59,6 +64,8 @@ package enum AwakeArbiter {
     /// keepDisplayOnWhileLocked) or off console; maySleep → system; holds → system; keepOnWhileActive → display while
     /// real idle < displayIdleMinutes (unknown idle counts as active), else system. Manual sessions with an end and the
     /// hold stack get `deadline = sessionEnd + grace`; rule sessions have no backstop and none while guards hold.
+    /// 0.3.1 B3.3: while `lidShut` (lid-closed mode on, the lid closed, no external display) every display policy
+    /// counts as `maySleep`, so Snaptic's own assertion never keeps the closed panel lit.
     package static func plan(_ input: AwakeArbiterInput) -> AwakeAssertionPlan {
         let disk = input.driveAliveWriting
         let end = input.sessionEnd.flatMap { $0.isFinite ? $0 + timeoutGraceSeconds : nil }
@@ -85,6 +92,7 @@ package enum AwakeArbiter {
     }
 
     private static func type(for options: AwakeSessionOptions, _ input: AwakeArbiterInput) -> AwakeAssertionType {
+        if input.lidShut { return .system }
         let displayAllowed = input.consoleActive && (!input.screenLocked || input.keepDisplayOnWhileLocked)
         switch options.display {
         case .maySleep:

@@ -7,6 +7,8 @@ import SnapticKit
 // items and keeps the switch header's state and detail current while a menu is open (N15). Every item has a native
 // path (the switch header is mouse-only; Keep Awake / Turn Off Keep Awake are its keyboard and VoiceOver twins).
 // The section uses no images except the app rows of "While an App Is Running", which are their own group.
+// 0.3.1 A4, B1: the same rows in Awake's tab of the Snaptic menu (style `tab`), and the lid-closed rows in all three
+// styles (a lid request starts only from these clicks, N19).
 
 @MainActor final class AwakeMenuRows {
     typealias Controls = AwakeMenuRowsControls
@@ -41,11 +43,18 @@ import SnapticKit
     /// The rows for the Awake menu (`compact == false`) or the compact section. `footer`: the Snaptic item is
     /// absent, so the own menu ends with Recent Notices › and Quit Snaptic (§5.2).
     func items(compact: Bool, footer: Bool = false) -> [NSMenuItem] {
+        items(style: compact ? .compact : .own, footer: footer)
+    }
+
+    /// The rows in `style` (0.3.1 A4). `footerExtras` (the shared footer's Update Available row, E1) go between the
+    /// own menu's Recent Notices › and Quit Snaptic.
+    func items(style: AwakeMenuStyle, footer: Bool = false, footerExtras: [NSMenuItem] = []) -> [NSMenuItem] {
         headers.removeAll { $0.item.menu == nil }
         guard let ctx = context else { return [] }
         let rt = ctx.runtime
+        // Kit places the lid row and drops Awake Settings… from the tab (B1, A4).
         let facts = AwakeMenuFacts(governing: rt.governing, holdsExist: !rt.holds.isEmpty,
-                                   rulesShown: rulesShown(ctx), compact: compact)
+                                   rulesShown: rulesShown(ctx), style: style, lid: Self.lidFacts(ctx))
         var out: [NSMenuItem] = []
         for row in AwakeMenuModel.rows(facts) {
             switch row {
@@ -76,10 +85,70 @@ import SnapticKit
                     self?.context?.host.openSettings(SettingsRoute("awake"))
                 })
             case .separator: out.append(MenuKit.separator())
+            case .lidClosed(let state): out.append(lidItem(state))
+            case .lidSubmenu(let ids): out.append(lidSubmenu(ids, ctx))
             }
         }
-        if footer && !compact { out += footerItems(ctx) }
+        if footer && style == .own { out += footerItems(ctx, extras: footerExtras) }
         return out
+    }
+
+    // MARK: Lid-closed mode (0.3.1 B1)
+
+    /// What Kit needs to place the lid row (B1, B3.0, B3.4): nil unless the feature is effective (on, available, not
+    /// killed, not in Safe Mode); the mode's state, or "Finishing Earlier Session…" while an earlier journal is
+    /// pending; whether the governing manual session takes the mode (`AwakeLidGate.addsToSession`: started from the
+    /// menu or Settings in this process, so restored sessions take the idle submenu); and the presets in order.
+    static func lidFacts(_ ctx: AwakeContext) -> AwakeLidMenuFacts? {
+        let rt = ctx.runtime
+        var takesMode = false
+        if case .manual(let s) = rt.governing {
+            takesMode = AwakeLidGate.addsToSession(source: s.source, startedInProcess: ctx.sessions.startedInProcess(s.id))
+        }
+        return AwakeLidMenuFacts.make(available: rt.isEffective(.lidClosed), mode: rt.lidMode,
+                                      recovery: ctx.host.lidRecovery?.recovery ?? .nothing,
+                                      sessionTakesMode: takesMode, presets: ctx.config.value.sessions.presets.map(\.id))
+    }
+
+    /// The lid row for the Settings pull-downs, where the menus get it (Kit's `AwakeMenuModel.lidRow`).
+    static func lidRow(_ ctx: AwakeContext) -> AwakeMenuRow? {
+        AwakeMenuModel.lidRow(lidFacts(ctx), governing: ctx.runtime.governing)
+    }
+
+    /// The B0 titles; pending rows are disabled. ✓ has no ellipsis: turning it off asks nothing.
+    private func lidItem(_ state: LidRowState) -> NSMenuItem {
+        let control = ControlID("menu.awake.lidClosed")
+        let title = AwakeLidText.rowTitle(state)
+        switch state {
+        case .off:
+            return MenuKit.action(title, control: control) { [weak self] in
+                self?.context?.lid.request(.add, source: .menu)
+            }
+        case .on:
+            return MenuKit.toggle(title, isOn: AwakeLidText.rowChecked(state), control: control) { [weak self] in
+                self?.context?.lid.turnOff()
+            }
+        case .authorizing, .verifying, .stopping, .finishingEarlier:
+            return MenuKit.action(title, enabled: AwakeLidText.rowEnabled(state), control: control) {}
+        }
+    }
+
+    /// "Keep Awake with the Lid Closed ›": every preset in order, each with "…" (each asks for the password), then
+    /// Custom… with the panel's lid-closed switch turned on.
+    private func lidSubmenu(_ ids: [StableID], _ ctx: AwakeContext) -> NSMenuItem {
+        let presets = ctx.config.value.sessions.presets
+        var rows: [NSMenuItem] = ids.compactMap { id in presets.first { $0.id == id } }.map { preset in
+            let id = preset.id
+            return MenuKit.action(AwakeLidText.presetTitle(preset.title(AwakeFormat.text)),
+                                  control: ControlID("menu.awake.lidPreset")) { [weak self] in
+                self?.context?.lid.request(.preset(id), source: .menu)
+            }
+        }
+        rows.append(MenuKit.separator())
+        rows.append(MenuKit.action(AwakeLidText.custom, control: ControlID("menu.awake.lidCustom")) { [weak self] in
+            self?.custom.present(.start, lidClosed: true)
+        })
+        return MenuKit.submenu(AwakeLidText.title, control: ControlID("menu.awake.lidSubmenu"), rows)
     }
 
     /// Rules › exists while ≥ 1 rule exists and `triggers` is effective (lead r4, r3 product M2).
@@ -222,8 +291,9 @@ import SnapticKit
                                        waitingName: name(rt.waitingTriggerIDs.first))
     }
 
-    /// Own menu without the Snaptic item (§5.2): Recent Notices › (when there are some) and Quit Snaptic.
-    private func footerItems(_ ctx: AwakeContext) -> [NSMenuItem] {
+    /// Own menu without the Snaptic item (§5.2): Recent Notices › (when there are some), `extras` (0.3.1 E1: the
+    /// Update Available row the shared footer carries) and Quit Snaptic, in `StatusMenu.ownFooter`'s order (r1 U4).
+    private func footerItems(_ ctx: AwakeContext, extras: [NSMenuItem]) -> [NSMenuItem] {
         var out: [NSMenuItem] = []
         let recent = ctx.host.toasts.recent
         if !recent.isEmpty {
@@ -234,6 +304,7 @@ import SnapticKit
             })
             out.append(MenuKit.submenu(L("Recent Notices"), control: ControlID("menu.awake.recentNotices"), rows))
         }
+        out += extras
         out.append(MenuKit.quit(control: ControlID("menu.awake.quit")))
         return out
     }
@@ -266,7 +337,17 @@ import SnapticKit
         input.activity = rt.activity
         input.activityCapped = rt.activityCapped
         input.stopAfterHours = ctx.config.value.activity.stopAfterHours
+        // 0.3.1 B1: the lid line first while the mode is on, the lid warning (Kit's rule) and route, the last end.
+        let lidOn = rt.lidMode.isOn
+        input.lidModeOn = lidOn
+        input.lidUntilClock = ctx.lid.capClockWall.map { AwakeFormat.clock($0) }
         input.lidWarning = rt.governing.isActive && lidWarning(ctx)
+        input.lidRoute = lidRoute(ctx)
+        if !lidOn, ctx.host.lidRecovery?.showsRows != true, let end = rt.lastLidEnd,
+           Date().timeIntervalSince(end.at) < AwakeLidPolicy.lastEndKeepSeconds {
+            input.lidLastEnd = AwakeLidText.lastEnd(end.reason, clock: AwakeFormat.clock(end.at.timeIntervalSince1970),
+                                                    floor: AwakeLidPolicy.floor(awakeGuards: ctx.config.value.guards))
+        }
         let use = backgroundUse(ctx)
         input.backgroundPaused = rt.power.flatMap { AwakeGuards.backgroundBlock($0, config: ctx.config.value.guards) }
             .flatMap { AwakeBackgroundText.paused($0, activity: use.activity, drives: use.drives) }
@@ -292,15 +373,30 @@ import SnapticKit
         return (activity, drives)
     }
 
-    /// "Closing the lid will put your Mac to sleep." on battery or without an external display (§2.12, design m5).
+    /// "Closing the lid will put your Mac to sleep." on battery or without an external display (§2.12, design m5),
+    /// only while closing it would sleep the Mac and lid-closed mode is off (0.3.1 B1: Kit's rule).
     private static func lidWarning(_ ctx: AwakeContext) -> Bool {
-        guard ctx.runtime.lidWillSleep != nil else { return false }
-        let onBattery = ctx.runtime.power.map { $0.batteryPresent && !$0.onAC } ?? false
+        let rt = ctx.runtime
+        let onBattery = rt.power.map { $0.batteryPresent && !$0.onAC } ?? false
         let external = NSScreen.screens.contains { screen in
             guard let n = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return false }
             return CGDisplayIsBuiltin(CGDirectDisplayID(n.uint32Value)) == 0
         }
-        return onBattery || !external
+        return AwakeDetail.showsLidWarning(lidWillSleep: rt.lidWillSleep, lidModeOn: rt.lidMode.isOn,
+                                           onBattery: onBattery, externalDisplay: external)
+    }
+
+    /// Which `lidRoute` line follows the lid warning in Settings (0.3.1 B1): choose it in the menu while the mode is
+    /// effective; turn it on in Advanced while only its switch is off on a Mac that could use it; otherwise (no lid,
+    /// no battery, translocated, a kill switch or Safe Mode) the 0.3 text.
+    private static func lidRoute(_ ctx: AwakeContext) -> AwakeLidRoute {
+        let rt = ctx.runtime
+        if rt.isEffective(.lidClosed) { return .available }
+        guard rt.availability[.lidClosed]?.isAvailable ?? false, rt.power?.batteryPresent ?? AwakeHardware.hasBattery,
+              AwakeFormat.lock([.lidClosed]) == nil, !(ctx.config.value.features[.lidClosed] ?? false) else {
+            return .unavailable
+        }
+        return .featureOff
     }
 
     private func observe(_ runtime: AwakeRuntimeState) {
@@ -314,6 +410,13 @@ import SnapticKit
             runtime.$guardHold.map { _ in () }.eraseToAnyPublisher(),
             runtime.$power.map { _ in () }.eraseToAnyPublisher(),
             runtime.$drives.map { _ in () }.eraseToAnyPublisher(),
+            // 0.3.1 B1: the lid warning and the lid lines.
+            runtime.$lidWillSleep.map { _ in () }.eraseToAnyPublisher(),
+            runtime.$lidMode.map { _ in () }.eraseToAnyPublisher(),
+            runtime.$lastLidEnd.map { _ in () }.eraseToAnyPublisher(),
+            NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
+                .receive(on: DispatchQueue.main)
+                .map { _ in () }.eraseToAnyPublisher(),
         ]
         Publishers.MergeMany(changes)
             .receive(on: DispatchQueue.main)
