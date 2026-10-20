@@ -37,12 +37,7 @@ enum SnapticEntry {
             refuse(L("Snaptic doesn’t start with these environment variables set: ") + names
                    + L(". Unset them, or open Snaptic from Finder."), showAlert: true)
         }
-        guard let home = AccountPaths.home else {
-            refuse(L("Snaptic couldn’t look up your account’s home folder."), showAlert: true)
-        }
-        guard KitArgs.homeMatches(environmentHome: environment["HOME"], accountHome: home) else {
-            refuse(L("HOME doesn’t match your account’s home folder, so Snaptic won’t start."), showAlert: true)
-        }
+        if let refusal = accountRefusal(environment: environment) { refuse(refusal, showAlert: true) }
         redirectStandardStreams()
 
         // Snaptic runs as a menu-bar ("accessory") app: no Dock icon, no main window.
@@ -54,6 +49,18 @@ enum SnapticEntry {
             app.run()
             withExtendedLifetime(delegate) {}
         }
+    }
+
+    /// Startup step 2's account checks, shared with `--selftest-launch` so CI runs them on the release binary (app
+    /// mode itself never runs in CI). nil: Snaptic may start.
+    static func accountRefusal(environment: [String: String]) -> String? {
+        guard let home = AccountPaths.home else {
+            return L("Snaptic couldn’t look up your account’s home folder.")
+        }
+        guard KitArgs.homeMatches(environmentHome: environment["HOME"], accountHome: home) else {
+            return L("HOME doesn’t match your account’s home folder, so Snaptic won’t start.")
+        }
+        return nil
     }
 
     /// Explains on stderr (before it is redirected) and exits 64. App mode only, with

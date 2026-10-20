@@ -25,6 +25,18 @@ enum SelfTestLaunch {
             return (["\(expectVariable) must be absent or loaded"], [])
         }
 
+        // The app's own startup checks: the release binary must find the account's home folder (0.3.1 shipped one
+        // that didn't) and agree with the Displays journal's lookup.
+        if let refusal = SnapticEntry.accountRefusal(environment: ProcessInfo.processInfo.environment) {
+            problems.append("startup checks refuse: " + refusal)
+        }
+        let accountHome = AccountPaths.home
+        let journalHome = RevertJournal.homeDirectory()
+        if accountHome == nil || accountHome != journalHome {
+            problems.append("home lookups disagree: \(accountHome ?? "nil") vs \(journalHome ?? "nil")")
+        }
+        report.append("selftest-launch: account home " + (accountHome ?? "nil"))
+
         var lock = InstanceLock()
         switch lock.acquire() {
         case .acquired: break
