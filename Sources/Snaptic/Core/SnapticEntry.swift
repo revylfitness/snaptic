@@ -107,11 +107,17 @@ enum AccountPaths {
         var size = sysconf(Int32(_SC_GETPW_R_SIZE_MAX))
         if size <= 0 || size > 1 << 20 { size = 16_384 }
         var buffer = [CChar](repeating: 0, count: size)
-        let capacity = buffer.count
-        let status = getpwuid_r(getuid(), &record, &buffer, capacity, &result)
-        guard status == 0, result != nil, let directory = record.pw_dir else { return nil }
-        let path = String(cString: directory)
-        return path.hasPrefix("/") ? path : nil
+        // `pw_dir` points into `buffer`, so it's copied out while the buffer is still borrowed. Passing `&buffer`
+        // gives the call a pointer that is valid only during the call, and an optimized build may free the array
+        // right after it: 0.3.1 then read freed memory here and refused to start.
+        let path: String? = buffer.withUnsafeMutableBufferPointer { storage in
+            guard let base = storage.baseAddress,
+                  getpwuid_r(getuid(), &record, base, storage.count, &result) == 0, result != nil,
+                  let directory = record.pw_dir else { return nil }
+            return String(cString: directory)
+        }
+        guard let path, path.hasPrefix("/") else { return nil }
+        return path
     }
 
     /// ~/Library/Application Support/Snaptic, created 0700 if missing.

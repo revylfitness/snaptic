@@ -20,15 +20,8 @@ struct JournalFiles {
         return home + "/Library/Application Support/Snaptic/Displays"
     }
 
-    static func homeDirectory() -> String? {
-        var pwd = passwd()
-        var result: UnsafeMutablePointer<passwd>?
-        var buffer = [CChar](repeating: 0, count: 16_384)
-        guard getpwuid_r(getuid(), &pwd, &buffer, buffer.count, &result) == 0, result != nil, let dir = pwd.pw_dir else {
-            return nil
-        }
-        return String(cString: dir)
-    }
+    /// One lookup for the whole app (AccountPaths keeps `pw_dir`'s buffer alive while it copies the path).
+    static func homeDirectory() -> String? { AccountPaths.home }
 
     /// Creates the directory chain (0700 for ours) and checks it isn't a symlink or foreign.
     func ensureDirectory() -> Bool {

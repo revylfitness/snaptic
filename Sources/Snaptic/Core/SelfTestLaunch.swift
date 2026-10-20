@@ -31,9 +31,9 @@ enum SelfTestLaunch {
             problems.append("startup checks refuse: " + refusal)
         }
         let accountHome = AccountPaths.home
-        let journalHome = RevertJournal.homeDirectory()
-        if accountHome == nil || accountHome != journalHome {
-            problems.append("home lookups disagree: \(accountHome ?? "nil") vs \(journalHome ?? "nil")")
+        let foundationHome = FileManager.default.homeDirectoryForCurrentUser.path
+        if accountHome == nil || accountHome != foundationHome {
+            problems.append("home lookups disagree: \(accountHome ?? "nil") vs \(foundationHome)")
         }
         report.append("selftest-launch: account home " + (accountHome ?? "nil"))
 
