@@ -287,6 +287,7 @@ New Kit row cases are `.lidClosed(LidRowState)` and `.lidSubmenu([presets])`. Th
 In Start mode only (not in Add Time…):
 - `ToggleSetting(L("Keep awake with the lid closed"), help: L("Asks for an administrator password when you click Start."))`.
 - While it is on, the button reads "Start…".
+- Start… never closes the panel silently (r1 A4, r2 A2-2). While another lid request is under way, a toast says so in a sentence ("Lid-closed mode is turning off. Try again in a moment.", and likewise for the password and turning on), and the panel stays open. If the feature stopped being effective while the panel was open (turned off, the kill switch, Safe Mode, or the request is refused without a toast), the toast is "Lid-closed mode isn’t available right now. To start without it, turn off “Keep awake with the lid closed”." and the panel stays open.
 
 #### Awake status section (Settings)
 
@@ -321,6 +322,7 @@ If verification takes longer than 2 s, a toast shows: "Turning on lid-closed mod
   - "…: time limit reached."
   - "…: another app turned sleep back on."
   - "…: Snaptic quit."
+  - "…: it stopped unexpectedly." (the watchdog exited for a reason the app's own facts don't show, r2 A2-1)
 
   It is cleared at the next turn-on.
 - **Cap warning.** When the cap will end before the session, a toast shows 5 minutes ahead: "Lid-closed mode turns off in 5 minutes. If the lid is closed then, your Mac goes to sleep."
@@ -355,7 +357,7 @@ LidClosedController asks SessionController to set or clear `lidRequested` throug
   - a trigger or hold takes over;
   - the module stops, or Safe Mode starts;
   - the feature is turned off, or the kill switch `Awake.disable.lidClosed` is set;
-  - restore or resume. The header then says "Lid-closed mode ended at …: Snaptic quit." That line is left out when the B3.4 leftover rows already explain the state.
+  - restore or resume. The header then says "Lid-closed mode ended at …: Snaptic quit." That line shows only when an earlier run's journal was found and the resumed session is the snapshot's `lidSession` (a journal also survives a quit during a failed request's wait, r2 A2-4), and is left out when the B3.4 leftover rows already explain the state.
 
 **CLI**
 - `awake extend` is refused while the mode is on. The refusal is `.lidClosedSession` with exit code 4 and the text "Lid-closed sessions can’t be extended from the command line. Use Add 1 Hour in the menu."
@@ -369,7 +371,7 @@ LidClosedController asks SessionController to set or clear `lidRequested` throug
 | Thermal `serious` or worse | "Your Mac is too hot for lid-closed mode right now." |
 | A Start Anyway session (`overrideGuards`) | "Lid-closed mode isn’t available in a Start Anyway session." |
 | Translocated bundle | The B1 translocated row's text |
-| Journal pending (B3.4) | "Snaptic is finishing an earlier lid-closed session. Try again in a minute." |
+| Journal pending (B3.4), or an earlier request's osascript isn't reaped yet (checked before any journal or beacon work, so a superseded request's stop file outlives it, r2 A2-3) | "Snaptic is finishing an earlier lid-closed session. Try again in a minute." |
 | Leftover (B3.4) | "Turn sleep back on first. It may have been left off by an earlier lid-closed session." with **Turn Sleep Back On…** and **Open Awake Settings…** |
 
 Low Power Mode does **not** block the mode. It follows the session's `endOnLowPowerMode` like everything else, and the README recommends Low Power Mode with the lid closed.
@@ -611,7 +613,7 @@ done
 - The fd is closed in the timer's cancel handler on the same queue, so a reused fd number is never touched.
 - **Liveness.** Each tick runs `kill(pid, 0)`, where ESRCH means gone, and compares `SNProcess.instanceID(for: pid)` with the value recorded at verify. It also reads IORegistry `SleepDisabled`.
 - State changes hop to main with `DispatchQueue.main.async { MainActor.assumeIsolated … }` (rule 2).
-- **Gone, or 0 twice:** the mode ends (`watchdogLost` or `otherApp`). A lost watchdog gets the same 15 s turn-off wait as any other end, because powerd may apply its restore a moment after it exits; if `SleepDisabled` still reads 1 after that, the leftover rows show (B3.4, r1 A3).
+- **Gone, or 0 twice:** the mode ends (`watchdogLost` or `otherApp`). The watchdog ends on its own at the floor, on heat and at its cap, often a lap before the app sees the same fact, so a lost watchdog is named by the app's own facts when they explain it (`AwakeLidPolicy.lostReason`: battery, heat, then the cap) and is `watchdogLost` otherwise, which has its own toast ("Lid-closed mode stopped unexpectedly. Awake is still on; your Mac sleeps if you close the lid.") and Last end phrase (r2 A2-1). A lost watchdog gets the same 15 s turn-off wait as any other end, because powerd may apply its restore a moment after it exits; if `SleepDisabled` still reads 1 after that, the leftover rows show (B3.4, r1 A3).
 
 **Display while the lid is shut**
 - **`lidShut`.** `AwakeArbiterInput.lidShut`, which defaults to `false`, is true only while the mode is on, the lid is closed (`SystemEventsMonitor.lidClosed == true`, now published as `AwakeRuntimeState.lidClosed`) **and no external display is attached**. It is re-evaluated on screen changes.

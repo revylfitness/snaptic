@@ -86,7 +86,7 @@ import SnapticKit
         lastConfig = config.value
         apply(resolveEffective(config.value))
         ctx.sessions.restore(snapshot)
-        noteLidQuit(ctx, stop: snapshot.stop?.wall)
+        noteLidQuit(ctx, stop: snapshot.stop?.wall, lidSession: snapshot.lidSession)
         // §2.1 step 5: re-apply once if restore changed the needs; afterwards follow every change.
         if ctx.sessions.dynamicNeeds != dynamicNeeds {
             dynamicNeeds = ctx.sessions.dynamicNeeds
@@ -213,12 +213,15 @@ import SnapticKit
     }
 
     /// 0.3.1 B2: a session resumed after a quit while lid-closed mode was on runs without it; its header says so
-    /// ("Snaptic quit"), unless the leftover rows already explain the state.
-    private func noteLidQuit(_ ctx: AwakeContext, stop: Double?) {
+    /// ("Snaptic quit"), unless the leftover rows already explain the state. Only the session that had the mode
+    /// (`lidSession`): a journal alone also survives a quit during a failed request's wait (r2 A2-4).
+    private func noteLidQuit(_ ctx: AwakeContext, stop: Double?, lidSession: StableID?) {
         guard !lidQuitChecked else { return }
         lidQuitChecked = true
-        guard let recovery = moduleHost?.lidRecovery, recovery.launchJournal != nil, recovery.recovery != .leftover,
-              let resumed = ctx.sessions.manual, resumed.source != .launch else { return }
+        guard let recovery = moduleHost?.lidRecovery, let resumed = ctx.sessions.manual, resumed.source != .launch,
+              AwakeLidPolicy.quitEndShown(launchJournal: recovery.launchJournal != nil,
+                                          leftover: recovery.recovery == .leftover, lidSession: lidSession,
+                                          resumed: resumed.id) else { return }
         runtime.lastLidEnd = AwakeLastLidEnd(reason: .quit, at: stop.map { Date(timeIntervalSince1970: $0) } ?? Date())
     }
 

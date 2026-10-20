@@ -207,16 +207,24 @@ struct CustomSessionPanel: View, ControlDeclaring {
         var options = ctx.config.value.sessions.effectiveOptions(for: kind, preset: nil,
                                                                   effective: ctx.runtime.effectiveFeatures)
         options.display = keepDisplayOn ? (options.display == .maySleep ? .keepOn : options.display) : .maySleep
-        // The mode may have changed while the panel was open: never close it without starting or saying why (r1 A4).
-        switch AwakeLidPolicy.customStart(lidToggle: lid, mode: ctx.lid.mode) {
+        // The mode or the feature may have changed while the panel was open: never close it without starting or
+        // saying why (r1 A4, r2 A2-2).
+        switch AwakeLidPolicy.customStart(lidToggle: lid, effective: ctx.runtime.isEffective(.lidClosed),
+                                          mode: ctx.lid.mode) {
         case .request:
             // B3.1: the password first; the session starts once the mode is verified on (Cancel starts nothing).
-            ctx.lid.request(.custom(kind, options), source: source)
+            guard ctx.lid.request(.custom(kind, options), source: source) else {
+                ctx.host.toasts.show(AwakeLidText.customUnavailable)
+                return
+            }
         case .plain:
             // With the mode on, this menu or Settings start replaces the session and the mode carries over (B2).
             _ = ctx.sessions.start(kind, options: options, presetID: nil, source: source, overrideGuards: false)
         case .pending(let state):
-            ctx.host.toasts.show(AwakeLidText.rowTitle(state))
+            ctx.host.toasts.show(AwakeLidText.pendingToast(state) ?? AwakeLidText.rowTitle(state))
+            return
+        case .unavailable:
+            ctx.host.toasts.show(AwakeLidText.customUnavailable)
             return
         }
         close()

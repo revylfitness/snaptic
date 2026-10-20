@@ -611,6 +611,7 @@ extension AwakePresentationTests {
             .cap: "Lid-closed mode ended at 3:12 AM: time limit reached.",
             .otherApp: "Lid-closed mode ended at 3:12 AM: another app turned sleep back on.",
             .quit: "Lid-closed mode ended at 3:12 AM: Snaptic quit.",
+            .watchdogLost: "Lid-closed mode ended at 3:12 AM: it stopped unexpectedly.",
         ]
         for end in AwakeLidEnd.allCases {
             XCTAssertEqual(AwakeLidText.lastEnd(end, clock: "3:12 AM", floor: 20), lines[end], "\(end)")
@@ -620,6 +621,7 @@ extension AwakePresentationTests {
             .battery: "Lid-closed mode turned off at 20% battery.",
             .heat: "Lid-closed mode turned off because your Mac got hot.",
             .otherApp: "Another app turned sleep back on, so lid-closed mode stopped.",
+            .watchdogLost: "Lid-closed mode stopped unexpectedly. Awake is still on; your Mac sleeps if you close the lid.",
         ]
         for end in AwakeLidEnd.allCases {
             XCTAssertEqual(AwakeLidText.endToast(end, floor: 20), toasts[end], "\(end)")

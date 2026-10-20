@@ -915,7 +915,8 @@ package enum AwakeLidText {
         return L("Lid-closed mode ended at ") + clock + ": " + phrase + "."
     }
 
-    /// The "ended at" phrase: battery, heat, the time limit, another app, or quitting.
+    /// The "ended at" phrase: battery, heat, the time limit, another app, quitting, or a watchdog that stopped for a
+    /// reason the app couldn't see (r2 A2-1).
     package static func endPhrase(_ end: AwakeLidEnd, floor: Int) -> String? {
         switch end {
         case .battery: return L("battery at \(floor)%")
@@ -923,7 +924,8 @@ package enum AwakeLidText {
         case .cap: return L("time limit reached")
         case .otherApp: return L("another app turned sleep back on")
         case .quit: return L("Snaptic quit")
-        case .user, .sessionEnded, .replaced, .watchdogLost, .safeMode, .featureOff, .moduleStopped: return nil
+        case .watchdogLost: return L("it stopped unexpectedly")
+        case .user, .sessionEnded, .replaced, .safeMode, .featureOff, .moduleStopped: return nil
         }
     }
 
@@ -931,6 +933,20 @@ package enum AwakeLidText {
 
     /// After 2 s of verifying.
     package static let verifying = L("Turning on lid-closed mode…")
+    /// The Custom… panel's Start… while the mode can't be requested (r2 A2-2); the panel stays open.
+    package static let customUnavailable = L("Lid-closed mode isn’t available right now. To start without it, turn off “Keep awake with the lid closed”.")
+
+    /// The Custom… panel's Start… while another lid request is under way (r2 A2-2): a sentence, not the bare row
+    /// title; nil for the states that aren't pending.
+    package static func pendingToast(_ state: LidRowState) -> String? {
+        switch state {
+        case .authorizing: return L("Lid-closed mode is waiting for a password. Try again in a moment.")
+        case .verifying: return L("Lid-closed mode is turning on. Try again in a moment.")
+        case .stopping: return L("Lid-closed mode is turning off. Try again in a moment.")
+        case .finishingEarlier: return AwakeLidRefusal.journalPending.text
+        case .off, .on: return nil
+        }
+    }
     package static let couldNotTurnOn = L("Snaptic couldn’t turn on lid-closed mode. Try again.")
     /// `check` found sleep already turned off (exit 3, or the preflight read 1).
     package static let alreadyOff = L("Sleep is already turned off for this Mac by another app or command, so it stays awake with the lid closed.")
@@ -950,7 +966,9 @@ package enum AwakeLidText {
         case .battery: return L("Lid-closed mode turned off at \(floor)% battery.")
         case .heat: return L("Lid-closed mode turned off because your Mac got hot.")
         case .otherApp: return L("Another app turned sleep back on, so lid-closed mode stopped.")
-        case .user, .sessionEnded, .replaced, .watchdogLost, .quit, .safeMode, .featureOff, .moduleStopped: return nil
+        case .watchdogLost:
+            return L("Lid-closed mode stopped unexpectedly. Awake is still on; your Mac sleeps if you close the lid.")
+        case .user, .sessionEnded, .replaced, .quit, .safeMode, .featureOff, .moduleStopped: return nil
         }
     }
 
