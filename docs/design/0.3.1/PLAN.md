@@ -847,7 +847,7 @@ These are numbered after 0.3's HW-23. The list lives here and in README's testin
 | HW-35 | Watchdog cost: `powermetrics` wakeups at a 5 s period. |
 | HW-36 | Updates (Part E):<br>• Sparkle loads in a Developer ID build;<br>• update 0.3.1 → 0.3.2 from a user-owned and from a root-owned copy;<br>• Accessibility and Screen Recording survive;<br>• no Gatekeeper prompt after relaunch;<br>• an update is refused with a wrong EdDSA signature and with a non-Developer-ID build;<br>• deferral works while lid-closed mode is on and while a display trial is pending. |
 | HW-37 | An ad-hoc local build (`build-app.sh` without an identity) launches without Sparkle, and Check for Updates… opens the Releases page. CI covers part of this with `--selftest-launch`. |
-| HW-38 | Updates, continued:<br>• Open at Login across the ad-hoc → Developer ID switch (no stale or duplicate Login Items entry);<br>• a tampered `appcast.xml` (edited release asset) is rejected by the client;<br>• a root-owned copy stays `root:wheel` after an update;<br>• record the authorization right Sparkle registers for root-owned installs;<br>• gentle reminders: the menu row appears and brings Sparkle's window forward;<br>• no Sparkle window during onboarding or Safe Mode;<br>• a manual check works in Safe Mode;<br>• Relauncher with a pending install-on-quit installs and relaunches once; record how often Sparkle's install block is already gone at relaunch time (then the quit-first toast shows);<br>• the 0.3.0 → 0.3.1 re-grant for Accessibility and Screen Recording. |
+| HW-38 | Updates, continued:<br>• Open at Login across the ad-hoc → Developer ID switch (no stale or duplicate Login Items entry);<br>• a tampered `appcast.xml` (edited release asset) is rejected by the client;<br>• a root-owned copy stays `root:wheel` after an update;<br>• record the authorization right Sparkle registers for root-owned installs;<br>• gentle reminders: the menu row appears and brings Sparkle's window forward;<br>• no Sparkle window during onboarding or Safe Mode;<br>• a manual check works in Safe Mode;<br>• Relauncher with a pending install-on-quit installs and relaunches once; record how often Sparkle's install block is already gone at relaunch time (then the quit-first toast shows);<br>• the 0.3.0 → 0.3.1 re-grant for Accessibility and Screen Recording;<br>• with an install waiting (Restart to Update Snaptic…), open Sparkle's window from the row and choose Skip This Version: the row goes away and Restart in Safe Mode… then Leave Safe Mode relaunch normally (r2 C2-4); repeat with Install on Quit: the row stays and the relaunch asks to quit first. |
 
 ## Part D: Teams, file ownership and order
 
@@ -958,7 +958,7 @@ These are numbered after 0.3's HW-23. The list lives here and in README's testin
 
 **After any Sparkle install,** a toast appears once per version on the next launch: "Snaptic was updated to 0.3.2." with **What’s New**, which opens the release notes in the browser. Sparkle's `updater(_:didFinishInstallingUpdate:)` path records the version. A manual install shows nothing.
 
-**Deferral texts** (Kit `UpdatePolicy.text`, tested; the one wait rule is `UpdatePolicy.decide(.installNow, …)`):
+**Deferral texts** (Kit `UpdatePolicy.text`, tested; the one wait rule is `UpdatePolicy.decide(.installNow, …)`, and only a downloaded update waits: one that isn't downloaded still reads "Version 0.3.2 is available." with Install and Relaunch…, which opens Sparkle's window; fix round r2 C2-3):
 - "Version 0.3.2 will install when lid-closed mode ends."
 - "…when the display change is kept or undone."
 - "Updates are paused in Safe Mode. Choose Check for Updates… to update anyway."
@@ -973,7 +973,7 @@ If the user clicks Install and Relaunch while something defers it, a toast gives
 
 **Detecting an upgrader.** 0.3.0 stores no last-run version.
 - A new migration marker, `MigrationID.v031Welcome`, is recorded the first time 0.3.1 runs.
-- The user counts as an **upgrader** when the `SnapticModulesV1` defaults key already existed before that marker. Otherwise they are a **new user**.
+- The user counts as an **upgrader** when the `SnapticModulesV1` defaults key already existed before that marker, or `SnapticDidLaunchBefore` is set (a 0.1 or 0.2 user: their upgrade defaults skip onboarding, so the card is where they're asked; Kit `MigrationLedger.isV031Upgrader`, fix round r2 C2-1). Otherwise they are a **new user**.
 - From 0.3.1 on, a `SnapticLastRunVersion` key (`CFBundleVersion`) is written at every launch, so later versions can tell upgrades apart directly. It is navigation state: not backed up and not cleared by Reset.
 
 **Upgraders, first launch of 0.3.1**
@@ -990,6 +990,7 @@ If the user clicks Install and Relaunch while something defers it, a toast gives
 - **Body:** "Snaptic can check GitHub once a day and install updates when you quit it. GitHub sees your IP address and macOS version, nothing more."
 - **Buttons:** **Check Automatically** turns on checks and automatic install (not for root-owned copies). **Not Now** turns both off. Either button advances to the next step, like the existing permission steps' buttons. There is no separate Continue.
 - **Controls:** `onboarding.updates.check` and `onboarding.updates.notNow` in `OnboardingControls`.
+- **When it shows** (Kit `OnboardingUpdatesPage`; fix rounds r1 U6, r2 C2-1): in builds that update themselves, while the user hasn't answered. A first launch opens the window inside `bootstrap()`, before `startUpdater()` creates the updater, so the page joins the run when the updater starts (`Onboarding.updaterDidStart`) and at every Continue. Once in, it stays in for the run, so answering doesn't renumber Done. `--selftest-launch` checks this on the signed app.
 
 **After Not Now,** About's status row says "Automatic checks are off.", not "Not checked yet".
 
@@ -1121,7 +1122,7 @@ Publishing a release in GitHub's UI, as for 0.3.0, also works. CI attaches the f
 
 **`Core/UpdaterController.swift`** (the only file allowed to `import Sparkle`) wraps `SPUStandardUpdaterController`.
 - **Optional at run time.** Sparkle is weak-linked with `-weak_framework Sparkle`, and CI checks the load command (E3). Every Sparkle symbol is reached only after `Bundle(identifier: "org.sparkle-project.Sparkle") != nil`. That is true only when dyld actually loaded the framework, and the check is lint-safe. Otherwise `ModuleHost.updater = nil`, and nothing calls into Sparkle.
-- **The updater gate** (Kit `UpdatePolicy.gate`; fix round r1 C8): Sparkle loaded, **and** an `.app` bundle, **and** a valid 32-byte `SUPublicEDKey`. An unbundled debug run (`swift run`) can find Sparkle next to its binary but would only get Sparkle's "Unable to Check For Updates" alert, so it gets no updater. `--selftest-launch` checks the gate itself and, while it is closed, runs `startUpdater()` (fix round r1 C6).
+- **The updater gate** (Kit `UpdatePolicy.gate`; fix round r1 C8): Sparkle loaded, **and** an `.app` bundle, **and** a valid 32-byte `SUPublicEDKey`. An unbundled debug run (`swift run`) can find Sparkle next to its binary but would only get Sparkle's "Unable to Check For Updates" alert, so it gets no updater. `--selftest-launch` checks the gate itself and runs `startUpdater()`: with the gate closed it must make no updater (fix round r1 C6); on the signed app it must make one, and an onboarding run begun before it, with the question unanswered, must then include the updates page (fix round r2 C2-1). The self-test exits before the main queue runs, so Sparkle's first update cycle (dispatched there) never starts.
 - **Created only in GUI mode.** It is created in `AppDelegate`. Helper and CLI processes return before AppKit starts (SnapticEntry.swift:13-19). In a release build those processes **load** Sparkle but never use it; the README says so.
 
 **Info.plist**
@@ -1138,8 +1139,8 @@ Publishing a release in GitHub's UI, as for 0.3.0, also works. CI attaches the f
 
   When the condition clears, it invokes the block.
 - **`updaterShouldRelaunchApplication`** always returns true.
-- **`updater(_:willInstallUpdateOnQuit:immediateInstallationBlock:)`** returns **YES** and stores the block as `pendingQuitInstall`. Returning YES means Snaptic owns the prompt and Sparkle stops checking until quit; that is expected. The "Restart to Update Snaptic…" row calls the block, but only after `UpdatePolicy` allows it (no lid-closed mode, no display trial). If it isn't allowed, the row shows the wait text instead.
-  - **The session** (Kit `UpdateSession`; fix round r1 C2, S9) tracks the offer, whether an install waits for quit, and whether the stored block is still alive. Sparkle's automatic driver captures itself **weakly** in that block, so the block dies when that driver's update cycle ends (`updater(_:didFinishUpdateCycleFor:error:)`) or after it ran once. A gentle reminder in the `installing` stage marks the install as waiting, and a ready offer is never downgraded while it waits, so "Restart to Update Snaptic…" isn't lost. With no live block, the row brings Sparkle's window forward, which resumes the waiting installer.
+- **`updater(_:willInstallUpdateOnQuit:immediateInstallationBlock:)`** returns **YES** and keeps the block as `installBlock` while `UpdateSession.hasInstallBlock` says it is alive. Returning YES means Snaptic owns the prompt and Sparkle stops checking until quit; that is expected. The "Restart to Update Snaptic…" row runs the block, but only after `UpdatePolicy` allows it (no lid-closed mode, no display trial); if it isn't allowed, the row shows the wait text instead. With no live block, the row brings Sparkle's window forward.
+  - **The session** (Kit `UpdateSession`; fix round r1 C2, S9) tracks the offer, whether an install waits for quit, and whether the stored block is still alive. Sparkle's automatic driver captures itself **weakly** in that block, so the block dies when that driver's update cycle ends (`updater(_:didFinishUpdateCycleFor:error:)`) or after it ran once. A gentle reminder in the `installing` stage marks the install as waiting, and a ready offer is never downgraded while it waits, so "Restart to Update Snaptic…" isn't lost. With no live block, the row brings Sparkle's window forward, which resumes the waiting installer. There, **Skip This Version** cancels the installer and the cycle ends without an error, so `updater(_:userDidMake:forUpdate:state:)` reports it (`UpdateSession.Event.userChose`) and the wait ends; **Install on Quit** leaves it waiting (fix round r2 C2-4).
   - **`Relauncher`** (which opens the new copy before the old one quits) asks `UpdatePolicy.relaunchRoute` (fix round r1 C3, S9):
     - nothing waits → relaunch as today;
     - an install waits, a live block, not Safe Mode → run the block: Sparkle installs and opens the new version. If Snaptic is still running 10 s later, Relauncher takes the relaunch back (`inFlight` clears) and routes again;
@@ -1193,7 +1194,7 @@ The README body says:
 - `Package.swift` declares exactly one dependency, `sparkle-project/Sparkle` with `exact:`, under `#if os(macOS)`.
 - `Package.resolved` is committed.
 
-**Workflow lint:** no `pull_request_target`, no `workflow_run`, no `set -x`, no `actions/cache` in `build`, `sign`, `publish` or any job they need (transitively, by `needs:`), and no `${{` inside a `run:` script, inline or block (fix round r1 S6). The lint's self-check pins each rule on cases it must report and cases it must let pass.
+**Workflow lint:** no `pull_request_target`, no `workflow_run`, no `set -x`, no cache in `build`, `sign`, `publish` or any job they need (transitively, by `needs:`): no action named for one (owner and repository compared without case), no `cache…` input that isn't `false`, and `actions/setup-go` only with `cache: false`. No `${{` inside a `run:` script or in `actions/github-script`'s inputs (fix round r1 S6). The rules read the parsed YAML (PyYAML), so a block-scalar header such as `|2-`, a multi-line plain or quoted scalar, a flow-style step or a quoted key reads as GitHub reads it; anchors, aliases, merge keys, explicit tags, repeated keys and more than one document are refused outright (fix round r2 S2-4). kit-linux installs `python3-yaml` and sets `LINT_REQUIRE_YAML=1`; a lint run without PyYAML elsewhere skips these rules with a warning. The lint's self-check pins each rule on cases it must report and cases it must let pass.
 
 ### E7. Controls
 
@@ -1203,7 +1204,7 @@ The README body says:
 | | `about.page.autoCheck` | `.setting` | `when: [.state(.updaterAvailable)]`. No `keys`: stored outside Snaptic's config, like `general.page.openAtLogin`. `SearchSpec("Check for updates automatically", keywords: ["updates", "sparkle", "update"])` |
 | | `about.page.autoInstall` | `.setting` | `when: [.state(.updaterAvailable), .parentOn(ControlID("about.page.autoCheck")), .state(.bundleWritable)]`. Search: "Download and install updates automatically". |
 | | `about.page.installUpdate` | `.statusAction` | `when: [.state(.updateAvailable)]` |
-| `StatusMenuControls` | `menu.snaptic.updateAvailable` | `.menuItem` | `when: [.state(.updateAvailable)]`. Placements: the Snaptic menu's footer, and own and Awake menus when they carry the shared footer (`CustomItemRow.updateAvailable` + `StatusMenu.updateItems(host:)`). |
+| `StatusMenuControls` | `menu.snaptic.updateAvailable` | `.menuItem` | `when: [.state(.updateAvailable)]`. Placements: the Snaptic menu's footer, and own and Awake menus when they carry the shared footer (`StatusMenu.updateItems(host:)`, which Awake's `IndicatorController` calls on every menu open). |
 | `GeneralPageControls` | `general.page.card.v031.openAccessibility`, `.openScreenRecording`, `.autoCheck`, `.notNow`, `.done` | `.button` | `when: [.state(.v031Welcome)]` |
 | `OnboardingControls` | `onboarding.updates.check`, `onboarding.updates.notNow` | `.button` | |
 

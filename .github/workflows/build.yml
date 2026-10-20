@@ -20,7 +20,7 @@ concurrency:
 # `appcast`). Only tag pushes reach sign, verify, attest and publish; both environments also accept only `v*` tags and
 # need the owner's approval for every run. Hygiene (lint): no `set -x`; no `${{ }}` inside `run:`, every value reaches
 # scripts through `env:`; secrets are decoded under `umask 077` into $RUNNER_TEMP and removed in an always() step; no
-# actions/cache in build or any job of the release chain; no repository script runs while a signing keychain exists.
+# cache in build or any job of the release chain; no repository script runs while a signing keychain exists.
 
 # The update key (PLAN 0.3.1 E2; README › "If a release key leaks"). Public values, kept here so a tag's diff shows
 # every change to them.
@@ -55,9 +55,15 @@ jobs:
         with:
           persist-credentials: false
 
+      # The workflow rules parse YAML (r2 S2-4): PyYAML comes from Ubuntu's archive, and LINT_REQUIRE_YAML makes its
+      # absence a failure here (other lint runs skip those rules with a warning).
       - name: Lint
+        env:
+          LINT_REQUIRE_YAML: "1"
         run: |
-          command -v python3 >/dev/null || { apt-get update -qq && apt-get install -y -qq python3 >/dev/null; }
+          if ! command -v python3 >/dev/null || ! python3 -c 'import yaml' 2>/dev/null; then
+            apt-get update -qq && apt-get install -y -qq python3 python3-yaml >/dev/null
+          fi
           set -o pipefail
           ./scripts/lint.sh --strict 2>&1 | tee lint.log
 

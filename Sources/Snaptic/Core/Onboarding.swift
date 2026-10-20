@@ -8,10 +8,12 @@ import SnapticKit
 /// it applies the chips; on the updates page Check Automatically and Not Now, either of which moves on), with Back
 /// beside it. The step is saved after every move, so closing the window and relaunching resumes where it stopped.
 ///
-/// The updates page shows only in builds that update themselves and while the user hasn't answered, decided once when
-/// the window opens (`includesUpdates`), so answering doesn't renumber the pages (r1 U6). It sits between the last
-/// saved step and Done without a saved step of its own (`ModulesConfig.onboarding` keeps the step before it), so a
-/// relaunch there comes back to it through Continue.
+/// The updates page shows only in builds that update themselves and while the user hasn't answered (Kit
+/// `OnboardingUpdatesPage`). A first launch opens the window before `startUpdater()` creates the updater, so the page
+/// joins when the updater starts (`updaterDidStart`) or at Continue, and once in it stays in for the run, so answering
+/// doesn't renumber the pages (r1 U6, r2 C2-1). It sits between the last saved step and Done without a saved step of
+/// its own (`ModulesConfig.onboarding` keeps the step before it), so a relaunch there comes back to it through
+/// Continue.
 @MainActor final class Onboarding: NSObject, NSWindowDelegate, ControlDeclaring {
     typealias Controls = OnboardingControls
     static let size = NSSize(width: 600, height: 580)
@@ -36,11 +38,7 @@ import SnapticKit
     func show() {
         guard let host else { return }
         host.permissions.holdAutomaticGuides = true
-        if !isShowing {
-            // This run's pages: the updates question stays in them once answered (r1 U6).
-            model.includesUpdates = Self.asksAboutUpdates(host)
-            model.showingUpdates = false
-        }
+        if !isShowing { beginRun() }
         model.step = host.modulesStore.value.resumeStep
         if model.step == .done { model.step = .welcome }
         save()
@@ -69,7 +67,8 @@ import SnapticKit
         guard let host else { return }
         guard model.step != .done else { finish(); return }
         let next = host.modulesStore.value.step(after: model.step)
-        if next == .done && !model.showingUpdates && model.includesUpdates {
+        model.updatesPage.refresh(asks: Self.asksAboutUpdates(host))
+        if next == .done && !model.showingUpdates && model.updatesPage.included {
             model.showingUpdates = true
             return
         }
@@ -80,8 +79,25 @@ import SnapticKit
 
     /// E1a: the updates question, once, in builds that update themselves.
     static func asksAboutUpdates(_ host: ModuleHost) -> Bool {
-        guard let updater = host.updaterController else { return false }
-        return !updater.consentDecided
+        OnboardingUpdatesPage.asks(updaterExists: host.updaterController != nil,
+                                   consentDecided: host.updaterController?.consentDecided ?? false)
+    }
+
+    /// `ModuleHost.startUpdater()` made the updater: the page joins this run if the question is open (C2-1).
+    func updaterDidStart() {
+        guard let host else { return }
+        model.updatesPage.refresh(asks: Self.asksAboutUpdates(host))
+    }
+
+    /// This run has the updates page (`--selftest-launch` checks it after `startUpdater()`).
+    var includesUpdatesPage: Bool { model.updatesPage.included }
+
+    /// A new run starts (`show()` while the window isn't showing; `--selftest-launch` calls it without a window): the
+    /// updates page is in if the question is open now, and may join later (C2-1).
+    func beginRun() {
+        guard let host else { return }
+        model.updatesPage.windowOpened(asks: Self.asksAboutUpdates(host))
+        model.showingUpdates = false
     }
 
     /// Check Automatically (checks and automatic install, never install for root-owned copies) or Not Now (both
@@ -137,8 +153,8 @@ import SnapticKit
     @Published var displaysApplyToken = 0
     /// 0.3.1 E1a: the Keep Snaptic Up to Date page shows (between `step` and Done).
     @Published var showingUpdates = false
-    /// E1a: this run has the updates page, decided when the window opens and kept after the answer (r1 U6).
-    @Published var includesUpdates = false
+    /// E1a: whether this run has the updates page (r1 U6, r2 C2-1).
+    @Published var updatesPage = OnboardingUpdatesPage()
 }
 
 private struct OnboardingView: View {
@@ -176,7 +192,7 @@ private struct OnboardingView: View {
 
     /// The pages in order: the steps, with the updates page before Done for the whole run that includes it (E1a, U6).
     private var pages: [OnboardingPage] {
-        store.value.onboardingPages(includesUpdates: model.includesUpdates || model.showingUpdates)
+        store.value.onboardingPages(includesUpdates: model.updatesPage.included || model.showingUpdates)
     }
 
     private var currentPage: OnboardingPage { model.showingUpdates ? .updates : .step(model.step) }

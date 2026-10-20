@@ -25,11 +25,11 @@ Snaptic 0.3.1 adds **tabs in the Snaptic menu**, **keeping awake with the lid cl
 
 ## New: in-app updates
 
-- Release builds update themselves with Sparkle 2 from a signed feed on GitHub Releases, **only if you allow it**. New users choose in onboarding; people coming from 0.3.0 choose on the “Welcome to Snaptic 0.3.1” card.
+- Release builds update themselves with Sparkle 2 from a signed feed on GitHub Releases, **only if you allow it**. New users choose in onboarding; people coming from an earlier version choose on the “Welcome to Snaptic 0.3.1” card.
 - **Settings › About › Updates:** Check for Updates…, “Check for updates automatically” (once a day), and “Download and install updates automatically” (installs the next time Snaptic quits).
 - When an update is found, the Snaptic menu shows **Update Available: Snaptic …** above Snaptic Settings…, instead of a window that could land behind others.
-- Updates wait while lid-closed mode is on or a display change is waiting for “Keep this change?”, and scheduled checks pause in Safe Mode.
-- Every update must carry a valid signature from Snaptic’s update key or its Developer ID signature, and the feed itself is signed.
+- Updates wait while lid-closed mode is on (or turning on or off) or a display change is waiting for “Keep this change?”, and scheduled checks pause in Safe Mode. If a downloaded update waits when Snaptic restarts itself, it installs and the new version opens; **Restart in Safe Mode…** never installs it, and asks you to quit Snaptic first instead.
+- The feed and every update are signed with Snaptic’s update key. A download signed with Snaptic’s Developer ID is accepted only so that a lost key can be replaced; that certificate alone can’t sign the feed, and such an update never installs by itself.
 - **Privacy:** Snaptic connects only to GitHub to check for updates, and only if you allow it. GitHub sees your IP address and macOS version, nothing more. No analytics.
 - Copies owned by root ask for an administrator password for each update. Copies built from source don’t update themselves.
 

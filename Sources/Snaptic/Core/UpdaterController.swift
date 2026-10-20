@@ -319,6 +319,21 @@ import SnapticKit
     @objc(updaterShouldRelaunchApplication:)
     func updaterShouldRelaunchApplication(_ updater: SPUUpdater) -> Bool { true }
 
+    /// The user's choice in Sparkle's window. Skip This Version on a waiting install cancels Sparkle's installer
+    /// without an error, so only this tells the session that nothing waits any more (r2 C2-4).
+    @objc(updater:userDidMakeChoice:forUpdate:state:)
+    func updater(_ updater: SPUUpdater, userDidMake choice: SPUUserUpdateChoice, forUpdate updateItem: SUAppcastItem,
+                 state: SPUUserUpdateState) {
+        let made: UpdateSession.UserChoice
+        switch choice {
+        case .skip: made = .skip
+        case .install: made = .install
+        case .dismiss: made = .dismiss
+        @unknown default: return
+        }
+        session.apply(.userChose(made, installing: state.stage == .installing))
+    }
+
     private func recordInstalling(_ item: SUAppcastItem) {
         guard UpdatePolicy.isVersion(item.displayVersionString) else { return }
         UserDefaults.standard.set(item.displayVersionString, forKey: Self.installingVersionKey)

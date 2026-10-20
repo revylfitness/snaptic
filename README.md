@@ -674,7 +674,7 @@ With a `SIGN_IDENTITY="Developer ID Application: …"` identity, `build-app.sh` 
 
 From 0.3.1 on, release builds update themselves with [Sparkle](https://sparkle-project.org) 2, from a signed feed on GitHub Releases. Snaptic checks only if you allow it.
 
-**Asking first.** Snaptic asks in its own window, never with Sparkle’s prompt: new users see a “Keep Snaptic Up to Date” step in onboarding (“Snaptic can check GitHub once a day and install updates when you quit it. GitHub sees your IP address and macOS version, nothing more.”), and people upgrading from 0.3.0 see the same choice on the “Welcome to Snaptic 0.3.1” card. **Check Automatically** turns on checks and automatic installs; **Not Now** turns both off. Until you choose, Snaptic never checks.
+**Asking first.** Snaptic asks in its own window, never with Sparkle’s prompt: new users see a “Keep Snaptic Up to Date” step in onboarding (“Snaptic can check GitHub once a day and install updates when you quit it. GitHub sees your IP address and macOS version, nothing more.”), and people upgrading from an earlier version see the same choice on the “Welcome to Snaptic 0.3.1” card. **Check Automatically** turns on checks and automatic installs; **Not Now** turns both off. Until you choose, Snaptic never checks.
 
 **Settings › About › Updates**
 - **Check for Updates…** checks now (in a build without Sparkle, it opens the Releases page).
@@ -725,7 +725,7 @@ In every case, a note goes in this README and on the Releases page.
 
 ## Privacy and security
 
-**Network: only for updates, and only if you allow it.** If you allow it, Snaptic contacts GitHub (github.com and its download host) once a day, and when you choose **Check for Updates…**. It downloads the signed update feed, and an update when you install one. GitHub sees your IP address, a Sparkle User-Agent with the app version, and your macOS version; Sparkle’s system profiling is off. Every update must carry either a valid signature from Snaptic’s update key or Snaptic’s Developer ID signature, and the feed itself is signed (see [Updates](#updates)). Nothing else connects: no telemetry, no analytics, no crash upload, and a lint check still rejects networking APIs in Snaptic’s own code.
+**Network: only for updates, and only if you allow it.** If you allow it, Snaptic contacts GitHub (github.com and its download host) once a day, and when you choose **Check for Updates…**. It downloads the signed update feed, and an update when you install one. GitHub sees your IP address, a Sparkle User-Agent with the app version, and your macOS version; Sparkle’s system profiling is off. The feed and every update are signed with Snaptic’s update key; a download signed with Snaptic’s Developer ID is accepted only so that a lost key can be replaced (see [Updates](#updates)). Nothing else connects: no telemetry, no analytics, no crash upload, and a lint check still rejects networking APIs in Snaptic’s own code.
 
 **What never leaves the process.** Window pixels, window titles, app names, and key presses. The command line, hooks, diagnostics, and the event log never carry them. Diagnostics mask serial numbers; display keys are salted per Mac and the salt is never exported.
 

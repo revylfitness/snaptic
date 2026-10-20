@@ -130,8 +130,9 @@ package struct OnboardingUpdatesPage: Equatable, Sendable {
     /// The window opens (not while it already shows): a new run starts from whether the question is open now.
     package mutating func windowOpened(asks: Bool) { included = asks }
 
-    /// The updater started, or Continue was pressed.
-    package mutating func refresh(asks: Bool) {}
+    /// The updater started, or Continue was pressed: the page joins the run if the question is open now, and a page
+    /// already in stays in.
+    package mutating func refresh(asks: Bool) { included = included || asks }
 }
 
 /// Host settings under `SnapticModulesV1`: which modules run, where their menus go, and
@@ -333,8 +334,8 @@ package struct ModulesConfig: ConfigModel {
     }
 
     /// E1a: the pages in order (the progress dots and "Step 5 of 6"), with the updates page before Done when
-    /// `includesUpdates`. The caller decides that once per run, when the window opens, so answering the question
-    /// doesn't drop its page and renumber Done (r1 U6).
+    /// `includesUpdates` (`OnboardingUpdatesPage.included`, which never drops the page during a run, so answering
+    /// doesn't renumber Done; r1 U6).
     package func onboardingPages(includesUpdates: Bool) -> [OnboardingPage] {
         var pages = onboardingSteps().map(OnboardingPage.step)
         if includesUpdates, let done = pages.firstIndex(of: .step(.done)) { pages.insert(.updates, at: done) }
