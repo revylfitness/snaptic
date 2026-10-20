@@ -7,7 +7,7 @@ Everything 0.3.1 introduced is in 0.3.2: tabs in the Snaptic menu, keeping awake
 ## Fixed
 
 - **Snaptic starts again.** At launch Snaptic asks macOS for your home folder. 0.3.1 read the answer from memory that the release build had already freed, so it saw garbage and refused to start. Snaptic now copies the answer while it’s still valid, and every part of the app uses that one lookup.
-- **Release checks run the app’s own startup checks.** The automated checks that build every release now run the same startup checks as the app, on the release build, so a release that can’t start can’t be published again.
+- **Release checks run the app’s own startup checks.** Every build now runs the same startup checks as the app, on the optimized build and again under a memory checker (AddressSanitizer) that catches reads of freed memory on any macOS version, so a release that can’t start can’t be published again.
 - **A network hiccup no longer fails a release.** The release pipeline retries Apple’s notarization check when the connection drops.
 
 ## Upgrading
