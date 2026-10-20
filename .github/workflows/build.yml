@@ -16,11 +16,13 @@ concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
-# Release pipeline (PLAN 0.3.1 E3): build → sign (environment `release`) → verify and attest → publish (environment
-# `appcast`). Only tag pushes reach sign, verify, attest and publish; both environments also accept only `v*` tags and
-# need the owner's approval for every run. Hygiene (lint): no `set -x`; no `${{ }}` inside `run:`, every value reaches
-# scripts through `env:`; secrets are decoded under `umask 077` into $RUNNER_TEMP and removed in an always() step; no
-# cache in build or any job of the release chain; no repository script runs while a signing keychain exists.
+# Release pipeline (PLAN 0.3.1 E3): kit-linux and build → sign (environment `release`) → verify and attest → publish
+# (environment `appcast`). Only tag pushes reach sign, verify, attest and publish; both environments also accept only
+# `v*` tags and need the owner's approval for every run. Every push also runs `rehearse`: the same path without secrets
+# (r3 C3-3), so a tag finds nothing new but Developer ID signing, notarization and the real keys. Hygiene (lint): no
+# `set -x`; no `${{ }}` inside `run:`, every value reaches scripts through `env:`; secrets are decoded under
+# `umask 077` into $RUNNER_TEMP and removed in an always() step; no cache, and only four pinned actions, in build or any
+# job of the release chain; no repository script runs while a signing keychain exists.
 
 # The update key (PLAN 0.3.1 E2; README › "If a release key leaks"). Public values, kept here so a tag's diff shows
 # every change to them.
@@ -28,8 +30,10 @@ concurrency:
 #   and the archive with the secret and verifies both against this key.
 # - SU_NEXT_PUBLIC_ED_KEY and SU_NEXT_KEY_TAG: both empty, except for the one release that rotates the key. That tag's
 #   Info.plist carries the next key, while its feed and archive are still signed with the current one (Sparkle 2.10.0
-#   accepts such an update: SUUpdateValidator checks the archive against the old app's key only). Any other tag fails
-#   until the rotation is finished (this key promoted, the next one cleared, the secret replaced).
+#   accepts such an update: SUUpdateValidator checks the archive against the old app's key only; publish signs the
+#   archive itself, because generate_appcast doesn't when the app's key isn't the secret's, r3 C3-1). Any other tag
+#   fails until the rotation is finished (this key promoted, the next one cleared, the secret replaced). `rehearse`
+#   runs exactly this case on every push, with a throwaway key as the current one.
 # - SPARKLE_ARCHIVE: the feed's download, Snaptic.zip or Snaptic.dmg. The Developer ID-signed disk image is the only
 #   archive Sparkle's code-signing fallback can verify, which copies still trusting a lost or retired key need.
 env:
@@ -37,6 +41,15 @@ env:
   SU_NEXT_PUBLIC_ED_KEY: ""
   SU_NEXT_KEY_TAG: ""
   SPARKLE_ARCHIVE: Snaptic.zip
+  FEED_URL: https://github.com/revylfitness/snaptic/releases/latest/download/appcast.xml
+  # Sparkle 2.10.0 as the SwiftPM artifact ships it (Sparkle-for-Swift-Package-Manager.zip, checksum
+  # 17e28312b8e18ab7cdbbe09a6fb28cc55a5479ec6c371dbc07cdecd2a14fd959), before Snaptic signs it.
+  SPARKLE_SHA256: b57162032b569fce26c8ba162a54c55740da362822f80eac72dbad41d6edc374
+  AUTOUPDATE_SHA256: abce46954cc1fdbd72bdf6bc786ca44590735bc842b3f713a2c948bbae86da3e
+  UPDATER_SHA256: 3566cf061983c184e00c5ec0a779bbec86bb0214004ad63e46b42133f27d908c
+  # publish's generate_appcast and sign_update (Sparkle-2.10.0.tar.xz).
+  SPARKLE_TOOLS_URL: https://github.com/sparkle-project/Sparkle/releases/download/2.10.0/Sparkle-2.10.0.tar.xz
+  SPARKLE_TOOLS_SHA256: c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c
 
 jobs:
   # Fast feedback (about a minute): lints plus the Foundation-only SnapticKit
@@ -103,8 +116,8 @@ jobs:
         run: ./scripts/ci-annotate.sh kit-linux lint.log build.log test.log
 
   # Runs the repository's own code, so it only ever gets read access and no secrets. It compiles once and assembles
-  # two bundles (E3): build/Snaptic.app (ad hoc, without Sparkle: every test and self-test runs on it) and, on tags
-  # only, build/release/Snaptic.app (the same binary with Sparkle embedded, never run or signed here).
+  # two bundles (E3): build/Snaptic.app (ad hoc, without Sparkle: every test and self-test runs on it) and, on every
+  # push, build/release/Snaptic.app (the same binary with Sparkle embedded, never run or signed here; r3 C3-3).
   build:
     runs-on: macos-15
     timeout-minutes: 45
@@ -129,10 +142,30 @@ jobs:
           xcodebuild -version
           swift --version
 
+      # The workflow rules need PyYAML, which the image lacks (r3 C3-2): a throwaway virtual environment gets one
+      # pinned release by its wheels' hashes, and LINT_REQUIRE_YAML makes a missing one fail rather than skip.
       - name: Lint
+        env:
+          LINT_REQUIRE_YAML: "1"
         run: |
           set -o pipefail
-          ./scripts/lint.sh --strict 2>&1 | tee lint.log
+          VENV="$RUNNER_TEMP/lint-venv"
+          python3 -m venv "$VENV"
+          # The macOS arm64 wheels of PyYAML 6.0.3 for CPython 3.9 to 3.14.
+          {
+            printf 'PyYAML==6.0.3'
+            printf ' --hash=sha256:%s' \
+              c3355370a2c156cffb25e876646f149d5d68f5e0a3ce86a5084dd0b64a994917 \
+              02ea2dfa234451bbb8772601d7b8e426c2bfa197136796224e50e35a78777956 \
+              652cb6edd41e718550aad172851962662ff2681490a8a711af6a4d288dd96824 \
+              fc09d0aa354569bc501d4e787133afc08552722d3ab34836a80547331bb5d4a0 \
+              2283a07e2c21a2aa78d9c4442724ec1eb15f5e42a723b99cb3d822d48f5f7ad1 \
+              34d5fcd24b8445fadc33f9cf348c1047101756fd760b4dacb5c3e99755703310
+            printf '\n'
+          } > "$RUNNER_TEMP/lint-requirements.txt"
+          "$VENV/bin/python3" -m pip install --quiet --disable-pip-version-check --no-deps --only-binary :all: \
+            --require-hashes -r "$RUNNER_TEMP/lint-requirements.txt"
+          PATH="$VENV/bin:$PATH" ./scripts/lint.sh --strict 2>&1 | tee lint.log
 
       - name: Build (debug, with tests)
         run: |
@@ -222,11 +255,11 @@ jobs:
 
       # The universal release build runs only for pushes (feature branches,
       # main, tags); pull requests get the faster native debug build above.
-      # build-app.sh checks the weak link and, on tags, assembles build/release.
+      # build-app.sh checks the weak link and assembles build/release, which rehearse checks and sign signs.
       - name: Build universal app
         if: github.event_name == 'push'
         env:
-          RELEASE_BUNDLE: ${{ startsWith(github.ref, 'refs/tags/v') && '1' || '0' }}
+          RELEASE_BUNDLE: "1"
         run: |
           set -o pipefail
           ARCHS="arm64 x86_64" ./scripts/build-app.sh 2>&1 | tee universal.log
@@ -295,21 +328,357 @@ jobs:
 
       # ditto keeps the framework's symlinks, which the artifact upload would not.
       - name: Archive the release bundle
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'push'
         run: ditto -c -k --sequesterRsrc --keepParent build/release/Snaptic.app build/release/Snaptic-unsigned.zip
 
       - name: Upload the release bundle (unsigned)
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'push'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Snaptic-unsigned
           path: build/release/Snaptic-unsigned.zip
           if-no-files-found: error
 
+  # The release path without secrets, on every push (r3 C3-3): build's release bundle, sign's bundle checks, an ad hoc
+  # signature in sign's order, sign's disk image steps, the self-tests with Sparkle loaded, and publish's feed steps
+  # with a throwaway update key as the current key and the pinned one as the next: the key-rotation case (r3 C3-1).
+  # The scripts marked in sign and publish run here unchanged (lint). sign doesn't wait for it; publish does.
+  rehearse:
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: macos-15
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: Snaptic-unsigned
+          path: ${{ runner.temp }}/unsigned
+
+      # Guards' Info.plist checks, with the tag the plist's version makes.
+      - name: Unpack the release bundle
+        run: |
+          set -euo pipefail
+          ditto -x -k "$RUNNER_TEMP/unsigned/Snaptic-unsigned.zip" "$RUNNER_TEMP/release"
+          APP="$RUNNER_TEMP/release/Snaptic.app"
+          plist() { /usr/libexec/PlistBuddy -c "Print :$1" "$APP/Contents/Info.plist"; }
+          VERSION=$(plist CFBundleShortVersionString)
+          [[ "$VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || { echo "CFBundleShortVersionString $VERSION isn't X.Y.Z." >&2; exit 1; }
+          MAJOR=$((10#${BASH_REMATCH[1]})) MINOR=$((10#${BASH_REMATCH[2]})) PATCH=$((10#${BASH_REMATCH[3]}))
+          if [ "$MINOR" -gt 99 ] || [ "$PATCH" -gt 99 ]; then echo "Minor and patch must be at most 99." >&2; exit 1; fi
+          [ "$(plist CFBundleVersion)" = "$((MAJOR * 10000 + MINOR * 100 + PATCH))" ] || { echo "CFBundleVersion doesn't follow E4's scheme." >&2; exit 1; }
+          EXPECTED_KEY="$SU_PUBLIC_ED_KEY"
+          if [ -n "$SU_NEXT_PUBLIC_ED_KEY" ]; then EXPECTED_KEY="$SU_NEXT_PUBLIC_ED_KEY"; fi
+          [ "$(plist SUPublicEDKey)" = "$EXPECTED_KEY" ] || { echo "SUPublicEDKey isn't the expected key." >&2; exit 1; }
+          [ "$(plist SUFeedURL)" = "$FEED_URL" ] || { echo "SUFeedURL isn't the pinned feed." >&2; exit 1; }
+          [ "$(plist SURequireSignedFeed)" = "true" ] || { echo "SURequireSignedFeed must be YES." >&2; exit 1; }
+          [ "$(plist SUVerifyUpdateBeforeExtraction)" = "true" ] || { echo "SUVerifyUpdateBeforeExtraction must be YES." >&2; exit 1; }
+          echo "REHEARSAL_TAG=v$VERSION" >> "$GITHUB_ENV"
+
+      - name: Check the bundle and Sparkle
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/release/Snaptic.app"
+          FW="$APP/Contents/Frameworks/Sparkle.framework"
+          check() {
+            local actual
+            actual=$(shasum -a 256 "$1" | awk '{print $1}')
+            [ "$actual" = "$2" ] || { echo "$1 doesn't match its pinned SHA-256 ($actual)." >&2; exit 1; }
+          }
+          check "$FW/Versions/B/Sparkle" "$SPARKLE_SHA256"
+          check "$FW/Versions/B/Autoupdate" "$AUTOUPDATE_SHA256"
+          check "$FW/Versions/B/Updater.app/Contents/MacOS/Updater" "$UPDATER_SHA256"
+          if [ -e "$FW/Versions/B/XPCServices" ] || [ -L "$FW/XPCServices" ] || [ -e "$FW/XPCServices" ]; then
+            echo "Sparkle's XPCServices must be removed." >&2
+            exit 1
+          fi
+          [ "$(ls "$APP/Contents/Frameworks")" = "Sparkle.framework" ] || { echo "Unexpected frameworks." >&2; exit 1; }
+          # Exactly four Mach-O files get the Developer ID signature: Snaptic, Sparkle, Autoupdate and Updater.
+          MACHO=0
+          while IFS= read -r -d '' file; do
+            case "$(head -c 4 "$file" | od -An -tx1 | tr -d ' \n')" in
+              cafebabe|bebafeca|cafebabf|bfbafeca|feedface|cefaedfe|feedfacf|cffaedfe) MACHO=$((MACHO + 1)) ;;
+            esac
+          done < <(find "$APP" -type f -print0)
+          [ "$MACHO" = "4" ] || { echo "Expected 4 Mach-O files, found $MACHO." >&2; exit 1; }
+          commands=$(otool -arch all -l "$APP/Contents/MacOS/Snaptic")
+          awk '
+            $1 == "cmd" { cmd = $2 }
+            $1 == "name" && index($2, "@rpath/Sparkle.framework/") == 1 { if (cmd == "LC_LOAD_WEAK_DYLIB") weak++; else strong++ }
+            cmd == "LC_RPATH" && $1 == "path" && $2 == "@executable_path/../Frameworks" { rpath++ }
+            END { exit !(weak > 0 && strong == 0 && rpath > 0) }' <<< "$commands" \
+            || { echo "Snaptic must weak-link Sparkle with the Frameworks rpath." >&2; exit 1; }
+          security find-certificate -c "Developer ID Certification Authority" /Library/Keychains/System.keychain >/dev/null \
+            || { echo "The Developer ID intermediate certificate isn't on this runner." >&2; exit 1; }
+
+      # sign's order, ad hoc and without the hardened runtime: library validation refuses ad hoc code, which has no
+      # Team ID (build-app.sh). Then the zip, as sign makes it after stapling.
+      - name: Sign the app (ad hoc)
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/release/Snaptic.app"
+          FW="$APP/Contents/Frameworks/Sparkle.framework"
+          for item in "$FW/Versions/B/Autoupdate" "$FW/Versions/B/Updater.app" "$FW" "$APP"; do
+            codesign --force --sign - "$item"
+          done
+          codesign --verify --strict --deep --verbose=2 "$APP"
+          OUT="$RUNNER_TEMP/out"
+          rm -rf "$OUT"
+          mkdir -p "$OUT"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT/Snaptic.zip"
+
+      - name: Build the disk image
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/release/Snaptic.app"
+          OUT="$RUNNER_TEMP/out"
+          STAGE="$RUNNER_TEMP/dmg-stage"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          ditto "$APP" "$STAGE/Snaptic.app"
+          ln -s /Applications "$STAGE/Applications"
+          hdiutil create -volname "Snaptic" -srcfolder "$STAGE" -fs HFS+ -format UDZO -imagekey zlib-level=9 -ov "$OUT/Snaptic.dmg" >/dev/null
+          hdiutil verify "$OUT/Snaptic.dmg" >/dev/null
+          rm -rf "$STAGE"
+
+      # verify's checks that need no Developer ID: the zip's app and the disk image's app are intact.
+      - name: Check the files
+        run: |
+          set -euo pipefail
+          ditto -x -k "$RUNNER_TEMP/out/Snaptic.zip" "$RUNNER_TEMP/selftest"
+          codesign --verify --strict --deep "$RUNNER_TEMP/selftest/Snaptic.app"
+          MOUNT="$RUNNER_TEMP/dmg-mount"
+          mkdir -p "$MOUNT"
+          hdiutil attach -readonly -nobrowse -noautoopen -mountpoint "$MOUNT" "$RUNNER_TEMP/out/Snaptic.dmg" >/dev/null
+          STATUS=0
+          codesign --verify --strict --deep "$MOUNT/Snaptic.app" || STATUS=1
+          [ -L "$MOUNT/Applications" ] || STATUS=1
+          hdiutil detach "$MOUNT" >/dev/null || hdiutil detach -force "$MOUNT" >/dev/null
+          [ "$STATUS" = "0" ] || { echo "Snaptic.dmg doesn't hold the app and the Applications shortcut." >&2; exit 1; }
+          mkdir -p "$RUNNER_TEMP/signed"
+          cp "$RUNNER_TEMP/out/Snaptic.zip" "$RUNNER_TEMP/out/Snaptic.dmg" "$RUNNER_TEMP/signed/"
+
+      - name: Helper self-test (release bundle)
+        timeout-minutes: 3
+        run: |
+          set -o pipefail
+          perl -e '$SIG{PIPE} = "DEFAULT"; exec @ARGV or die "exec: $!"' \
+            ./scripts/selftest-helpers.sh "$RUNNER_TEMP/selftest/Snaptic.app/Contents/MacOS/Snaptic" 2>&1 | tee selftest.log
+
+      # verify's self-tests: Sparkle loads, its updater starts (r3 C3-4) and onboarding gets the updates page.
+      - name: Controls and launch self-tests (release bundle, Sparkle loaded)
+        timeout-minutes: 2
+        run: |
+          set -o pipefail
+          dir=$(mktemp -d)
+          token=$(od -An -N30 -tx1 /dev/urandom | tr -d ' \n')
+          printf '%s\n' "$token" > "$dir/token"
+          chmod 600 "$dir/token"
+          BIN="$RUNNER_TEMP/selftest/Snaptic.app/Contents/MacOS/Snaptic"
+          SNAPTIC_SELFTEST_TOKEN="$token" "$BIN" --selftest-controls "$dir/token" 2>&1 | tee -a selftest.log
+          SNAPTIC_SELFTEST_TOKEN="$token" SNAPTIC_SELFTEST_EXPECT_SPARKLE=loaded \
+            "$BIN" --selftest-launch "$dir/token" 2>&1 | tee -a selftest.log
+
+      # A throwaway Ed25519 key stands in for the appcast secret. It is the current key, and the pinned key (the one
+      # the app carries) is the next: the release that rotates the key, which must publish (r3 C3-1).
+      - name: Throwaway update key
+        run: |
+          set -euo pipefail
+          umask 077
+          cat > "$RUNNER_TEMP/throwaway-key.swift" <<'SWIFT'
+          import CryptoKit
+          let key = Curve25519.Signing.PrivateKey()
+          print(key.rawRepresentation.base64EncodedString())
+          print(key.publicKey.rawRepresentation.base64EncodedString())
+          SWIFT
+          KEYS=$(xcrun swift "$RUNNER_TEMP/throwaway-key.swift")
+          SEED=$(sed -n 1p <<< "$KEYS")
+          PUBLIC=$(sed -n 2p <<< "$KEYS")
+          echo "::add-mask::$SEED"
+          [ "$PUBLIC" != "$SU_PUBLIC_ED_KEY" ] || { echo "The throwaway key is the pinned key." >&2; exit 1; }
+          {
+            echo "REHEARSAL_ED_SEED=$SEED"
+            echo "REHEARSAL_PUBLIC_ED_KEY=$PUBLIC"
+            echo "REHEARSAL_NEXT_PUBLIC_ED_KEY=$SU_PUBLIC_ED_KEY"
+          } >> "$GITHUB_ENV"
+
+      - name: Release notes
+        env:
+          TAG: ${{ env.REHEARSAL_TAG }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Tag $TAG isn't vX.Y.Z." >&2; exit 1; }
+          VERSION="${TAG#v}"
+          # The notes live under the version's major.minor folder or its own folder (0.3.1's); exactly one must exist.
+          FOUND=()
+          for candidate in "docs/design/${VERSION%.*}/RELEASE-NOTES-$VERSION.md" "docs/design/$VERSION/RELEASE-NOTES-$VERSION.md"; do
+            if [ -f "$candidate" ] && [ ! -L "$candidate" ]; then FOUND+=("$candidate"); fi
+          done
+          [ "${#FOUND[@]}" = "1" ] || { echo "Expected one RELEASE-NOTES-$VERSION.md under docs/design, found ${#FOUND[@]}." >&2; exit 1; }
+          NOTES="${FOUND[0]}"
+          # A new draft is titled by the notes' first "# " heading (data, not a string in this workflow); control
+          # characters are removed, so the value is one line.
+          TITLE=$(grep -m1 '^# ' "$NOTES" | sed -e 's/^# *//' -e 's/[[:space:]]*$//' | LC_ALL=C tr -d '\000-\037\177' || true)
+          if [ -z "$TITLE" ] || [ "${#TITLE}" -gt 200 ]; then echo "$NOTES needs a first '# ' heading (at most 200 characters)." >&2; exit 1; fi
+          { echo "NOTES=$NOTES"; echo "TITLE=$TITLE"; } >> "$GITHUB_ENV"
+
+      - name: Sparkle tools
+        run: |
+          set -euo pipefail
+          TOOLS="$RUNNER_TEMP/sparkle-tools"
+          mkdir -p "$TOOLS"
+          curl -fsSL --proto '=https' -o "$RUNNER_TEMP/Sparkle-2.10.0.tar.xz" "$SPARKLE_TOOLS_URL"
+          echo "$SPARKLE_TOOLS_SHA256  $RUNNER_TEMP/Sparkle-2.10.0.tar.xz" | shasum -a 256 -c -
+          tar -xJf "$RUNNER_TEMP/Sparkle-2.10.0.tar.xz" -C "$TOOLS" ./bin/generate_appcast ./bin/sign_update
+
+      - name: Generate the appcast
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ env.REHEARSAL_ED_SEED }}
+          TAG: ${{ env.REHEARSAL_TAG }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [ -n "$SPARKLE_ED_PRIVATE_KEY" ] || { echo "The appcast secret is missing." >&2; exit 1; }
+          case "$SPARKLE_ARCHIVE" in Snaptic.zip|Snaptic.dmg) ;; *) echo "SPARKLE_ARCHIVE must be Snaptic.zip or Snaptic.dmg." >&2; exit 1 ;; esac
+          FEED="$RUNNER_TEMP/feed"
+          rm -rf "$FEED"
+          mkdir -p "$FEED"
+          cp "$RUNNER_TEMP/signed/$SPARKLE_ARCHIVE" "$FEED/$SPARKLE_ARCHIVE"
+          if [ -z "${NOTES:-}" ] || [ ! -f "$NOTES" ]; then echo "The release notes weren't found." >&2; exit 1; fi
+          cp "$NOTES" "$FEED/Snaptic.md"
+          TOOLS="$RUNNER_TEMP/sparkle-tools/bin"
+          printf '%s\n' "$SPARKLE_ED_PRIVATE_KEY" | "$TOOLS/generate_appcast" --ed-key-file - \
+            --download-url-prefix "https://github.com/revylfitness/snaptic/releases/download/$TAG/" \
+            --embed-release-notes \
+            --full-release-notes-url "https://github.com/revylfitness/snaptic/releases/tag/$TAG" \
+            --link https://github.com/revylfitness/snaptic \
+            "$FEED"
+          [ -f "$FEED/appcast.xml" ] || { echo "generate_appcast wrote no appcast.xml." >&2; exit 1; }
+          # generate_appcast signs the archive only when the app's SUPublicEDKey is the secret's key (Sparkle 2.10.0
+          # Appcast.swift:199-209), which the release that rotates the key doesn't have (r3 C3-1). So sign_update
+          # signs it here, always: a signature generate_appcast did write must be the same (Ed25519 signatures are
+          # deterministic); a missing one is added, and the feed is then signed again.
+          SIGNATURE=$(printf '%s\n' "$SPARKLE_ED_PRIVATE_KEY" | "$TOOLS/sign_update" -p --ed-key-file - "$FEED/$SPARKLE_ARCHIVE")
+          [[ "$SIGNATURE" =~ ^[A-Za-z0-9+/]{86}==$ ]] || { echo "sign_update printed no archive signature." >&2; exit 1; }
+          CHANGED=$(python3 -I - "$FEED/appcast.xml" "$SIGNATURE" <<'PY'
+          import re
+          import sys
+          path, signature = sys.argv[1], sys.argv[2]
+          text = open(path, encoding="utf-8").read()
+          enclosures = re.findall(r"<enclosure\b[^>]*>", text)
+          if len(enclosures) != 1 or not enclosures[0].endswith("/>"):
+              sys.exit("the feed must have exactly one enclosure")
+          enclosure = enclosures[0]
+          found = re.findall(r'\ssparkle:edSignature="([^"]*)"', enclosure)
+          if found:
+              if found != [signature]:
+                  sys.exit("generate_appcast's archive signature isn't sign_update's")
+              print("no")
+          else:
+              signed = enclosure[:-2].rstrip() + ' sparkle:edSignature="' + signature + '"/>'
+              open(path, "w", encoding="utf-8").write(text.replace(enclosure, signed, 1))
+              print("yes")
+          PY
+          )
+          if [ "$CHANGED" = "yes" ]; then
+            echo "The app's SUPublicEDKey isn't the secret's key: the archive was signed with sign_update."
+            printf '%s\n' "$SPARKLE_ED_PRIVATE_KEY" | "$TOOLS/sign_update" --ed-key-file - "$FEED/appcast.xml"
+          fi
+          # Sparkle's own check of the feed signature (with the key derived from the secret)…
+          printf '%s\n' "$SPARKLE_ED_PRIVATE_KEY" | "$TOOLS/sign_update" --verify --ed-key-file - "$FEED/appcast.xml"
+
+      - name: Verify the appcast against the pinned key
+        env:
+          TAG: ${{ env.REHEARSAL_TAG }}
+          SU_PUBLIC_ED_KEY: ${{ env.REHEARSAL_PUBLIC_ED_KEY }}
+          SU_NEXT_PUBLIC_ED_KEY: ${{ env.REHEARSAL_NEXT_PUBLIC_ED_KEY }}
+          SU_NEXT_KEY_TAG: ${{ env.REHEARSAL_TAG }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          ditto -x -k "$RUNNER_TEMP/signed/Snaptic.zip" "$RUNNER_TEMP/app"
+          PLIST="$RUNNER_TEMP/app/Snaptic.app/Contents/Info.plist"
+          BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST")
+          EXPECTED_KEY="$SU_PUBLIC_ED_KEY"
+          if [ -n "$SU_NEXT_PUBLIC_ED_KEY" ] || [ -n "$SU_NEXT_KEY_TAG" ]; then
+            if [ -z "$SU_NEXT_PUBLIC_ED_KEY" ] || [ "$SU_NEXT_KEY_TAG" != "$TAG" ]; then
+              echo "The key rotation isn't set up for $TAG." >&2
+              exit 1
+            fi
+            EXPECTED_KEY="$SU_NEXT_PUBLIC_ED_KEY"
+          fi
+          [ "$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" "$PLIST")" = "$EXPECTED_KEY" ] \
+            || { echo "The app's SUPublicEDKey isn't the expected key." >&2; exit 1; }
+          cat > "$RUNNER_TEMP/verify-appcast.swift" <<'SWIFT'
+          import CryptoKit
+          import Foundation
+
+          func fail(_ message: String) -> Never {
+              FileHandle.standardError.write(Data(("verify-appcast: " + message + "\n").utf8))
+              exit(1)
+          }
+
+          let args = CommandLine.arguments
+          guard args.count == 7 else { fail("usage: <public key> <appcast> <archive> <url> <version> <build>") }
+          guard let keyData = Data(base64Encoded: args[1]),
+                let key = try? Curve25519.Signing.PublicKey(rawRepresentation: keyData) else { fail("bad public key") }
+          guard let feed = FileManager.default.contents(atPath: args[2]),
+                let archive = FileManager.default.contents(atPath: args[3]) else { fail("can't read the files") }
+
+          // The signing block Sparkle appends (SPUExtractAppcastContent): the signed content is everything before it.
+          guard let start = feed.range(of: Data("<!-- sparkle-signatures:\n".utf8), options: .backwards),
+                let end = feed.range(of: Data("-->".utf8), in: start.upperBound..<feed.count) else { fail("the feed is unsigned") }
+          let content = feed.subdata(in: 0..<start.lowerBound)
+          var signature: Data?
+          var length: Int?
+          for line in String(decoding: feed.subdata(in: start.upperBound..<end.lowerBound), as: UTF8.self).split(separator: "\n") {
+              let text = line.trimmingCharacters(in: .whitespaces)
+              if text.hasPrefix("edSignature:") { signature = Data(base64Encoded: String(text.dropFirst(12)).trimmingCharacters(in: .whitespaces)) }
+              if text.hasPrefix("length:") { length = Int(String(text.dropFirst(7)).trimmingCharacters(in: .whitespaces)) }
+          }
+          guard let signature, length == content.count, key.isValidSignature(signature, for: content) else {
+              fail("the feed's signature doesn't verify against the pinned SUPublicEDKey")
+          }
+
+          let sparkle = "http://www.andymatuschak.org/xml-namespaces/sparkle"
+          guard let document = try? XMLDocument(data: content),
+                let items = try? document.nodes(forXPath: "/rss/channel/item"), items.count == 1,
+                let item = items.first as? XMLElement else { fail("the feed must hold exactly one item") }
+          let enclosures = item.elements(forName: "enclosure")
+          guard enclosures.count == 1, let enclosure = enclosures.first else { fail("the item must have one enclosure") }
+          func value(_ name: String) -> String? {
+              item.elements(forLocalName: name, uri: sparkle).first?.stringValue
+                  ?? enclosure.attribute(forLocalName: name, uri: sparkle)?.stringValue
+          }
+          guard value("version") == args[6] else { fail("sparkle:version isn't \(args[6])") }
+          guard value("shortVersionString") == args[5] else { fail("sparkle:shortVersionString isn't \(args[5])") }
+          guard enclosure.attribute(forName: "url")?.stringValue == args[4] else { fail("the enclosure URL isn't \(args[4])") }
+          guard enclosure.attribute(forName: "length")?.stringValue == String(archive.count) else { fail("the enclosure length is wrong") }
+          guard let archiveSignature = enclosure.attribute(forLocalName: "edSignature", uri: sparkle)?.stringValue,
+                let archiveData = Data(base64Encoded: archiveSignature),
+                key.isValidSignature(archiveData, for: archive) else {
+              fail("the archive's signature doesn't verify against the pinned SUPublicEDKey")
+          }
+          print("verify-appcast: ok (\(args[5]), build \(args[6]))")
+          SWIFT
+          xcrun swift "$RUNNER_TEMP/verify-appcast.swift" "$SU_PUBLIC_ED_KEY" "$RUNNER_TEMP/feed/appcast.xml" \
+            "$RUNNER_TEMP/signed/$SPARKLE_ARCHIVE" "https://github.com/revylfitness/snaptic/releases/download/$TAG/$SPARKLE_ARCHIVE" \
+            "$VERSION" "$BUILD"
+
+      - name: Report errors as annotations
+        if: failure()
+        run: ./scripts/ci-annotate.sh rehearse selftest.log
+
   # Signs, notarizes and staples the release bundle (E3 step 2). It runs no repository code: the checkout is only for
   # the ancestry guard. The Developer ID secrets exist only in the `release` environment.
   sign:
-    needs: build
+    # kit-linux runs the workflow lint, actionlint and the Linux tests (r3 C3-2).
+    needs: [kit-linux, build]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: macos-15
     timeout-minutes: 90
@@ -322,12 +691,6 @@ jobs:
     env:
       TEAM_ID: 7TFS5G4532
       IDENTITY: "Developer ID Application: Sean Frasure (7TFS5G4532)"
-      FEED_URL: https://github.com/revylfitness/snaptic/releases/latest/download/appcast.xml
-      # Sparkle 2.10.0 as the SwiftPM artifact ships it (Sparkle-for-Swift-Package-Manager.zip, checksum
-      # 17e28312b8e18ab7cdbbe09a6fb28cc55a5479ec6c371dbc07cdecd2a14fd959), before Snaptic signs it.
-      SPARKLE_SHA256: b57162032b569fce26c8ba162a54c55740da362822f80eac72dbad41d6edc374
-      AUTOUPDATE_SHA256: abce46954cc1fdbd72bdf6bc786ca44590735bc842b3f713a2c948bbae86da3e
-      UPDATER_SHA256: 3566cf061983c184e00c5ec0a779bbec86bb0214004ad63e46b42133f27d908c
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -429,6 +792,7 @@ jobs:
           [ "$BUILD" -gt "$PREVIOUS" ] || { echo "CFBundleVersion $BUILD must be greater than the published feeds' $PREVIOUS." >&2; exit 1; }
           echo "Release $TAG, build $BUILD (published feeds had $PREVIOUS, $N feeds read)."
 
+      # rehearse runs this script unchanged on every push (lint).
       - name: Check the bundle and Sparkle
         run: |
           set -euo pipefail
@@ -571,9 +935,24 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT/Snaptic.zip"
           rm -f "$SECRETS/notary.p8"
 
-      # A second keychain, for this step only: the disk image is built from the stapled app (make-dmg.sh's steps,
-      # inline: no repository script runs while it exists) and signed.
-      - name: Build and sign the disk image
+      # The disk image is built from the stapled app (make-dmg.sh's steps, inline: no repository script runs in this
+      # job). rehearse runs this script unchanged on every push (lint).
+      - name: Build the disk image
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/release/Snaptic.app"
+          OUT="$RUNNER_TEMP/out"
+          STAGE="$RUNNER_TEMP/dmg-stage"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          ditto "$APP" "$STAGE/Snaptic.app"
+          ln -s /Applications "$STAGE/Applications"
+          hdiutil create -volname "Snaptic" -srcfolder "$STAGE" -fs HFS+ -format UDZO -imagekey zlib-level=9 -ov "$OUT/Snaptic.dmg" >/dev/null
+          hdiutil verify "$OUT/Snaptic.dmg" >/dev/null
+          rm -rf "$STAGE"
+
+      # A second keychain, for this step only.
+      - name: Sign the disk image
         env:
           P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
           P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
@@ -600,19 +979,9 @@ jobs:
           IDENTITIES=$(security find-identity -v -p codesigning "$KEYCHAIN")
           grep -qF "\"$IDENTITY\"" <<< "$IDENTITIES" || { echo "The p12 doesn't hold $IDENTITY." >&2; exit 1; }
 
-          APP="$RUNNER_TEMP/release/Snaptic.app"
           OUT="$RUNNER_TEMP/out"
-          STAGE="$RUNNER_TEMP/dmg-stage"
-          rm -rf "$STAGE"
-          mkdir -p "$STAGE"
-          ditto "$APP" "$STAGE/Snaptic.app"
-          xcrun stapler validate "$STAGE/Snaptic.app"
-          ln -s /Applications "$STAGE/Applications"
-          hdiutil create -volname "Snaptic" -srcfolder "$STAGE" -fs HFS+ -format UDZO -imagekey zlib-level=9 -ov "$OUT/Snaptic.dmg" >/dev/null
-          hdiutil verify "$OUT/Snaptic.dmg" >/dev/null
           codesign --force --timestamp --keychain "$KEYCHAIN" --sign "$IDENTITY" "$OUT/Snaptic.dmg"
           codesign --verify --strict --verbose=2 "$OUT/Snaptic.dmg"
-          rm -rf "$STAGE"
 
       - name: Delete the signing keychain again
         if: always()
@@ -785,7 +1154,7 @@ jobs:
   # Publishes the signed files and a freshly generated, EdDSA-signed appcast (E3 step 5). The Sparkle key exists only
   # in the `appcast` environment. Only this job creates, uploads to or edits a GitHub release (lint).
   publish:
-    needs: [sign, verify, attest]
+    needs: [sign, verify, attest, rehearse]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: macos-15
     timeout-minutes: 30
@@ -793,9 +1162,6 @@ jobs:
     permissions:
       contents: write
       attestations: read
-    env:
-      SPARKLE_TOOLS_URL: https://github.com/sparkle-project/Sparkle/releases/download/2.10.0/Sparkle-2.10.0.tar.xz
-      SPARKLE_TOOLS_SHA256: c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c
     steps:
       # Only the release notes are read from the checkout.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -823,9 +1189,9 @@ jobs:
               --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/build.yml" --source-ref "$GITHUB_REF"
           done
 
-      - name: Release state
+      # rehearse runs this script unchanged on every push (lint).
+      - name: Release notes
         env:
-          GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
@@ -838,12 +1204,21 @@ jobs:
           done
           [ "${#FOUND[@]}" = "1" ] || { echo "Expected one RELEASE-NOTES-$VERSION.md under docs/design, found ${#FOUND[@]}." >&2; exit 1; }
           NOTES="${FOUND[0]}"
-          echo "NOTES=$NOTES" >> "$GITHUB_ENV"
+          # A new draft is titled by the notes' first "# " heading (data, not a string in this workflow); control
+          # characters are removed, so the value is one line.
+          TITLE=$(grep -m1 '^# ' "$NOTES" | sed -e 's/^# *//' -e 's/[[:space:]]*$//' | LC_ALL=C tr -d '\000-\037\177' || true)
+          if [ -z "$TITLE" ] || [ "${#TITLE}" -gt 200 ]; then echo "$NOTES needs a first '# ' heading (at most 200 characters)." >&2; exit 1; fi
+          { echo "NOTES=$NOTES"; echo "TITLE=$TITLE"; } >> "$GITHUB_ENV"
+
+      - name: Release state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
           # A draft (CI's or the owner's) or a published release for this tag is reused with its title; otherwise a
-          # draft is made, titled by the notes' first "# " heading (data, not a string in this workflow).
+          # draft is made.
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            TITLE=$(grep -m1 '^# ' "$NOTES" | sed -e 's/^# *//' -e 's/[[:space:]]*$//' | LC_ALL=C tr -d '\000-\037\177' || true)
-            if [ -z "$TITLE" ] || [ "${#TITLE}" -gt 200 ]; then echo "$NOTES needs a first '# ' heading (at most 200 characters)." >&2; exit 1; fi
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
               --title "$TITLE" --notes-file "$NOTES"
           fi
@@ -860,6 +1235,7 @@ jobs:
       # The feed is built from scratch for every release, from only this release's archive (SPARKLE_ARCHIVE) and
       # notes: an earlier feed or asset is never re-signed. It lists only this version; no delta updates. The secret
       # must be the seed of SU_PUBLIC_ED_KEY, also in the release that rotates the key (the next step checks).
+      # rehearse runs this script and the next one unchanged on every push, with a throwaway key (lint).
       - name: Generate the appcast
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
@@ -883,6 +1259,36 @@ jobs:
             --link https://github.com/revylfitness/snaptic \
             "$FEED"
           [ -f "$FEED/appcast.xml" ] || { echo "generate_appcast wrote no appcast.xml." >&2; exit 1; }
+          # generate_appcast signs the archive only when the app's SUPublicEDKey is the secret's key (Sparkle 2.10.0
+          # Appcast.swift:199-209), which the release that rotates the key doesn't have (r3 C3-1). So sign_update
+          # signs it here, always: a signature generate_appcast did write must be the same (Ed25519 signatures are
+          # deterministic); a missing one is added, and the feed is then signed again.
+          SIGNATURE=$(printf '%s\n' "$SPARKLE_ED_PRIVATE_KEY" | "$TOOLS/sign_update" -p --ed-key-file - "$FEED/$SPARKLE_ARCHIVE")
+          [[ "$SIGNATURE" =~ ^[A-Za-z0-9+/]{86}==$ ]] || { echo "sign_update printed no archive signature." >&2; exit 1; }
+          CHANGED=$(python3 -I - "$FEED/appcast.xml" "$SIGNATURE" <<'PY'
+          import re
+          import sys
+          path, signature = sys.argv[1], sys.argv[2]
+          text = open(path, encoding="utf-8").read()
+          enclosures = re.findall(r"<enclosure\b[^>]*>", text)
+          if len(enclosures) != 1 or not enclosures[0].endswith("/>"):
+              sys.exit("the feed must have exactly one enclosure")
+          enclosure = enclosures[0]
+          found = re.findall(r'\ssparkle:edSignature="([^"]*)"', enclosure)
+          if found:
+              if found != [signature]:
+                  sys.exit("generate_appcast's archive signature isn't sign_update's")
+              print("no")
+          else:
+              signed = enclosure[:-2].rstrip() + ' sparkle:edSignature="' + signature + '"/>'
+              open(path, "w", encoding="utf-8").write(text.replace(enclosure, signed, 1))
+              print("yes")
+          PY
+          )
+          if [ "$CHANGED" = "yes" ]; then
+            echo "The app's SUPublicEDKey isn't the secret's key: the archive was signed with sign_update."
+            printf '%s\n' "$SPARKLE_ED_PRIVATE_KEY" | "$TOOLS/sign_update" --ed-key-file - "$FEED/appcast.xml"
+          fi
           # Sparkle's own check of the feed signature (with the key derived from the secret)…
           printf '%s\n' "$SPARKLE_ED_PRIVATE_KEY" | "$TOOLS/sign_update" --verify --ed-key-file - "$FEED/appcast.xml"
 

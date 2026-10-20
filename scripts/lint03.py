@@ -18,6 +18,11 @@
   `build`; r1 S6); no `${{` inside a `run:` script or `actions/github-script`'s inputs (values reach scripts through
   `env:`, so a tag name or release field is never spliced into code; r1 S6); and `gh release` only in the `publish`
   job (checked once a `publish` job exists: until T-update's pipeline lands, the 0.3 `release` job still publishes).
+  Round 3 (S3-2, C3-2, C3-3): no reusable workflows or local actions anywhere, and in the signed chain only the four
+  pinned actions it uses (so no composite or Docker action is ever out of sight); no `cache` input of any spelling; no
+  `${{` in a `docker://` action's inputs; no `SHELLOPTS`, `BASHOPTS`, `BASH_ENV` or `ENV` in an `env:`; `sign` needs
+  `kit-linux` (lint, actionlint, Linux tests) and `build`; and the secret-free `rehearse` job runs sign's and
+  publish's secret-free steps with byte-identical scripts.
 
 Run by scripts/lint.sh (which passes LINT_MODE=check|write and LINT_STRICT=0|1). Comments are stripped before
 matching (string literals are kept); counts are occurrences, not lines.
@@ -300,6 +305,7 @@ def self_check_031():
     for manifest, imports, resolved, flagged in package_cases:
         if bool(l19_package(manifest, imports, resolved)) != flagged:
             problems.append(f"self-check: l19_package {'missed' if flagged else 'wrongly reported'} {manifest!r}")
+    sha = "a" * 40
     wf = "on:\n  push:\njobs:\n  build:\n    steps:\n      - run: echo\n  release:\n    steps:\n      - run: gh release view x\n"
     workflow_cases = [
         (wf, False),
@@ -321,7 +327,7 @@ def self_check_031():
         (wf.replace("run: echo", "run: |\n          set -e\n          echo \"${{ github.event.release.name }}\""), True),
         (wf.replace("run: echo", "run: >-\n          echo ok # ${{ github.head_ref }}"), True),
         (wf.replace("      - run: echo\n", "      - env:\n          TAG: ${{ github.ref_name }}\n"
-                    "        run: |\n          echo \"$TAG\"\n      - uses: actions/upload-artifact@abc\n"
+                    "        run: |\n          echo \"$TAG\"\n      - uses: actions/upload-artifact@" + sha + "\n"
                     "        with:\n          path: ${{ runner.temp }}/out\n"), False),
         (wf.replace("jobs:\n", "defaults:\n  run:\n    shell: bash\njobs:\n"), False),
         # r2 S2-4: the rules read the parsed YAML, so no spelling of the same workflow gets past them.
@@ -341,18 +347,65 @@ def self_check_031():
         (wf.replace("run: echo", "run: |\n          set -o xtrace"), True),
         (wf.replace("      - run: echo\n", "      - uses: actions/github-script@abc\n        with:\n"
                     "          script: core.info('${{ github.head_ref }}')\n"), True),
-        (wf.replace("      - run: echo\n", "      - uses: actions/github-script@abc\n        env:\n"
-                    "          REF: ${{ github.head_ref }}\n        with:\n          script: core.info(process.env.REF)\n"),
+        (wf + "  lint:\n    steps:\n      - uses: actions/github-script@abc\n        env:\n"
+              "          REF: ${{ github.head_ref }}\n        with:\n          script: core.info(process.env.REF)\n",
          False),
         (wf.replace("      - run: echo\n", "      - uses: Actions/Cache@abc\n"), True),
         (wf.replace("      - run: echo\n", "      - uses: actions/setup-python@abc\n        with:\n          cache: pip\n"),
          True),
         (wf + "  lint:\n    steps:\n      - uses: actions/setup-python@abc\n        with:\n          cache: pip\n", False),
         (wf.replace("      - run: echo\n", "      - uses: actions/setup-go@abc\n"), True),
+        # r3 S3-2: the signed chain uses only its four pinned actions.
         (wf.replace("      - run: echo\n", "      - uses: actions/setup-go@abc\n        with:\n          cache: false\n"),
-         False),
+         True),
+        (wf + "  lint:\n    steps:\n      - uses: actions/setup-go@abc\n        with:\n          cache: false\n", False),
+        (wf.replace("      - run: echo\n", "      - uses: actions/checkout@" + sha + "\n"), False),
+        (wf.replace("      - run: echo\n", "      - uses: actions/checkout@v7\n"), True),
+        (wf.replace("      - run: echo\n", "      - uses: ruby/setup-ruby@" + sha + "\n        with:\n"
+                    "          bundler-cache: true\n"), True),
+        (wf.replace("      - run: echo\n", "      - uses: actions/setup-node@" + sha + "\n"), True),
+        (wf.replace("      - run: echo\n", "      - uses: actions/download-artifact@" + sha + "\n        with:\n"
+                    "          package-manager-cache: true\n"), True),
+        (wf + "  lint:\n    steps:\n      - uses: ./.github/actions/x\n", True),
+        (wf + "  lint:\n    uses: ./.github/workflows/x.yml\n", True),
+        (wf + "  lint:\n    uses: octo/repo/.github/workflows/x.yml@" + sha + "\n", True),
+        (wf + "  lint:\n    steps:\n      - uses: docker://alpine:3\n        with:\n"
+              "          args: sh -c \"echo ${{ github.head_ref }}\"\n", True),
+        (wf + "  lint:\n    steps:\n      - uses: docker://alpine:3\n        with:\n          args: echo ok\n", False),
+        (wf.replace("      - run: echo\n", "      - env:\n          SHELLOPTS: xtrace\n        run: echo\n"), True),
+        (wf.replace("jobs:\n", "env:\n  BASH_ENV: /tmp/x\njobs:\n"), True),
+        (wf + "  lint:\n    env:\n      ENV: /tmp/x\n    steps:\n      - run: echo\n", True),
         (wf + "  compile:\n    steps:\n      - uses: actions/cache@abc\n"
               "  sign:\n    needs: \"compile\"\n    steps:\n      - run: echo\n", True),
+    ]
+    # r3 C3-2, C3-3: sign needs kit-linux and build; rehearse runs the same secret-free scripts.
+    steps = {"sign": ["Check the bundle and Sparkle", "Build the disk image"],
+             "publish": ["Release notes", "Sparkle tools", "Generate the appcast",
+                         "Verify the appcast against the pinned key"]}
+
+    def chain(needs="[kit-linux, build]", rehearsed="echo same", order="for item in a b; do"):
+        text = "on:\n  push:\njobs:\n  kit-linux:\n    steps:\n      - run: echo\n  build:\n    steps:\n      - run: echo\n"
+        text += f"  sign:\n    needs: {needs}\n    steps:\n      - name: Sign the app\n        run: |\n"
+        text += "          for item in a b; do\n            echo $item\n          done\n"
+        for job in ("sign", "publish", "rehearse"):
+            if job != "sign":
+                text += f"  {job}:\n    needs: build\n    steps:\n"
+            if job == "rehearse":
+                text += f"      - name: Sign the app (ad hoc)\n        run: |\n          {order}\n            echo\n          done\n"
+            for owner, names in steps.items():
+                if job == owner or job == "rehearse":
+                    for name in names:
+                        run = rehearsed if job == "rehearse" and name == "Sparkle tools" else "echo same"
+                        text += f"      - name: {name}\n        run: {run}\n"
+        return text
+
+    workflow_cases += [
+        (chain(), False),
+        (chain(needs="build"), True),
+        (chain(needs="[kit-linux]"), True),
+        (chain(rehearsed="echo different"), True),
+        (chain(order="for item in b a; do"), True),
+        (chain().split("  rehearse:")[0], True),
     ]
     if yaml is None:
         return problems
@@ -645,6 +698,18 @@ try:
 except ImportError:
     yaml = None
 
+# What the signed chain uses, nothing else (r3 S3-2): a composite or Docker action's own steps are out of the rules'
+# sight, so none is allowed there.
+SIGNED_CHAIN_ACTIONS = {"actions/checkout", "actions/upload-artifact", "actions/download-artifact",
+                        "actions/attest-build-provenance"}
+PINNED = re.compile(r"@[0-9a-f]{40}$")
+# Shell start-up variables that turn on xtrace or run a file before every script (r3 S3-2).
+SHELL_ENV = {"SHELLOPTS", "BASHOPTS", "BASH_ENV", "ENV"}
+# The secret-free rehearsal (r3 C3-3): these steps of sign and publish run in `rehearse` with the same script.
+REHEARSED = [("sign", "Check the bundle and Sparkle"), ("sign", "Build the disk image"), ("publish", "Release notes"),
+             ("publish", "Sparkle tools"), ("publish", "Generate the appcast"),
+             ("publish", "Verify the appcast against the pinned key")]
+SIGN_LOOP = re.compile(r"^\s*for item in [^\n]*; do$", re.M)
 SET_X = re.compile(r"\bset\s+(?:-[A-Za-z]*x[A-Za-z]*|-o\s+xtrace)\b|\b(?:ba)?sh\s+-[A-Za-z]*x")
 FORBIDDEN_TRIGGERS = {"pull_request_target", "workflow_run"}
 
@@ -766,21 +831,71 @@ def step_problems(path, job, step, signed):
     # GitHub resolves an action's owner and repository without case.
     action = uses.split("@")[0].lower()
     inputs = yaml_items(yaml_get(step, "with"))
-    if action == "actions/github-script":
+    if action == "actions/github-script" or action.startswith("docker://"):
         for key, value in inputs:
             if any("${{" in s.value for s in yaml_scalars(value)):
-                problems.append(f"{path}:{yaml_line(value)}: ${{{{ }}}} in actions/github-script's {key}; "
-                                "pass the value through env: (r2 S2-4)")
+                problems.append(f"{path}:{yaml_line(value)}: ${{{{ }}}} in {action}'s {key}; "
+                                "pass the value through env: (r2 S2-4, r3 S3-2)")
+    if uses.startswith("./"):
+        problems.append(f"{path}:{yaml_line(step)}: local action {uses}: the workflow rules can't see into it (r3 S3-2)")
     if signed:
         where = f"{path}:{yaml_line(step)}"
         if "cache" in action:
             problems.append(f"{where}: job {job} must not use a cache ({uses}): its output is signed or published")
         for key, value in inputs:
-            if key.lower().startswith("cache") and not (isinstance(value, yaml.ScalarNode) and value.value == "false"):
+            if "cache" in key.lower() and not (isinstance(value, yaml.ScalarNode) and value.value == "false"):
                 problems.append(f"{where}: job {job} must not turn on a cache (with: {key}): its output is signed or "
                                 "published")
         if action == "actions/setup-go" and not any(k == "cache" for k, _ in inputs):
             problems.append(f"{where}: job {job} must set cache: false for actions/setup-go (it caches by default)")
+        if uses and (action not in SIGNED_CHAIN_ACTIONS or not PINNED.search(uses)):
+            problems.append(f"{where}: job {job} may use only {', '.join(sorted(SIGNED_CHAIN_ACTIONS))}, pinned to a "
+                            f"full commit SHA, not {uses} (r3 S3-2)")
+    return problems
+
+
+def env_mappings(node):
+    """Every `env:` mapping in the tree (workflow, job, step, container)."""
+    for key, value in yaml_items(node):
+        if key == "env":
+            yield value
+        yield from env_mappings(value)
+    if isinstance(node, yaml.SequenceNode):
+        for item in node.value:
+            yield from env_mappings(item)
+
+
+def step_run(job, name):
+    """The `run:` text of the job's step with this name, or None."""
+    steps = yaml_get(job, "steps")
+    for step in steps.value if isinstance(steps, yaml.SequenceNode) else []:
+        title = yaml_get(step, "name")
+        run = yaml_get(step, "run")
+        if isinstance(title, yaml.ScalarNode) and title.value == name and isinstance(run, yaml.ScalarNode):
+            return run.value
+    return None
+
+
+def release_chain_problems(path, jobs):
+    """r3 C3-2: sign gates on kit-linux (the workflow lint, actionlint, the Linux tests) as well as build. r3 C3-3: the
+    rehearsal runs sign's and publish's secret-free steps byte for byte, and signs in sign's order."""
+    problems = []
+    needs = set(job_needs(jobs["sign"]))
+    for required in ("build", "kit-linux"):
+        if required not in needs:
+            problems.append(f"{path}: job sign must need {required} (r3 C3-2)")
+    rehearse = jobs.get("rehearse")
+    if rehearse is None:
+        return problems + [f"{path}: the release chain needs its secret-free rehearse job (r3 C3-3)"]
+    for job, name in REHEARSED:
+        original = step_run(jobs.get(job), name)
+        if original is None:
+            problems.append(f"{path}: job {job} has no step {name!r} with a run: script (r3 C3-3)")
+        elif step_run(rehearse, name) != original:
+            problems.append(f"{path}: rehearse's {name!r} must run exactly {job}'s script (r3 C3-3)")
+    loop = SIGN_LOOP.search(step_run(jobs["sign"], "Sign the app") or "")
+    if loop is None or loop.group(0).strip() not in (step_run(rehearse, "Sign the app (ad hoc)") or ""):
+        problems.append(f"{path}: rehearse's 'Sign the app (ad hoc)' must sign in sign's order (r3 C3-3)")
     return problems
 
 
@@ -812,13 +927,22 @@ def workflow_file(path, text):
             if scalar.value in FORBIDDEN_TRIGGERS:
                 problems.append(f"{path}:{yaml_line(scalar)}: workflow trigger pull_request_target / workflow_run is "
                                 "forbidden (E3)")
+    for node in env_mappings(root):
+        for key, value in yaml_items(node):
+            if key in SHELL_ENV:
+                problems.append(f"{path}:{yaml_line(value)}: env: {key} changes how every shell starts (r3 S3-2)")
     jobs = dict(yaml_items(yaml_get(root, "jobs")))
     chain = signed_chain(jobs)
     for name, job in jobs.items():
+        if yaml_get(job, "uses") is not None:
+            problems.append(f"{path}:{yaml_line(job)}: job {name} calls a reusable workflow, which the workflow rules "
+                            "can't see into (r3 S3-2)")
         steps = yaml_get(job, "steps")
         for step in steps.value if isinstance(steps, yaml.SequenceNode) else []:
             if isinstance(step, yaml.MappingNode):
                 problems += step_problems(path, name, step, name in chain)
+    if "sign" in jobs:
+        problems += release_chain_problems(path, jobs)
     # "Only publish runs gh release": active once T-update's pipeline has a publish job (until then the 0.3 release
     # job still publishes).
     if "publish" in jobs:
