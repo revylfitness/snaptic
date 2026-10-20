@@ -158,7 +158,7 @@ import SnapticKit
         modules.value = modules.value.insertingAwakeForUpgrader(modulesExisted: modulesExisted, ledger: &marks)
         // 0.3.1 E1a: an upgrader's module settings existed before this launch (0.3.0 stored no last-run version), or
         // an earlier version ran (0.1 and 0.2 users skip onboarding; r2 C2-1).
-        marks.recordV031Welcome(upgrader: v031Upgrader)
+        marks.recordV031Welcome(upgrader: v031Upgrader, canAsk: UpdaterController.gate == .ready)
         // M1 (§4.6, R5-12): G's pure migration over the raw 0.2 JSON; the marker is recorded whatever it found.
         var m1: AwakeMigrationResult?
         if !marks.has(.fromDisplays) {

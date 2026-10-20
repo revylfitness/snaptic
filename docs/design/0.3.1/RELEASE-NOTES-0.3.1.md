@@ -1,6 +1,6 @@
 # Snaptic 0.3.1 (one last manual download)
 
-**Coming from 0.3.0? This is one last manual download.** 0.3.0 can’t update itself, so download `Snaptic.dmg` or `Snaptic.zip` below and replace the copy in Applications. From 0.3.1 on, Snaptic can keep itself up to date.
+**Coming from 0.3.0 or earlier? This is one last manual download.** Those versions can’t update themselves, so download `Snaptic.dmg` or `Snaptic.zip` below and replace the copy in Applications. From 0.3.1 on, Snaptic can keep itself up to date.
 
 Snaptic 0.3.1 adds **tabs in the Snaptic menu**, **keeping awake with the lid closed**, and **in-app updates**. It is also the first release signed by its developer, **Sean Frasure** (Developer ID), and notarized by Apple, so macOS opens it without an Open Anyway step. Details are in the [README](https://github.com/revylfitness/snaptic/blob/main/README.md).
 
@@ -28,14 +28,14 @@ Snaptic 0.3.1 adds **tabs in the Snaptic menu**, **keeping awake with the lid cl
 - Release builds update themselves with Sparkle 2 from a signed feed on GitHub Releases, **only if you allow it**. New users choose in onboarding; people coming from an earlier version choose on the “Welcome to Snaptic 0.3.1” card.
 - **Settings › About › Updates:** Check for Updates…, “Check for updates automatically” (once a day), and “Download and install updates automatically” (installs the next time Snaptic quits).
 - When an update is found, the Snaptic menu shows **Update Available: Snaptic …** above Snaptic Settings…, instead of a window that could land behind others.
-- Updates wait while lid-closed mode is on (or turning on or off) or a display change is waiting for “Keep this change?”, and scheduled checks pause in Safe Mode. If a downloaded update waits when Snaptic restarts itself, it installs and the new version opens; **Restart in Safe Mode…** never installs it, and asks you to quit Snaptic first instead.
+- Updates wait while lid-closed mode is on (or turning on or off) or a display change is waiting for “Keep this change?”, and scheduled checks pause in Safe Mode. A downloaded update then installs when you quit or restart Snaptic; an update you chose in Sparkle’s window restarts Snaptic by itself once the wait ends, and the menu and About say so meanwhile. If a downloaded update waits when Snaptic restarts itself, it installs and the new version opens if Sparkle can still hand it over; otherwise, and always for **Restart in Safe Mode…**, Snaptic asks you to quit it first.
 - The feed and every update are signed with Snaptic’s update key. A download signed with Snaptic’s Developer ID is accepted only so that a lost key can be replaced; that certificate alone can’t sign the feed, and such an update never installs by itself.
 - **Privacy:** Snaptic connects only to GitHub to check for updates, and only if you allow it. GitHub sees your IP address and macOS version, nothing more. No analytics.
 - Copies owned by root ask for an administrator password for each update. Copies built from source don’t update themselves.
 
-## Upgrading from 0.3.0
+## Upgrading from 0.3.0 or earlier
 
-- No setting is lost.
+- No setting is lost. Coming from 0.2 or 0.1, those versions’ own upgrade steps run first, as in 0.3.0 (see the README).
 - **Permissions, once more.** Because 0.3.1 is signed by its developer, macOS treats it as a new app for Accessibility and Screen Recording. Settings opens on General with a “Welcome to Snaptic 0.3.1” card: remove the old Snaptic with − in each list in System Settings, then turn on the new one. After this, updates keep your permissions.
 - The card also asks whether to keep Snaptic up to date.
 
@@ -51,7 +51,7 @@ Snaptic 0.3.1 adds **tabs in the Snaptic menu**, **keeping awake with the lid cl
 
 - Lid-closed mode asks for a password every time, and macOS’s dialog names `osascript`, not Snaptic. Another app’s display assertion (for example `caffeinate -d`) can keep the built-in display lit with the lid closed, and the keyboard backlight may stay on.
 - Security software may flag “osascript with administrator privileges” when lid-closed mode turns on.
-- Updates need a release build. 0.3.0 needs this one manual download.
+- Updates need a release build. 0.3.0 and earlier need this one manual download.
 - Snaptic is English only.
 
 ## Hardware checks pending

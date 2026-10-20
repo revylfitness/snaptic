@@ -5,7 +5,7 @@
 #   ARCHS="arm64 x86_64" ./scripts/build-app.sh   # universal build (needs full Xcode)
 #   SIGN_IDENTITY="Developer ID Application: You (TEAMID)" ./scripts/build-app.sh   # also embeds and signs Sparkle
 #   INSTALL=1 ./scripts/build-app.sh           # also install to /Applications, owned by root (asks for your password)
-#   RELEASE_BUNDLE=1 ./scripts/build-app.sh    # CI on tags: also build/release/Snaptic.app, unsigned, with Sparkle
+#   RELEASE_BUNDLE=1 ./scripts/build-app.sh    # CI: also build/release/Snaptic.app, unsigned, with Sparkle
 #
 # Sparkle (PLAN 0.3.1 E2, E4) is weak-linked: an ad hoc build has no Team ID, so the hardened runtime's library
 # validation would refuse the framework, and the app runs without it. Only a build signed with a real identity
@@ -134,7 +134,8 @@ if grep -q '<key>' <<< "$ENTITLEMENTS"; then
 fi
 
 if [[ "${RELEASE_BUNDLE:-0}" == "1" ]]; then
-  # E3: the same binary with Sparkle embedded, never run or signed here (CI's sign job signs it).
+  # E3: the same binary with Sparkle embedded, never run or signed here (CI's sign job signs it; rehearse signs a
+  # copy ad hoc on every push).
   RELEASE_APP="build/release/Snaptic.app"
   echo "==> Assembling $RELEASE_APP (unsigned, with Sparkle)"
   mkdir -p build/release

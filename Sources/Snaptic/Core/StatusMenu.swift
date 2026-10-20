@@ -584,8 +584,9 @@ import SnapticKit
     /// builds its own menu from it on every open.
     static func updateItems(host: ModuleHost) -> [NSMenuItem] {
         guard let updater = host.updater, let offer = updater.availableUpdate else { return [] }
-        // E4: while lid-closed mode or a display trial holds the install, the row says why instead of offering it.
-        if offer.readyToRestart, let wait = updater.waitText {
+        // E4: while lid-closed mode or a display trial holds the install or Sparkle's relaunch, the row says why instead
+        // of offering it (r3 U3-4).
+        if let wait = updater.waitText {
             return [MenuKit.status(wait, control: ControlID("menu.snaptic.updateAvailable"))]
         }
         let title = UpdatePolicy.menuTitle(offer)
