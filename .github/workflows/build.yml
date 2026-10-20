@@ -670,6 +670,31 @@ jobs:
             "$RUNNER_TEMP/signed/$SPARKLE_ARCHIVE" "https://github.com/revylfitness/snaptic/releases/download/$TAG/$SPARKLE_ARCHIVE" \
             "$VERSION" "$BUILD"
 
+      - name: DEBUG feed (temporary)
+        if: failure()
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ env.REHEARSAL_ED_SEED }}
+          TAG: ${{ env.REHEARSAL_TAG }}
+        run: |
+          T="$RUNNER_TEMP/sparkle-tools/bin"
+          D="$RUNNER_TEMP/feed-debug"
+          OUT=$({
+            ls -la "$RUNNER_TEMP/feed" "$RUNNER_TEMP/signed"
+            rm -rf "$D"; mkdir -p "$D"
+            cp "$RUNNER_TEMP/signed/$SPARKLE_ARCHIVE" "$D/"; cp "$NOTES" "$D/Snaptic.md"
+            printf '%s\n' "$SPARKLE_ED_PRIVATE_KEY" | "$T/generate_appcast" --ed-key-file - \
+              --download-url-prefix "https://github.com/revylfitness/snaptic/releases/download/$TAG/" --embed-release-notes \
+              --full-release-notes-url "https://github.com/revylfitness/snaptic/releases/tag/$TAG" \
+              --link https://github.com/revylfitness/snaptic "$D"
+            echo "generate rc=$?"
+            printf '%s\n' "$SPARKLE_ED_PRIVATE_KEY" | "$T/sign_update" -p --ed-key-file - "$D/$SPARKLE_ARCHIVE"
+            echo "sign rc=$?"
+            grep -n 'enclosure\|sparkle-signatures\|edSignature' "$D/appcast.xml" "$RUNNER_TEMP/feed/appcast.xml"
+            tail -c 600 "$RUNNER_TEMP/feed/appcast.xml"
+          } 2>&1)
+          printf '%s\n' "$OUT" | sed 's/%/%25/g' | split -l 40 - "$RUNNER_TEMP/dbg."
+          for f in "$RUNNER_TEMP"/dbg.*; do echo "::error title=debug::$(cut -c1-300 "$f" | awk 'BEGIN{ORS="%0A"} {print}')"; done
+
       - name: Report errors as annotations
         if: failure()
         run: ./scripts/ci-annotate.sh rehearse selftest.log
