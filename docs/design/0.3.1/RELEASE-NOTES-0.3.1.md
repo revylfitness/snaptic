@@ -56,7 +56,7 @@ Snaptic 0.3.1 adds **tabs in the Snaptic menu**, **keeping awake with the lid cl
 
 ## Hardware checks pending
 
-0.3.1 was built without hardware testing. These checks (HW-24 to HW-38 in the 0.3.1 plan) still need a hardware session:
+0.3.1 was built without hardware testing. These checks (HW-24 to HW-38 in the [0.3.1 plan](https://github.com/revylfitness/snaptic/blob/main/docs/design/0.3.1/PLAN.md)) still need a hardware session:
 
 - tab switching in an open menu on macOS 14, 15, 26, and 27, with VoiceOver, Switch Control, and Full Keyboard Access, and ⌘1–⌘3;
 - the password dialog, Touch ID, and Cancel, from Developer ID and ad-hoc builds;
