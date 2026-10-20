@@ -504,7 +504,8 @@ jobs:
           {
             echo "REHEARSAL_ED_SEED=$SEED"
             echo "REHEARSAL_PUBLIC_ED_KEY=$PUBLIC"
-            echo "REHEARSAL_NEXT_PUBLIC_ED_KEY=$SU_PUBLIC_ED_KEY"
+            # A rotation release carries the next key, so the rehearsal expects it too (r4 C4-1).
+            echo "REHEARSAL_NEXT_PUBLIC_ED_KEY=${SU_NEXT_PUBLIC_ED_KEY:-$SU_PUBLIC_ED_KEY}"
           } >> "$GITHUB_ENV"
 
       - name: Release notes

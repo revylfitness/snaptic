@@ -17,7 +17,7 @@
   input, setup-go's default) in `build`, `sign`, `publish` or any job they need (the signed bundle is built in
   `build`; r1 S6); no `${{` inside a `run:` script or `actions/github-script`'s inputs (values reach scripts through
   `env:`, so a tag name or release field is never spliced into code; r1 S6); and `gh release` only in the `publish`
-  job (checked once a `publish` job exists: until T-update's pipeline lands, the 0.3 `release` job still publishes).
+  job (checked whenever a workflow has a `publish` job).
   Round 3 (S3-2, C3-2, C3-3): no reusable workflows or local actions anywhere, and in the signed chain only the four
   pinned actions it uses (so no composite or Docker action is ever out of sight); no `cache` input of any spelling; no
   `${{` in a `docker://` action's inputs; no `SHELLOPTS`, `BASHOPTS`, `BASH_ENV` or `ENV` in an `env:`; `sign` needs
@@ -943,8 +943,7 @@ def workflow_file(path, text):
                 problems += step_problems(path, name, step, name in chain)
     if "sign" in jobs:
         problems += release_chain_problems(path, jobs)
-    # "Only publish runs gh release": active once T-update's pipeline has a publish job (until then the 0.3 release
-    # job still publishes).
+    # "Only publish runs gh release": checked in every workflow that has a publish job.
     if "publish" in jobs:
         for name, job in jobs.items():
             if name != "publish" and any(re.search(r"\bgh\s+release\b", s.value) for s in yaml_scalars(job)):
