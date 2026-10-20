@@ -769,7 +769,7 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
 
 **0.3 → 0.3.1.** No setting is lost, and nothing about your modules, sessions, or rules changes. Coming from 0.2 or 0.1, the steps below apply too; from 0.2, the 0.2 → 0.3 steps further down run first.
 
-- **One last manual download.** 0.3.0 and earlier have no updater, so download 0.3.1 from the [latest release](https://github.com/revylfitness/snaptic/releases/latest) and replace the copy in Applications. From 0.3.1 on, Snaptic can update itself.
+- **One last manual download.** 0.3.0 and earlier have no updater, so download the [latest release](https://github.com/revylfitness/snaptic/releases/latest) and replace the copy in Applications. 0.3.1 itself doesn’t start (it says it couldn’t look up your home folder), so it can’t update either: replace it the same way. From 0.3.2 on, Snaptic updates itself.
 - **Permissions, once.** 0.3.1 is the first release signed by its developer, so macOS treats it as a new app for Accessibility and Screen Recording. Settings opens on General with a “Welcome to Snaptic 0.3.1” card: “Snaptic is now signed by its developer, so macOS asks you to allow it again once. After this, updates keep your permissions.” For each permission you had granted, it says “Remove the old Snaptic with −, then turn on the new one.” with **Open System Settings…**.
 - **Updates:** the card asks whether to keep Snaptic up to date (**Check Automatically** or **Not Now**), and **Done** hides it. It also hides itself once you’ve chosen and the permissions work again.
 - **Open at login:** if Snaptic doesn’t open at login after the change of signature, or Login Items lists it twice, turn Open at login off and on again in General.
