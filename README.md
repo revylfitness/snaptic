@@ -21,9 +21,9 @@ Snaptic is MIT-licensed and written from scratch in Swift by revyl fitness techn
 Each module can be turned on or off on its own: in **Settings › General › Choose what Snaptic does**, or with the switch at the top of the module’s own page (“Use Window Switcher”, “Use Displays”, “Use Awake”). A module that is off runs nothing: no event taps, timers, observers, IOKit handles, power assertions, private-API calls, helper processes, or permission prompts. Inside Displays and Awake, each feature has its own switch where the feature is used, and anything that’s off costs nothing either.
 
 - **First launch:** onboarding asks which modules you want, then asks only for the permissions those need, and whether Snaptic should keep itself up to date (**Check Automatically** or **Not Now**). It picks up where it left off if macOS makes Snaptic relaunch.
-- **Upgrading from 0.3.0:** download 0.3.1 by hand one last time; from then on Snaptic can update itself. Because 0.3.1 is the first release signed by its developer, macOS asks you to allow Accessibility and Screen Recording again once, and a “Welcome to Snaptic 0.3.1” card in General walks you through it (see [Upgrading and downgrading](#upgrading-and-downgrading)).
-- **Upgrading from 0.2:** Window Switcher and Displays stay as they were. Awake starts off, with a “New: Awake” card in General, unless you used Displays’ display sleep prevention in 0.2; then Awake is on and keeps doing that job (see [Upgrading and downgrading](#upgrading-and-downgrading)).
-- **Upgrading from 0.1:** the switcher stays on; Displays and Awake start off, each with its own card.
+- **Upgrading from 0.3.0 or earlier:** download 0.3.1 by hand one last time; from then on Snaptic can update itself. Because 0.3.1 is the first release signed by its developer, macOS asks you to allow Accessibility and Screen Recording again once, and a “Welcome to Snaptic 0.3.1” card in General walks you through it (see [Upgrading and downgrading](#upgrading-and-downgrading)).
+- **Upgrading from 0.2:** Window Switcher and Displays stay as they were. Awake starts off, with a “New: Awake” card in General, unless you used Displays’ display sleep prevention in 0.2; then Awake is on and keeps doing that job (see [Upgrading and downgrading](#upgrading-and-downgrading)). As for 0.3.0, it’s one last manual download, and the “Welcome to Snaptic 0.3.1” card shows too.
+- **Upgrading from 0.1:** the switcher stays on; Displays and Awake start off, each with its own card. As for 0.3.0, it’s one last manual download, and the “Welcome to Snaptic 0.3.1” card shows too.
 
 ## Settings
 
@@ -310,7 +310,7 @@ When it turns off for any of these reasons while the lid is closed, your Mac goe
 
 - Awake’s icon uses a lid-closed look while the mode is on, and its tooltip and VoiceOver label add “even with the lid closed”. VoiceOver says “Keeping your Mac awake with the lid closed.” when it turns on and “Lid-closed mode turned off.” when it ends.
 - The menu and the Awake page say “Stays awake with the lid closed”, or “Stays awake with the lid closed until 6:40 PM” when the 24-hour limit comes first.
-- After it ends, for 12 hours: “Lid-closed mode ended at 3:12 AM: battery at 20%.” (or “your Mac got hot”, “time limit reached”, “another app turned sleep back on”, “Snaptic quit”).
+- After it ends, for 12 hours: “Lid-closed mode ended at 3:12 AM: battery at 20%.” (or “your Mac got hot”, “time limit reached”, “another app turned sleep back on”, “Snaptic quit”, “it stopped unexpectedly”).
 - History marks the session “Lid closed”, and `snaptic awake status --json` has `"lidClosed": true`.
 - An update never relaunches Snaptic while lid-closed mode is on (see [Updates](#updates)).
 - `Awake.disable.lidClosed` turns the feature off for this Mac (see [Hidden kill switches](#hidden-kill-switches)).
@@ -617,7 +617,7 @@ Grab `Snaptic.dmg` from the [latest release](https://github.com/revylfitness/sna
 
 From 0.3.1 on, releases are signed with the Developer ID of Snaptic’s developer, Sean Frasure, and notarized by Apple, so macOS opens them without an **Open Anyway** step. Run Snaptic from Applications: if macOS starts it from a temporary “translocated” location, Snaptic tells you to move it first (lid-closed mode refuses to run from there).
 
-**Coming from 0.3.0?** 0.3.0 can’t update itself, so download 0.3.1 one last time and replace the old copy in Applications. After that, Snaptic can keep itself up to date (see [Updates](#updates)), and macOS asks you to allow Accessibility and Screen Recording once more (see [Upgrading and downgrading](#upgrading-and-downgrading)).
+**Coming from 0.3.0 or earlier?** Those versions can’t update themselves, so download 0.3.1 one last time and replace the old copy in Applications. After that, Snaptic can keep itself up to date (see [Updates](#updates)), and macOS asks you to allow Accessibility and Screen Recording once more (see [Upgrading and downgrading](#upgrading-and-downgrading)).
 
 To check a download yourself:
 
@@ -639,7 +639,7 @@ Leave out `INSTALL=1` to build only (`build/Snaptic.app`). For a universal Apple
 
 `INSTALL=1` installs the app owned by root (it runs `sudo ditto` and `chown -R root:wheel`, so it asks for your password). That way your account, and any program running as you, can’t replace the binary that holds Snaptic’s permissions. Snaptic warns before you grant a permission if its bundle is writable by you. A root-owned copy also makes the administrator password prompts of [lid-closed mode](#your-password-and-what-runs-as-root) safer to trust, and each update of it asks for an administrator password (see [Updates](#updates)). Awake runs nothing as root except while you use lid-closed mode, after you type your password; the `INSTALL=1` password is only for installing.
 
-GitHub Actions compiles every push and pull request, without any signing secrets. Pushes to `main` also upload an ad-hoc signed `Snaptic-adhoc` build as a workflow artifact; it doesn’t contain Sparkle, so it can’t update itself, and macOS will warn before opening it. To make the disk image from a local build, run `./scripts/make-dmg.sh` after `build-app.sh`. Pull requests and manual runs never publish a downloadable app.
+GitHub Actions compiles every push and pull request, without any signing secrets. Every push also rehearses a release without secrets: it signs the release bundle ad hoc, makes the disk image, runs the self-tests with Sparkle loaded, and builds and checks a signed feed with a throwaway update key, so a release tag adds only the Developer ID signature, notarization and the real keys. Pushes to `main` also upload an ad-hoc signed `Snaptic-adhoc` build as a workflow artifact; it doesn’t contain Sparkle, so it can’t update itself, and macOS will warn before opening it. To make the disk image from a local build, run `./scripts/make-dmg.sh` after `build-app.sh`. Pull requests and manual runs never publish a downloadable app.
 
 **Releases** are built only from a version tag (`vX.Y.Z`) on `main`. The same compiled app gets Sparkle added, is signed with the Developer ID certificate and the hardened runtime (no entitlements), and is notarized and stapled, both as `Snaptic.zip` and as `Snaptic.dmg`. Signing and publishing run in two separate GitHub environments, each limited to version tags and each needing the owner’s approval for every run. A separate job adds a build-provenance attestation to the signed zip and disk image. Verify that a download came from this workflow at its release tag:
 
@@ -684,7 +684,7 @@ From 0.3.1 on, release builds update themselves with [Sparkle](https://sparkle-p
 
 **When an update is found,** Snaptic doesn’t pop up a window that could land behind others. Instead the Snaptic menu shows **Update Available: Snaptic 0.3.2…** above Snaptic Settings… (**Restart to Update Snaptic…** once it has downloaded and installs automatically), and the About page shows it too. Either brings Sparkle’s update window forward, with the release notes, which come inside the signed feed. After an update, Snaptic says “Snaptic was updated to 0.3.2.” once, with **What’s New**.
 
-**When updates wait.** An update never relaunches Snaptic while lid-closed mode is on (or is turning on or off) or while a display change is waiting for “Keep this change?”; the status line says so (“Version 0.3.2 will install when lid-closed mode ends.”). Quitting Snaptic, which ends both, may install a downloaded update. When Snaptic restarts itself while a downloaded update waits, the update installs and the new version opens if Sparkle can still hand it over; otherwise, and always for **Restart in Safe Mode…** (which never installs it), Snaptic asks you to quit it first and then open it again (holding ⇧ for Safe Mode). In Safe Mode scheduled checks pause, and Sparkle’s window never appears during onboarding or in Safe Mode; **Check for Updates…** still works, so a broken release can always be replaced.
+**When updates wait.** An update never relaunches Snaptic while lid-closed mode is on (or is turning on or off) or while a display change is waiting for “Keep this change?”. A downloaded update that installs at quit then waits for you, and the status line says so (“Version 0.3.2 will install when you quit or restart Snaptic after lid-closed mode ends.”). If you chose **Install and Relaunch** in Sparkle’s window, Snaptic says “Snaptic will restart and install version 0.3.2 when lid-closed mode ends.”, keeps that line in About and the menu, and restarts by itself once the mode ends. Quitting Snaptic, which ends both, may install a downloaded update. When Snaptic restarts itself while a downloaded update waits, the update installs and the new version opens if Sparkle can still hand it over; otherwise, and always for **Restart in Safe Mode…** (which never installs it), Snaptic asks you to quit it first and then open it again (holding ⇧ for Safe Mode). In Safe Mode scheduled checks pause, and Sparkle’s window never appears during onboarding or in Safe Mode; **Check for Updates…** still works, so a broken release can always be replaced.
 
 **Copies owned by root** (installed with `INSTALL=1`, or after `sudo chown -R root:wheel`): each update asks for an administrator password through Sparkle’s installer, so updates install only when you choose **Install and Relaunch**, and About says “Only an administrator can change this copy of Snaptic, so each update asks for an administrator password.” instead of offering automatic installs.
 
@@ -695,7 +695,7 @@ From 0.3.1 on, release builds update themselves with [Sparkle](https://sparkle-p
 - **The Developer ID certificate alone** can’t sign the feed. Sparkle uses a feed it can’t verify only after its checks have failed for 20 days in a row, and then shows the update without release notes and never installs it by itself.
 - **A signed feed carries no date.** Someone who controls the release or the connection can keep serving an older signed feed, which holds copies at that version (Sparkle never installs an older one), and a program running as you can start the 20-day period early by editing Snaptic’s preferences.
 
-The two secrets live in separate GitHub environments that run only for version tags and only after the owner approves each run, and the owner reviews a tag’s changes, including `.github/`, before approving.
+The two secrets live in separate GitHub environments that run only for version tags and only after the owner approves each run, and the owner reviews a tag’s changes, including `.github/`, before approving. That protects against one leaked secret, not against the owner’s GitHub account: whoever controls it (a signed-in browser, or a token with `repo` scope, such as the one `gh auth login` stores) can push a tag and approve both environments, and so publish a signed, notarized update on their own, without either secret. Everything therefore rests on that account’s own protection: two-factor sign-in with a passkey or hardware key, and no long-lived token that can approve deployments on the Mac it’s used from.
 
 **Processes.** Sparkle runs its own `Autoupdate` and `Updater.app` (inside Snaptic’s bundle) to install an update, and asks for an administrator password through macOS for a root-owned copy. Snaptic’s helper and command-line processes load Sparkle in a release build but never use it.
 
@@ -706,7 +706,7 @@ The release workflow keeps the update key’s public half in `.github/workflows/
 **The update key leaks, and you still have it.** One release carries the new key but is still signed with the old one. Sparkle checks a download only against the key of the copy it updates, so every copy accepts it.
 1. Make a new key on your Mac: `./bin/generate_keys --account snaptic-2` prints its public key, and `./bin/generate_keys --account snaptic-2 -x new-key.txt` exports its seed. Keep `new-key.txt` private.
 2. In one pull request, set `SUPublicEDKey` in `Resources/Info.plist` to the new public key, set `SU_NEXT_PUBLIC_ED_KEY` to the same key and `SU_NEXT_KEY_TAG` to the new release’s tag (for example `v0.3.2`), and bump the version as for any release. Leave `SU_PUBLIC_ED_KEY` and the `appcast` secret on the old key.
-3. Merge, push the tag, and approve both deployments. CI refuses the tag unless the app carries exactly the next key, then signs the feed and the zip with the old key and checks both against it.
+3. Merge, push the tag, and approve both deployments. CI refuses the tag unless the app carries exactly the next key, then signs the feed and the zip with the old key and checks both against it. (Sparkle’s `generate_appcast` leaves the zip unsigned when the app’s key isn’t the signing key, so the workflow signs it with `sign_update`; every push rehearses this case with a throwaway key.)
 4. Once the release is published, replace the secret (`gh secret set SPARKLE_ED_PRIVATE_KEY --env appcast < new-key.txt`, then delete `new-key.txt`), and in a pull request set `SU_PUBLIC_ED_KEY` to the new key, empty `SU_NEXT_PUBLIC_ED_KEY` and `SU_NEXT_KEY_TAG`, and set `SPARKLE_ARCHIVE` to `Snaptic.dmg`. CI refuses any other tag until the rotation is finished, and refuses a secret that doesn’t match `SU_PUBLIC_ED_KEY`.
 5. Ship the next release within a few days: until then, copies already on the new key report that the check failed, because the published feed is still signed with the old one.
 6. Delete the old key from your keychain (the old account’s “Private key for signing Sparkle updates” in Keychain Access) and wherever else it was kept.
@@ -767,9 +767,9 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
 
 ## Upgrading and downgrading
 
-**0.3 → 0.3.1.** No setting is lost, and nothing about your modules, sessions, or rules changes.
+**0.3 → 0.3.1.** No setting is lost, and nothing about your modules, sessions, or rules changes. Coming from 0.2 or 0.1, the steps below apply too, after those versions’ own upgrade steps (further down).
 
-- **One last manual download.** 0.3.0 has no updater, so download 0.3.1 from the [latest release](https://github.com/revylfitness/snaptic/releases/latest) and replace the copy in Applications. From 0.3.1 on, Snaptic can update itself.
+- **One last manual download.** 0.3.0 and earlier have no updater, so download 0.3.1 from the [latest release](https://github.com/revylfitness/snaptic/releases/latest) and replace the copy in Applications. From 0.3.1 on, Snaptic can update itself.
 - **Permissions, once.** 0.3.1 is the first release signed by its developer, so macOS treats it as a new app for Accessibility and Screen Recording. Settings opens on General with a “Welcome to Snaptic 0.3.1” card: “Snaptic is now signed by its developer, so macOS asks you to allow it again once. After this, updates keep your permissions.” For each permission you had granted, it says “Remove the old Snaptic with −, then turn on the new one.” with **Open System Settings…**.
 - **Updates:** the card asks whether to keep Snaptic up to date (**Check Automatically** or **Not Now**), and **Done** hides it. It also hides itself once you’ve chosen and the permissions work again.
 - **Open at login:** if Snaptic doesn’t open at login after the change of signature, or Login Items lists it twice, turn Open at login off and on again in General.
@@ -821,7 +821,7 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
   - Appear active keeps macOS from idling, but chat apps may still mark you away; pointer movement is Experimental and limited by its safety rules.
   - History, rules, and recently used apps are plain preferences that other programs running as you can read.
   - Starting a session at login needs “Open at login” and **Start a session when Snaptic opens**.
-- **General:** English only (all text is ready for translation, but no translations exist yet) and no trackpad gesture. Updates need a release build: copies built from source don’t update themselves, and 0.3.0 needs one manual download to reach 0.3.1.
+- **General:** English only (all text is ready for translation, but no translations exist yet) and no trackpad gesture. Updates need a release build: copies built from source don’t update themselves, and 0.3.0 and earlier need one manual download to reach 0.3.1.
 
 ### Needs testing on hardware
 
