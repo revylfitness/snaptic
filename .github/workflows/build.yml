@@ -292,6 +292,22 @@ jobs:
           SNAPTIC_SELFTEST_TOKEN="$token" SNAPTIC_SELFTEST_EXPECT_SPARKLE=absent \
             build/Snaptic.app/Contents/MacOS/Snaptic --selftest-launch "$dir/token" 2>&1 | tee -a selftest.log
 
+      # Temporary diagnosis: an optimized build with AddressSanitizer runs the startup account checks, so a read of
+      # freed memory is reported whatever the OS's allocator does with it.
+      - name: Startup checks under AddressSanitizer (diagnosis)
+        if: github.event_name == 'push'
+        timeout-minutes: 30
+        run: |
+          set -o pipefail
+          swift build -c release -Xswiftc -sanitize=address --product Snaptic
+          BIN="$(swift build -c release -Xswiftc -sanitize=address --show-bin-path)/Snaptic"
+          dir=$(mktemp -d)
+          token=$(od -An -N30 -tx1 /dev/urandom | tr -d ' \n')
+          printf '%s\n' "$token" > "$dir/token"
+          chmod 600 "$dir/token"
+          ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 SNAPTIC_SELFTEST_TOKEN="$token" SNAPTIC_SELFTEST_EXPECT_SPARKLE=absent \
+            "$BIN" --selftest-launch "$dir/token" 2>&1 | tee asan.log
+
       - name: Helper self-test (universal, and under Rosetta when available)
         if: github.event_name == 'push'
         timeout-minutes: 3
