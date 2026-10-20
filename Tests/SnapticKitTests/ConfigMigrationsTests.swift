@@ -30,6 +30,14 @@ final class ConfigMigrationsTests: XCTestCase {
         XCTAssertFalse(fresh.showsV031Welcome)
     }
 
+    /// r2 C2-1: a 0.1 or 0.2 user (launched before, no module settings yet) skips onboarding, so they get the card.
+    func testV031UpgradersIncludeUsersOfVersionsBeforeModuleSettings() {
+        XCTAssertFalse(MigrationLedger.isV031Upgrader(modulesExisted: false, launchedBefore: false))
+        XCTAssertTrue(MigrationLedger.isV031Upgrader(modulesExisted: true, launchedBefore: false))
+        XCTAssertTrue(MigrationLedger.isV031Upgrader(modulesExisted: true, launchedBefore: true))
+        XCTAssertTrue(MigrationLedger.isV031Upgrader(modulesExisted: false, launchedBefore: true))
+    }
+
     func testRecordAndHas() {
         var l = MigrationLedger()
         XCTAssertFalse(l.has(.showNits))

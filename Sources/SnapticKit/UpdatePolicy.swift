@@ -41,6 +41,14 @@ package struct UpdateSession: Equatable, Sendable {
         case cycleFinished(failed: Bool)
         /// Snaptic ran the install-now block.
         case installStarted
+        /// `updater(_:userDidMake:forUpdate:state:)`: the user's choice in Sparkle's window; `installing` when the
+        /// window offered an install that already waits (`state.stage == .installing`).
+        case userChose(UserChoice, installing: Bool)
+    }
+
+    /// Sparkle's `SPUUserUpdateChoice`.
+    package enum UserChoice: Equatable, Sendable {
+        case install, skip, dismiss
     }
 
     package init() {}
@@ -68,6 +76,8 @@ package struct UpdateSession: Equatable, Sendable {
             }
         case .installStarted:
             hasInstallBlock = false
+        case .userChose:
+            break
         }
     }
 }

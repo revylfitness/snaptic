@@ -30,6 +30,11 @@ extension MigrationLedger {
         return true
     }
 
+    /// E1a: who counts as an upgrader at the first 0.3.1 launch.
+    package static func isV031Upgrader(modulesExisted: Bool, launchedBefore: Bool) -> Bool {
+        modulesExisted
+    }
+
     /// E1a: the welcome card is due (an upgrader who isn't done with it).
     package var showsV031Welcome: Bool { has(.v031Welcome) && !has(.v031WelcomeDone) }
 }
