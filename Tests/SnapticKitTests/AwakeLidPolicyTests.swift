@@ -27,7 +27,8 @@ final class AwakeLidPolicyTests: XCTestCase {
         XCTAssertEqual(modes.map(\.token), [nil, token, token, token, token, nil])
         XCTAssertEqual(modes.map(\.rowState), [.off, .authorizing, .verifying, .on, .stopping, .off])
         XCTAssertEqual(AwakeLidEnd.allCases.count, 12)
-        XCTAssertEqual(AwakeLidFailStage.allCases.map(\.rawValue), ["beacon", "spawn", "args", "verify", "timeout"])
+        XCTAssertEqual(AwakeLidFailStage.allCases.map(\.rawValue), ["beacon", "spawn", "args", "verify", "timeout",
+                                                                       "restore"])
     }
 
     // MARK: Floor, cap

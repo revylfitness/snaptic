@@ -685,7 +685,7 @@ The watchdog's `sleepnow` covers a hung app.
 
 | Where | Rows |
 |---|---|
-| **Every Snaptic menu** (shared, own and Awake's custom one) | First group, above the tab bar: a status row "Sleep Is Turned Off", then "Turn Sleep Back On…". `CustomItemRow` gains `leftover: Bool`, and `IndicatorController` calls a static `StatusMenu.leftoverItems(host:)` on each build, because a menu item can belong to only one menu. **Keep Sleep Off** has no undo except Terminal, so it never appears in a menu. |
+| **Every Snaptic menu** (shared, own and Awake's custom one) | First group, above the tab bar: a status row "Sleep Is Turned Off", then "Turn Sleep Back On…". `IndicatorController` calls a static `StatusMenu.leftoverItems(host:)` each time its menu opens (`menuNeedsUpdate` rebuilds it on every open), because a menu item can belong to only one menu; `CustomItemRow` carries no flag for it. **Keep Sleep Off** has no undo except Terminal, so it never appears in a menu. |
 | **Awake page and Advanced › Other Apps** | "Your Mac can’t sleep. This may be from an earlier lid-closed session that didn’t finish." with **Turn Sleep Back On…**, **Keep Sleep Off** and **Not Now** |
 | **When Awake isn't running** | A toast with the same text. Toasts allow at most two buttons, so it has **Turn Sleep Back On…** and **Open Awake Settings…**. The leftover rows show on the Awake page **even while Awake is turned off**, because they come from the host's `LidRecovery`, not from the module. |
 
@@ -880,8 +880,7 @@ These are numbered after 0.3's HW-23. The list lives here and in README's testin
      - `AwakeHost.lidModeOn` (the N11 suffix);
      - `ModuleHost.updater: UpdaterControlling?` (Part E).
    - **Cross-team menu hooks** (code r4 M2):
-     - `CustomItemRow.leftover: Bool` and `CustomItemRow.updateAvailable: Bool`;
-     - `static StatusMenu.leftoverItems(host:) -> [NSMenuItem]` and `static StatusMenu.updateItems(host:) -> [NSMenuItem]`, which T-lid-app's `IndicatorController` calls;
+     - `static StatusMenu.leftoverItems(host:) -> [NSMenuItem]` and `static StatusMenu.updateItems(host:) -> [NSMenuItem]`, which T-lid-app's `IndicatorController` calls from `menuNeedsUpdate` on every open (`CustomItemRow`'s `leftover` and `updateAvailable` flags were removed in f618aa6: nothing needs them);
      - `ModuleHost.lidRecovery` and `ModuleHost.updater` are declared by the lead in Step 0. After that, T-lid-app fills in the recovery and T-update fills in the updater.
    - **Self-test:** the `--selftest-launch` flag (`KitArgs`, `SnapticEntry`, `SelfTest`) and its token gate.
 4. **Every A6, B7 and E7 control**, each with a stub use. The `ControlRegistry` changes (`ControlKind.menuTabBar` and the new `ControlState`s), `SettingsIndex`, every `Controls/*` table and `ControlRegistryTests` are the lead's in Step 0, then frozen.

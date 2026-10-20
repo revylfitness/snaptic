@@ -53,9 +53,10 @@ package enum AwakeLidEnd: String, Codable, CaseIterable, Sendable {
          moduleStopped
 }
 
-/// Where turning lid-closed mode on failed (B5; logged, never shown).
+/// Where turning lid-closed mode on failed (B5; logged, never shown). `restore`: Turn Sleep Back On…'s script ran and
+/// reported an error, told apart from a spawn that failed (r2 C2-5).
 package enum AwakeLidFailStage: String, Codable, CaseIterable, Sendable {
-    case beacon, spawn, args, verify, timeout
+    case beacon, spawn, args, verify, timeout, restore
 }
 
 /// `~/Library/Application Support/Snaptic/awake/lid.json` (B3.1 step 2): one slot, 0600, written atomically. No field
