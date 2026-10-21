@@ -92,7 +92,7 @@ final class ConfigAwakeTests: XCTestCase {
         XCTAssertNil(c.restoringDefaults(keepingLidClosed: false).features[.lidClosed])
         XCTAssertNil(c.restoringDefaults().features[.lidClosed], "the default is to reset it")
         XCTAssertEqual(AwakeLidText.restoreNotice(c, keepingLidClosed: true),
-                       "Restored, except “Keep awake with the lid closed”, which stays on until lid-closed mode is off.")
+                       "Restored, except “Keep awake with the lid closed”, which can’t change while lid-closed mode is on.")
         XCTAssertNil(AwakeLidText.restoreNotice(c, keepingLidClosed: false))
 
         var off = c

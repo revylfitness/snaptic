@@ -548,7 +548,7 @@ extension AwakePresentationTests {
                        "Lid-closed mode is on. Turn it off first, in the Awake menu or in Options on the Awake page.")
         // r2 P2-1: Restore Awake Defaults… kept the opt-in, and says so.
         XCTAssertEqual(AwakeLidText.restoreKept,
-                       "Restored, except “Keep awake with the lid closed”, which stays on until lid-closed mode is off.")
+                       "Restored, except “Keep awake with the lid closed”, which can’t change while lid-closed mode is on.")
         XCTAssertEqual(AwakeLidText.section, "Lid closed")
         XCTAssertEqual(AwakeLidText.footer,
                        "While lid-closed mode is on, your Mac can’t sleep for low battery or heat. Awake turns it off at the Awake page’s battery level (at least 10%), when your Mac gets hot, or after 24 hours. Use it on a hard surface, not in a bag.")

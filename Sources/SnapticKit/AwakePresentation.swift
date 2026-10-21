@@ -931,7 +931,7 @@ package enum AwakeLidText {
     /// r2 P2-4: Options ▾ on the Awake page has the same item, and with Awake on Don’t Show there is no Awake menu.
     package static let turnOffFirst = L("Lid-closed mode is on. Turn it off first, in the Awake menu or in Options on the Awake page.")
     /// Restore Awake Defaults… while the mode is on or pending kept the opt-in on (r2 P2-1); never kept silently.
-    package static let restoreKept = L("Restored, except “Keep awake with the lid closed”, which stays on until lid-closed mode is off.")
+    package static let restoreKept = L("Restored, except “Keep awake with the lid closed”, which can’t change while lid-closed mode is on.")
 
     /// The toast after Restore Awake Defaults… on `config` (the value before the restore): only when the restore kept
     /// the opt-in on, which differs from the default.
