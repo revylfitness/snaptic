@@ -2,9 +2,10 @@ import Foundation
 
 // The Awake page (owner: G; PLAN 0.3 §4.3 "Awake", §1.4, R5-9, R5-10, R5-11, R5-12): header switch "Use Awake", the
 // status row (Keep Awake ▾, Options ▾, Turn Off, Pause Rules ▾ / Resume), Sessions, End sessions automatically
-// (laptops), Start automatically (rules), Keyboard Shortcuts… (its sheet's rows are here too), Drives ›, History ›
-// and the footer. Awake is new in 0.3; the 0.2 Displays sleep prevention it took over (feature switch, Arrangement
-// row, hotkey) lives on as rules through migration M1 and the Pause Rules shortcut (R5-12).
+// (laptops), Lid closed (laptops, 0.3.3), Start automatically (rules), Keyboard Shortcuts… (its sheet's rows are here
+// too), Drives ›, History › and the footer. Awake is new in 0.3; the 0.2 Displays sleep prevention it took over
+// (feature switch, Arrangement row, hotkey) lives on as rules through migration M1 and the Pause Rules shortcut
+// (R5-12).
 
 package enum AwakePageControls: ControlTable {
     package static let surface = "awake.page"
@@ -77,6 +78,17 @@ package enum AwakePageControls: ControlTable {
                     keys: ["guards.endOnAdapterDisconnect"],
                     search: SearchSpec("End sessions when the power adapter is disconnected",
                                        keywords: ["charger", "unplugged", "AC power"], root: root)),
+        // 0.3.3: Lid closed (laptops), moved here from Awake › Advanced (0.3.1 B1's `awake.advanced.lidClosed` and
+        // `awake.advanced.lidBundleLearnMore`), with the writable-bundle note. The Menu Bar page has a second switch
+        // for the same setting (`menubar.page.awakeLidClosed`).
+        ControlSpec("awake.page.lidClosed", .setting, when: awake + [.hardware(.battery)],
+                    keys: ["features.lidClosed"],
+                    search: SearchSpec("Keep awake with the lid closed",
+                                       keywords: ["lid", "clamshell", "closed display", "insomnia", "amphetamine",
+                                                  "disablesleep", "lid-closed mode"], root: root)),
+        ControlSpec("awake.page.lidBundleLearnMore", .statusAction,
+                    when: awake + [.hardware(.battery), .parentOn(ControlID("awake.page.lidClosed")),
+                                   .state(.bundleWritable)]),
         // Start automatically: Displays' 0.2 sleep prevention (feature switch and the Arrangement row) became rules
         // through migration M1.
         ControlSpec("awake.page.rules", .list, when: awake,

@@ -534,7 +534,13 @@ extension AwakePresentationTests {
                        "Choose Keep Awake with the Lid Closed in the Awake menu. Asks for an administrator password each time.")
         XCTAssertEqual(AwakeLidText.customHelp, "Start… asks for an administrator password.")
         XCTAssertEqual(AwakeLidText.customStart, "Start…")
-        XCTAssertEqual(AwakeLidText.advancedFooter,
+        // 0.3.3: the Menu Bar page's copy of the switch says what it adds to the Awake menu.
+        XCTAssertEqual(AwakeLidText.menuBarSetting, "Show Keep Awake with the Lid Closed in the Awake menu")
+        XCTAssertTrue(AwakeLidText.menuBarSetting.contains(AwakeLidText.title))
+        XCTAssertEqual(AwakeLidText.menuBarHelp,
+                       "Turns on lid-closed mode, the same switch as on the Awake page. Choosing it in the menu asks for an administrator password each time.")
+        XCTAssertEqual(AwakeLidText.section, "Lid closed")
+        XCTAssertEqual(AwakeLidText.footer,
                        "While lid-closed mode is on, your Mac can’t sleep for low battery or heat. Awake turns it off at the Awake page’s battery level (at least 10%), when your Mac gets hot, or after 24 hours. Use it on a hard surface, not in a bag.")
         XCTAssertEqual(AwakeLidText.translocated,
                        "Snaptic is running from a temporary location. Move it to Applications to use lid-closed mode.")
@@ -578,7 +584,11 @@ extension AwakePresentationTests {
 
     func testLidRouteVariants() {
         XCTAssertEqual(AwakeStatusText.lidRoute(.featureOff),
-                       "To keep it awake with the lid closed, connect power and an external display, or turn on lid-closed mode in Awake › Advanced.")
+                       "To keep it awake with the lid closed, connect power and an external display, or turn on lid-closed mode in Awake settings.")
+        // 0.3.3: the switch left Awake › Advanced, so no variant points there.
+        for route in AwakeLidRoute.allCases {
+            XCTAssertFalse(AwakeStatusText.lidRoute(route).contains("Advanced"), route.rawValue)
+        }
         XCTAssertEqual(AwakeStatusText.lidRoute(.available),
                        "To keep it awake with the lid closed, connect power and an external display, or choose Keep Awake with the Lid Closed in the Awake menu.")
         XCTAssertEqual(AwakeStatusText.lidRoute(.unavailable),

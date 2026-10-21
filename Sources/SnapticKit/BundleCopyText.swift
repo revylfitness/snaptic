@@ -2,8 +2,8 @@ import Foundation
 
 // What Snaptic says about the copy of itself that runs (owner: T-lid-app; PLAN 0.3.1 B1, B6): the Permissions page's
 // lid-closed sibling, kept in one place so every warning about this copy of Snaptic reads the same, and the README
-// links of the Lid closed section. Its translocated row and footer are `AwakeLidText.translocated` and
-// `advancedFooter`.
+// links of the Lid closed section (on the Awake page from 0.3.3). Its translocated row and footer are
+// `AwakeLidText.translocated` and `footer`.
 
 package enum BundleCopyText {
     /// B1: under "Keep awake with the lid closed" while it's on and this account can change Snaptic's bundle.

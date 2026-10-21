@@ -53,9 +53,9 @@ import SnapticKit
 }
 
 /// The Awake page (owner: G; PLAN 0.3 §4.3 "Awake", R5-9, R5-10, R5-11): header switch "Use Awake", the status row
-/// (every session kind starts from here alone), Sessions, End sessions automatically (laptops), Start automatically,
-/// Keyboard, Drives › and History ›, and the footer. Rendered whether or not Awake runs; while it is off it shows
-/// what it does.
+/// (every session kind starts from here alone), Sessions, End sessions automatically and Lid closed (laptops; the
+/// latter from 0.3.3), Start automatically, Keyboard, Drives › and History ›, and the footer. Rendered whether or not
+/// Awake runs; while it is off it shows what it does.
 struct AwakePage: View, ControlDeclaring {
     typealias Controls = AwakePageControls
 
@@ -187,6 +187,7 @@ private struct AwakeRootContent: View {
                 AwakeSessionsSection(env: env)
                 if runtime.power?.batteryPresent ?? AwakeHardware.hasBattery {
                     AwakeBatterySection(env: env)
+                    AwakeLidSection(env: env)
                 }
                 rulesSection
                 if runtime.isEffective(.shortcuts) {
@@ -452,6 +453,71 @@ private struct AwakeBatterySection: View {
         } footer: {
             Text(L("Sessions always end below 5% battery or if your Mac gets very hot."))
         }
+    }
+}
+
+// MARK: - Lid closed (laptops; 0.3.1 B1, on this page from 0.3.3)
+
+/// Lid-closed mode's one-time opt-in (`features[.lidClosed]`, off by default), moved here from Awake › Advanced in
+/// 0.3.3 with its notes: the writable-bundle note while on, the translocated row instead of the switch, and the limits
+/// in the footer. The Menu Bar page has a second switch for the same setting (`MenuBarPage`). The leftover rows are
+/// `AwakeLidLeftoverSection`, at the top of this page.
+private struct AwakeLidSection: View {
+    let env: AwakePageEnvironment
+    @StateObject private var features: ConfigSlice<AwakeConfig, LossyMap<AwakeFeature, Bool>>
+    /// File-system checks of this copy of Snaptic (B1).
+    private let translocated = PermissionFlow.isTranslocated
+    private let bundleWritable = PermissionFlow.bundleIsUserWritable
+
+    init(env: AwakePageEnvironment) {
+        self.env = env
+        _features = StateObject(wrappedValue: ConfigSlice(env.config, \.features))
+    }
+
+    var body: some View {
+        let on = features.value[.lidClosed] ?? false
+        let lock = AwakeFormat.lock([.lidClosed])
+        Section {
+            if translocated {
+                StatusRow(AwakeLidText.translocated, style: .warning)
+            } else {
+                ToggleSetting(AwakeLidText.setting, help: AwakeLidText.settingHelp,
+                              isOn: Binding(get: { on }, set: { value in setLidClosed(value) }),
+                              anchor: ControlID("awake.page.lidClosed"),
+                              disabledReason: lock?.lock == .safeMode ? lock?.lock.text : nil)
+                    .disabled(lock != nil)
+                if let lock, lock.lock == .killSwitch {
+                    DefaultsLockRow(key: KillSwitches.key(prefix: "Awake", id: lock.feature.rawValue))
+                }
+                if on && lock == nil && bundleWritable {
+                    SettingsRowNote(BundleCopyText.lidWritable,
+                                    fix: StatusAction(title: AwakeLidText.learnMore,
+                                                      control: ControlID("awake.page.lidBundleLearnMore")) {
+                                        Self.open(BundleCopyText.passwordHelpURL)
+                                    })
+                }
+            }
+        } header: {
+            Text(AwakeLidText.section)
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(AwakeLidText.footer)
+                Button(AwakeLidText.learnMore) { Self.open(BundleCopyText.lidHelpURL) }
+                    .buttonStyle(.link)
+            }
+        }
+    }
+
+    private func setLidClosed(_ on: Bool) {
+        var next = env.config.value
+        next.features[.lidClosed] = on
+        if next != env.config.value { env.config.value = next }
+    }
+
+    /// A README section (BundleCopyText's lid-closed links).
+    private static func open(_ link: String) {
+        guard let url = URL(string: link) else { return }
+        NSWorkspace.shared.open(url)
     }
 }
 

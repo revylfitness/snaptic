@@ -3,7 +3,7 @@ import XCTest
 
 final class BundleCopyTextTests: XCTestCase {
     func testStringsUseCurlyApostrophesOnly() {
-        for text in [BundleCopyText.lidWritable, AwakeLidText.translocated, AwakeLidText.advancedFooter] {
+        for text in [BundleCopyText.lidWritable, AwakeLidText.translocated, AwakeLidText.footer, AwakeLidText.menuBarHelp] {
             XCTAssertFalse(text.contains("'"), text)
             XCTAssertTrue(text.hasSuffix("."), text)
         }
@@ -16,8 +16,8 @@ final class BundleCopyTextTests: XCTestCase {
     }
 
     func testFooterStatesTheLimits() {
-        XCTAssertTrue(AwakeLidText.advancedFooter.contains("at least 10%"))
-        XCTAssertTrue(AwakeLidText.advancedFooter.contains("after 24 hours"))
+        XCTAssertTrue(AwakeLidText.footer.contains("at least 10%"))
+        XCTAssertTrue(AwakeLidText.footer.contains("after 24 hours"))
     }
 
     func testHelpURLsPointAtTheReadmeSections() {

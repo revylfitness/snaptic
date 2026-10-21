@@ -158,6 +158,27 @@ final class ControlRegistryTests: XCTestCase {
         }
     }
 
+    /// 0.3.3: lid-closed mode's opt-in left Awake › Advanced for the Awake page, with a second switch on the Menu Bar
+    /// page; both show on the same Macs, and search opens each on its page, not in a sheet. The leftover rows stay
+    /// under Advanced › Other Apps.
+    func testLidClosedOptInLivesOnTheAwakeAndMenuBarPages() {
+        let owners = specs.map { $0.spec }.filter { $0.keys.contains("features.lidClosed") }
+        XCTAssertEqual(Set(owners.map { $0.id.rawValue }), ["awake.page.lidClosed", "menubar.page.awakeLidClosed"])
+        for spec in owners {
+            XCTAssertEqual(spec.kind, .setting, spec.id.rawValue)
+            XCTAssertEqual(Set(spec.when), [.module(.awake), .hardware(.battery)], spec.id.rawValue)
+            XCTAssertNotNil(spec.search, spec.id.rawValue)
+            XCTAssertNil(spec.search?.sheet, spec.id.rawValue)
+        }
+        XCTAssertEqual(owners.first { $0.id.rawValue == "awake.page.lidClosed" }?.search?.root, "awake")
+        XCTAssertEqual(owners.first { $0.id.rawValue == "menubar.page.awakeLidClosed" }?.search?.root, "menuBar")
+        let learnMore = AwakePageControls.controls.first { $0.id.rawValue == "awake.page.lidBundleLearnMore" }
+        XCTAssertNotNil(learnMore)
+        XCTAssertTrue(learnMore?.when.contains(.parentOn(ControlID("awake.page.lidClosed"))) ?? false)
+        let advanced = Set(AwakeAdvancedSheetControls.controls.map { $0.id.rawValue }.filter { $0.contains(".lid") })
+        XCTAssertEqual(advanced, ["awake.advanced.lidRestore", "awake.advanced.lidKeepOff", "awake.advanced.lidDismiss"])
+    }
+
     // MARK: Totality and the key cross-check (step-3 exit)
 
     /// Test 1: every frozen 0.2 id has a home (some spec's `replaces`) or a removal reason, never both.

@@ -766,11 +766,11 @@ package enum AwakeStatusText {
     /// the `unavailable` variant.
     package static let lidRoute = L("To keep it awake with the lid closed, connect power and an external display.")
 
-    /// 0.3.1 B1: the `lidRoute` line by lid-closed mode's state.
+    /// 0.3.1 B1: the `lidRoute` line by lid-closed mode's state (0.3.3: the switch moved to the Awake page).
     package static func lidRoute(_ route: AwakeLidRoute) -> String {
         switch route {
         case .featureOff:
-            return L("To keep it awake with the lid closed, connect power and an external display, or turn on lid-closed mode in Awake › Advanced.")
+            return L("To keep it awake with the lid closed, connect power and an external display, or turn on lid-closed mode in Awake settings.")
         case .available:
             return L("To keep it awake with the lid closed, connect power and an external display, or choose Keep Awake with the Lid Closed in the Awake menu.")
         case .unavailable:
@@ -836,11 +836,11 @@ package enum AwakeRuleRowText {
 
 /// Where the Settings status row's `lidRoute` line points (0.3.1 B1).
 package enum AwakeLidRoute: String, CaseIterable, Sendable {
-    /// The feature is off: turn it on in Awake › Advanced.
+    /// The feature is off: turn it on in Awake settings (the Awake page's Lid closed section, 0.3.3).
     case featureOff
     /// On and available: choose it in the Awake menu.
     case available
-    /// Translocated, no lid, no battery, the kill switch, or Safe Mode (the Advanced toggle is missing or locked):
+    /// Translocated, no lid, no battery, the kill switch, or Safe Mode (the Awake page's switch is missing or locked):
     /// the 0.3 text.
     case unavailable
 }
@@ -857,13 +857,16 @@ package enum AwakeLidText {
     package static let action = L("Keep Awake with the Lid Closed…")
     /// The idle submenu's last item: the Custom… panel with lid-closed mode turned on.
     package static let custom = L("Custom…")
-    /// The Advanced setting and the Custom… panel's toggle.
+    /// The Awake page's setting (0.3.3; Advanced's until then) and the Custom… panel's toggle.
     package static let setting = L("Keep awake with the lid closed")
     package static let settingHelp = L("Choose Keep Awake with the Lid Closed in the Awake menu. Asks for an administrator password each time.")
+    /// 0.3.3: the same setting on the Menu Bar page, under Awake's rows; it names what it adds to the Awake menu.
+    package static let menuBarSetting = L("Show Keep Awake with the Lid Closed in the Awake menu")
+    package static let menuBarHelp = L("Turns on lid-closed mode, the same switch as on the Awake page. Choosing it in the menu asks for an administrator password each time.")
     package static let customHelp = L("Start… asks for an administrator password.")
     /// The Custom… panel's button while the toggle is on.
     package static let customStart = L("Start…")
-    /// The Advanced section's title.
+    /// The Awake page's section title (0.3.3).
     package static let section = L("Lid closed")
     package static let learnMore = L("Learn More…")
     /// The translocated row (B1), also the refusal's toast.
@@ -889,8 +892,8 @@ package enum AwakeLidText {
     /// The row carries a checkmark while on.
     package static func rowChecked(_ state: LidRowState) -> Bool { state == .on }
 
-    /// The Advanced footer (B1), before its Learn More… link.
-    package static var advancedFooter: String {
+    /// The Lid closed section's footer (B1; on the Awake page from 0.3.3), before its Learn More… link.
+    package static var footer: String {
         L("While lid-closed mode is on, your Mac can’t sleep for low battery or heat. Awake turns it off at the Awake page’s battery level (at least 10%), when your Mac gets hot, or after ")
             + capSpan + L(". Use it on a hard surface, not in a bag.")
     }
