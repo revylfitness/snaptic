@@ -173,11 +173,17 @@ struct AwakeAdvancedSheet: View, ControlDeclaring {
 
     // MARK: Restore
 
+    /// Lid-closed mode's opt-in stays while the mode is on or pending, read at the click, and a toast says so (r2 P2-1).
     private var restore: RestoreDefaults {
-        let config = env.config
+        let env = self.env
         return RestoreDefaults(scopeName: L("Awake"), destructive: false) {
-            let next = config.value.restoringDefaults()
-            if next != config.value { config.value = next }
+            let keep = env.runtime.lidMode.locksOptIn
+            let current = env.config.value
+            let next = current.restoringDefaults(keepingLidClosed: keep)
+            if next != current { env.config.value = next }
+            if let notice = AwakeLidText.restoreNotice(current, keepingLidClosed: keep) {
+                env.context?.host.toasts.show(notice)
+            }
         }
     }
 }

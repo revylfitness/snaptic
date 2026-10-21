@@ -484,7 +484,9 @@ private struct AwakeLidSection: View {
                                          runtime: runtime)
         Section {
             if optIn == .translocated {
+                // The switch's anchor, so a search for it lands on the reason (r2 P2-2, as on the Menu Bar page).
                 StatusRow(AwakeLidText.translocated, style: .warning)
+                    .modifier(SettingsAnchor(ControlID("awake.page.lidClosed")))
             } else if optIn.showsSwitch {
                 ToggleSetting(AwakeLidText.setting, help: AwakeLidText.settingHelp,
                               isOn: Binding(get: { on }, set: { value in setLidClosed(value) }),

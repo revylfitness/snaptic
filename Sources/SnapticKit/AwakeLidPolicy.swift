@@ -28,6 +28,10 @@ package enum AwakeLidMode: Equatable, Sendable {
         }
     }
 
+    /// On, or turning on or off: nothing in Settings may change the opt-in then, since clearing it would end the
+    /// mode without a word (`AwakeLidOptIn.lidModeOn`, Restore Awake Defaults…; 0.3.3 r1 P1-1, r2 P2-1).
+    package var locksOptIn: Bool { isOn || isPending }
+
     package var token: String? {
         switch self {
         case .authorizing(let t), .verifying(let t, _), .on(let t, _, _), .stopping(let t): return t

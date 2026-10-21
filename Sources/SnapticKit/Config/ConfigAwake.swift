@@ -64,10 +64,14 @@ package struct AwakeConfig: ConfigModel {
     /// ids, default options, behavior), guards, activity and Drive Alive back to defaults, so pointer movement is off
     /// and no volume is kept awake. Kept: the rules (user content; every `nudge` → `declare`, as always), the indicator
     /// (the Menu Bar page's scope), the shortcuts (the Keyboard Shortcuts sheet's scope) and the recent apps. The
-    /// kept rules keep running: `features.triggers` (opt-in) is kept with them (review parity P1).
-    package func restoringDefaults() -> AwakeConfig {
+    /// kept rules keep running: `features.triggers` (opt-in) is kept with them (review parity P1). For the same reason
+    /// `keepingLidClosed` (lid-closed mode on or pending, `AwakeLidMode.locksOptIn`, read at the click) keeps
+    /// `features.lidClosed`: clearing it would end the mode without a word (0.3.3 r2 P2-1). The caller says so
+    /// (`AwakeLidText.restoreNotice`).
+    package func restoringDefaults(keepingLidClosed: Bool = false) -> AwakeConfig {
         var c = AwakeConfig()
         c.features[.triggers] = features[.triggers]
+        if keepingLidClosed { c.features[.lidClosed] = features[.lidClosed] }
         c.triggers = triggers.withoutNudge().sanitized()
         c.indicator = indicator.sanitized()
         c.shortcuts = shortcuts

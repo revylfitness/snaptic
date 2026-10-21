@@ -873,7 +873,7 @@ package enum AwakeLidOptIn: Equatable, Sendable {
         if let lock = AwakeFeatureLock.of(.lidClosed, killSwitches: killSwitches, safeMode: safeMode) {
             return .locked(lock)
         }
-        if lidMode.isOn || lidMode.isPending { return .lidModeOn }
+        if lidMode.locksOptIn { return .lidModeOn }
         return .available
     }
 
@@ -928,7 +928,16 @@ package enum AwakeLidText {
     package static let menuBarHelp = L("Adds Keep Awake with the Lid Closed to the Awake menu, the same switch as on the Awake page. Choosing it asks for an administrator password each time. Use it on a hard surface, not in a bag.")
     /// Both switches while the mode is on or turning on or off (`AwakeLidOptIn.lidModeOn`): turning either off would
     /// end the mode without a word (r1 P1-1).
-    package static let turnOffFirst = L("Lid-closed mode is on. Turn it off in the Awake menu first.")
+    /// r2 P2-4: Options ▾ on the Awake page has the same item, and with Awake on Don’t Show there is no Awake menu.
+    package static let turnOffFirst = L("Lid-closed mode is on. Turn it off first, in the Awake menu or in Options on the Awake page.")
+    /// Restore Awake Defaults… while the mode is on or pending kept the opt-in on (r2 P2-1); never kept silently.
+    package static let restoreKept = L("Lid-closed mode is on, so it stays allowed. Turn it off, then restore again to reset it.")
+
+    /// The toast after Restore Awake Defaults… on `config` (the value before the restore): only when the restore kept
+    /// the opt-in on, which differs from the default.
+    package static func restoreNotice(_ config: AwakeConfig, keepingLidClosed: Bool) -> String? {
+        keepingLidClosed && config.features[.lidClosed] == true ? restoreKept : nil
+    }
     package static let customHelp = L("Start… asks for an administrator password.")
     /// The Custom… panel's button while the toggle is on.
     package static let customStart = L("Start…")

@@ -543,8 +543,12 @@ extension AwakePresentationTests {
         XCTAssertFalse(AwakeLidText.menuBarHelp.contains("Turns on"))
         XCTAssertTrue(AwakeLidText.footer.hasSuffix("Use it on a hard surface, not in a bag."))
         XCTAssertTrue(AwakeLidText.menuBarHelp.hasSuffix("Use it on a hard surface, not in a bag."))
-        // r1 P1-1: both switches while the mode is on.
-        XCTAssertEqual(AwakeLidText.turnOffFirst, "Lid-closed mode is on. Turn it off in the Awake menu first.")
+        // r1 P1-1: both switches while the mode is on. r2 P2-4: Options ▾ on the Awake page too (Don’t Show has no menu).
+        XCTAssertEqual(AwakeLidText.turnOffFirst,
+                       "Lid-closed mode is on. Turn it off first, in the Awake menu or in Options on the Awake page.")
+        // r2 P2-1: Restore Awake Defaults… kept the opt-in, and says so.
+        XCTAssertEqual(AwakeLidText.restoreKept,
+                       "Lid-closed mode is on, so it stays allowed. Turn it off, then restore again to reset it.")
         XCTAssertEqual(AwakeLidText.section, "Lid closed")
         XCTAssertEqual(AwakeLidText.footer,
                        "While lid-closed mode is on, your Mac can’t sleep for low battery or heat. Awake turns it off at the Awake page’s battery level (at least 10%), when your Mac gets hot, or after 24 hours. Use it on a hard surface, not in a bag.")
@@ -587,7 +591,7 @@ extension AwakePresentationTests {
             (.awakeOff, true, false, nil, false),
             (.locked(.killSwitch), true, false, nil, true),
             (.locked(.safeMode), true, false, "Paused in Safe Mode.", false),
-            (.lidModeOn, true, false, "Lid-closed mode is on. Turn it off in the Awake menu first.", false),
+            (.lidModeOn, true, false, "Lid-closed mode is on. Turn it off first, in the Awake menu or in Options on the Awake page.", false),
             (.available, true, true, nil, false),
         ]
         for (state, shows, enabled, reason, lockRow) in rows {
