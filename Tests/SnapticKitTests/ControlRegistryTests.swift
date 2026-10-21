@@ -175,6 +175,12 @@ final class ControlRegistryTests: XCTestCase {
         let learnMore = AwakePageControls.controls.first { $0.id.rawValue == "awake.page.lidBundleLearnMore" }
         XCTAssertNotNil(learnMore)
         XCTAssertTrue(learnMore?.when.contains(.parentOn(ControlID("awake.page.lidClosed"))) ?? false)
+        // r1 P1-2: the Menu Bar switch carries the same note, with its own Learn More… under its own switch.
+        let menuBarLearnMore = MenuBarPageControls.controls.first { $0.id.rawValue == "menubar.page.awakeLidBundleLearnMore" }
+        XCTAssertEqual(menuBarLearnMore?.kind, .statusAction)
+        XCTAssertEqual(Set(menuBarLearnMore?.when ?? []),
+                       [.module(.awake), .hardware(.battery), .parentOn(ControlID("menubar.page.awakeLidClosed")),
+                        .state(.bundleWritable)])
         let advanced = Set(AwakeAdvancedSheetControls.controls.map { $0.id.rawValue }.filter { $0.contains(".lid") })
         XCTAssertEqual(advanced, ["awake.advanced.lidRestore", "awake.advanced.lidKeepOff", "awake.advanced.lidDismiss"])
     }

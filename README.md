@@ -47,9 +47,9 @@ Everything about Snaptic’s menu bar icons lives on this page.
 - **Where each module appears:** one pop-up per module with the same choices Control Center uses: **Always Show in Menu Bar**, **Show When Active**, **Show in Snaptic Menu**, and **Don’t Show**. Window Switcher has no “Show When Active”. For Displays it means “while an external display is connected”; for Awake, “while your Mac is being kept awake” (Awake’s default).
 - **Icons:** a choice of icon for each module that has its own item and for the Snaptic icon.
 - **Awake time:** **Don’t Show** (default), **Time Remaining**, or **End Time** next to Awake’s icon, in your system’s 12- or 24-hour setting, with seconds only in the last minute.
-- **Show Keep Awake with the Lid Closed in the Awake menu** (Macs with a battery, while Awake is on): turns on [lid-closed mode](#keeping-awake-with-the-lid-closed). It’s the same switch as on the Awake page.
+- **Show Keep Awake with the Lid Closed in the Awake menu** (Macs with a battery; dimmed while Awake is off): lets you turn on [lid-closed mode](#keeping-awake-with-the-lid-closed) from the Awake menu, which asks for an administrator password each time. It’s the same switch as on the Awake page, and like that one it’s locked while lid-closed mode is on.
 - **Displays menu:** **Standard** or **Compact** style (one slider per display), “Scroll over a slider to adjust it”, and **Customize Displays Menu…**, where every optional menu item can be shown, moved into a submenu, or hidden.
-- **Restore Menu Bar Defaults…** resets only this page.
+- **Restore Menu Bar Defaults…** resets where each module appears, the icons, Awake’s time, and the Displays menu. The lid-closed switch is Awake’s setting, so it stays; **Awake › Advanced… › Restore Awake Defaults…** resets it.
 
 **Tabs in the Snaptic menu.** The Snaptic icon appears when a module is set to Show in Snaptic Menu. With two or more, the Snaptic menu shows a tab for each, in the order Window Switcher, Displays, Awake (all three out of the box), and only the selected module’s items below the tabs. With one module the menu has no tabs and shows that module’s section as before.
 
@@ -253,7 +253,7 @@ Accessibility is asked for only when you turn pointer movement on. To revoke it,
 
 ### In the menu bar
 
-By default Awake’s icon appears only while your Mac is being kept awake (Show When Active), next to the Snaptic icon; change that on the [Menu Bar](#menu-bar) page, along with the icon (cup, eye, or light bulb, filled while active) and the time shown next to it. The Awake menu, Awake’s tab in the Snaptic menu, and the compact Awake section (when Awake is the only module in the Snaptic menu) have the same rows: the **Keep Awake** switch with what’s keeping your Mac awake (“Held by Terminal (2)” for command-line holds), **Turn Off Keep Awake**, the Add Time items, **Keep Display On**, **End Command-Line Holds**, **Start Session ›**, **While an App Is Running ›**, and **Rules ›**. With lid-closed mode turned on (on the Awake page or the Menu Bar page), they also have **Keep Awake with the Lid Closed** (see [Keeping awake with the lid closed](#keeping-awake-with-the-lid-closed)). On a laptop running on battery or without an external display, the menu reminds you that closing the lid puts your Mac to sleep, unless lid-closed mode is on.
+By default Awake’s icon appears only while your Mac is being kept awake (Show When Active), next to the Snaptic icon; change that on the [Menu Bar](#menu-bar) page, along with the icon (cup, eye, or light bulb, filled while active) and the time shown next to it. The Awake menu, Awake’s tab in the Snaptic menu, and the compact Awake section (when Awake is the only module in the Snaptic menu) have the same rows: the **Keep Awake** switch with what’s keeping your Mac awake (“Held by Terminal (2)” for command-line holds), **Turn Off Keep Awake**, the Add Time items, **Keep Display On**, **End Command-Line Holds**, **Start Session ›**, **While an App Is Running ›**, and **Rules ›**. With “Keep awake with the lid closed” turned on (on the Awake page or the Menu Bar page), they also have **Keep Awake with the Lid Closed** (see [Keeping awake with the lid closed](#keeping-awake-with-the-lid-closed)). On a laptop running on battery or without an external display, the menu reminds you that closing the lid puts your Mac to sleep, unless lid-closed mode is on.
 
 ### Keyboard shortcuts
 
@@ -274,7 +274,7 @@ A MacBook goes to sleep when you close its lid, whatever power assertion an app 
 
 #### Turning it on
 
-1. Turn on **Awake › Lid closed › Keep awake with the lid closed** (or, on the Menu Bar page, **Show Keep Awake with the Lid Closed in the Awake menu**: the same switch).
+1. Turn on **Awake › Lid closed › Keep awake with the lid closed** (or, on the Menu Bar page, **Show Keep Awake with the Lid Closed in the Awake menu**: the same switch). This only adds the menu item and asks for nothing. While lid-closed mode is on, both switches are locked: “Lid-closed mode is on. Turn it off in the Awake menu first.”
 2. In the Awake menu (or Awake’s tab in the Snaptic menu), choose **Keep Awake with the Lid Closed ›** and a session. Each one ends in “…” because it asks for your password; **Custom…** opens the session panel with “Keep awake with the lid closed” turned on, and its button reads **Start…**. The session starts only once lid-closed mode is on, so Cancel starts nothing.
 3. Enter an administrator password in macOS’s dialog. It reads: “Snaptic wants to keep your Mac awake with the lid closed for up to 24 hours. Sleep turns back on when the session ends, when Snaptic quits, at 20% battery, or if your Mac gets hot. Enter an administrator password to allow this.” It names your battery limit. Touch ID may work there.
 

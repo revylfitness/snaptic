@@ -3,7 +3,8 @@ import XCTest
 
 final class BundleCopyTextTests: XCTestCase {
     func testStringsUseCurlyApostrophesOnly() {
-        for text in [BundleCopyText.lidWritable, AwakeLidText.translocated, AwakeLidText.footer, AwakeLidText.menuBarHelp] {
+        for text in [BundleCopyText.lidWritable, AwakeLidText.translocated, AwakeLidText.footer, AwakeLidText.menuBarHelp,
+                     AwakeLidText.turnOffFirst] {
             XCTAssertFalse(text.contains("'"), text)
             XCTAssertTrue(text.hasSuffix("."), text)
         }

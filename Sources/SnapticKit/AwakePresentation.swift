@@ -845,6 +845,67 @@ package enum AwakeLidRoute: String, CaseIterable, Sendable {
     case unavailable
 }
 
+/// How lid-closed mode's opt-in (`features[.lidClosed]`) shows (0.3.3; PLAN 0.3.1 B1 amendment): one answer for the
+/// Awake page's Lid closed section and the Menu Bar page's copy of the switch, so the two can't drift.
+package enum AwakeLidOptIn: Equatable, Sendable {
+    /// No row: the Mac has no battery.
+    case hidden
+    /// `AwakeLidText.translocated` in place of the switch: it couldn't work from this copy.
+    case translocated
+    /// The switch, disabled without a reason: Awake is off or not running (ux m18, as the Menu Bar page's other Awake
+    /// rows). The Awake page shows its section only while Awake runs, so it never meets this.
+    case awakeOff
+    /// The switch, disabled: a kill switch (with its `DefaultsLockRow`) or Safe Mode (with its reason).
+    case locked(AwakeFeatureLock)
+    /// The switch, disabled with `AwakeLidText.turnOffFirst`: lid-closed mode is on or turning on or off, and turning
+    /// the switch off would end it silently (and sleep a Mac whose lid is shut).
+    case lidModeOn
+    /// The switch, usable.
+    case available
+
+    /// In this order: what the hardware and this copy allow, then Awake, then the locks, then the mode itself.
+    /// `failed` counts as off: it only carries one toast before returning to `off`.
+    package static func of(battery: Bool, awakeRunning: Bool, translocated: Bool, killSwitches: Set<AwakeFeature>,
+                           safeMode: Bool, lidMode: AwakeLidMode) -> AwakeLidOptIn {
+        guard battery else { return .hidden }
+        if translocated { return .translocated }
+        guard awakeRunning else { return .awakeOff }
+        if let lock = AwakeFeatureLock.of(.lidClosed, killSwitches: killSwitches, safeMode: safeMode) {
+            return .locked(lock)
+        }
+        if lidMode.isOn || lidMode.isPending { return .lidModeOn }
+        return .available
+    }
+
+    /// The switch row is there (possibly disabled).
+    package var showsSwitch: Bool {
+        switch self {
+        case .hidden, .translocated: return false
+        case .awakeOff, .locked, .lidModeOn, .available: return true
+        }
+    }
+
+    package var isEnabled: Bool { self == .available }
+
+    /// The note under the disabled switch; nil when it needs none (Awake off, or the kill switch's own lock row).
+    package var disabledReason: String? {
+        switch self {
+        case .locked(.safeMode): return AwakeFeatureLock.safeMode.text
+        case .lidModeOn: return AwakeLidText.turnOffFirst
+        case .hidden, .translocated, .awakeOff, .locked(.killSwitch), .available: return nil
+        }
+    }
+
+    /// `DefaultsLockRow` for `Awake.disable.lidClosed` under the switch.
+    package var showsKillSwitchRow: Bool { self == .locked(.killSwitch) }
+
+    /// The writable-bundle note (`BundleCopyText.lidWritable`, B1) while the switch is on and nothing locks it; the
+    /// mode being on keeps it, since the risk is the next password prompt.
+    package func showsBundleNote(isOn: Bool, bundleWritable: Bool) -> Bool {
+        isOn && bundleWritable && (self == .available || self == .lidModeOn)
+    }
+}
+
 /// Lid-closed mode's words (0.3.1 B0–B3.4): the menus, Settings, toasts, VoiceOver and the History suffix. The
 /// password dialogs' texts are `LidWatchdog.promptText(floor:)` and `restorePromptText`; the refusals are
 /// `AwakeLidRefusal.text`.
@@ -862,7 +923,12 @@ package enum AwakeLidText {
     package static let settingHelp = L("Choose Keep Awake with the Lid Closed in the Awake menu. Asks for an administrator password each time.")
     /// 0.3.3: the same setting on the Menu Bar page, under Awake's rows; it names what it adds to the Awake menu.
     package static let menuBarSetting = L("Show Keep Awake with the Lid Closed in the Awake menu")
-    package static let menuBarHelp = L("Turns on lid-closed mode, the same switch as on the Awake page. Choosing it in the menu asks for an administrator password each time.")
+    /// It only adds the menu item; turning the mode on is the item, which asks for the password (r1 P1-4). The bag
+    /// warning is the Awake page footer's last sentence, so this way of opting in carries it too (P1-2).
+    package static let menuBarHelp = L("Adds Keep Awake with the Lid Closed to the Awake menu, the same switch as on the Awake page. Choosing it asks for an administrator password each time. Use it on a hard surface, not in a bag.")
+    /// Both switches while the mode is on or turning on or off (`AwakeLidOptIn.lidModeOn`): turning either off would
+    /// end the mode without a word (r1 P1-1).
+    package static let turnOffFirst = L("Lid-closed mode is on. Turn it off in the Awake menu first.")
     package static let customHelp = L("Start… asks for an administrator password.")
     /// The Custom… panel's button while the toggle is on.
     package static let customStart = L("Start…")

@@ -1,8 +1,9 @@
 import Foundation
 
 // The Menu Bar page's controls (owner: M; PLAN 0.3 §4.3 Menu Bar, N7): one presence pop-up per module with its icon
-// tiles, Awake's Time and Icon (and, 0.3.3, lid-closed mode's switch), the hidden-icon warnings, the Displays menu's
-// Style and scrolling, Customize Displays Menu…, the Snaptic icon and the footer's Restore Menu Bar Defaults….
+// tiles, Awake's Time and Icon (and, 0.3.3, lid-closed mode's switch with its note), the hidden-icon warnings, the
+// Displays menu's Style and scrolling, Customize Displays Menu…, the Snaptic icon and the footer's Restore Menu Bar
+// Defaults….
 
 package enum MenuBarPageControls: ControlTable {
     package static let surface = "menubar.page"
@@ -40,6 +41,10 @@ package enum MenuBarPageControls: ControlTable {
                     keys: ["features.lidClosed"],
                     search: search("Keep Awake with the Lid Closed in the Awake menu",
                                    ["lid", "clamshell", "lid-closed mode", "Awake menu"])),
+        // r1 P1-2: the writable-bundle note's Learn More…, as under the Awake page's switch.
+        ControlSpec("menubar.page.awakeLidBundleLearnMore", .statusAction,
+                    when: [.module(.awake), .hardware(.battery), .parentOn(ControlID("menubar.page.awakeLidClosed")),
+                           .state(.bundleWritable)]),
         ControlSpec("menubar.page.warning", .statusAction, when: [.state(.hiddenIconWarning)],
                     replaces: ["l.gen.menu.hiddenIconWarnings"]),
         ControlSpec("menubar.page.style", .setting, when: [.module(.displays)], replaces: ["l.gen.menu.compact"],

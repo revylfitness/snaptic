@@ -460,36 +460,40 @@ private struct AwakeBatterySection: View {
 
 /// Lid-closed mode's one-time opt-in (`features[.lidClosed]`, off by default), moved here from Awake › Advanced in
 /// 0.3.3 with its notes: the writable-bundle note while on, the translocated row instead of the switch, and the limits
-/// in the footer. The Menu Bar page has a second switch for the same setting (`MenuBarPage`). The leftover rows are
+/// in the footer. While lid-closed mode is on, the switch is locked with a reason (r1 P1-1). The Menu Bar page has a
+/// second switch for the same setting (`MenuBarPage`); `AwakeLidOptIn` decides both. The leftover rows are
 /// `AwakeLidLeftoverSection`, at the top of this page.
 private struct AwakeLidSection: View {
     let env: AwakePageEnvironment
     @StateObject private var features: ConfigSlice<AwakeConfig, LossyMap<AwakeFeature, Bool>>
-    /// File-system checks of this copy of Snaptic (B1).
-    private let translocated = PermissionFlow.isTranslocated
+    /// The lid mode locks the switch (r1 P1-1), so the section follows it.
+    @ObservedObject private var runtime: AwakeRuntimeState
+    /// File-system check of this copy of Snaptic (B1).
     private let bundleWritable = PermissionFlow.bundleIsUserWritable
 
     init(env: AwakePageEnvironment) {
         self.env = env
         _features = StateObject(wrappedValue: ConfigSlice(env.config, \.features))
+        _runtime = ObservedObject(wrappedValue: env.runtime)
     }
 
     var body: some View {
         let on = features.value[.lidClosed] ?? false
-        let lock = AwakeFormat.lock([.lidClosed])
+        // The page shows this section only on a Mac with a battery while Awake runs; the Menu Bar page asks the same.
+        let optIn = AwakeFormat.lidOptIn(battery: runtime.power?.batteryPresent ?? AwakeHardware.hasBattery,
+                                         runtime: runtime)
         Section {
-            if translocated {
+            if optIn == .translocated {
                 StatusRow(AwakeLidText.translocated, style: .warning)
-            } else {
+            } else if optIn.showsSwitch {
                 ToggleSetting(AwakeLidText.setting, help: AwakeLidText.settingHelp,
                               isOn: Binding(get: { on }, set: { value in setLidClosed(value) }),
-                              anchor: ControlID("awake.page.lidClosed"),
-                              disabledReason: lock?.lock == .safeMode ? lock?.lock.text : nil)
-                    .disabled(lock != nil)
-                if let lock, lock.lock == .killSwitch {
-                    DefaultsLockRow(key: KillSwitches.key(prefix: "Awake", id: lock.feature.rawValue))
+                              anchor: ControlID("awake.page.lidClosed"), disabledReason: optIn.disabledReason)
+                    .disabled(!optIn.isEnabled)
+                if optIn.showsKillSwitchRow {
+                    DefaultsLockRow(key: KillSwitches.key(prefix: "Awake", id: AwakeFeature.lidClosed.rawValue))
                 }
-                if on && lock == nil && bundleWritable {
+                if optIn.showsBundleNote(isOn: on, bundleWritable: bundleWritable) {
                     SettingsRowNote(BundleCopyText.lidWritable,
                                     fix: StatusAction(title: AwakeLidText.learnMore,
                                                       control: ControlID("awake.page.lidBundleLearnMore")) {

@@ -26,6 +26,14 @@ import SnapticKit
                                safeMode: SettingsShell.shared.host?.safeMode.isActive ?? false)
     }
 
+    /// Lid-closed mode's opt-in on the Awake and Menu Bar pages (0.3.3): the Kit decides from this copy's and the
+    /// runtime's facts.
+    static func lidOptIn(battery: Bool, runtime: AwakeRuntimeState) -> AwakeLidOptIn {
+        AwakeLidOptIn.of(battery: battery, awakeRunning: runtime.moduleState == .running,
+                         translocated: PermissionFlow.isTranslocated, killSwitches: killSwitches(),
+                         safeMode: SettingsShell.shared.host?.safeMode.isActive ?? false, lidMode: runtime.lidMode)
+    }
+
     /// "5:00 PM" / "17:00" for a wall instant in the current time zone.
     static func clock(_ unix: Double) -> String {
         guard unix.isFinite else { return "" }
