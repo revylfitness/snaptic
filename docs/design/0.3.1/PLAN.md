@@ -246,6 +246,8 @@ Design-spec §4.7 gets a terminology row: "closed-lid, clamshell, disablesleep a
 
 A new section, "Lid closed", follows the experimental pointer-nudge pattern. (DS §1.5 places the lid option in Advanced, "with a warning about heat".)
 
+> **0.3.3 amendment (owner).** The opt-in moves out of Advanced; its behaviour is unchanged. The "Lid closed" section below (the toggle, the writable-bundle note, the translocated row, the footer and its Learn More…) is now a section of the **main Awake page**, after "End sessions automatically", and Advanced no longer has it. The **Menu Bar page** gets a second switch for the same `features[.lidClosed]`, under Awake's rows: "Show Keep Awake with the Lid Closed in the Awake menu" (help: "Turns on lid-closed mode, the same switch as on the Awake page. Choosing it in the menu asks for an administrator password each time."). It shows where the Awake page's switch does (a battery, Awake running, not translocated) and is locked the same way (Safe Mode's disabled reason, the kill switch's `DefaultsLockRow`). The B3.4 leftover rows stay at the top of the Awake page and under Advanced › Other Apps. The `lidRoute` "Feature off" text below becomes "…or turn on lid-closed mode in Awake settings." Ids: see the B7 amendment.
+
 - **The toggle.** `ToggleSetting(L("Keep awake with the lid closed"), help: L("Choose Keep Awake with the Lid Closed in the Awake menu. Asks for an administrator password each time."))`.
   - It is backed by `features[.lidClosed]`, which is opt-in and off by default.
   - It shows only on Macs with a battery (`when: .hardware(.battery)`).
@@ -832,6 +834,8 @@ While a Snaptic journal exists, Advanced › Other Apps never says "Snaptic can�
 | `CustomSessionPanelControls` | `awake.custom.lidClosed` | `.setting` | `when: [.awakeFeature(.lidClosed)]`. The `awake.custom` surface is exempt from search. |
 
 New `ControlState` cases: `lidModeOn`, `lidLeftover` and `bundleWritable`. All three are used above.
+
+> **0.3.3 amendment (owner; see B1).** `awake.advanced.lidClosed` and `awake.advanced.lidBundleLearnMore` move to `AwakePageControls` as `awake.page.lidClosed` (same kind, keys, conditions and search title; no `sheet:`) and `awake.page.lidBundleLearnMore` (`.parentOn(ControlID("awake.page.lidClosed"))`). `MenuBarPageControls` adds `menubar.page.awakeLidClosed` (`.setting`, `keys: ["features.lidClosed"]`, `when: [.module(.awake), .hardware(.battery)]`, its own search entry "Keep Awake with the Lid Closed in the Awake menu"), following the precedent of one setting with a control on each page that shows it (`displays.automations.actionShowInMenu` and `menubar.customize.actions`). `replaces:` is not used: it names frozen 0.2 ids only (ControlRegistryTests), and 0.3 ids are not stored anywhere, so nothing needs mapping. The three `awake.advanced.lid*` leftover rows stay.
 
 ---
 
