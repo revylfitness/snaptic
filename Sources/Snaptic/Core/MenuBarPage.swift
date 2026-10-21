@@ -12,6 +12,7 @@ import SnapticKit
 /// Awake                              [Show When Active ▾]
 ///    Time (own icon only)            [Don't Show ▾]
 ///    Icon                            [cup] [eye] [bulb]
+///    Show Keep Awake with the Lid Closed in the Awake menu   [◯]   (0.3.3; laptops; locked while the mode is on)
 /// ⚠ status rows, only while true
 /// Displays menu: Style · Scroll over a slider to adjust it · Customize Displays Menu…
 /// Snaptic icon                       [◫] [◩] [◰]
@@ -45,6 +46,8 @@ private struct MenuBarPageContent: View {
     @State private var customizeFocus: DisplayKey?
     /// The sheet was opened by this page's own button.
     @State private var openedHere = false
+    /// File-system check of this copy of Snaptic, for the lid-closed switch's note (B1).
+    private let bundleWritable = PermissionFlow.bundleIsUserWritable
     /// Bumped when displays come or go: Displays' Show When Active icon (and so the Snaptic glyph) follows them.
     @State private var screensRevision = 0
 
@@ -155,6 +158,7 @@ private struct MenuBarPageContent: View {
                                     selection: awakeGlyph, anchor: ControlID("menubar.page.awakeIcon"))
                         .padding(.leading, 20)
                 }
+                awakeLidClosedRows
             } else if presence == .ownIcon || presence == .ownIconWhenActive {
                 GlyphTilePicker(L("Icon"), symbols: Self.moduleSymbols(id, default: module.symbolName,
                                                                        current: modules.value.preferences(id).symbol),
@@ -164,6 +168,49 @@ private struct MenuBarPageContent: View {
             }
         }
         .disabled(!on)
+    }
+
+    /// 0.3.3: lid-closed mode's opt-in, a second switch for the Awake page's (`features[.lidClosed]`), decided the same
+    /// way (`AwakeLidOptIn`): on a Mac with a battery; the translocated reason in its place, carrying its anchor so
+    /// search lands on it (r1 P1-3); disabled while Awake is off, as Time and Icon are; locked by a kill switch,
+    /// Safe Mode, or the mode being on (P1-1); and the writable-bundle note while on (P1-2).
+    @ViewBuilder private var awakeLidClosedRows: some View {
+        let optIn = AwakeFormat.lidOptIn(battery: awakeRuntime.power?.batteryPresent ?? AwakeHardware.hasBattery,
+                                         runtime: awakeRuntime)
+        if optIn == .translocated {
+            StatusRow(AwakeLidText.translocated, style: .warning)
+                .padding(.leading, 20)
+                .modifier(SettingsAnchor(ControlID("menubar.page.awakeLidClosed")))
+        } else if optIn.showsSwitch {
+            ToggleSetting(AwakeLidText.menuBarSetting, help: AwakeLidText.menuBarHelp, isOn: awakeLidClosed,
+                          subordinate: true, anchor: ControlID("menubar.page.awakeLidClosed"),
+                          disabledReason: optIn.disabledReason)
+                .disabled(!optIn.isEnabled)
+            if optIn.showsKillSwitchRow {
+                DefaultsLockRow(key: KillSwitches.key(prefix: "Awake", id: AwakeFeature.lidClosed.rawValue))
+                    .padding(.leading, 20)
+            }
+            if optIn.showsBundleNote(isOn: awake.value.features[.lidClosed] ?? false,
+                                     bundleWritable: bundleWritable) {
+                SettingsRowNote(BundleCopyText.lidWritable,
+                                fix: StatusAction(title: AwakeLidText.learnMore,
+                                                  control: ControlID("menubar.page.awakeLidBundleLearnMore")) {
+                                    guard let url = URL(string: BundleCopyText.passwordHelpURL) else { return }
+                                    NSWorkspace.shared.open(url)
+                                })
+                    .padding(.leading, 20)
+            }
+        }
+    }
+
+    private var awakeLidClosed: Binding<Bool> {
+        let store = awake
+        return Binding(get: { store.value.features[.lidClosed] ?? false },
+                       set: { on in
+                           var next = store.value
+                           next.features[.lidClosed] = on
+                           if next != store.value { store.value = next }
+                       })
     }
 
     private static func presenceControl(_ id: ModuleID) -> ControlID {

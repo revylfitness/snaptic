@@ -78,6 +78,42 @@ final class ConfigAwakeTests: XCTestCase {
         XCTAssertEqual(off.restoringDefaults().features[.triggers], false, "rules the user turned off stay off")
     }
 
+    /// 0.3.3 r2 P2-1: while lid-closed mode is on or pending, Restore Awake Defaults… keeps the opt-in (clearing it
+    /// would end the mode without a word) and says so; otherwise it resets it like everything else.
+    func testRestoreDefaultsKeepsTheLidOptInOnlyWhileTheModeRuns() {
+        var c = ownMac()
+        c.features[.lidClosed] = true
+        c.features[.pointerNudge] = true
+        let kept = c.restoringDefaults(keepingLidClosed: true)
+        XCTAssertEqual(kept.features[.lidClosed], true)
+        XCTAssertNotEqual(kept.features[.pointerNudge], true, "the rest still resets")
+        XCTAssertEqual(kept.features[.triggers], true)
+        XCTAssertEqual(kept.sessions.presets, AwakeConfig().sanitized().sessions.presets)
+        XCTAssertNil(c.restoringDefaults(keepingLidClosed: false).features[.lidClosed])
+        XCTAssertNil(c.restoringDefaults().features[.lidClosed], "the default is to reset it")
+        XCTAssertEqual(AwakeLidText.restoreNotice(c, keepingLidClosed: true),
+                       "Restored, except “Keep awake with the lid closed”, which can’t change while lid-closed mode is on.")
+        XCTAssertNil(AwakeLidText.restoreNotice(c, keepingLidClosed: false))
+
+        var off = c
+        off.features[.lidClosed] = false
+        XCTAssertEqual(off.restoringDefaults(keepingLidClosed: true).features[.lidClosed], false)
+        XCTAssertNil(AwakeLidText.restoreNotice(off, keepingLidClosed: true), "nothing on was kept")
+        off.features[.lidClosed] = nil
+        XCTAssertNil(off.restoringDefaults(keepingLidClosed: true).features[.lidClosed])
+        XCTAssertNil(AwakeLidText.restoreNotice(off, keepingLidClosed: true))
+    }
+
+    /// The mode states that keep the opt-in (the switches' lock and the restore), written out by hand.
+    func testLidModeLocksOptInWhileOnOrPending() {
+        XCTAssertTrue(AwakeLidMode.on(token: "t", pid: 9, until: 100).locksOptIn)
+        XCTAssertTrue(AwakeLidMode.authorizing(token: "t").locksOptIn)
+        XCTAssertTrue(AwakeLidMode.verifying(token: "t", pid: 9).locksOptIn)
+        XCTAssertTrue(AwakeLidMode.stopping(token: "t").locksOptIn)
+        XCTAssertFalse(AwakeLidMode.off.locksOptIn)
+        XCTAssertFalse(AwakeLidMode.failed(.verify).locksOptIn)
+    }
+
     func testImportingOwnBackupKeepsTheMacsRulesAndPresets() throws {
         let c = ownMac()
         XCTAssertEqual(c.triggers.triggers.first?.criteria.count, 2)

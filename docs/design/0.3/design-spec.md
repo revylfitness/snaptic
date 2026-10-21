@@ -10,7 +10,7 @@ Guiding rules, taken from Apple's Settings HIG [S1]:
 
 Success test: each module page shows **at most about 8 controls** before the "Advanced…" button. Everything else sits one click deeper.
 
-**0.3.1 amendments** (`docs/design/0.3.1/PLAN.md`) are marked "(0.3.1)": §1.5 (lid-closed mode in Awake's Advanced), §3.3 (tabs in the Snaptic menu and the attention-mark exception), §3.4 (the resize exception), §4.7 (terminology) and §5 (icons).
+**0.3.1 amendments** (`docs/design/0.3.1/PLAN.md`) are marked "(0.3.1)": §1.5 (lid-closed mode in Awake's Advanced), §3.3 (tabs in the Snaptic menu and the attention-mark exception), §3.4 (the resize exception), §4.7 (terminology) and §5 (icons). The **0.3.3 amendment** to §1.5 is marked "(0.3.3)": the Lid closed section moves to the main Awake page.
 
 ---
 
@@ -106,6 +106,7 @@ Avoid tabs inside pages and nested sheets.
   - No time-limit picker (the limit is a fixed 24 hours) and no separate battery setting (it's derived from Awake's).
   - From a translocated copy, the row is replaced by "Snaptic is running from a temporary location. Move it to Applications to use lid-closed mode."
   - The lid isn't a setting on the main page; the lid route line there points to Advanced or to the menu.
+- **(0.3.3) The "Lid closed" section moves to the main Awake page** (after End sessions automatically), unchanged, and leaves Advanced; the lid route line points to Awake settings or to the menu. The Menu Bar page has a second switch for the same setting under Awake's rows, "Show Keep Awake with the Lid Closed in the Awake menu". Both are locked while lid-closed mode is on. See the 0.3.3 amendments in `docs/design/0.3.1/PLAN.md` B1 and B7.
 
 ### 1.6 Search
 

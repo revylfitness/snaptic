@@ -939,14 +939,24 @@ jobs:
               exit 1
             fi
           }
+          # Stapling and validating ask Apple's CloudKit service; a dropped connection (error 68) is retried rather
+          # than failing the release (v0.3.2's sign, as verify's validate()).
+          stapler() {
+            local try
+            for try in 1 2 3 4 5; do
+              xcrun stapler "$@" && return 0
+              [ "$try" = 5 ] || { echo "stapler $1 failed (try $try of 5); retrying in 20 s" >&2; sleep 20; }
+            done
+            return 1
+          }
           APP="$RUNNER_TEMP/release/Snaptic.app"
           OUT="$RUNNER_TEMP/out"
           rm -rf "$OUT"
           mkdir -p "$OUT"
           ditto -c -k --sequesterRsrc --keepParent "$APP" "$RUNNER_TEMP/notarize/Snaptic.zip"
           notarize "$RUNNER_TEMP/notarize/Snaptic.zip"
-          xcrun stapler staple "$APP"
-          xcrun stapler validate "$APP"
+          stapler staple "$APP"
+          stapler validate "$APP"
           ASSESSMENT=$(spctl -a -t exec -vv "$APP" 2>&1)
           echo "$ASSESSMENT"
           grep -q 'source=Notarized Developer ID' <<< "$ASSESSMENT" || { echo "Gatekeeper doesn't accept the app." >&2; exit 1; }
@@ -1043,10 +1053,20 @@ jobs:
               exit 1
             fi
           }
+          # Stapling and validating ask Apple's CloudKit service; a dropped connection (error 68) is retried rather
+          # than failing the release (v0.3.2's sign, as verify's validate()).
+          stapler() {
+            local try
+            for try in 1 2 3 4 5; do
+              xcrun stapler "$@" && return 0
+              [ "$try" = 5 ] || { echo "stapler $1 failed (try $try of 5); retrying in 20 s" >&2; sleep 20; }
+            done
+            return 1
+          }
           OUT="$RUNNER_TEMP/out"
           notarize "$OUT/Snaptic.dmg"
-          xcrun stapler staple "$OUT/Snaptic.dmg"
-          xcrun stapler validate "$OUT/Snaptic.dmg"
+          stapler staple "$OUT/Snaptic.dmg"
+          stapler validate "$OUT/Snaptic.dmg"
           ASSESSMENT=$(spctl -a -t open --context context:primary-signature -vv "$OUT/Snaptic.dmg" 2>&1)
           echo "$ASSESSMENT"
           grep -q 'source=Notarized Developer ID' <<< "$ASSESSMENT" || { echo "Gatekeeper doesn't accept the disk image." >&2; exit 1; }

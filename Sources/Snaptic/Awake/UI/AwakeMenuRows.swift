@@ -387,8 +387,8 @@ import SnapticKit
     }
 
     /// Which `lidRoute` line follows the lid warning in Settings (0.3.1 B1): choose it in the menu while the mode is
-    /// effective; turn it on in Advanced while only its switch is off on a Mac that could use it; otherwise (no lid,
-    /// no battery, translocated, a kill switch or Safe Mode) the 0.3 text.
+    /// effective; turn it on in Awake settings while only its switch is off on a Mac that could use it; otherwise (no
+    /// lid, no battery, translocated, a kill switch or Safe Mode) the 0.3 text.
     private static func lidRoute(_ ctx: AwakeContext) -> AwakeLidRoute {
         let rt = ctx.runtime
         if rt.isEffective(.lidClosed) { return .available }

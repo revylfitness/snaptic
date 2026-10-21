@@ -534,10 +534,81 @@ extension AwakePresentationTests {
                        "Choose Keep Awake with the Lid Closed in the Awake menu. Asks for an administrator password each time.")
         XCTAssertEqual(AwakeLidText.customHelp, "Start… asks for an administrator password.")
         XCTAssertEqual(AwakeLidText.customStart, "Start…")
-        XCTAssertEqual(AwakeLidText.advancedFooter,
+        // 0.3.3: the Menu Bar page's copy of the switch says what it adds to the Awake menu.
+        XCTAssertEqual(AwakeLidText.menuBarSetting, "Show Keep Awake with the Lid Closed in the Awake menu")
+        XCTAssertTrue(AwakeLidText.menuBarSetting.contains(AwakeLidText.title))
+        // r1 P1-4: it adds the menu item; only choosing that asks for the password. P1-2: it carries the bag warning.
+        XCTAssertEqual(AwakeLidText.menuBarHelp,
+                       "Adds Keep Awake with the Lid Closed to the Awake menu, the same switch as on the Awake page. Choosing it asks for an administrator password each time. Use it on a hard surface, not in a bag.")
+        XCTAssertFalse(AwakeLidText.menuBarHelp.contains("Turns on"))
+        XCTAssertTrue(AwakeLidText.footer.hasSuffix("Use it on a hard surface, not in a bag."))
+        XCTAssertTrue(AwakeLidText.menuBarHelp.hasSuffix("Use it on a hard surface, not in a bag."))
+        // r1 P1-1: both switches while the mode is on. r2 P2-4: Options ▾ on the Awake page too (Don’t Show has no menu).
+        XCTAssertEqual(AwakeLidText.turnOffFirst,
+                       "Lid-closed mode is on. Turn it off first, in the Awake menu or in Options on the Awake page.")
+        // r2 P2-1: Restore Awake Defaults… kept the opt-in, and says so.
+        XCTAssertEqual(AwakeLidText.restoreKept,
+                       "Restored, except “Keep awake with the lid closed”, which can’t change while lid-closed mode is on.")
+        XCTAssertEqual(AwakeLidText.section, "Lid closed")
+        XCTAssertEqual(AwakeLidText.footer,
                        "While lid-closed mode is on, your Mac can’t sleep for low battery or heat. Awake turns it off at the Awake page’s battery level (at least 10%), when your Mac gets hot, or after 24 hours. Use it on a hard surface, not in a bag.")
         XCTAssertEqual(AwakeLidText.translocated,
                        "Snaptic is running from a temporary location. Move it to Applications to use lid-closed mode.")
+    }
+
+    /// 0.3.3 (r1 P1-1, P1-3, the code review's shared predicate): where the opt-in shows, what locks it and why, for
+    /// both pages. Expectations are written out by hand, row by row.
+    func testLidOptInStates() {
+        func optIn(battery: Bool = true, running: Bool = true, translocated: Bool = false,
+                   killSwitches: Set<AwakeFeature> = [], safeMode: Bool = false,
+                   lidMode: AwakeLidMode = .off) -> AwakeLidOptIn {
+            AwakeLidOptIn.of(battery: battery, awakeRunning: running, translocated: translocated,
+                             killSwitches: killSwitches, safeMode: safeMode, lidMode: lidMode)
+        }
+        let on = AwakeLidMode.on(token: "t", pid: 9, until: 100)
+        XCTAssertEqual(optIn(), .available)
+        XCTAssertEqual(optIn(battery: false), .hidden)
+        XCTAssertEqual(optIn(battery: false, translocated: true, lidMode: on), .hidden, "no battery wins")
+        XCTAssertEqual(optIn(translocated: true), .translocated)
+        XCTAssertEqual(optIn(running: false, translocated: true), .translocated, "the reason shows while Awake is off")
+        XCTAssertEqual(optIn(running: false), .awakeOff)
+        XCTAssertEqual(optIn(running: false, safeMode: true), .awakeOff)
+        XCTAssertEqual(optIn(killSwitches: [.lidClosed]), .locked(.killSwitch))
+        XCTAssertEqual(optIn(killSwitches: [.lidClosed], safeMode: true), .locked(.killSwitch), "named first")
+        XCTAssertEqual(optIn(safeMode: true), .locked(.safeMode))
+        XCTAssertEqual(optIn(killSwitches: [.history]), .available, "another feature's kill switch")
+        XCTAssertEqual(optIn(lidMode: on), .lidModeOn)
+        XCTAssertEqual(optIn(lidMode: .authorizing(token: "t")), .lidModeOn)
+        XCTAssertEqual(optIn(lidMode: .verifying(token: "t", pid: 9)), .lidModeOn)
+        XCTAssertEqual(optIn(lidMode: .stopping(token: "t")), .lidModeOn)
+        XCTAssertEqual(optIn(lidMode: .failed(.verify)), .available, "failed is a toast on the way to off")
+        XCTAssertEqual(optIn(safeMode: true, lidMode: on), .locked(.safeMode))
+
+        // (state, shows the switch, enabled, reason, kill-switch row)
+        let rows: [(AwakeLidOptIn, Bool, Bool, String?, Bool)] = [
+            (.hidden, false, false, nil, false),
+            (.translocated, false, false, nil, false),
+            (.awakeOff, true, false, nil, false),
+            (.locked(.killSwitch), true, false, nil, true),
+            (.locked(.safeMode), true, false, "Paused in Safe Mode.", false),
+            (.lidModeOn, true, false, "Lid-closed mode is on. Turn it off first, in the Awake menu or in Options on the Awake page.", false),
+            (.available, true, true, nil, false),
+        ]
+        for (state, shows, enabled, reason, lockRow) in rows {
+            XCTAssertEqual(state.showsSwitch, shows, "\(state)")
+            XCTAssertEqual(state.isEnabled, enabled, "\(state)")
+            XCTAssertEqual(state.disabledReason, reason, "\(state)")
+            XCTAssertEqual(state.showsKillSwitchRow, lockRow, "\(state)")
+        }
+
+        // The writable-bundle note: switch on, bundle writable, nothing but the mode itself locking it.
+        XCTAssertTrue(AwakeLidOptIn.available.showsBundleNote(isOn: true, bundleWritable: true))
+        XCTAssertTrue(AwakeLidOptIn.lidModeOn.showsBundleNote(isOn: true, bundleWritable: true))
+        XCTAssertFalse(AwakeLidOptIn.available.showsBundleNote(isOn: false, bundleWritable: true))
+        XCTAssertFalse(AwakeLidOptIn.available.showsBundleNote(isOn: true, bundleWritable: false))
+        for state in [AwakeLidOptIn.hidden, .translocated, .awakeOff, .locked(.killSwitch), .locked(.safeMode)] {
+            XCTAssertFalse(state.showsBundleNote(isOn: true, bundleWritable: true), "\(state)")
+        }
     }
 
     /// B1: the lid line is the first extra while the mode is on; the cap's clock when the cap ends first.
@@ -578,7 +649,11 @@ extension AwakePresentationTests {
 
     func testLidRouteVariants() {
         XCTAssertEqual(AwakeStatusText.lidRoute(.featureOff),
-                       "To keep it awake with the lid closed, connect power and an external display, or turn on lid-closed mode in Awake › Advanced.")
+                       "To keep it awake with the lid closed, connect power and an external display, or turn on lid-closed mode in Awake settings.")
+        // 0.3.3: the switch left Awake › Advanced, so no variant points there.
+        for route in AwakeLidRoute.allCases {
+            XCTAssertFalse(AwakeStatusText.lidRoute(route).contains("Advanced"), route.rawValue)
+        }
         XCTAssertEqual(AwakeStatusText.lidRoute(.available),
                        "To keep it awake with the lid closed, connect power and an external display, or choose Keep Awake with the Lid Closed in the Awake menu.")
         XCTAssertEqual(AwakeStatusText.lidRoute(.unavailable),
