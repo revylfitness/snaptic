@@ -144,13 +144,17 @@ jobs:
 
       # The workflow rules need PyYAML, which the image lacks (r3 C3-2): a throwaway virtual environment gets one
       # pinned release by its wheels' hashes, and LINT_REQUIRE_YAML makes a missing one fail rather than skip.
+      # The venv uses the selected Xcode's python3 (3.9 with Xcode 16.4), not the image's: the image moved python3 to
+      # 3.15 (macos-15-arm64 20261104), which PyYAML 6.0.3 has no wheel for, and the pinned Xcode keeps this one fixed.
       - name: Lint
         env:
           LINT_REQUIRE_YAML: "1"
         run: |
           set -o pipefail
           VENV="$RUNNER_TEMP/lint-venv"
-          python3 -m venv "$VENV"
+          PYTHON="$(xcrun --find python3)"
+          "$PYTHON" --version
+          "$PYTHON" -m venv "$VENV"
           # The macOS arm64 wheels of PyYAML 6.0.3 for CPython 3.9 to 3.14.
           {
             printf 'PyYAML==6.0.3'

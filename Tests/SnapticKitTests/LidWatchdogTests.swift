@@ -312,10 +312,14 @@ done
         guard lines.count == 3 else { return }
         XCTAssertTrue(lines[0].hasPrefix("/bin/sh -c '"))
         XCTAssertTrue(lines[0].hasSuffix(" </dev/null >/dev/null 2>&1 || exit $?"))
-        XCTAssertTrue(lines[1].hasPrefix("/usr/bin/nohup /bin/sh -c '"))
+        XCTAssertTrue(lines[1].hasPrefix("trap '' HUP; /bin/sh -c '"))
         XCTAssertTrue(lines[1].hasSuffix(" </dev/null >/dev/null 2>&1 &"))
         XCTAssertEqual(lines[2], "echo $!")
         XCTAssertEqual(lines.filter { $0.hasSuffix("&") }.count, 1, "only the second line is backgrounded")
+        // 0.3.4: nohup can't run under `do shell script … with administrator privileges` on macOS 27 ("can't detach
+        // from console"), and exits before it starts the watchdog.
+        XCTAssertFalse(c.contains("nohup"), "no nohup")
+        XCTAssertEqual(LidWatchdog.defaultCommandTools, [LidWatchdog.shellPath: "/bin/sh"])
         // The quoted words come back exactly: the script, then the mode and the six arguments.
         for (line, mode) in [(lines[0], "check"), (lines[1], "run")] {
             let words = ShellWords.split(line)

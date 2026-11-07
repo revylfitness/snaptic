@@ -464,12 +464,13 @@ Low Power Mode does **not** block the mode. It follows the session's `endOnLowPo
 
 ```
 /bin/sh -c <Q(script)> snaptic-lid check <Q(a1)>…<Q(a6)> </dev/null >/dev/null 2>&1 || exit $?
-/usr/bin/nohup /bin/sh -c <Q(script)> snaptic-lid run <Q(a1)>…<Q(a6)> </dev/null >/dev/null 2>&1 &
+trap '' HUP; /bin/sh -c <Q(script)> snaptic-lid run <Q(a1)>…<Q(a6)> </dev/null >/dev/null 2>&1 &
 echo $!
 ```
 
 - `check` runs in the foreground. Its exit code becomes the `do shell script` error number (TN2065).
-- Only the second line is backgrounded, and `$!` is `nohup`'s pid. `nohup` execs `/bin/sh`, so that is the watchdog's pid.
+- Only the second line's last command is backgrounded. `&` forks a child that execs `/bin/sh`, so `$!` is the watchdog's pid.
+- **0.3.4 amendment: no `nohup`.** Through 0.3.3 the second line started with `/usr/bin/nohup`. On macOS 27, `nohup` run by `do shell script … with administrator privileges` prints "nohup: can't detach from console: No such process" and exits before it execs anything. `$!` was still a pid, so osascript answered `ok <pid>`, the watchdog never ran, sleep was never turned off, and every attempt ended in the failed toast (found on a MacBook Pro on 27.2). `trap '' HUP` now ignores SIGHUP before the fork, and an ignored signal stays ignored across fork and exec, which is all `nohup` added; the script also ignores HUP itself.
 - All output is redirected, so `do shell script` returns at once.
 - `Q` is POSIX single-quoting: `'…'`, with each `'` written as `'\''`.
 - `appleScript(command:prompt:)` escapes `\` as `\\`, `"` as `\"` and LF as `\n`, and refuses every other control character.
@@ -587,7 +588,7 @@ done
 **Late password.** The stop file is written on every failure exit in the app (B3.0) and checked before anything is set.
 
 **Detachment**
-- `nohup` and `&`, with all three standard streams redirected.
+- `trap '' HUP` and `&`, with all three standard streams redirected (0.3.4; `nohup` until then, see Command).
 - osascript's own process group (B3.1 step 4), and the script ignores TSTP, TTIN and TTOU, so a terminal can't stop the watchdog. Stock macOS has no `setsid(1)` and `set -m` needs a terminal, so the script can't leave the group itself. `&` already starts it with INT and QUIT ignored (POSIX, for a shell without job control), and a signal ignored on entry can't be trapped. The script ignores both itself too, so a direct run (as in the shell test) behaves like the real launch: neither ends it (r2 S2-2).
 - The app signals only osascript's pid.
 - HW-31 checks:
@@ -743,7 +744,7 @@ While a Snaptic journal exists, Advanced › Other Apps never says "Snaptic can�
 
 **`AwakeLidMode`, `AwakeLidEnd`, `AwakeLidFailStage`.**
 - `AwakeLidEnd`: `user, sessionEnded, replaced, cap, battery, heat, otherApp, watchdogLost, quit, safeMode, featureOff, moduleStopped`.
-- `AwakeLidFailStage`: `beacon, spawn, args, verify, timeout`.
+- `AwakeLidFailStage`: `beacon, spawn, args, verify, timeout` (`restore` since r2). 0.3.4 adds `preflight` (the kernel value unreadable before the prompt), `exited` (the watchdog quit during verify, which now fails at once instead of after 10 s) and `notOff` (it kept running but the kernel never read 1 in 10 s); all three were `verify` before. The failed toast names the stage (`AwakeLidText.failedToast`), and `EventLog` counts each `lidFailed` stage and `lidLeftover` under a fixed key, so the diagnostics report shows them as counts (still no timestamps, §3.6 security M3).
 - Both are closed `CaseIterable` enums.
 
 **Config, feature and backup.**
@@ -856,7 +857,7 @@ These are numbered after 0.3's HW-23. The list lives here and in README's testin
 | HW-28 | The osascript admin dialog from a Developer ID-signed **and** an ad-hoc Snaptic, each disclaimed and not:<br>• requester name, icon and title;<br>• prompt text;<br>• Touch ID;<br>• Cancel → `err -128`;<br>• no Automation consent;<br>• Displays' dimming overlays move behind it.<br>• osascript ignoring SIGTERM while the password dialog is up, and the SIGKILL 5 s later (r1 S5)<br>• the password dialog comes to the front when lid-closed mode or Turn Sleep Back On… is chosen from the menu (r1 U7) |
 | HW-29 | Captured output of `notifyutil -g com.apple.system.thermalpressurelevel`, `pmset -g batt`, `pmset -g` and `ioreg -r -n IOPMrootDomain -d 1`, on Apple silicon and Intel, macOS 14, 15, 26 and 27. These are golden fixtures for the parsers. |
 | HW-30 | Lid closed on battery:<br>(a) a Keep Display On session with no external display;<br>(b) `caffeinate -d` running in another app;<br>(c) one external display with Keep Display On.<br>Check that:<br>• the Mac stays awake;<br>• the built-in panel goes dark within 35 s in (a), and the external display stays on in (c);<br>• Apple menu › Sleep is greyed out;<br>• the panel wakes on lid open;<br>• the keyboard backlight is recorded;<br>• the indicator's lid glyph is recorded. |
-| HW-31 | Watchdog behaviour:<br>• osascript returns within 1 s;<br>• `ps -p <pid> -o comm,ruid,uid` shows `sh 0 0`;<br>• it survives osascript's exit and a SIGTERM to osascript;<br>• `ps -o pgid` of the watchdog is osascript's pid, not Snaptic's group, and ^Z in the terminal that started a debug build doesn't stop it;<br>• `/usr/bin/stat -f '%HT %u'` prints `Regular File <uid>` for the beacon, and `stat -f %d` of `/var/folders` and of `D` match (else the mode never turns on).<br>Each of these restores sleep (`pmset -g`):<br>• quit;<br>• `kill -9` of Snaptic;<br>• SIGSTOP of Snaptic for 30 s;<br>• the stop file;<br>• the cap;<br>• deleting the beacon in a tight loop (within 10 s);<br>• an induced script error;<br>• `sudo kill -TERM` of the watchdog.<br>Restart with the lid shut (Apple menu › Restart… over Screen Sharing, mode on): the Mac restarts and doesn't go to sleep on the way. Snaptic's quit writes the stop file before launchd's SIGTERM, so the watchdog may take its normal exit; the `halt-<token>` file written at that quit (after `NSWorkspace.willPowerOffNotification`) makes `cleanup` skip `sleepnow` (r2 A2-5, fixed in r3). This row confirms it, and Log Out… with the lid shut likewise doesn't sleep the Mac.<br>• the A2-3 residual: a new request within ~0.1 s of a superseded password acceptance ends with sleep back on (r3)<br>• `/bin/sh` pointed at zsh (`sudo ln -sf /bin/zsh /private/var/select/sh`, test machine only; put it back to bash afterwards): the watchdog still restores sleep on every exit (r3 security)<br>• a restart or log out cancelled by another app after `willPowerOff`, then a quit with the lid shut: record whether `sleepnow` is skipped (r4 C4-4, accepted for 0.3.1) |
+| HW-31 | Watchdog behaviour:<br>• 0.3.4: started from the app, the watchdog is still running 5 s after osascript returns and `pmset -g` shows `SleepDisabled 1` (on 27.2, `nohup` exited at once here and nothing caught it);<br>• osascript returns within 1 s;<br>• `ps -p <pid> -o comm,ruid,uid` shows `sh 0 0`;<br>• it survives osascript's exit and a SIGTERM to osascript;<br>• `ps -o pgid` of the watchdog is osascript's pid, not Snaptic's group, and ^Z in the terminal that started a debug build doesn't stop it;<br>• `/usr/bin/stat -f '%HT %u'` prints `Regular File <uid>` for the beacon, and `stat -f %d` of `/var/folders` and of `D` match (else the mode never turns on).<br>Each of these restores sleep (`pmset -g`):<br>• quit;<br>• `kill -9` of Snaptic;<br>• SIGSTOP of Snaptic for 30 s;<br>• the stop file;<br>• the cap;<br>• deleting the beacon in a tight loop (within 10 s);<br>• an induced script error;<br>• `sudo kill -TERM` of the watchdog.<br>Restart with the lid shut (Apple menu › Restart… over Screen Sharing, mode on): the Mac restarts and doesn't go to sleep on the way. Snaptic's quit writes the stop file before launchd's SIGTERM, so the watchdog may take its normal exit; the `halt-<token>` file written at that quit (after `NSWorkspace.willPowerOffNotification`) makes `cleanup` skip `sleepnow` (r2 A2-5, fixed in r3). This row confirms it, and Log Out… with the lid shut likewise doesn't sleep the Mac.<br>• the A2-3 residual: a new request within ~0.1 s of a superseded password acceptance ends with sleep back on (r3)<br>• `/bin/sh` pointed at zsh (`sudo ln -sf /bin/zsh /private/var/select/sh`, test machine only; put it back to bash afterwards): the watchdog still restores sleep on every exit (r3 security)<br>• a restart or log out cancelled by another app after `willPowerOff`, then a quit with the lid shut: record whether `sleepnow` is skipped (r4 C4-4, accepted for 0.3.1) |
 | HW-32 | Restart while on: `SleepDisabled` persists; the leftover rows appear in every menu with Awake turned off; Turn Sleep Back On… and Keep Sleep Off both work. |
 | HW-33 | The battery floor restores sleep while Snaptic is SIGSTOPped. |
 | HW-34 | The cap, the battery floor and heat, each ending with the lid closed on battery and no display: the Mac is asleep within 30 s (`pmset -g log`), including right after a cap end. |
@@ -1309,7 +1310,7 @@ New `ControlState` cases: `updaterAvailable`, `updateAvailable` and `v031Welcome
 | parity m7 (resume) | The gate ends the mode on resume, with a header line |
 | parity m9 (upgrade item, copy) | Moved to the Displays tab; Menu Bar copy says "set to Show in Snaptic Menu" |
 | sec m1, m5 (parse fails toward off; non-integers) | `num` guards; three-valued `sd` |
-| sec m2 (detach) | `nohup` with redirects, pid-only signals, HW-31 |
+| sec m2 (detach) | `nohup` with redirects (0.3.4: `trap '' HUP` instead, B3.2), pid-only signals, HW-31 |
 | sec m3 (fake journal prompts) | A prompt only while `SleepDisabled` reads 1; no journal field ever reaches root |
 | sec m4 (`kill -0` as root) | Comment says it is a liveness hint; the beacon is the bound |
 | code m3 (EmergencyActions runs off main) | B3.3 |

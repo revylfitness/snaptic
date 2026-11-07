@@ -707,6 +707,23 @@ extension AwakePresentationTests {
                        "Lid-closed mode turns off in 5 minutes. If the lid is closed then, your Mac goes to sleep.")
         XCTAssertEqual(AwakeLidText.verifying, "Turning on lid-closed mode…")
         XCTAssertEqual(AwakeLidText.couldNotTurnOn, "Snaptic couldn’t turn on lid-closed mode. Try again.")
+        // 0.3.4: the failed toast names the step.
+        let reasons: [AwakeLidFailStage: String] = [
+            .preflight: "it couldn’t read your Mac’s sleep setting",
+            .beacon: "it couldn’t set up its files",
+            .args: "its helper refused the settings",
+            .spawn: "the password step failed",
+            .timeout: "the password dialog didn’t finish in time",
+            .verify: "its helper didn’t start",
+            .exited: "its helper stopped before sleep turned off",
+            .notOff: "sleep didn’t turn off within 10 seconds",
+        ]
+        for stage in AwakeLidFailStage.allCases {
+            let expected = reasons[stage].map { "Snaptic couldn’t turn on lid-closed mode because \($0). Try again." }
+            XCTAssertEqual(AwakeLidText.failedToast(stage), expected ?? AwakeLidText.couldNotTurnOn, "\(stage)")
+        }
+        XCTAssertEqual(Set(AwakeLidFailStage.allCases.map(AwakeLidText.failedToast)).count,
+                       AwakeLidFailStage.allCases.count, "each stage has its own text")
         XCTAssertEqual(AwakeLidText.alreadyOff,
                        "Sleep is already turned off for this Mac by another app or command, so it stays awake with the lid closed.")
         XCTAssertEqual(AwakeLidText.replaced, "Replaced the running session.")

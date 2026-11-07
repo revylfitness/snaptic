@@ -768,6 +768,8 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
 
 ## Upgrading and downgrading
 
+**0.3.3 → 0.3.4.** Snaptic updates itself, and no setting is lost. Lid-closed mode turns on again on macOS 27, where every attempt used to fail.
+
 **0.3.2 → 0.3.3.** Snaptic updates itself, and no setting is lost. Lid-closed mode’s opt-in moved from **Awake › Advanced…** to the Awake page’s **Lid closed** section and the Menu Bar page; if it was on, it stays on.
 
 **0.3 → 0.3.1.** No setting is lost, and nothing about your modules, sessions, or rules changes. Coming from 0.2 or 0.1, the steps below apply too; from 0.2, the 0.2 → 0.3 steps further down run first.

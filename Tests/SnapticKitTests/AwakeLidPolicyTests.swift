@@ -28,7 +28,7 @@ final class AwakeLidPolicyTests: XCTestCase {
         XCTAssertEqual(modes.map(\.rowState), [.off, .authorizing, .verifying, .on, .stopping, .off])
         XCTAssertEqual(AwakeLidEnd.allCases.count, 12)
         XCTAssertEqual(AwakeLidFailStage.allCases.map(\.rawValue), ["beacon", "spawn", "args", "verify", "timeout",
-                                                                       "restore"])
+                                                                       "restore", "preflight", "exited", "notOff"])
     }
 
     // MARK: Floor, cap
@@ -139,6 +139,17 @@ final class AwakeLidPolicyTests: XCTestCase {
         XCTAssertEqual(AwakeLidPolicy.launchStep(LidWatchdog.parseResult("err -128\n")), .canceled)
         XCTAssertEqual(AwakeLidPolicy.launchStep(LidWatchdog.parseResult("err 3\n")), .alreadyOff)
         XCTAssertEqual(AwakeLidPolicy.launchStep(LidWatchdog.parseResult("ok 1\n")), .failed(.spawn))
+    }
+
+    /// 0.3.4: a watchdog that quits during verify fails at once (`exited`), whatever the kernel still reads.
+    func testVerifyPoll() {
+        XCTAssertEqual(AwakeLidPolicy.verifyPoll(watchdogAlive: true, kernelSleepDisabled: true), .on)
+        XCTAssertEqual(AwakeLidPolicy.verifyPoll(watchdogAlive: true, kernelSleepDisabled: false), .wait)
+        XCTAssertEqual(AwakeLidPolicy.verifyPoll(watchdogAlive: true, kernelSleepDisabled: nil), .wait, "unreadable")
+        for kernel in [true, false, nil] as [Bool?] {
+            XCTAssertEqual(AwakeLidPolicy.verifyPoll(watchdogAlive: false, kernelSleepDisabled: kernel), .failed(.exited),
+                           "\(String(describing: kernel)): its cleanup is restoring sleep")
+        }
     }
 
     func testWatchdogVerified() {

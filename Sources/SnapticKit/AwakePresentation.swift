@@ -1026,6 +1026,26 @@ package enum AwakeLidText {
         }
     }
     package static let couldNotTurnOn = L("Snaptic couldn’t turn on lid-closed mode. Try again.")
+
+    /// The failed toast (B3.0), naming the step that failed (0.3.4): one text for every stage hid which one broke.
+    /// `restore` isn't a turn-on failure and gets the plain text.
+    package static func failedToast(_ stage: AwakeLidFailStage) -> String {
+        switch stage {
+        case .preflight:
+            return L("Snaptic couldn’t turn on lid-closed mode because it couldn’t read your Mac’s sleep setting. Try again.")
+        case .beacon: return L("Snaptic couldn’t turn on lid-closed mode because it couldn’t set up its files. Try again.")
+        case .args: return L("Snaptic couldn’t turn on lid-closed mode because its helper refused the settings. Try again.")
+        case .spawn: return L("Snaptic couldn’t turn on lid-closed mode because the password step failed. Try again.")
+        case .timeout:
+            return L("Snaptic couldn’t turn on lid-closed mode because the password dialog didn’t finish in time. Try again.")
+        case .verify: return L("Snaptic couldn’t turn on lid-closed mode because its helper didn’t start. Try again.")
+        case .exited:
+            return L("Snaptic couldn’t turn on lid-closed mode because its helper stopped before sleep turned off. Try again.")
+        case .notOff:
+            return L("Snaptic couldn’t turn on lid-closed mode because sleep didn’t turn off within 10 seconds. Try again.")
+        case .restore: return couldNotTurnOn
+        }
+    }
     /// `check` found sleep already turned off (exit 3, or the preflight read 1).
     package static let alreadyOff = L("Sleep is already turned off for this Mac by another app or command, so it stays awake with the lid closed.")
     /// An idle-submenu start that replaced another governing session.

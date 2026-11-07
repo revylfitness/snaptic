@@ -110,13 +110,12 @@ package enum LidWatchdog {
     /// Every absolute tool path the script uses (tested against the script's text).
     package static let toolPaths = ["/bin/date", "/bin/kill", "/bin/sleep", "/usr/bin/awk", "/usr/bin/notifyutil",
                                     "/usr/bin/pmset", "/usr/bin/sed", "/usr/bin/stat", "/usr/sbin/ioreg"]
-    /// The shell that runs the script, and `nohup` (the command's own tools, B3.2).
+    /// The shell that runs the script (the command's only tool, B3.2). No `nohup`: see `command(argv:script:tools:)`.
     package static let shellPath = "/bin/sh"
-    package static let nohupPath = "/usr/bin/nohup"
 
     /// Tool path → the path to run instead (the shell test swaps in stubs); by default each path is itself.
     package static let defaultTools: [String: String] = Dictionary(uniqueKeysWithValues: toolPaths.map { ($0, $0) })
-    package static let defaultCommandTools: [String: String] = [shellPath: shellPath, nohupPath: nohupPath]
+    package static let defaultCommandTools: [String: String] = [shellPath: shellPath]
 
     /// The root watchdog, exactly as PLAN 0.3.1 B3.2 states it (golden-tested). A raw literal, so `\(` and `\1` stay
     /// literal; LF is its only control byte (tested). Its only writes are `pmset -a disablesleep 0|1` and
@@ -326,8 +325,15 @@ done
     }
 
     /// Three lines joined with LF: the foreground `check` (its exit code becomes the `do shell script` error
-    /// number), the backgrounded `run` (`$!` is nohup's pid, and nohup execs the shell, so it is the watchdog's), then
-    /// `echo $!`. Every stream is redirected, so `do shell script` returns at once.
+    /// number), the backgrounded `run`, then `echo $!`. Every stream is redirected, so `do shell script` returns at
+    /// once.
+    ///
+    /// The `run` line has no `nohup` (0.3.4). On macOS 27, `/usr/bin/nohup` started by `do shell script … with
+    /// administrator privileges` prints "can't detach from console: No such process" and exits before it execs
+    /// anything, yet `$!` is still a pid, so osascript answered `ok <pid>` for a watchdog that never ran and sleep was
+    /// never turned off. Instead, `trap '' HUP` makes SIGHUP ignored before the fork, and an ignored signal stays
+    /// ignored across fork and exec, which is what nohup did. The script ignores HUP itself too (its second line).
+    /// `&` on a simple command forks a child that execs the shell, so `$!` is the watchdog's pid.
     package static func command(_ args: Arguments) -> String {
         command(argv: args.argv, script: defaultScript, tools: defaultCommandTools)
     }
@@ -335,12 +341,11 @@ done
     /// The shell test's variant: any argv (to reach the script's own refusals), script and command tools.
     static func command(argv: [String], script: String, tools: [String: String]) -> String {
         let sh = tools[shellPath].flatMap { isSafePath($0) ? $0 : nil } ?? shellPath
-        let nohup = tools[nohupPath].flatMap { isSafePath($0) ? $0 : nil } ?? nohupPath
         let body = sh + " -c " + quoted(script) + " snaptic-lid"
         let args = argv.map(quoted).joined(separator: " ")
         return [
             body + " check " + args + " </dev/null >/dev/null 2>&1 || exit $?",
-            nohup + " " + body + " run " + args + " </dev/null >/dev/null 2>&1 &",
+            "trap '' HUP; " + body + " run " + args + " </dev/null >/dev/null 2>&1 &",
             "echo $!",
         ].joined(separator: "\n")
     }
