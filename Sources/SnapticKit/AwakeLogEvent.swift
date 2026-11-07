@@ -30,6 +30,18 @@ package enum AwakeLogEvent: Equatable, Sendable {
         }
     }
 
+    /// The counter this case bumps in `EventLog.shared.awakeCounts` (no timestamps, so the diagnostics report may
+    /// show it): a counted case's own text; for the lid's ring cases a fixed key as well (0.3.4), so a report says
+    /// which turn-on step failed even though the ring itself is never exported; nil for the other ring cases.
+    package var counterKey: String? {
+        if isCounted { return text }
+        switch self {
+        case .lidFailed(let stage): return "awake.lid.failed." + stage.rawValue
+        case .lidLeftover: return "awake.lid.leftover"
+        default: return nil
+        }
+    }
+
     /// Fixed text per case: the counter key for counted cases ("awake.session.started.duration"), a sentence for ring
     /// cases. Rule numbers are 1-based and bounded by AwakeTrigger.maxTriggers.
     package var text: String {

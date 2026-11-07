@@ -57,10 +57,15 @@ package enum AwakeLidEnd: String, Codable, CaseIterable, Sendable {
          moduleStopped
 }
 
-/// Where turning lid-closed mode on failed (B5; logged, never shown). `restore`: Turn Sleep Back On…'s script ran and
-/// reported an error, told apart from a spawn that failed (r2 C2-5).
+/// Where turning lid-closed mode on failed (B5): logged, counted for the diagnostics report, and named by the failed
+/// toast (`AwakeLidText.failedToast`, 0.3.4). `restore`: Turn Sleep Back On…'s script ran and reported an error, told
+/// apart from a spawn that failed (r2 C2-5).
+/// - `verify`: the pid osascript returned wasn't a root watchdog started after the spawn (gone, or someone else's).
+/// - 0.3.4: `preflight` (the kernel's `SleepDisabled` unreadable before the prompt, `verify` until then), `exited`
+///   (the watchdog quit before the kernel read 1) and `notOff` (it kept running, but the kernel never read 1 within
+///   `verifyLimitSeconds`); the last two were both `verify` until then.
 package enum AwakeLidFailStage: String, Codable, CaseIterable, Sendable {
-    case beacon, spawn, args, verify, timeout, restore
+    case beacon, spawn, args, verify, timeout, restore, preflight, exited, notOff
 }
 
 /// `~/Library/Application Support/Snaptic/awake/lid.json` (B3.1 step 2): one slot, 0600, written atomically. No field
@@ -170,6 +175,16 @@ package enum AwakeLidLaunchStep: Equatable, Sendable {
     /// `check` exited 3: the "Sleep is already turned off…" toast; the session starts or continues without the mode.
     case alreadyOff
     /// "Snaptic couldn’t turn on lid-closed mode. Try again." (`args` for the script's 64, else `spawn`).
+    case failed(AwakeLidFailStage)
+}
+
+/// What one verify poll found (B3.1 step 6, `AwakeLidPolicy.verifyPoll`).
+package enum AwakeLidVerifyPoll: Equatable, Sendable {
+    /// The kernel reads 1 with the watchdog running: the mode is on.
+    case on
+    /// Not yet: poll again, until `verifyLimitSeconds` (then `notOff`).
+    case wait
+    /// The failed toast with this stage.
     case failed(AwakeLidFailStage)
 }
 
@@ -514,6 +529,14 @@ package enum AwakeLidPolicy {
         case .failed(64): return .failed(.args)
         case .failed: return .failed(.spawn)
         }
+    }
+
+    /// One verify poll (B3.1 step 6). The watchdog gone fails at once with `exited` (0.3.4: it waited out the
+    /// 10 s), even when the kernel still reads 1: its cleanup is turning sleep back on. Otherwise a kernel reading of
+    /// 1 turns the mode on, and anything else waits for the next poll; `verifyLimitSeconds` without one is `notOff`.
+    package static func verifyPoll(watchdogAlive: Bool, kernelSleepDisabled: Bool?) -> AwakeLidVerifyPoll {
+        guard watchdogAlive else { return .failed(.exited) }
+        return kernelSleepDisabled == true ? .on : .wait
     }
 
     /// The watchdog's identity at verify (B3.1 step 6): real uid 0 and started after the spawn (both from

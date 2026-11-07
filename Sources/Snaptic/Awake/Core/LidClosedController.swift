@@ -312,7 +312,7 @@ final class LidBeacon: @unchecked Sendable {
             (LidSystem.kernelSleepDisabled(), OtherAssertionsReader.sleepDisabledPreference())
         }
         guard var p = pending, p.token == token, let ctx = context else { return }
-        guard let kernel else { return abandon(token, failure: .verify, toast: AwakeLidText.couldNotTurnOn) }
+        guard let kernel else { return abandon(token, failure: .preflight) }
         if kernel || preference {
             // Someone else's setting: never touched. The session starts or continues without the mode.
             abandon(token, failure: nil, toast: AwakeLidText.alreadyOff)
@@ -323,16 +323,16 @@ final class LidBeacon: @unchecked Sendable {
         let now = AwakeModule.clockNow()
         let journal = AwakeLidJournal(token: token, bootSessionUUID: now.bootSession, startedAtWall: now.wall,
                                       startedAtContinuous: now.continuous, floor: p.floor)
-        guard LidJournalStore.write(journal) else { return abandon(token, failure: .beacon, toast: AwakeLidText.couldNotTurnOn) }
+        guard LidJournalStore.write(journal) else { return abandon(token, failure: .beacon) }
         p.stage = .journaled
         pending = p
         // 3. The beacon directory, the beacon and the heartbeat (it runs while the dialog waits, too).
         guard let dir = LidSystem.beaconDirectory(), LidSystem.prepareBeaconDirectory(dir) else {
-            return abandon(token, failure: .beacon, toast: AwakeLidText.couldNotTurnOn)
+            return abandon(token, failure: .beacon)
         }
         LidSystem.clearBeacons(dir)
         guard let beacon = LidBeacon(directory: dir, token: token) else {
-            return abandon(token, failure: .beacon, toast: AwakeLidText.couldNotTurnOn)
+            return abandon(token, failure: .beacon)
         }
         self.beacon = beacon
         let target = CallbackTarget(self)
@@ -348,7 +348,7 @@ final class LidBeacon: @unchecked Sendable {
         guard let args = LidWatchdog.Arguments.validated(uid: getuid(), pid: getpid(), token: token,
                                                          capSeconds: LidWatchdog.capSeconds, floor: p.floor, dir: dir),
               let script = LidWatchdog.startScript(args, prompt: LidWatchdog.promptText(floor: p.floor)) else {
-            return abandon(token, failure: .args, toast: AwakeLidText.couldNotTurnOn)
+            return abandon(token, failure: .args)
         }
         p.spawnWall = Date().timeIntervalSince1970
         p.spawnContinuous = AwakeModule.clockNow().continuous
@@ -365,7 +365,7 @@ final class LidBeacon: @unchecked Sendable {
         } catch {
             // The spawner throws only before SIGCONT: osascript never ran.
             if pending?.token == token { pending?.stage = .journaled }
-            return abandon(token, failure: .spawn, toast: AwakeLidText.couldNotTurnOn)
+            return abandon(token, failure: .spawn)
         }
         guard pending?.token == token else {
             handle.interrupt()   // superseded while osascript was being checked
@@ -382,7 +382,7 @@ final class LidBeacon: @unchecked Sendable {
         guard let p = pending, p.token == token, case .authorizing = mode else { return }
         let elapsed = AwakeModule.clockNow().continuous - p.spawnContinuous
         if timedOut || elapsed >= AwakeLidPolicy.osascriptTimeoutSeconds {
-            return abandon(token, failure: .timeout, toast: AwakeLidText.couldNotTurnOn)
+            return abandon(token, failure: .timeout)
         }
         let outcome = LidWatchdog.parseResult(output)
         switch AwakeLidPolicy.launchStep(outcome) {
@@ -394,11 +394,12 @@ final class LidBeacon: @unchecked Sendable {
             abandon(token, failure: nil, toast: AwakeLidText.alreadyOff, outcome: outcome)
             startWithoutMode(p)
         case .failed(let stage):
-            abandon(token, failure: stage, toast: AwakeLidText.couldNotTurnOn, outcome: outcome)
+            abandon(token, failure: stage, outcome: outcome)
         }
     }
 
-    /// 6. The watchdog is root's and started after the spawn; then the kernel must read 1 within 10 s.
+    /// 6. The watchdog is root's and started after the spawn; then the kernel must read 1 within 10 s while it keeps
+    /// running (0.3.4: a watchdog that quits fails at once with `exited`, not after the 10 s).
     private func verify(_ token: String, pid: Int32) async {
         guard let p = pending, p.token == token else { return }
         set(.verifying(token: token, pid: pid))
@@ -408,7 +409,7 @@ final class LidBeacon: @unchecked Sendable {
         guard instance != 0, AwakeLidPolicy.watchdogVerified(realUID: UInt32(exactly: uid),
                                                              startTime: Double(instance) / 1_000_000,
                                                              spawnedAt: p.spawnWall) else {
-            return abandon(token, failure: .verify, toast: AwakeLidText.couldNotTurnOn)
+            return abandon(token, failure: .verify)
         }
         if var journal = LidJournalStore.read(), journal.token == token {
             journal.pid = pid
@@ -419,13 +420,16 @@ final class LidBeacon: @unchecked Sendable {
         for poll in 1...Self.verifyPolls {
             try? await Task.sleep(nanoseconds: Self.verifyPollNanoseconds)
             guard pending?.token == token else { return }   // superseded meanwhile
-            if LidSystem.kernelSleepDisabled() == true {
-                turnedOn(token, pid: pid)
-                return
+            let alive = SNProcess.instanceID(for: pid) == instance
+            switch AwakeLidPolicy.verifyPoll(watchdogAlive: alive,
+                                             kernelSleepDisabled: alive ? LidSystem.kernelSleepDisabled() : nil) {
+            case .on: return turnedOn(token, pid: pid)
+            case .failed(let stage): return abandon(token, failure: stage)
+            case .wait: break
             }
             if poll == Self.slowVerifyPolls { context?.host.toasts.show(AwakeLidText.verifying) }
         }
-        abandon(token, failure: .verify, toast: AwakeLidText.couldNotTurnOn)
+        abandon(token, failure: .notOff)
     }
 
     private func turnedOn(_ token: String, pid: Int32) {
@@ -491,8 +495,9 @@ final class LidBeacon: @unchecked Sendable {
     /// Every exit from `authorizing` or `verifying` other than into `on` (B3.0): the stop file, the heartbeat stopped;
     /// when a watchdog may have run, the journal kept until the kernel reads 0 (still 1 after 30 s: the leftover rows),
     /// otherwise the journal goes at once and a `SleepDisabled` of 1 stays someone else's (B3.1, B3.4); one toast at
-    /// most. `outcome`: osascript's answer, when there was one.
-    private func abandon(_ token: String, failure: AwakeLidFailStage?, toast: String?,
+    /// most: by default a failure's own (`AwakeLidText.failedToast`, naming the stage), none without a failure.
+    /// `outcome`: osascript's answer, when there was one.
+    private func abandon(_ token: String, failure: AwakeLidFailStage?, toast: String? = nil,
                          outcome: LidWatchdog.Outcome? = nil) {
         guard let p = pending, p.token == token else { return }
         pending = nil
@@ -512,7 +517,7 @@ final class LidBeacon: @unchecked Sendable {
             EventLog.shared.record(AwakeLogEvent.lidFailed(failure))
             set(.failed(failure))
         }
-        if let toast { context?.host.toasts.show(toast) }
+        if let toast = toast ?? failure.map(AwakeLidText.failedToast) { context?.host.toasts.show(toast) }
         set(.off)
     }
 

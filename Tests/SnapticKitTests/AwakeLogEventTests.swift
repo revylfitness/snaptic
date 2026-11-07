@@ -65,6 +65,16 @@ extension AwakeLogEventTests {
         XCTAssertEqual(AwakeLogEvent.lidFailed(.verify).text, "Lid-closed mode couldn't turn on (verify).")
         XCTAssertEqual(AwakeLogEvent.lidFailed(.restore).text, "Turn Sleep Back On's script reported an error.")
         XCTAssertEqual(AwakeLogEvent.lidLeftover.text, "Sleep was found turned off after an earlier lid-closed session.")
+        // 0.3.4: the lid's ring cases are counted too, under fixed keys (the diagnostics report shows counts only).
+        XCTAssertEqual(AwakeLogEvent.lidFailed(.verify).counterKey, "awake.lid.failed.verify")
+        XCTAssertEqual(AwakeLogEvent.lidFailed(.exited).counterKey, "awake.lid.failed.exited")
+        XCTAssertEqual(AwakeLogEvent.lidLeftover.counterKey, "awake.lid.leftover")
+        XCTAssertEqual(AwakeLogEvent.lidOn.counterKey, "awake.lid.on")
+        XCTAssertNil(AwakeLogEvent.assertionFailed.counterKey, "other ring cases stay uncounted")
+        for e in lid { XCTAssertNotNil(e.counterKey, e.text) }
+        for e in every where e.isCounted { XCTAssertEqual(e.counterKey, e.text) }
+        let keys = (every + lid).compactMap(\.counterKey)
+        XCTAssertEqual(Set(keys).count, keys.count, "every counter has its own key")
         let texts = (every + lid).map(\.text)
         XCTAssertEqual(Set(texts).count, texts.count, "every case has its own text")
         for t in lid.map(\.text) {

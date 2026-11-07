@@ -55,7 +55,9 @@ final class LidWatchdogShellTests: XCTestCase {
             Thread.sleep(forTimeInterval: 0.3)
             XCTAssertTrue(held.sets.isEmpty, "\(shell): nothing set")
             XCTAssertTrue(invalid.sets.isEmpty, "\(shell): nothing set")
-            XCTAssertFalse(held.log.contains { $0.hasPrefix("nohup") }, "\(shell): run never started")
+            // `run` reads the clock before anything else; `check` never does.
+            XCTAssertFalse(held.log.contains { $0.hasPrefix("date") }, "\(shell): run never started")
+            XCTAssertFalse(invalid.log.contains { $0.hasPrefix("date") }, "\(shell): run never started")
         }
     }
 
@@ -76,6 +78,27 @@ final class LidWatchdogShellTests: XCTestCase {
             e.touch(e.stopFile)
             XCTAssertTrue(e.waitFor("pref", "0"), "\(shell): the stop file restores")
             XCTAssertTrue(e.waitGone(pid), "\(shell): and ends the watchdog")
+        }
+    }
+
+    /// What nohup was there for, without it (0.3.4): the watchdog the command started ignores SIGHUP, so sleep stays
+    /// off until the stop file.
+    func testLaunchedWatchdogIgnoresHangup() throws {
+        for shell in shells {
+            let e = try env(shell)
+            let r = try e.runCommand()
+            XCTAssertEqual(r.status, 0, "\(shell)")
+            let pid = try XCTUnwrap(Int32(r.stdout.trimmingCharacters(in: .whitespacesAndNewlines)), "\(shell): \(r.stdout)")
+            e.watch(pid)
+            XCTAssertTrue(e.waitFor("pref", "1"), "\(shell): turned sleep off")
+            XCTAssertEqual(kill(pid, SIGHUP), 0, "\(shell)")
+            Thread.sleep(forTimeInterval: 0.6)
+            XCTAssertFalse(StubEnv.isGone(pid), "\(shell): SIGHUP doesn't end it")
+            XCTAssertEqual(e.read("pref"), "1", "\(shell): sleep stays off")
+            XCTAssertEqual(e.sets.map(\.value), ["1"], "\(shell): nothing restored")
+            e.touch(e.stopFile)
+            XCTAssertTrue(e.waitFor("pref", "0"), "\(shell): the stop file restores")
+            XCTAssertTrue(e.waitGone(pid), "\(shell)")
         }
     }
 
@@ -416,7 +439,7 @@ private final class StubEnv {
             let name = (path as NSString).lastPathComponent
             tools[path] = dir + "/bin/" + name
         }
-        var commandTools = [LidWatchdog.nohupPath: dir + "/bin/nohup", LidWatchdog.shellPath: "/bin/sh"]
+        var commandTools = [LidWatchdog.shellPath: "/bin/sh"]
         if shell == .bashPosix { commandTools[LidWatchdog.shellPath] = dir + "/bin/sh" }
         self.commandTools = commandTools
         script = LidWatchdog.script(tools: tools, period: 0.2, stale: 20, tempRoot: root)
@@ -519,7 +542,6 @@ private final class StubEnv {
         exec \#(t["sleep"] ?? "/bin/sleep") "$t"
         """#)
         try stub("notifyutil", "echo \"notifyutil $*\" >> \"$S/log\"\necho \"com.apple.system.thermalpressurelevel $(cat \"$S/ctl/thermal\")\"")
-        try stub("nohup", "echo nohup >> \"$S/log\"\nexec \"$@\"")
         if let bash = Self.bashPath { try stub("sh", "exec " + bash + " --posix \"$@\"") }
     }
 

@@ -27,15 +27,12 @@ final class EventLog: @unchecked Sendable {
     }
 
     /// The only writer of the Awake category (0.3 §3.6, lint L9): a closed event with a fixed text. Counted cases
-    /// only bump their counter (no timestamp, so the log keeps no activity timeline); the error cases go into the ring.
+    /// only bump their counter (no timestamp, so the log keeps no activity timeline); the error cases go into the ring,
+    /// and the lid's also bump a counter (0.3.4, `AwakeLogEvent.counterKey`).
     func record(_ event: AwakeLogEvent) {
-        guard event.isCounted else {
-            record(EventCategory.awake, event.text)
-            return
-        }
-        lock.lock(); defer { lock.unlock() }
-        // The keys are the cases' fixed texts, so the map stays as small as the enum.
-        counts[event.text] = min((counts[event.text] ?? 0), Int.max - 1) + 1
+        if !event.isCounted { record(EventCategory.awake, event.text) }
+        // The keys are fixed per case (`counterKey`), so the map stays as small as the enum.
+        if let key = event.counterKey { count(key) }
     }
 
     /// Bumps a fixed counter (security S-4: `KitControl.counterKey` for the Awake verbs) instead of a timestamped
