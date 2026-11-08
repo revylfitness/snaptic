@@ -17,3 +17,4 @@
 #import "SNNightShift.h"
 #import "SNOSD.h"
 #import "SNVirtualDisplay.h"
+#import "SNMenuBarVisibility.h"

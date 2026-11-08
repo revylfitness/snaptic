@@ -231,6 +231,8 @@ jobs:
 
       # 0.3.1 E3: ModuleHost and the updater gate come up (token-gated; the user's settings are put back afterwards).
       # The debug build may find Sparkle next to it, so this run doesn't check which way the gate went.
+      # 0.4 H8: macOS 15 has no MenuBarClientCore, so the Hidden Icons shim must report unavailable (and the debug
+      # build forces its poison path).
       - name: Launch self-test (debug)
         timeout-minutes: 2
         run: |
@@ -239,7 +241,8 @@ jobs:
           token=$(od -An -N30 -tx1 /dev/urandom | tr -d ' \n')
           printf '%s\n' "$token" > "$dir/token"
           chmod 600 "$dir/token"
-          SNAPTIC_SELFTEST_TOKEN="$token" .build/debug/Snaptic --selftest-launch "$dir/token" 2>&1 | tee -a selftest.log
+          SNAPTIC_SELFTEST_TOKEN="$token" SNAPTIC_SELFTEST_EXPECT_ICONS_SHIM=unavailable \
+            .build/debug/Snaptic --selftest-launch "$dir/token" 2>&1 | tee -a selftest.log
 
       # 0.3 R5-5: connection holds, the held pool, pings and the edge rules, against a bare control server.
       - name: Control-server self-test (debug)
@@ -293,7 +296,7 @@ jobs:
           token=$(od -An -N30 -tx1 /dev/urandom | tr -d ' \n')
           printf '%s\n' "$token" > "$dir/token"
           chmod 600 "$dir/token"
-          SNAPTIC_SELFTEST_TOKEN="$token" SNAPTIC_SELFTEST_EXPECT_SPARKLE=absent \
+          SNAPTIC_SELFTEST_TOKEN="$token" SNAPTIC_SELFTEST_EXPECT_SPARKLE=absent SNAPTIC_SELFTEST_EXPECT_ICONS_SHIM=unavailable \
             build/Snaptic.app/Contents/MacOS/Snaptic --selftest-launch "$dir/token" 2>&1 | tee -a selftest.log
 
       # The app's startup checks and launch, optimized and under AddressSanitizer: a read of freed memory is caught on

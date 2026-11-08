@@ -1261,7 +1261,7 @@ Results are in `STEP0-NOTES.md`. No Blocker row failed. These changes follow fro
 | R2-8 | The completion arrives on a background thread; off-main `invalidate` is safe (S0-5). | No change: the shim hops to main, and the watchdog calls `invalidateAll` off main. |
 | R2-9 | Rows carried forward: S0-7 camera/mic/location and S0-8 (a)/(c) before A2; S0-9 before A3; S0-13/14 and Bartender's team id at R. | Listed in `STEP0-NOTES.md` › Carried forward. |
 
-## R3. Implementation changes (K5, 2026-11-07)
+## R3. Implementation changes (K5, B1, 2026-11-07)
 
 Where the code departs from the text above, the code and this table win.
 
@@ -1272,3 +1272,8 @@ Where the code departs from the text above, the code and this table win.
 | R3-3 | §4.14 | `snaptic icons …` lines count as ordinary `.control` verbs. `KitControl.counterKey` stays Awake-only; the icons rules live in `KitControl.iconsVerbRules` (status `.read`, the rest `.low`). |
 | R3-4 | §4.3, A7 | The Menu Bar page row for Hidden Icons lands with A7 (it needs the page's view). K5 adds only the Kit tables and the H2 `MenuLayout` rules (`effectivePresence`). |
 | R3-5 | K5, lint | Lint L15 carries `L15_PENDING` for the five Icons tables until their A-item views alias them; it fails once a pending table gains an alias, so the set empties itself by A7. |
+| R3-6 | §4.2.2, B1 | The shim's activate call is `activateWithSystemItemsFrom:to:bundles:token:completion:` and returns a BOOL: on NO (poisoned, unverified, bounds 0 ≤ lower < upper ≤ 256, more than 1024 bundles or one outside 1–255 units, token 0 or already held) the completion is never called and `lastRefusal` says why. The shim also has `isPresent`, `heldCount`, `takeDuplicateCompletions` and `simulateExceptionForSelfTest` (the debug selftest's poison path). |
+| R3-7 | §4.2.2, H8, B1 | The encoding table, the shim state and the self-test verdict live in Kit (`IconsShimContract`, Linux-tested); `PrivateMenuBarAPI` only reads the raw encodings and marks the shim verified (all five or none). |
+| R3-8 | H8, CI | `SNAPTIC_SELFTEST_EXPECT_ICONS_SHIM` (`available` or `unavailable`) turns the launch line into a check; CI sets `unavailable` on both launch runs. |
+| R3-9 | H12 | Diagnostics show the shim state plus **five** encoding rows (the table has five selectors), not six. |
+| R3-10 | B1 done-when | The local 27.2 `--selftest-launch` run that prints `available` is an owner check at R (it needs Snaptic quit); B1 verified the shim on 27.2 with a standalone probe (all five encodings match, refusals, poison). |
