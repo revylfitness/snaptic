@@ -1090,6 +1090,7 @@ only. App items run `--selftest-launch` and `--selftest-controls` locally.
 | M34 | Quit while collapsed: icons return (both engines) | B | L |
 | M35 | Safe Mode: Hidden Icons doesn't start | B | L |
 | M36 | Module off: no items, timers, monitors, or prompts (Activity Monitor + EventLog) | B | L |
+| M37 | Backup with Hidden Icons settings: export, change, import; the preview lists "Hidden Icons: …" and `arranged` and per-app choices stay (R3-81) | B | L |
 
 ---
 
@@ -1261,7 +1262,7 @@ Results are in `STEP0-NOTES.md`. No Blocker row failed. These changes follow fro
 | R2-8 | The completion arrives on a background thread; off-main `invalidate` is safe (S0-5). | No change: the shim hops to main, and the watchdog calls `invalidateAll` off main. |
 | R2-9 | Rows carried forward: S0-7 camera/mic/location and S0-8 (a)/(c) before A2; S0-9 before A3; S0-13/14 and Bartender's team id at R. | Listed in `STEP0-NOTES.md` › Carried forward. |
 
-## R3. Implementation changes (K5, B1, A1, A2, A3, A4, A5, A6, A7, A8, A9, 2026-11-07)
+## R3. Implementation changes (K5, B1, A1, A2, A3, A4, A5, A6, A7, A8, A9, D1, 2026-11-07)
 
 Where the code departs from the text above, the code and this table win.
 
@@ -1346,3 +1347,7 @@ Where the code departs from the text above, the code and this table win.
 | R3-77 | §4.14, A9 | The shortcut is registered by `IconsCLI` while the module runs (not in Safe Mode). It re-registers when `IconsConfig.shortcut` changes. A combo that can't be registered logs a fixed line and stays unregistered; the Settings row already shows the conflict. |
 | R3-78 | §4.16, A9 | `KitControl.retiredVerbs` stays as an empty table, so the retired-verb path is kept for the next retirement. `prevent-sleep` is checked as a removed verb: `--selftest-controls` dispatches it and expects "Unknown command", and `selftest-control-server.sh` case 10 now expects that text. |
 | R3-79 | A9 | `iconsCases` (16 lines) run the real `IconsCLI` handlers against a module that never started, instead of probes. Status reports `engine=unavailable state=unavailable`, the visibility verbs refuse with the unavailable line, and misuse is a usage error. After `stop()` every verb is "Unknown command". |
+| R3-80 | D1 | README's upgrade bullet says "Upgrading from 0.3.2 or later", not "0.3.x": 0.3.0 and 0.3.1 can't update themselves (0.3.1 doesn't start), so only 0.3.2 and later get 0.4 by updating. The Upgrading section's own entry is "0.3.4 → 0.4.0", with the downgrade note under it. |
+| R3-81 | D1, H7, A5 | `Backup.swift` never wrote or read the `icons` section, though K1 added it to `KitBackup` (allowlist, `iconsSectionData`, `importIcons`, tests). D1 found it while writing the backup list and wired it: export adds `iconsSectionData(iconsStore.value)`, import previews "Hidden Icons: …" lines and applies `importIcons(current:imported:)` (this Mac's `arranged` kept; the apps store never touched). M37 at R: export, change a setting, import, check the preview and the result. |
+| R3-82 | D1, §4.14 | README documents the CLI as built: refusals (paused, needs permission, unavailable, arrangement) exit 5 with their lines, any other refused hide answers with the status row (exit 5), usage errors exit 2, and `status` counts are apps from the last layout read (Snaptic left out), not icons. Showing hidden icons is never refused (a collapsed bar skips the refusal). The exit-codes table drops "a retired command such as `prevent-sleep`" from 2 and adds Hidden Icons refusals to 5. |
+| R3-83 | D1 | README additions beyond the D1 row: Safety and Permissions bullets, Troubleshooting (icons came back, can't find the arrow, `icons` unknown), a How it works row for `Sources/Snaptic/Icons/`, the Hidden Icons undocumented-API bullet, and the hardware-testing bullet (S0-7, S0-8, S0-9, S0-13, S0-14, other hiders). The (?) anchor test's `awaitingREADME` is now empty. |
