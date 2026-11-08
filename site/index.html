@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Snaptic</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<meta name="description" content="Snaptic is a free, open-source window switcher, set of display utilities, and keep-awake tool for Mac. Turn on only what you want.">
+<meta name="description" content="Snaptic is a free, open-source window switcher, set of display utilities, keep-awake tool, and menu bar icon hider for Mac. Turn on only what you want.">
 <meta property="og:title" content="Snaptic">
-<meta property="og:description" content="Every window. Every display. Awake on demand. A free, open-source window switcher, display toolkit, and keep-awake tool for Mac.">
+<meta property="og:description" content="Every window. Every display. Awake on demand. A free, open-source window switcher, display toolkit, keep-awake tool, and menu bar icon hider for Mac.">
 <meta name="theme-color" content="#0d0d0f">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -384,6 +384,7 @@ footer .links a:hover { color: var(--ink); }
     <a class="l opt" href="#how">How it works</a>
     <a class="l opt" href="#displays">Displays</a>
     <a class="l opt" href="#awake">Awake</a>
+    <a class="l opt" href="#icons">Icons</a>
     <a class="l opt" href="#keys">Keys</a>
     <a class="l" href="https://github.com/revylfitness/snaptic">GitHub</a>
     <a class="btn" href="#get">Get Snaptic</a>
@@ -398,7 +399,7 @@ footer .links a:hover { color: var(--ink); }
         <span class="gray"><span class="word">Every display.</span></span>
         <span><span class="word">Awake on demand.</span></span>
       </h1>
-      <p class="lede">The window switcher your Mac should have shipped with, the display tools you’d usually pay for, and a keep-awake switch that works even with the lid closed. Free and open source. Turn on only what you want.</p>
+      <p class="lede">The window switcher your Mac should have shipped with, the display tools you’d usually pay for, a keep-awake switch that works even with the lid closed, and an arrow that tucks away the menu bar icons you don’t need. Free and open source. Turn on only what you want.</p>
       <div class="ctas">
         <a class="btn light big" href="#get">Get Snaptic</a>
         <a class="btn big" href="https://github.com/revylfitness/snaptic">View on GitHub</a>
@@ -639,11 +640,56 @@ footer .links a:hover { color: var(--ink); }
     </div>
   </section>
 
+  <section class="block stagger" id="icons">
+    <div class="wrap">
+      <h2 class="huge"><span>Fewer</span><span>icons.</span></h2>
+      <p>Hidden Icons tucks the menu bar icons you don’t need behind an arrow. It’s off until you turn it on. On macOS 27 it needs Accessibility; on macOS 14–26, hiding needs no permission.</p>
+
+      <div class="bento">
+        <div class="card span-4">
+          <div class="art">
+            <svg class="wide" viewBox="0 0 200 120" aria-hidden="true"><rect x="4" y="38" width="192" height="44" rx="12" fill="none" stroke="currentColor" stroke-width="5"/><rect x="20" y="52" width="16" height="16" rx="4" fill="currentColor" opacity="0.35"/><rect x="44" y="52" width="16" height="16" rx="4" fill="currentColor" opacity="0.35"/><rect x="68" y="52" width="16" height="16" rx="4" fill="currentColor" opacity="0.35"/><path d="M98 48v24" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><path d="m122 50-10 10 10 10" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><rect x="138" y="52" width="16" height="16" rx="4" fill="currentColor"/><rect x="162" y="52" width="16" height="16" rx="4" fill="currentColor"/></svg>
+          </div>
+          <h3>One click.</h3>
+          <p>Click the arrow ‹ to hide the icons to its left, and again to show them. Hold ⌘ and drag icons to choose which side they’re on.</p>
+        </div>
+        <div class="card span-2">
+          <div class="art"><span class="nine" aria-hidden="true">27</span></div>
+          <h3>Ready for macOS 27.</h3>
+          <p>macOS itself hides the icons, and you can choose Always Show or Always Hide for an app.</p>
+        </div>
+        <div class="card span-3">
+          <div class="art">
+            <svg viewBox="0 0 96 96" aria-hidden="true"><path d="M48 10 18 22v22c0 20 13 34 30 42 17-8 30-22 30-42V22Z" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/><path d="m34 48 10 10 18-20" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <h3>Fails safe.</h3>
+          <p>If Snaptic quits, crashes, or can’t be sure hiding is safe, your icons come back. Privacy indicators are never hidden.</p>
+        </div>
+        <div class="card span-3">
+          <div class="art">
+            <svg viewBox="0 0 96 96" aria-hidden="true"><rect x="8" y="16" width="80" height="64" rx="10" fill="none" stroke="currentColor" stroke-width="6"/><path d="m24 40 10 8-10 8" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><path d="M42 58h24" stroke="currentColor" stroke-width="6" stroke-linecap="round"/></svg>
+          </div>
+          <h3>Scriptable.</h3>
+          <p><code>snaptic icons toggle</code> shows or hides them from a script, Stream Deck, or Raycast.</p>
+        </div>
+      </div>
+
+      <div class="shorts">
+        <div><h3>Hides again.</h3><p>Icons tuck away again after 10 seconds, or whenever you choose.</p></div>
+        <div><h3>Always Hidden.</h3><p>A second section that stays hidden until you Option-click the arrow. Opt-in.</p></div>
+        <div><h3>The hidden list.</h3><p>Open a hidden icon’s menu from the Snaptic menu, without showing them all.</p></div>
+        <div><h3>Shortcut.</h3><p>Show or hide your icons from any app.</p></div>
+        <div><h3>Plays nice.</h3><p>Steps aside while Hidden Bar, Bartender, Ice, or Thaw runs.</p></div>
+        <div><h3>From Hidden Bar?</h3><p>Quit it, then ⌘-drag Snaptic’s arrow to where Hidden Bar’s was.</p></div>
+      </div>
+    </div>
+  </section>
+
   <section class="block" id="settings">
     <div class="wrap">
       <h2 class="huge"><span style="display:block">Settings that</span><span class="gray" style="display:block">explain themselves.</span></h2>
       <div class="keytable">
-        <div><span class="k"><span class="key wide-key">7</span></span><span><strong>Seven pages.</strong> General, Menu Bar, one page per module, Permissions, and About.</span></div>
+        <div><span class="k"><span class="key wide-key">8</span></span><span><strong>Eight pages.</strong> General, Menu Bar, one page per module, Permissions, and About.</span></div>
         <div><span class="k"><span class="key wide-key">Search</span></span><span><strong>Find anything.</strong> Search by name, even for settings in Advanced sheets.</span></div>
         <div><span class="k"><span class="key">?</span></span><span><strong>Every option explained.</strong> Each one says what it does, and (?) opens its section of the guide.</span></div>
         <div><span class="k"><span class="key wide-key">Menu</span></span><span><strong>Live menus.</strong> Sliders, values, and countdowns update while a menu is open. Each module picks its own place in the menu bar, and the shared menu gives each one a tab.</span></div>
@@ -669,20 +715,25 @@ footer .links a:hover { color: var(--ink); }
       <h2 class="huge"><span style="display:block">Use only</span><span class="gray" style="display:block">what you want.</span></h2>
       <p class="lede">Turn each tool on or off, then each feature inside it. Anything that’s off costs nothing: no background work, no helpers, and no permission prompts.</p>
       <div class="bento">
-        <div class="card span-2">
+        <div class="card span-3">
           <div class="art"><span class="switch" aria-hidden="true"></span></div>
           <h3>Window Switcher.</h3>
           <p>Every window, one keystroke away.</p>
         </div>
-        <div class="card span-2">
+        <div class="card span-3">
           <div class="art"><span class="switch" aria-hidden="true"></span></div>
           <h3>Displays.</h3>
           <p>Brightness, resolution, color, and more.</p>
         </div>
-        <div class="card span-2">
+        <div class="card span-3">
           <div class="art"><span class="switch" aria-hidden="true"></span></div>
           <h3>Awake.</h3>
           <p>Keeps your Mac awake when you choose.</p>
+        </div>
+        <div class="card span-3">
+          <div class="art"><span class="switch off" aria-hidden="true"></span></div>
+          <h3>Hidden Icons.</h3>
+          <p>Tucks menu bar icons behind an arrow. Off until you turn it on.</p>
         </div>
       </div>
     </div>
@@ -722,7 +773,7 @@ INSTALL=1 ./scripts/build-app.sh</code></pre></div>
         </li>
         <li>
           <h3>Say yes.</h3>
-          <p>Snaptic asks only for what your features need: Accessibility for the switcher and media keys, and Screen Recording for thumbnails and Picture in Picture. Awake needs no permission unless you turn on its pointer movement.</p>
+          <p>Snaptic asks only for what your features need: Accessibility for the switcher and media keys, and Screen Recording for thumbnails and Picture in Picture. Awake needs no permission unless you turn on its pointer movement, and Hidden Icons needs Accessibility only on macOS 27 or for its list of hidden icons.</p>
           <div class="code"><div class="bar"><span>Terminal</span><button class="copy" type="button">Copy</button></div><pre><code>open /Applications/Snaptic.app</code></pre></div>
         </li>
       </ol>
@@ -733,9 +784,9 @@ INSTALL=1 ./scripts/build-app.sh</code></pre></div>
 <footer>
   <div class="wrap">
     <p class="made">Made with &lt;/3 by revyl fitness technology, Inc.</p>
-    <p>Snaptic is free, open-source software under the MIT license. It asks for Accessibility access for the window switcher, media keys, and Awake’s optional pointer movement, and Screen Recording access for thumbnails and Picture in Picture, only when those features are on. It connects only to GitHub to check for updates, and only if you allow it. No analytics.</p>
+    <p>Snaptic is free, open-source software under the MIT license. It asks for Accessibility access for the window switcher, media keys, Awake’s optional pointer movement, and Hidden Icons on macOS 27 or its list of hidden icons, and Screen Recording access for thumbnails and Picture in Picture, only when those features are on. It connects only to GitHub to check for updates, and only if you allow it. No analytics.</p>
     <p>Snaptic is an independent project, not affiliated with or endorsed by Apple Inc. Mac and macOS are trademarks of Apple Inc. App names and window contents in the demo are fictional.</p>
-    <p>Snaptic isn’t affiliated with BetterDisplay, MonitorControl, Lunar, Amphetamine, or Insomnia.</p>
+    <p>Snaptic isn’t affiliated with BetterDisplay, MonitorControl, Lunar, Amphetamine, Insomnia, Hidden Bar, Bartender, Ice, or Thaw. Hidden Icons follows Hidden Bar’s design in Snaptic’s own code.</p>
     <div class="links">
       <a href="https://github.com/revylfitness/snaptic">Source code</a>
       <a href="https://github.com/revylfitness/snaptic/issues">Report an issue</a>
