@@ -708,7 +708,7 @@ import SnapticKit
     /// VoiceOver, Switch Control, Keyboard navigation (`isFullKeyboardAccessEnabled`, `AppleKeyboardUIMode`) or
     /// Accessibility › Full Keyboard Access, which has no public API and no change notification: its preference is
     /// read on every open (r1 U2; HW-25 confirms the key). Unreadable counts as off.
-    private static func assistiveInputInUse() -> Bool {
+    static func assistiveInputInUse() -> Bool {
         let workspace = NSWorkspace.shared
         let domain = MenuTabs.fullKeyboardAccessDomain as CFString
         // Another process writes this domain; drop any cached copy first.

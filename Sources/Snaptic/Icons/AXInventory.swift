@@ -57,26 +57,81 @@ import SnapticKit
 
     // MARK: AXPress (§4.8, A6)
 
-    /// Presses the app's extra at `index` among its `AXExtrasMenuBar` children, off main. `false` when it no longer
-    /// exists or the app refused; the caller checks `Icons.disable.axpress` first.
-    func press(pid: Int32, index: Int, completion: @escaping (Bool) -> Void) {
-        guard pid != ownPID, index >= 0, AXIsProcessTrusted() else {
-            DispatchQueue.main.async { completion(false) }
+    enum PressOutcome: Equatable {
+        case pressed
+        /// The extra at the row's index isn't the row's icon any more (moved, resized, or the app's extras changed).
+        case mismatch
+        /// It never reached the arrow's screen within the wait, or the app refused the press.
+        case failed
+    }
+
+    /// Presses the row's extra off main (§4.8 steps 2–4): waits up to 0.3 s, polling every 30 ms, for the extra at
+    /// the row's index to be in the menu bar of `screen`, checks it is still the row's icon, then AXPress. A press that
+    /// opens no window of that app within 0.5 s counts `icons.pressNoop`. The caller re-resolved the app (pid, bundle,
+    /// launch date) and checked `Icons.disable.axpress` first.
+    func press(_ row: IconsListRow, screen: IconsRect, completion: @escaping (PressOutcome) -> Void) {
+        let pid = row.extra.pid
+        guard pid != ownPID, row.extra.index >= 0, AXIsProcessTrusted(),
+              let primaryHeight = LengthBackend.primaryHeight else {
+            DispatchQueue.main.async { completion(.failed) }
             return
         }
-        queue.async {
-            let app = AXUIElementCreateApplication(pid)
-            Self.limit(app)
-            var ok = false
-            if case .value(let bar) = Self.element(app, kAXExtrasMenuBarAttribute) {
-                let children = Self.children(bar)
-                if case .value(let list) = children, index < list.count {
-                    Self.limit(list[index])
-                    ok = AXUIElementPerformAction(list[index], kAXPressAction as CFString) == .success
+        queue.async { [weak self] in
+            let deadline = Self.uptime() + IconsHiddenListRules.readyWait
+            var target: (AXUIElement, IconsRect)?
+            while true {
+                target = Self.extra(pid: pid, index: row.extra.index, primaryHeight: primaryHeight)
+                if IconsHiddenListRules.ready(target?.1, screen: screen) || Self.uptime() >= deadline { break }
+                Thread.sleep(forTimeInterval: IconsHiddenListRules.pollInterval)
+            }
+            let outcome: PressOutcome
+            var before: Set<Int> = []
+            if let target, IconsHiddenListRules.ready(target.1, screen: screen) {
+                if IconsHiddenListRules.matches(row, actual: target.1) {
+                    before = Self.windowNumbers(pid: pid)
+                    let ok = AXUIElementPerformAction(target.0, kAXPressAction as CFString) == .success
+                    outcome = ok ? .pressed : .failed
+                } else {
+                    outcome = .mismatch
+                }
+            } else {
+                outcome = .failed
+            }
+            DispatchQueue.main.async { completion(outcome) }
+            guard outcome == .pressed else { return }
+            self?.queue.asyncAfter(deadline: .now() + IconsHiddenListRules.noopWindow) { [weak self] in
+                guard Self.windowNumbers(pid: pid).subtracting(before).isEmpty else { return }
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated { self?.onCount?(.pressNoop) }
                 }
             }
-            DispatchQueue.main.async { completion(ok) }
         }
+    }
+
+    /// The app's extra at `index` and its frame, now.
+    nonisolated private static func extra(pid: Int32, index: Int, primaryHeight: Double) -> (AXUIElement, IconsRect)? {
+        let app = AXUIElementCreateApplication(pid)
+        limit(app)
+        guard case .value(let bar) = element(app, kAXExtrasMenuBarAttribute),
+              case .value(let list) = children(bar), index < list.count else { return nil }
+        let child = list[index]
+        limit(child)
+        guard case .value(let p) = point(child), case .value(let s) = sizeOf(child),
+              let frame = IconsAXGeometry.appKitRect(x: Double(p.x), y: Double(p.y), width: Double(s.width),
+                                                     height: Double(s.height), primaryHeight: primaryHeight)
+        else { return nil }
+        return (child, frame)
+    }
+
+    /// The app's on-screen windows (a menu it opens is one), by number. Window lists carry no titles here.
+    nonisolated private static func windowNumbers(pid: Int32) -> Set<Int> {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { return [] }
+        var numbers: Set<Int> = []
+        for info in list where (info[kCGWindowOwnerPID as String] as? Int32) == pid {
+            if let number = info[kCGWindowNumber as String] as? Int { numbers.insert(number) }
+        }
+        return numbers
     }
 
     // MARK: Snapshot (main)

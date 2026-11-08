@@ -628,3 +628,6 @@ Sources/SnapticKit/IconsMonitorRules.swift	lead	L	-	-
 Sources/Snaptic/Icons/IconsMonitors.swift	lead	L	-	-
 Tests/SnapticKitTests/IconsMonitorRulesTests.swift	lead	L	-	-
 Sources/Snaptic/Core/ActivationPolicyController.swift	lead	L	-	-
+Sources/SnapticKit/IconsHiddenList.swift	lead	L	-	-
+Tests/SnapticKitTests/IconsHiddenListTests.swift	lead	L	-	-
+Sources/Snaptic/Icons/IconsMenuRows.swift	lead	L	-	-

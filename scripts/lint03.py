@@ -1472,7 +1472,7 @@ def without_string_text(code):
 # `typealias Controls = <table>` for one of these, "declared but no view or builder uses it" is skipped for it; every
 # other L15 check applies. Once a view declares the alias, the entry must go (reported below). R checks it is empty.
 L15_PENDING = {
-    "IconsPageControls", "IconsAdvancedSheetControls", "IconsSectionsPageControls", "IconsMenuRowsControls",
+    "IconsPageControls", "IconsAdvancedSheetControls", "IconsSectionsPageControls",
 }
 
 

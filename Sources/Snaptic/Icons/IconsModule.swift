@@ -94,6 +94,8 @@ import SnapticKit
     /// The arrow's own menu is open (A6 sets it): the auto-collapse timer waits.
     var ownMenuOpen = false
     private(set) var lastHiddenListPress: Double?
+    /// The Snaptic-menu section and the arrow's menu (A6).
+    private lazy var menuRows = IconsMenuRows(module: self)
 
     /// Launch collapse is decided once per process, at the first start (§4.6).
     private static var launchDecided = false
@@ -179,6 +181,7 @@ import SnapticKit
         items.onClick = { [weak self] action in self?.clicked(action) }
         items.onVisibilityLost = { [weak self] role in self?.visibilityLost(role) }
         items.onDirectionChange = { [weak self] _ in self?.inputsChanged() }
+        items.menuProvider = { [weak self] in self?.menuRows.arrowMenu() }
         items.start(engine: kind, alwaysHidden: value.alwaysHidden, dividers: value.dividers)
 
         switch IconsEngineFactory.choose(inputs) {
@@ -276,6 +279,7 @@ import SnapticKit
         items.onClick = nil
         items.onVisibilityLost = nil
         items.onDirectionChange = nil
+        items.menuProvider = nil
         defaults.removeObject(forKey: Self.inFlightKey)
         ActivationPolicyController.shared.iconsShown(false, cause: .other, fullBarOnExpand: false)
         launchWaiting = false
@@ -299,7 +303,12 @@ import SnapticKit
         monitors.onExamChange = nil
     }
 
-    func menuSection() -> [NSMenuItem] { [] }
+    /// The Snaptic menu lists it only with Arrow and Snaptic Menu (the plan's `shared`, H2); it stays even when the
+    /// list is empty.
+    func menuSection() -> [NSMenuItem] {
+        guard state == .running else { return [] }
+        return menuRows.items(arrow: false)
+    }
 
     func settingsRoot() -> SettingsRoot {
         let module = self
@@ -324,6 +333,57 @@ import SnapticKit
     func hiddenListPressed() {
         lastHiddenListPress = Self.uptime
         queue.hiddenListPressed(now: Self.uptime)
+    }
+
+    // MARK: The hidden list (§4.8, A6)
+
+    func openSettings(_ page: String) {
+        context?.openSettings(page)
+    }
+
+    /// Rows may be pressed: AXPress isn't turned off and there is an inventory to press through.
+    var pressEnabled: Bool { inventory != nil && !killSwitches.contains(.axpress) }
+
+    func listFacts() -> IconsListFacts {
+        IconsListFacts(engine: engineKind, state: engineState, access: access.state, pausedFor: pausedFor,
+                       examPaused: examPaused, inventoryOff: inventory == nil)
+    }
+
+    /// The rows of the last good layout, named after their running apps.
+    func hiddenList() -> IconsHiddenList {
+        let layout = core?.layout
+        var names: [Int32: String] = [:]
+        for pid in (layout?.extras.map(\.extra.pid) ?? []) + (layout?.offScreen.map(\.pid) ?? [])
+        where names[pid] == nil {
+            names[pid] = NSRunningApplication(processIdentifier: pid)?.localizedName ?? ""
+        }
+        return IconsHiddenListRules.list(layout, names: names, screens: screens(), rightToLeft: items.rightToLeft)
+    }
+
+    /// A menu with the list opened: a background re-read where one can be trusted.
+    func listOpened() {
+        core?.listOpened()
+    }
+
+    /// A row was chosen (§4.8): the same app instance still runs (pid, bundle, launch date), the icons it needs are
+    /// shown first, then the inventory waits for the icon, checks it and presses it. A mismatch does nothing; the next
+    /// open re-reads.
+    func press(_ row: IconsListRow, launchDate: Date?) {
+        guard pressEnabled, let inventory, let core else { return }
+        guard let app = NSRunningApplication(processIdentifier: row.extra.pid), !app.isTerminated,
+              app.bundleIdentifier == row.extra.bundleID, app.launchDate == launchDate else { return }
+        // The expand below must not be collapsed again by the timer while the menu opens.
+        hiddenListPressed()
+        if let mode = IconsHiddenListRules.expand(for: row.section, state: core.state) {
+            perform(mode == .all ? .showAll : .show, from: .hiddenList)
+        }
+        let all = screens()
+        let arrowScreen = items.frame(of: .toggle).flatMap { IconsGeometry.screen(holding: $0, in: all) }
+        guard let screen = (arrowScreen ?? all.first)?.frame else { return }
+        inventory.press(row, screen: screen) { [weak self] outcome in
+            guard outcome == .pressed else { return }
+            self?.hiddenListPressed()
+        }
     }
 
     /// The Privacy pane Snaptic opened has closed (A7).

@@ -1261,7 +1261,7 @@ Results are in `STEP0-NOTES.md`. No Blocker row failed. These changes follow fro
 | R2-8 | The completion arrives on a background thread; off-main `invalidate` is safe (S0-5). | No change: the shim hops to main, and the watchdog calls `invalidateAll` off main. |
 | R2-9 | Rows carried forward: S0-7 camera/mic/location and S0-8 (a)/(c) before A2; S0-9 before A3; S0-13/14 and Bartender's team id at R. | Listed in `STEP0-NOTES.md` › Carried forward. |
 
-## R3. Implementation changes (K5, B1, A1, A2, A3, A4, A5, 2026-11-07)
+## R3. Implementation changes (K5, B1, A1, A2, A3, A4, A5, A6, 2026-11-07)
 
 Where the code departs from the text above, the code and this table win.
 
@@ -1309,3 +1309,15 @@ Where the code departs from the text above, the code and this table win.
 | R3-40 | H6, A5 | In Safe Mode the module reports `degraded("Paused in Safe Mode")` and creates nothing (no items, monitors or timers); "Hiding menu bar icons" is in Safe Mode's skipped list. |
 | R3-41 | §4.5, A5 | Length's new-icon toast ("A new icon may be hidden. ⌘-drag it to the right of the arrow to keep it shown." [Show Icons]) fires only while collapsed, once per app per day (`toastDue`/`toasted`); expanded, a new icon is plainly visible. |
 | R3-42 | H6, A5 | Reset clears both stores (`arranged` with them), every `NSStatusItem Preferred Position Snaptic.icons.*` and `NSStatusItem Visible Snaptic.icons.*` key, and `Icons.launch.seen`. The crash-guard keys stay: they are about the OS build, not settings. Both stores are force-saved in the migration pass before the ledger, and flushed at quit and reset. |
+| R3-43 | §4.8, A6 | The headers read "Hidden (n)" and "Behind the Notch (n)" in title case; the header style draws them small. |
+| R3-44 | §4.8, A6 | Hidden lists both Hidden and Always Hidden, nearest the arrow first. Behind the Notch lists shown icons a notch covers (`IconsNotch.split`). |
+| R3-45 | §4.8, A6 | On Length while collapsed, a fresh read finds hidden icons off the screen. They're listed after the placed ones under their app's section, in bar order from the boundary, and match at press time by size only (`frameKnown` false). |
+| R3-46 | §4.8, A6 | Opening a menu asks for a background re-read through the new `IconsEngineCore.listOpened()`, at most once per 5 s. It never expands, and the open menu keeps the rows it was built with. |
+| R3-47 | §4.3, A6 | While the engine is unavailable, Show, Hide and Show All are left out. The reason row explains why; the arrow menu still has the reason and Settings. |
+| R3-48 | §4.8, A6 | Length with `Icons.disable.inventory` shows no list slot at all: hiding still works, but nothing can be listed. |
+| R3-49 | §4.3, A6 | "Hidden Icons Settings…" has no ⌘, key equivalent: ⌘, belongs to Snaptic Settings. |
+| R3-50 | §4.8, A6 | `icons.pressNoop` counts when no new on-screen window for the app's pid appears within 0.5 s (CGWindowList before and after). |
+| R3-51 | §4.8, A6 | `hiddenListPressed()` is called before the expand and again after a successful press, so the auto-collapse timer doesn't run out under the opened menu. |
+| R3-52 | §4.13, A6 | A row's hint "Opens its menu." is set through `toolTip`. Its app icon has an empty `accessibilityDescription`, so it's decorative and the title names the app. |
+| R3-53 | §4.8, A6 | An AX title that only repeats the app name falls back to "Icon n"; a missing app name reads "App". Every extra the read found counts toward "several", including off-screen ones. |
+| R3-54 | A6 | `StatusMenu.assistiveInputInUse()` (static) is internal so the Show All row can use it. `AXInventory.press(pid:index:)` is replaced by `press(_:screen:completion:)`, which re-reads, waits for the icon to be on the arrow's screen, matches it and returns `PressOutcome`. |

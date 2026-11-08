@@ -551,6 +551,16 @@ package final class IconsEngineCore {
         }
     }
 
+    /// A menu with the hidden list opened (§4.8, A6): read again in the background when the read can be trusted.
+    /// Unlike `refreshLayout()` it never expands; Native skips it while a restriction is held, and the open menu keeps
+    /// the cached rows (the next open shows the new ones).
+    package func listOpened() {
+        switch stored {
+        case .unavailable, .calibrating: return
+        case .collapsed, .expanded: refreshRead()
+        }
+    }
+
     /// `didChangeScreenParameters`. Length re-applies inflated lengths 250 ms after the last one, never during a
     /// Displays resolution trial. Native keeps its restriction (Hidden Bar's display-change case).
     package func screenParametersChanged() {
