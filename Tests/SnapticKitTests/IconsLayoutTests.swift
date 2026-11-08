@@ -18,7 +18,11 @@ private func rect(_ x: Double, width: Double = 24) -> IconsRect {
 private func app(_ bundle: String?, _ xs: Double..., path: String? = nil, pid: Int32? = nil,
                  result: IconsReadResult = .ok) -> IconsAppRead {
     // A pid per bundle, clear of Snaptic's own (1).
-    let p = pid ?? Int32(100 + (bundle ?? "").unicodeScalars.reduce(0) { ($0 * 31 + Int($1.value)) % 100_000 })
+    var hash = 0
+    for scalar in (bundle ?? "").unicodeScalars {
+        hash = (hash * 31 + Int(scalar.value)) % 100_000
+    }
+    let p: Int32 = pid ?? Int32(100 + hash)
     let extras = xs.enumerated().map { IconsExtra(pid: p, bundleID: bundle, index: $0.offset, frame: rect($0.element)) }
     return IconsAppRead(pid: p, bundleID: bundle, bundlePath: path ?? bundle.map { "/Applications/\($0).app" },
                         result: result, extras: extras)
