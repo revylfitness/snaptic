@@ -102,6 +102,8 @@ import SnapticKit
     private(set) var lastHiddenListPress: Double?
     /// The Snaptic-menu section and the arrow's menu (A6).
     private lazy var menuRows = IconsMenuRows(module: self)
+    /// `snaptic icons …` and the shortcut (A9).
+    private lazy var cli = IconsCLI(module: self)
 
     /// Launch collapse is decided once per process, at the first start (§4.6).
     private static var launchDecided = false
@@ -202,6 +204,7 @@ import SnapticKit
         }
         subscribe()
         state = .running
+        cli.start(context)
         refreshPresentation()
         decideLaunch()
     }
@@ -259,6 +262,7 @@ import SnapticKit
 
     func stop() {
         guard context != nil else { return }
+        cli.stop()
         if let core {
             _ = queue.submit(.stop, from: .monitor, now: Self.uptime)
             core.stop()
@@ -337,9 +341,11 @@ import SnapticKit
 
     // MARK: Commands (the menu, the CLI and Settings use this; A6, A7, A8)
 
-    /// One intent from `source`, through the queue.
-    func perform(_ command: IconsCommand, from source: IconsIntentSource) {
-        submit(.command(command), from: source)
+    /// One intent from `source`, through the queue. `done` gets the collapse's result once it finished, or nil when
+    /// the intent ran no collapse (an expand, no change, a drop); it is called exactly once.
+    func perform(_ command: IconsCommand, from source: IconsIntentSource,
+                 done: ((IconsCollapseResult?) -> Void)? = nil) {
+        submit(.command(command), from: source, done: done)
     }
 
     /// Sections › Refresh (A7). Native while the read is limited is **Show All Icons and Refresh**: it expands with ⌥
@@ -396,6 +402,17 @@ import SnapticKit
         if let readAt = apps.value.layout?.readAt, readAt > 0 { facts.cacheAge = max(Self.wall - readAt, 0) }
         return facts
     }
+
+    /// `snaptic icons status` (A9): engine, state and counts of the live read.
+    func cliFacts() -> IconsStatusFacts {
+        IconsCLIRules.facts(engine: engineKind, state: engineState,
+                            needsPermission: engineKind == .native && access.state.needsPermission,
+                            paused: pausedFor != nil, layout: core?.layout,
+                            ownBundleID: Bundle.main.bundleIdentifier ?? "", now: Self.wall)
+    }
+
+    /// The Settings status row's text (the CLI's line for a refusal it has none of its own for).
+    func statusText() -> String { IconsPageRules.status(pageFacts()).text }
 
     /// Hidden and Always Hidden icons in the last read; nil without one.
     var hiddenCount: Int? {
@@ -544,20 +561,27 @@ import SnapticKit
 
     // MARK: Intents
 
-    private func submit(_ intent: IconsIntent, from source: IconsIntentSource) {
-        guard let core else { return }
+    private func submit(_ intent: IconsIntent, from source: IconsIntentSource,
+                        done: ((IconsCollapseResult?) -> Void)? = nil) {
+        guard let core else {
+            done?(.unavailable)
+            return
+        }
         if case .command(let command) = intent, asksFirst(command, from: source, core: core) {
+            // The CLI never asks (`asksFirst`), so `done` is nil here.
             askBeforeFirstCollapse(intent, from: source)
             return
         }
         let result = queue.submit(intent, from: source, now: Self.uptime)
         switch result {
         case .run(let step, let seq):
-            run(step, seq: seq, source: source, core: core)
+            run(step, seq: seq, source: source, core: core, done: done)
         case .noChange:
             if case .command = intent, source == .timer || source == .launch { auto.disarm() }
+            done?(nil)
         case .dropped(let drop):
             if drop == .timerSuppressed { armAuto() }
+            done?(nil)
         }
     }
 
@@ -595,19 +619,23 @@ import SnapticKit
         }
     }
 
-    private func run(_ step: IconsStep, seq: UInt64, source: IconsIntentSource, core: IconsEngineCore) {
+    private func run(_ step: IconsStep, seq: UInt64, source: IconsIntentSource, core: IconsEngineCore,
+                     done: ((IconsCollapseResult?) -> Void)? = nil) {
         switch step {
         case .collapse:
             collapseSource = source
             autoTimer?.cancel()
             autoTimer = nil
             core.collapse { [weak self, weak core] result in
+                // Runs after `collapsed` below, so the refusal and the status row are current for the CLI.
+                defer { done?(result) }
                 guard let self, let core, self.core === core else { return }
                 self.collapseSource = nil
                 self.collapsed(result, source: source)
                 self.queue.settled(seq: seq, state: core.state)
                 self.refreshPresentation()
             }
+            return
         case .expand(let mode):
             core.expand(mode)
             queue.settled(seq: seq, state: core.state)
@@ -621,6 +649,7 @@ import SnapticKit
             queue.settled(seq: seq, state: core.state)
             refreshPresentation()
         }
+        done?(nil)
     }
 
     private func collapsed(_ result: IconsCollapseResult, source: IconsIntentSource) {
@@ -903,6 +932,7 @@ import SnapticKit
             autoTimer = nil
             auto.disarm()
         }
+        cli.shortcutChanged()
         inputsChanged()
         refreshPresentation()
         requestRefresh()

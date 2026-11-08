@@ -1261,7 +1261,7 @@ Results are in `STEP0-NOTES.md`. No Blocker row failed. These changes follow fro
 | R2-8 | The completion arrives on a background thread; off-main `invalidate` is safe (S0-5). | No change: the shim hops to main, and the watchdog calls `invalidateAll` off main. |
 | R2-9 | Rows carried forward: S0-7 camera/mic/location and S0-8 (a)/(c) before A2; S0-9 before A3; S0-13/14 and Bartender's team id at R. | Listed in `STEP0-NOTES.md` › Carried forward. |
 
-## R3. Implementation changes (K5, B1, A1, A2, A3, A4, A5, A6, A7, A8, 2026-11-07)
+## R3. Implementation changes (K5, B1, A1, A2, A3, A4, A5, A6, A7, A8, A9, 2026-11-07)
 
 Where the code departs from the text above, the code and this table win.
 
@@ -1340,3 +1340,9 @@ Where the code departs from the text above, the code and this table win.
 | R3-71 | H4, H5, A8 | The permissions step adds Hidden Icons' `requiredPermissions` while it's on (Accessibility on 27, shown with its 27 pane name; nothing on 14–26). The Done line shows while Hidden Icons is on and not turned off by `Modules.disable.hiddenIcons`. |
 | R3-72 | H10, §4.16, A8 | `insertingIconsCard(upgrader:ledger:)` runs after the 0.3.1 welcome and before M1. It records `iconsCard.v1` whatever it decides, and adds the card only for an upgrader (`isV031Upgrader`, so 0.1 users on `upgradeDefaults` too) whose onboarding is done, with Hidden Icons off and the card not stored. Turn On Hidden Icons presents How to Arrange on the next main-queue turn after `go(to:)`, which clears the open sheet. |
 | R3-73 | §4.16, A8 | The §4.16 strings joined `IconsControlsTests.canonical`. |
+| R3-74 | §4.14, A9 | `state=` is decided in this order: unavailable, paused (another menu bar hider; an exam isn't "paused"), needs permission (Native only), then collapsed or expanded (calibrating reports expanded). A collapsed bar never refuses: `show` and `toggle` expand whatever the state says, and `hide` changes nothing. The state refusals apply only to a bar that isn't collapsed (Kit `IconsCLIRules`). |
+| R3-75 | §4.14, A9 | A collapse from the CLI is awaited (the module's `perform(_:from:done:)`; every engine path answers). Refusals with a §4.14 line (arrangement, needs permission) answer with it. The others (arrow or `\|` hidden, own items, exam, unstable inventory, identity) and a fail-safe answer with the Settings status row's text. All exit 5. A usage error from a handler says "Usage error. Run “snaptic help icons”." (exit 2). |
+| R3-76 | §4.14, §4.15, A9 | Counts are bundles per section in the live read, with Snaptic's own left out. `layoutAgeSeconds` is the live read's age. Without a live read the counts are 0 and the age is null: the cache isn't reported. |
+| R3-77 | §4.14, A9 | The shortcut is registered by `IconsCLI` while the module runs (not in Safe Mode). It re-registers when `IconsConfig.shortcut` changes. A combo that can't be registered logs a fixed line and stays unregistered; the Settings row already shows the conflict. |
+| R3-78 | §4.16, A9 | `KitControl.retiredVerbs` stays as an empty table, so the retired-verb path is kept for the next retirement. `prevent-sleep` is checked as a removed verb: `--selftest-controls` dispatches it and expects "Unknown command", and `selftest-control-server.sh` case 10 now expects that text. |
+| R3-79 | A9 | `iconsCases` (16 lines) run the real `IconsCLI` handlers against a module that never started, instead of probes. Status reports `engine=unavailable state=unavailable`, the visibility verbs refuse with the unavailable line, and misuse is a usage error. After `stop()` every verb is "Unknown command". |

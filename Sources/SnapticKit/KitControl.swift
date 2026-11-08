@@ -362,11 +362,10 @@ package enum KitControl {
         return (best.verb, Array(words.dropFirst(best.count)))
     }
 
-    /// 0.2 verbs that are gone, with the answer the CLI gets (R5-12): `ControlCommandRegistry.dispatch` answers them
-    /// before lookup with exit 2 (usage), whatever modules run; help never lists them. Removed in 0.4.
-    package static let retiredVerbs: [String: String] = [
-        "prevent-sleep": "Moved to Awake: use “snaptic awake …”.",
-    ]
+    /// Verbs that are gone, with the answer the CLI gets (R5-12): `ControlCommandRegistry.dispatch` answers them
+    /// before lookup with exit 2 (usage), whatever modules run; help never lists them. Empty since 0.4 removed
+    /// `prevent-sleep` (0.4 §4.16): it is an unknown command now. The mechanism stays for the next retirement.
+    package static let retiredVerbs: [String: String] = [:]
 
     /// The retired verb `words` start with (verb words compare case-insensitively, like `match`), or nil.
     package static func retiredVerb(_ words: [String]) -> (verb: String, message: String)? {

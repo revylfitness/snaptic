@@ -116,4 +116,77 @@ final class IconsCommandGrammarTests: XCTestCase {
             XCTAssertFalse(IconsCommandGrammar.statusLine(facts).contains("-"), "counts are never negative")
         }
     }
+
+    // MARK: A9: IconsCLIRules
+
+    func testStateOrder() {
+        func state(_ engine: IconsEngineKind?, _ s: IconsEngineState, permission: Bool = false,
+                   paused: Bool = false) -> IconsCLIState {
+            IconsCLIRules.state(engine: engine, state: s, needsPermission: permission, paused: paused)
+        }
+        XCTAssertEqual(state(nil, .expanded(.plain)), .unavailable)
+        XCTAssertEqual(state(.native, .unavailable(.shimUnavailable), permission: true, paused: true), .unavailable)
+        XCTAssertEqual(state(.native, .collapsed, permission: true, paused: true), .paused)
+        XCTAssertEqual(state(.native, .expanded(.plain), permission: true), .needsPermission)
+        XCTAssertEqual(state(.length, .expanded(.plain), permission: true), .expanded, "Length needs no permission")
+        XCTAssertEqual(state(.length, .collapsed), .collapsed)
+        XCTAssertEqual(state(.native, .calibrating), .expanded, "nothing is hidden until the collapse finished")
+        XCTAssertEqual(state(.native, .expanded(.all)), .expanded)
+        XCTAssertEqual(IconsCLIRules.engine(.native), .native)
+        XCTAssertEqual(IconsCLIRules.engine(.length), .length)
+        XCTAssertEqual(IconsCLIRules.engine(nil), .unavailable)
+    }
+
+    func testFactsCountSectionsWithoutSnaptic() {
+        let layout = IconsLayout(sections: ["own": .hidden, "a": .shown, "b": .shown, "c": .hidden,
+                                            "d": .alwaysHidden],
+                                 systemBundles: [], carried: [], extras: [], offScreen: [], scope: .unrestricted,
+                                 readAt: 1_000)
+        let facts = IconsCLIRules.facts(engine: .native, state: .collapsed, needsPermission: false, paused: false,
+                                        layout: layout, ownBundleID: "own", now: 1_042.5)
+        XCTAssertEqual(facts, IconsStatusFacts(engine: .native, state: .collapsed, hidden: 1, alwaysHidden: 1,
+                                               shown: 2, layoutAgeSeconds: 42.5))
+        XCTAssertEqual(IconsCommandGrammar.statusLine(facts),
+                       "engine=native state=collapsed hidden=1 alwaysHidden=1 shown=2")
+        // A clock that went back reports 0, a layout never read (readAt 0) and no layout report none.
+        var never = layout
+        never.readAt = 0
+        XCTAssertEqual(IconsCLIRules.facts(engine: .length, state: .expanded(.plain), needsPermission: false,
+                                           paused: false, layout: layout, ownBundleID: "own", now: 10)
+                        .layoutAgeSeconds, 0)
+        XCTAssertNil(IconsCLIRules.facts(engine: .length, state: .expanded(.plain), needsPermission: false,
+                                         paused: false, layout: never, ownBundleID: "own", now: 10).layoutAgeSeconds)
+        XCTAssertEqual(IconsCLIRules.facts(engine: nil, state: .unavailable(.stopped), needsPermission: false,
+                                           paused: false, layout: nil, ownBundleID: "own", now: 10),
+                       IconsStatusFacts(engine: .unavailable, state: .unavailable))
+    }
+
+    func testRefusalBeforeTheCommand() {
+        for state in IconsCLIState.allCases {
+            XCTAssertNil(IconsCLIRules.refusal(state: state, collapsed: true), "a collapsed bar can always show")
+        }
+        XCTAssertNil(IconsCLIRules.refusal(state: .expanded, collapsed: false))
+        XCTAssertEqual(IconsCLIRules.refusal(state: .paused, collapsed: false), .paused)
+        XCTAssertEqual(IconsCLIRules.refusal(state: .needsPermission, collapsed: false), .needsPermission)
+        XCTAssertEqual(IconsCLIRules.refusal(state: .unavailable, collapsed: false), .unavailable)
+    }
+
+    func testFailureAfterTheCollapse() {
+        XCTAssertNil(IconsCLIRules.failure(after: .collapsed, statusText: "row"))
+        XCTAssertNil(IconsCLIRules.failure(after: .superseded, statusText: "row"))
+        let arrangement = IconsCLIRules.failure(after: .refused(.arrangement), statusText: "row")
+        XCTAssertEqual(arrangement?.exit, ControlExit.unavailable)
+        XCTAssertEqual(arrangement?.message, "Drag the | divider to the left of the arrow (hold ⌘).")
+        XCTAssertEqual(IconsCLIRules.failure(after: .refused(.needsPermission), statusText: "row")?.message,
+                       IconsCLIRefusal.needsPermission.message)
+        for refusal in IconsRefusal.allCases where IconsCLIRefusal(refusal) == nil {
+            let failure = IconsCLIRules.failure(after: .refused(refusal), statusText: "row")
+            XCTAssertEqual(failure?.exit, ControlExit.unavailable, refusal.rawValue)
+            XCTAssertEqual(failure?.message, "row", refusal.rawValue)
+        }
+        XCTAssertEqual(IconsCLIRules.failure(after: .failed(.activationFailed), statusText: "row")?.message, "row")
+        let unavailable = IconsCLIRules.failure(after: .unavailable, statusText: "row")
+        XCTAssertEqual(unavailable?.exit, 5)
+        XCTAssertEqual(unavailable?.message, "Hidden Icons isn’t available on this version of macOS.")
+    }
 }

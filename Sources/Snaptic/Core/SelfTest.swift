@@ -90,9 +90,12 @@ enum SelfTest {
         for problem in menu { say("selftest: menu items: " + problem + "\n") }
         let awake = runAwakeVerbCheck()
         say("selftest-controls: \(KitControl.awakeVerbRules.count) Awake verbs, \(awakeCases.count) command lines, "
-            + "\(KitControl.retiredVerbs.count) retired verbs\n")
+            + "\(KitControl.retiredVerbs.count) retired verbs, \(removedVerbs.count) removed verbs\n")
         for problem in awake { say("selftest: awake verbs: " + problem + "\n") }
-        exit(problems.isEmpty && menu.isEmpty && awake.isEmpty ? 0 : 1)
+        let icons = runBounded(iconsVerbProblems)
+        say("selftest-controls: \(KitControl.iconsVerbRules.count) Icons verbs, \(iconsCases.count) command lines\n")
+        for problem in icons { say("selftest: icons verbs: " + problem + "\n") }
+        exit(problems.isEmpty && menu.isEmpty && awake.isEmpty && icons.isEmpty ? 0 : 1)
     }
 
     // MARK: Awake verbs (0.3 §2.10, §3.1)
@@ -149,11 +152,14 @@ enum SelfTest {
     }
 
     /// Runs the Awake verb checks on main, bounded by `awakeCheckSeconds`. Returns the problems.
-    private static func runAwakeVerbCheck() -> [String] {
+    private static func runAwakeVerbCheck() -> [String] { runBounded(awakeVerbProblems) }
+
+    /// Runs `check` on main, bounded by `awakeCheckSeconds`. Returns the problems.
+    private static func runBounded(_ check: @escaping @MainActor () async -> [String]) -> [String] {
         MainActor.assumeIsolated {
             let run = AwakeCheckRun()
             Task { @MainActor in
-                run.problems = await awakeVerbProblems()
+                run.problems = await check()
                 run.done = true
             }
             let deadline = Date().addingTimeInterval(awakeCheckSeconds)
@@ -226,6 +232,120 @@ enum SelfTest {
             problems.append(key + " wasn't counted")
         }
         problems += await retiredVerbProblems(registry, peer: peer, lifetime: lifetime)
+        problems += await removedVerbProblems(registry, peer: peer)
+        return problems
+    }
+
+    /// Verbs removed for good (0.4 §4.16: `prevent-sleep`, retired in 0.3). They aren't retired any more: they answer
+    /// the house "Unknown command", exit 2, and help doesn't list them.
+    static let removedVerbs = ["prevent-sleep"]
+
+    @MainActor private static func removedVerbProblems(_ registry: ControlCommandRegistry,
+                                                       peer: ControlPeer) async -> [String] {
+        var problems: [String] = []
+        let unknown = L("Unknown command. Run “snaptic help” for the list.")
+        for verb in removedVerbs {
+            if KitControl.retiredVerbs[verb] != nil { problems.append(verb + " is still retired") }
+            for words in [[verb], [verb, "off"], [verb.uppercased(), "on"]] {
+                let line = words.joined(separator: " ")
+                let response = await dispatch(words, registry: registry, peer: peer)
+                if response.exitCode != ControlExit.usage || response.output != unknown {
+                    problems.append("\(line): exit \(response.exitCode), “\(response.output)”")
+                }
+            }
+            let help = await dispatch(["help"], registry: registry, peer: peer)
+            if help.output.contains(verb) { problems.append("help lists " + verb) }
+        }
+        return problems
+    }
+
+    // MARK: Icons verbs (0.4 §4.14, A9)
+
+    /// A command line and what the real `IconsCLI` handlers, on a stopped module, must answer: status reports
+    /// unavailable, the visibility verbs refuse with the unavailable line (exit 5), misuse is a usage error.
+    private struct IconsCase {
+        let words: [String]
+        let exit: Int32
+        /// The exact reply.
+        let output: String
+
+        init(_ words: [String], exit: Int32 = ControlExit.ok, _ output: String) {
+            self.words = words
+            self.exit = exit
+            self.output = output
+        }
+    }
+
+    private static var iconsCases: [IconsCase] {
+        let stopped = IconsStatusFacts(engine: .unavailable, state: .unavailable)
+        let line = IconsCommandGrammar.statusLine(stopped)
+        let json = IconsCommandGrammar.statusJSON(stopped)
+        let refused = IconsCLIRefusal.unavailable.message
+        let five = IconsCLIRefusal.unavailable.exitCode
+        let usage = IconsCLI.usage.output
+        let unknown = L("Unknown command. Run “snaptic help” for the list.")
+        return [
+            IconsCase(["icons", "status"], line),
+            IconsCase(["ICONS", "Status"], line),
+            IconsCase(["icons", "status", "--json"], json),
+            IconsCase(["--json", "icons", "status"], json),
+            IconsCase(["icons", "show"], exit: five, refused),
+            IconsCase(["icons", "show", "--all"], exit: five, refused),
+            IconsCase(["icons", "hide"], exit: five, refused),
+            IconsCase(["icons", "toggle"], exit: five, refused),
+            IconsCase(["icons", "toggle", "--all"], exit: five, refused),
+            IconsCase(["icons", "hide", "--all"], exit: ControlExit.usage, usage),
+            IconsCase(["icons", "status", "--all"], exit: ControlExit.usage, usage),
+            IconsCase(["icons", "show", "--json"], exit: ControlExit.usage, usage),
+            IconsCase(["icons", "show", "--all", "--all"], exit: ControlExit.usage, usage),
+            IconsCase(["icons", "toggle", "now"], exit: ControlExit.usage, usage),
+            IconsCase(["icons"], exit: ControlExit.usage, unknown),
+            IconsCase(["icons", "edit"], exit: ControlExit.usage, unknown),
+        ]
+    }
+
+    /// The real handlers (`IconsCLI.registerVerbs`) on a module that never started, with stores under keys nothing
+    /// else uses (nothing is written: the module doesn't change them). Then the off module: the verbs are gone.
+    @MainActor private static func iconsVerbProblems() async -> [String] {
+        let lifetime = Lifetime()
+        defer { lifetime.end() }
+        let registry = ControlCommandRegistry()
+        let module = IconsModule(config: ConfigStore<IconsConfig>(key: "SnapticSelftestIconsV1"),
+                                 apps: ConfigStore<IconsAppsState>(key: "SnapticSelftestIconsAppsV1"))
+        let cli = IconsCLI(module: module)
+        cli.registerVerbs(on: registry, lifetime: lifetime)
+        var problems: [String] = []
+        for rule in KitControl.iconsVerbRules {
+            guard let entry = registry.entry(rule.verb) else {
+                problems.append(rule.verb + " isn't registered")
+                continue
+            }
+            if entry.policy != rule.policy || entry.offOnly || entry.holds || !entry.cliAllowed {
+                problems.append(rule.verb + ": the rules weren't applied")
+            }
+        }
+        let peer = ControlPeer(pid: getpid(), uid: getuid(), startTime: SNProcess.startTime(for: getpid()))
+        for item in iconsCases {
+            let line = item.words.joined(separator: " ")
+            let response = await dispatch(item.words, registry: registry, peer: peer)
+            if response.exitCode != item.exit || response.output != item.output {
+                problems.append("\(line): exit \(response.exitCode) “\(response.output)”, expected \(item.exit) "
+                                + "“\(item.output)”")
+            }
+        }
+        let help = await dispatch(["help"], registry: registry, peer: peer)
+        for (verb, summary) in IconsCommandGrammar.verbs
+        where !help.output.contains("icons " + verb) || !help.output.contains(summary) {
+            problems.append("help doesn't list icons " + verb)
+        }
+        // §4.14: an off module registers nothing, so every verb is the house "Unknown command".
+        cli.stop()
+        for (verb, _) in IconsCommandGrammar.verbs {
+            let response = await dispatch(["icons", verb], registry: registry, peer: peer)
+            if response.exitCode != ControlExit.usage || !response.output.hasPrefix(L("Unknown command.")) {
+                problems.append("icons \(verb) with the module off: exit \(response.exitCode)")
+            }
+        }
         return problems
     }
 

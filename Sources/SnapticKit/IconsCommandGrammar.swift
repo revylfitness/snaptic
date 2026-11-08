@@ -148,3 +148,66 @@ package enum IconsCommandGrammar {
 
     private static func count(_ n: Int) -> Int { max(0, min(n, 9_999)) }
 }
+
+/// The app's side of `snaptic icons …` (A9): the status facts and the replies, so the handlers stay thin.
+package enum IconsCLIRules {
+    package static func engine(_ kind: IconsEngineKind?) -> IconsCLIEngine {
+        switch kind {
+        case .native: return .native
+        case .length: return .length
+        case nil: return .unavailable
+        }
+    }
+
+    /// `state=`: unavailable first, then paused (another menu bar hider), then Native's missing permission, then the
+    /// bar. A collapsed bar can report needsPermission or paused; showing its icons is still allowed.
+    package static func state(engine: IconsEngineKind?, state: IconsEngineState, needsPermission: Bool,
+                              paused: Bool) -> IconsCLIState {
+        guard let engine else { return .unavailable }
+        if case .unavailable = state { return .unavailable }
+        if paused { return .paused }
+        if engine == .native, needsPermission { return .needsPermission }
+        return state.isCollapsed ? .collapsed : .expanded
+    }
+
+    /// Counts by section of the last read (Snaptic's own items left out); zero without one.
+    package static func facts(engine: IconsEngineKind?, state: IconsEngineState, needsPermission: Bool, paused: Bool,
+                              layout: IconsLayout?, ownBundleID: String, now: Double) -> IconsStatusFacts {
+        var facts = IconsStatusFacts(engine: Self.engine(engine),
+                                     state: Self.state(engine: engine, state: state, needsPermission: needsPermission,
+                                                       paused: paused))
+        guard let layout else { return facts }
+        for (bundle, section) in layout.sections where bundle != ownBundleID {
+            switch section {
+            case .shown: facts.shown += 1
+            case .hidden: facts.hidden += 1
+            case .alwaysHidden: facts.alwaysHidden += 1
+            }
+        }
+        if layout.readAt > 0 { facts.layoutAgeSeconds = max(now - layout.readAt, 0) }
+        return facts
+    }
+
+    /// The refusal before `show`, `hide` or `toggle` runs. A collapsed bar never refuses: an expand always runs and
+    /// `hide` changes nothing.
+    package static func refusal(state: IconsCLIState, collapsed: Bool) -> IconsCLIRefusal? {
+        collapsed ? nil : IconsCLIRefusal(state: state)
+    }
+
+    /// The failure line after a collapse finished; nil: success. `statusText` is the Settings status row, for a
+    /// refusal the CLI has no line of its own for.
+    package static func failure(after result: IconsCollapseResult,
+                                statusText: String) -> (exit: Int32, message: String)? {
+        switch result {
+        case .collapsed, .superseded:
+            return nil
+        case .refused(let refusal):
+            if let line = IconsCLIRefusal(refusal) { return (line.exitCode, line.message) }
+            return (ControlExit.unavailable, statusText)
+        case .failed:
+            return (ControlExit.unavailable, statusText)
+        case .unavailable:
+            return (IconsCLIRefusal.unavailable.exitCode, IconsCLIRefusal.unavailable.message)
+        }
+    }
+}
