@@ -85,7 +85,7 @@ enum ConfirmResult: Equatable {
         if interactive {
             let mouse = NSEvent.mouseLocation
             let key = windows.values.first { $0.screen.map { NSMouseInRect(mouse, $0.frame, false) } ?? false } ?? windows.values.first
-            NSApp.activate(ignoringOtherApps: true)
+            ActivationPolicyController.shared.activate(.confirm, ignoringOtherApps: true)
             activatedSelf = true
             key?.makeKey()
         }

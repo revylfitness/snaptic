@@ -173,7 +173,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Who holds the lock, and "Quit the other copy" only when that process passes our
     /// designated requirement (R5.7).
     private func lockHolderDialog(holder: pid_t?) {
-        NSApp.activate()
+        ActivationPolicyController.shared.activate(.launch)
         let alert = NSAlert()
         alert.messageText = L("Snaptic is already running")
         var detail = L("Another copy of Snaptic holds its lock, so this one won’t start.")
@@ -200,7 +200,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func failClosed(_ reason: String) {
-        NSApp.activate()
+        ActivationPolicyController.shared.activate(.launch)
         let alert = NSAlert()
         alert.messageText = L("Snaptic couldn’t start")
         alert.informativeText = reason

@@ -186,7 +186,7 @@ struct CustomSessionPanel: View, ControlDeclaring {
         panel.contentViewController = NSHostingController(rootView: view)
         panel.center()
         window = panel
-        NSApp.activate(ignoringOtherApps: true)
+        ActivationPolicyController.shared.activate(.awakePanel, ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
     }
 

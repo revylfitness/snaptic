@@ -28,6 +28,11 @@ PLAN 0.4 (K1, H11 / §4.15) adds L20: under Icons/, `NSLog`/`os_log`/`print`/`de
 literal (no interpolation, no format arguments), `Logger` isn't used, and an `EventLog` `record(…)` interpolates only
 `….rawValue` (a reason code), so no bundle id, app name, AX title or error text reaches a log.
 
+PLAN 0.4 (A4, H9) adds L21: `setActivationPolicy(` and activating Snaptic itself (`NSApp.activate(`,
+`NSApplication.shared.activate(`, `NSRunningApplication.current.activate(`) only in
+Core/ActivationPolicyController.swift and Core/SnapticEntry.swift (the launch default and the refusal alert).
+Activating another app is untouched.
+
 Run by scripts/lint.sh (which passes LINT_MODE=check|write and LINT_STRICT=0|1). Comments are stripped before
 matching (string literals are kept); counts are occurrences, not lines.
 """
@@ -278,6 +283,24 @@ def self_check_04():
     for path, source, flagged in cases:
         if bool(l20_file(path, source)) != flagged:
             problems.append(f"self-check: l20_file {'missed' if flagged else 'wrongly reported'} {source!r} in {path}")
+    backup = "Sources/Snaptic/Core/Backup.swift"
+    l21_cases = [
+        (backup, "NSApp.activate()", True),
+        (backup, "NSApp.activate(ignoringOtherApps: true)", True),
+        (backup, "NSApplication.shared.activate()", True),
+        (backup, "NSRunningApplication.current.activate(options: [])", True),
+        (backup, "NSApp.setActivationPolicy(.regular)", True),
+        (backup, "app.setActivationPolicy(.accessory)", True),
+        (backup, "ActivationPolicyController.shared.activate(.alert)", False),
+        (backup, "app.activate(options: [])", False),
+        (backup, "remembered?.activate()", False),
+        (backup, "x.activationPolicy == .regular", False),
+        ("Sources/Snaptic/Core/SnapticEntry.swift", "app.setActivationPolicy(.accessory)", False),
+        ("Sources/Snaptic/Core/ActivationPolicyController.swift", "NSApp.activate()", False),
+    ]
+    for path, source, flagged in l21_cases:
+        if bool(l21_file(path, source)) != flagged:
+            problems.append(f"self-check: l21_file {'missed' if flagged else 'wrongly reported'} {source!r} in {path}")
     return problems
 
 
@@ -576,6 +599,7 @@ def unratcheted_problems():
     problems += l18()
     problems += l19()
     problems += l20()
+    problems += l21()
     problems += workflows()
     problems += rule2()
     problems += menu_contributors()
@@ -737,6 +761,26 @@ def l20_file(p, t):
                 problems.append(f"{p}: L20 record(…) under Icons/ interpolates only a reason code’s rawValue, "
                                 f"not {expr.strip()!r} (§4.15)")
     return sorted(set(problems))
+
+
+# PLAN 0.4 L21 (A4, H9): one activation-policy owner.
+L21_ALLOWED = ("Sources/Snaptic/Core/ActivationPolicyController.swift", "Sources/Snaptic/Core/SnapticEntry.swift")
+L21_CALL = re.compile(r"\.\s*setActivationPolicy\s*\(|(?<![\w.])(?:NSApp|NSApplication\s*\.\s*shared|"
+                      r"NSRunningApplication\s*\.\s*current)\s*\.\s*activate\s*\(")
+
+
+def l21():
+    problems = []
+    for p in APP:
+        problems += l21_file(p, TEXT[p])
+    return problems
+
+
+def l21_file(p, t):
+    if p in L21_ALLOWED:
+        return []
+    return [f"{p}: L21 {' '.join(m.group(0).split())!r} goes through ActivationPolicyController (H9)"
+            for m in L21_CALL.finditer(t)]
 
 
 def l19_package(manifest, imports, resolved):

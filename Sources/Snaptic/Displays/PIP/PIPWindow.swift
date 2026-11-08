@@ -219,7 +219,7 @@ enum PIPWindowCommand: Equatable {
     func beginCrop() {
         guard mode == .floating, !closed else { return }
         if configuration.clickThrough { window.ignoresMouseEvents = false }
-        NSApp.activate(ignoringOtherApps: true)
+        ActivationPolicyController.shared.activate(.pip, ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         content.beginCrop()
     }
@@ -337,7 +337,7 @@ enum PIPWindowCommand: Equatable {
 }
 
 /// Borderless windows need this to take key (crop drawing, Esc).
-private final class PIPNSWindow: NSWindow {
+private final class PIPNSWindow: NSWindow, ActivationNeutralWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }

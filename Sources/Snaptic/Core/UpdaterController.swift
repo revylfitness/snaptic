@@ -179,7 +179,7 @@ import SnapticKit
 
     func checkForUpdates() {
         guard let controller else { return }
-        NSApp.activate()
+        ActivationPolicyController.shared.activate(.updater)
         controller.checkForUpdates(nil)
     }
 

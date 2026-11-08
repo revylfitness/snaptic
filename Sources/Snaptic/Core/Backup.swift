@@ -27,7 +27,7 @@ import UniformTypeIdentifiers
         panel.nameFieldStringValue = "Snaptic Settings." + fileExtension
         panel.allowedContentTypes = [UTType(filenameExtension: fileExtension) ?? .json]
         panel.canCreateDirectories = true
-        NSApp.activate()
+        ActivationPolicyController.shared.activate(.savePanel)
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try document.write(to: url, options: [.atomic])
@@ -60,7 +60,7 @@ import UniformTypeIdentifiers
         panel.allowedContentTypes = [UTType(filenameExtension: fileExtension) ?? .json, .json]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        NSApp.activate()
+        ActivationPolicyController.shared.activate(.savePanel)
         guard panel.runModal() == .OK, let url = panel.url else { return }
         let path = url.path
         Task { @MainActor [weak host] in
@@ -174,7 +174,7 @@ import UniformTypeIdentifiers
         }
         alert.addButton(withTitle: L("Import"))
         alert.addButton(withTitle: L("Cancel"))
-        NSApp.activate()
+        ActivationPolicyController.shared.activate(.alert)
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         if let newSwitcher { host.switcherSettings.config = newSwitcher }
         if let newModules { host.modulesStore.value = newModules }

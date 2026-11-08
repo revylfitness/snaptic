@@ -346,12 +346,10 @@ import SnapticKit
     }
 
     /// Snaptic's own windows that hold the timer: anything titled (Settings, onboarding, confirm and save panels,
-    /// Sparkle, the custom session and PIP editors). The status items, the PIP picture itself, the OSD and toasts
-    /// are untitled and don't count.
+    /// Sparkle, the custom session editor), the same test H9's demotion uses. The status items, PIP windows (titled
+    /// or not, `ActivationNeutralWindow`), the OSD and toasts don't count.
     static func snapticWindowVisible() -> Bool {
-        NSApp.windows.contains { window in
-            window.isVisible && !window.isMiniaturized && window.styleMask.contains(.titled)
-        }
+        ActivationPolicyController.snapticWindowVisible()
     }
 
     /// On-screen windows other than the desktop's, AppKit global space.

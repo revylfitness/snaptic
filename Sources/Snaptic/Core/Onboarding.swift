@@ -20,6 +20,8 @@ import SnapticKit
 
     private weak var host: ModuleHost?
     private var window: NSWindow?
+    /// Keeps Snaptic `.regular` while onboarding is open (H9).
+    private var policyToken: ActivationPolicyController.Token?
     private let model = OnboardingModel()
 
     init(host: ModuleHost) {
@@ -58,8 +60,8 @@ import SnapticKit
             window.center()
             self.window = window
         }
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate()
+        if policyToken == nil { policyToken = ActivationPolicyController.shared.hold(.onboarding) }
+        ActivationPolicyController.shared.activate(.onboarding)
         window?.makeKeyAndOrderFront(nil)
     }
 
@@ -139,11 +141,8 @@ import SnapticKit
         // Closed early: the saved step stays, and onboarding resumes next launch.
         host?.permissions.holdAutomaticGuides = false
         host?.modulesStore.flush()
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated {
-                if !(self.host?.settingsWindow.isOpen ?? false) { NSApp.setActivationPolicy(.accessory) }
-            }
-        }
+        policyToken?.release()
+        policyToken = nil
     }
 }
 

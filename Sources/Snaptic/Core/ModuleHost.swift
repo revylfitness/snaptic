@@ -145,6 +145,9 @@ import SnapticKit
         awake = AwakeModule(config: awakeConfig, state: awakeState, history: awakeHistory)
         icons = IconsModule()
         m1Toast = Self.pendingM1Toast(m1, ledger: ledger, awake: awakeConfig)
+        // H9 (P-24): Snaptic doesn't activate over the Window Switcher panel.
+        let signals = self.signals
+        ActivationPolicyController.shared.switcherPanelOpen = { [weak signals] in signals?.switcherVisible ?? false }
     }
 
     /// The one-time migrations, in the R5-2 order: ledger → M3 (modules) → M4, M5, M10 (displays) → Awake inserted

@@ -245,7 +245,7 @@ enum PermissionStatus: Equatable { case granted, denied, unknown }
             flow.windowDelegate = delegate
             flow.window = window
         }
-        NSApp.activate()
+        ActivationPolicyController.shared.activate(.permissionGuide)
         flow.window?.makeKeyAndOrderFront(nil)
     }
 

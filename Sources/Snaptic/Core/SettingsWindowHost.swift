@@ -5,7 +5,7 @@ import SnapticKit
 /// The Settings window (PLAN 0.3 §4.2): `SettingsShellView` over `SettingsShell.shared` — sidebar with search and
 /// the seven roots, a NavigationStack per root. Fixed width 715 pt, vertical resize only (min 520, default 720);
 /// minimize and zoom are off, as for System Settings. While it is open the app is `.regular` (Dock and ⌘⇥, 0.2
-/// R5.8); it goes back to `.accessory` when it closes and no other Snaptic window (onboarding) is open.
+/// R5.8); it goes back to `.accessory` when it closes and nothing else holds it (`ActivationPolicyController`, H9).
 @MainActor final class SettingsWindowHost: NSObject, NSWindowDelegate {
     static let width: CGFloat = 715
     static let minimumHeight: CGFloat = 520
@@ -19,6 +19,8 @@ import SnapticKit
     private var window: NSWindow?
     private var pageToken: NSObjectProtocol?
     private var eventMonitor: Any?
+    /// Keeps Snaptic `.regular` while Settings is open (H9).
+    private var policyToken: ActivationPolicyController.Token?
     let shell = SettingsShell.shared
 
     init(host: ModuleHost) {
@@ -47,8 +49,8 @@ import SnapticKit
         let isExternal = external || NSAppleEventManager.shared().currentAppleEvent != nil
         shell.open(page: page, external: isExternal)
         let window = self.window ?? makeWindow(host: host)
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate()
+        if policyToken == nil { policyToken = ActivationPolicyController.shared.hold(.settings) }
+        ActivationPolicyController.shared.activate(.settings)
         window.makeKeyAndOrderFront(nil)
     }
 
@@ -123,14 +125,9 @@ import SnapticKit
     }
 
     func windowWillClose(_ notification: Notification) {
-        // Back to a menu-bar app. Deferred, so the window finishes closing first.
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated {
-                let settingsOpen = self.window?.isVisible ?? false
-                let onboardingOpen = self.host?.onboarding.isShowing ?? false
-                if !settingsOpen && !onboardingOpen { NSApp.setActivationPolicy(.accessory) }
-            }
-        }
+        // Back to a menu-bar app once nothing else holds it; the controller waits for this window to finish closing.
+        policyToken?.release()
+        policyToken = nil
     }
 }
 

@@ -126,7 +126,7 @@ struct PreConfirmToken: Sendable {
             } else {
                 panel.center()
             }
-            NSApp.activate(ignoringOtherApps: true)
+            ActivationPolicyController.shared.activate(.confirm, ignoringOtherApps: true)
             panel.makeKeyAndOrderFront(nil)
             NSAccessibility.post(element: panel, notification: .announcementRequested,
                                  userInfo: [.announcement: panel.title, .priority: NSAccessibilityPriorityLevel.high.rawValue])
