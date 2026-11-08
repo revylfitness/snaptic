@@ -12,6 +12,8 @@
     <string>Snaptic</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleShortVersionString</key>
     <string>0.3.4</string>
     <!-- major·10000 + minor·100 + patch (PLAN 0.3.1 E4); the release workflow checks it. -->
