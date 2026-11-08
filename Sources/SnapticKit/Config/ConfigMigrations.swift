@@ -17,6 +17,9 @@ package enum MigrationID: String, CaseIterable, Sendable {
     /// is finished (recorded at once for new users of a build that asks about updates, and when an upgrader is done with
     /// the card).
     case v031Welcome = "v031Welcome.v1", v031WelcomeDone = "v031Welcome.done"
+    /// 0.4 H10: the "New: Hidden Icons" decision for upgraders was made (recorded on every install's first 0.4
+    /// launch).
+    case iconsCard = "iconsCard.v1"
 }
 
 extension MigrationLedger {

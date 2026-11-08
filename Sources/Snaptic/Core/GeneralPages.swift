@@ -111,13 +111,21 @@ private struct GeneralPageContent: View {
         }
     }
 
-    /// Turn On Awake / Turn On Displays turn the module on; Show Awake doesn't. Each opens the module's page.
+    /// Turn On Awake / Displays / Hidden Icons turn the module on; Show Awake doesn't. Each opens the module's page;
+    /// Turn On Hidden Icons also presents How to Arrange (0.4 §4.16), on the next turn because `go(to:)` clears
+    /// the open sheet.
     private func act(on card: NewModuleCard) {
         let id = GeneralCardRules.module(of: card)
         var config = GeneralCardRules.dismissing(card, in: modules.value)
         if card != .awakeMigrated { config.setEnabled(true, for: id) }
         modules.value = config
         shell.go(to: SettingsLocation(root: id.rawValue))
+        if card == .hiddenIcons {
+            let shell = shell
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { shell.openSheet = IconsPageControls.arrangeSheet }
+            }
+        }
     }
 
     private func dismiss(_ card: NewModuleCard) {

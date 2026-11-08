@@ -174,10 +174,11 @@ import SnapticKit
         icons.ownItems = { [weak self] in self?.statusMenu.iconsOwnItems ?? [] }
     }
 
-    /// The one-time migrations, in the R5-2 order: ledger → M3 (modules) → M4, M5, M10 (displays) → Awake inserted
-    /// off for upgraders (§2.13, once: marker `awakeUpgrade.v1`) → M1 → forced saves: modules, displays, Awake, then the ledger last (the commit
-    /// point; a crash before it re-runs migrations that are idempotent over what that run wrote). Returns M1's
-    /// result when it ran in this launch.
+    /// The one-time migrations, in the R5-2 order: ledger → M3 (modules) → M4, M5, M10 (displays) → Awake
+    /// inserted off for upgraders (§2.13, once: marker `awakeUpgrade.v1`) → 0.3.1 welcome → "New: Hidden Icons"
+    /// for upgraders (0.4 H10, once: marker `iconsCard.v1`) → M1 → forced saves: modules, displays, Awake, then the
+    /// ledger last (the commit point; a crash before it re-runs migrations that are idempotent over what that run
+    /// wrote). Returns M1's result when it ran in this launch.
     private static func runMigrations(modules: ConfigStore<ModulesConfig>, modulesExisted: Bool, v031Upgrader: Bool,
                                       displays: ConfigStore<DisplaysConfig>, awake: ConfigStore<AwakeConfig>,
                                       icons: ConfigStore<IconsConfig>, iconsApps: ConfigStore<IconsAppsState>,
@@ -189,6 +190,8 @@ import SnapticKit
         // 0.3.1 E1a: an upgrader's module settings existed before this launch (0.3.0 stored no last-run version), or
         // an earlier version ran (0.1 and 0.2 users skip onboarding; r2 C2-1).
         marks.recordV031Welcome(upgrader: v031Upgrader, canAsk: UpdaterController.gate == .ready)
+        // 0.4 H10: "New: Hidden Icons" for upgraders with it off, once (marker `iconsCard.v1`).
+        modules.value = modules.value.insertingIconsCard(upgrader: v031Upgrader, ledger: &marks)
         // M1 (§4.6, R5-12): G's pure migration over the raw 0.2 JSON; the marker is recorded whatever it found.
         var m1: AwakeMigrationResult?
         if !marks.has(.fromDisplays) {

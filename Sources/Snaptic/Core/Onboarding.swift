@@ -3,10 +3,11 @@ import SwiftUI
 import SnapticKit
 
 /// First-run onboarding (H; PLAN 0.3 §4.7): Welcome → Choose modules → Displays chips (F's
-/// `DisplaysOnboardingStep`, only while Displays is on) → Permissions (only what was chosen) → Keep Snaptic Up to
-/// Date (0.3.1 E1a) → Done. One primary button, always in the window footer ("Continue" / "Done"; on the Displays step
-/// it applies the chips; on the updates page Check Automatically and Not Now, either of which moves on), with Back
-/// beside it. The step is saved after every move, so closing the window and relaunching resumes where it stopped.
+/// `DisplaysOnboardingStep`, only while Displays is on) → Arrange Your Icons (0.4 H5, only while Hidden Icons is on)
+/// → Permissions (only what was chosen) → Keep Snaptic Up to Date (0.3.1 E1a) → Done. One primary button, always in
+/// the window footer ("Continue" / "Done"; on the Displays step it applies the chips; on the updates page Check
+/// Automatically and Not Now, either of which moves on), with Back beside it. The step is saved after every move, so
+/// closing the window and relaunching resumes where it stopped.
 ///
 /// The updates page shows only in builds that update themselves and while the user hasn't answered (Kit
 /// `OnboardingUpdatesPage`). A first launch opens the window before `startUpdater()` creates the updater, so the page
@@ -177,6 +178,7 @@ private struct OnboardingView: View {
                     case .welcome: welcome
                     case .modules: modules
                     case .displays: displays
+                    case .arrange: arrange
                     case .permissions: permissionsStep
                     case .done: done
                     }
@@ -222,7 +224,7 @@ private struct OnboardingView: View {
                 .accessibilityHidden(true)
             Text(L("Welcome to Snaptic"))
                 .font(.largeTitle.weight(.semibold))
-            Text(L("A window switcher, display controls, and Keep Awake, in your menu bar. Turn on only what you want; everything else stays off."))
+            Text(L("A window switcher, display controls, Keep Awake, and hidden menu bar icons, in your menu bar. Turn on only what you want; everything else stays off."))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 420)
@@ -248,7 +250,7 @@ private struct OnboardingView: View {
                 }
             }
             .formStyle(.grouped)
-            .scrollDisabled(true)
+            // 0.4 H5: four rows fit at the default text size; at the largest the form scrolls (this step only).
         }
     }
 
@@ -266,11 +268,31 @@ private struct OnboardingView: View {
                 set: { store.value.setPresence($0 ? .hidden : .inSnapticMenu, for: .displays) })
     }
 
-    /// What the chosen modules and display features need.
+    /// 0.4 H5: the per-engine diagram and the ⌘-drag rules; nothing hides until the first click on the arrow.
+    private var arrange: some View {
+        VStack(spacing: 0) {
+            heading(L("Arrange Your Icons"), nil)
+            IconsArrangeGuide(engine: host.icons.engineKind ?? IconsArrangeSheet.engineForThisMac,
+                              alwaysHidden: host.icons.config.value.alwaysHidden)
+                .frame(maxWidth: 460, alignment: .leading)
+                .padding(.horizontal, 40)
+                .padding(.top, 16)
+            Text(L("Nothing hides until you click the arrow for the first time."))
+                .font(.headline)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 460)
+                .padding(.horizontal, 40)
+                .padding(.top, 18)
+        }
+    }
+
+    /// What the chosen modules and display features need (Hidden Icons: Accessibility on macOS 27, H4).
     private var needed: [Permission] {
         var set = Set(store.value.onboardingPermissions)
-        if store.value.isEnabled(.windowSwitcher) && !host.disabledByDefaults.contains(.windowSwitcher) {
-            set.formUnion(host.switcher.requiredPermissions)
+        for module in [host.switcher as any SnapticModule, host.icons]
+        where store.value.isEnabled(module.id) && !host.disabledByDefaults.contains(module.id) {
+            set.formUnion(module.requiredPermissions)
         }
         return Permission.allCases.filter { set.contains($0) }
     }
@@ -332,19 +354,27 @@ private struct OnboardingView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 420)
+            if store.value.isEnabled(.hiddenIcons) && !host.disabledByDefaults.contains(.hiddenIcons) {
+                Text(L("Click the arrow ‹ to hide icons once they’re arranged."))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 420)
+            }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 40)
     }
 
-    private func heading(_ title: String, _ text: String) -> some View {
+    private func heading(_ title: String, _ text: String?) -> some View {
         VStack(spacing: 6) {
             Text(title)
                 .font(.title.weight(.semibold))
-            Text(text)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
+            if let text {
+                Text(text)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: 460)
         .padding(.horizontal, 40)

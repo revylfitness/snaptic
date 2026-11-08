@@ -111,7 +111,7 @@ final class IconsControlsTests: XCTestCase {
         return FileManager.default.fileExists(atPath: app.path) ? root : nil
     }
 
-    /// §4.17's strings as the sources spell them: counts, times and names are the interpolations that fill them
+    /// §4.17's (and §4.16's) strings as the sources spell them: counts, times and names are the interpolations that fill them
     /// ("Hiding 7 icons" is `Hiding \(n) icons`, "9:41" is `\(time)`).
     private static let canonical: [String] = [
         #"Hidden Icons"#,
@@ -189,6 +189,15 @@ final class IconsControlsTests: XCTestCase {
         #"Relaunch Snaptic"#,
         #"Open Privacy Settings"#,
         #"Show Arrow"#,
+        // §4.16: the New card and onboarding (A8).
+        #"New: Hidden Icons"#,
+        #"Hide the menu bar icons you don’t need behind an arrow, and open them from the Snaptic menu."#,
+        #"Turn On Hidden Icons"#,
+        #"A window switcher, display controls, Keep Awake, and hidden menu bar icons, in your menu bar. "#
+            + #"Turn on only what you want; everything else stays off."#,
+        #"Arrange Your Icons"#,
+        #"Nothing hides until you click the arrow for the first time."#,
+        #"Click the arrow ‹ to hide icons once they’re arranged."#,
     ]
 
     /// Every §4.17 string is a whole literal somewhere in the app or Kit sources, so a reworded string fails here

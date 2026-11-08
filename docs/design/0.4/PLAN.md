@@ -1261,7 +1261,7 @@ Results are in `STEP0-NOTES.md`. No Blocker row failed. These changes follow fro
 | R2-8 | The completion arrives on a background thread; off-main `invalidate` is safe (S0-5). | No change: the shim hops to main, and the watchdog calls `invalidateAll` off main. |
 | R2-9 | Rows carried forward: S0-7 camera/mic/location and S0-8 (a)/(c) before A2; S0-9 before A3; S0-13/14 and Bartender's team id at R. | Listed in `STEP0-NOTES.md` › Carried forward. |
 
-## R3. Implementation changes (K5, B1, A1, A2, A3, A4, A5, A6, A7, 2026-11-07)
+## R3. Implementation changes (K5, B1, A1, A2, A3, A4, A5, A6, A7, A8, 2026-11-07)
 
 Where the code departs from the text above, the code and this table win.
 
@@ -1334,3 +1334,9 @@ Where the code departs from the text above, the code and this table win.
 | R3-65 | §4.9, A7 | Reset Arrow Position… has the help "Puts the arrow and dividers back next to the Snaptic icon if you can’t find them." The Advanced sheet's Diagnostics section lists `diagnosticsLines()` above the kill switches. |
 | R3-66 | §4.12, A7 | The Permissions page lists Hidden Icons under Accessibility's "Needed by" on 14–26 while it runs, and on 27 adds the relaunch note (Relaunch Snaptic) when the grant isn't effective. |
 | R3-67 | §4.17, D1, A7 | The README's Menu Bar text, "eight pages" and the ⌘1–⌘4 line stay for D1. The §4.17 check is `IconsControlsTests.testEveryCanonicalStringIsInTheSources` (whole literals, counts and times as interpolations). `L15_PENDING` is empty. |
+| R3-68 | H5, §4.16, A8 | `OnboardingStep.arrange` sits between Displays and Permissions. Its heading is title case, "Arrange Your Icons", like the other steps. It shows How to Arrange's content (the diagram, "Hold ⌘ and drag…", the bullets and the closing line; shared as `IconsArrangeGuide`), then "Nothing hides until you click the arrow for the first time." For onboarding, this step is the "turning it on presents How to Arrange" path. |
+| R3-69 | H5, A8 | `resumeStep`: a saved step that no longer applies moves on to the next step that does (it was always the step after Modules, which could go back to Displays). |
+| R3-70 | H5, A8 | The modules step no longer disables scrolling: four rows fit at the default text size, and the grouped form scrolls when it doesn't. The other steps are unchanged. The largest-text check is M31's. |
+| R3-71 | H4, H5, A8 | The permissions step adds Hidden Icons' `requiredPermissions` while it's on (Accessibility on 27, shown with its 27 pane name; nothing on 14–26). The Done line shows while Hidden Icons is on and not turned off by `Modules.disable.hiddenIcons`. |
+| R3-72 | H10, §4.16, A8 | `insertingIconsCard(upgrader:ledger:)` runs after the 0.3.1 welcome and before M1. It records `iconsCard.v1` whatever it decides, and adds the card only for an upgrader (`isV031Upgrader`, so 0.1 users on `upgradeDefaults` too) whose onboarding is done, with Hidden Icons off and the card not stored. Turn On Hidden Icons presents How to Arrange on the next main-queue turn after `go(to:)`, which clears the open sheet. |
+| R3-73 | §4.16, A8 | The §4.16 strings joined `IconsControlsTests.canonical`. |

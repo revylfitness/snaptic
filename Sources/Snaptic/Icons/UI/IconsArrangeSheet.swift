@@ -2,8 +2,8 @@ import SwiftUI
 import SnapticKit
 
 /// How to Arrange Your Icons (lead; PLAN 0.4 §4.17, §4.0, A7): a small drawing of the menu bar with its sections,
-/// then the ⌘-drag rules for this engine. Opened by How to Arrange…, the first-run status action, and turning
-/// Hidden Icons on. It has no settings, so no controls.
+/// then the ⌘-drag rules for this engine (`IconsArrangeGuide`). Opened by How to Arrange…, the first-run status
+/// action, turning Hidden Icons on, and the New card's Turn On. It has no settings, so no controls.
 struct IconsArrangeSheet: View {
     let engine: IconsEngineKind
     let alwaysHidden: Bool
@@ -15,11 +15,33 @@ struct IconsArrangeSheet: View {
     }
 
     var body: some View {
-        let lines = IconsPageRules.arrangeLines(engine: engine, alwaysHidden: alwaysHidden)
         VStack(alignment: .leading, spacing: 14) {
             Text(IconsPageRules.arrangeTitle)
                 .font(.headline)
                 .accessibilityAddTraits(.isHeader)
+            IconsArrangeGuide(engine: engine, alwaysHidden: alwaysHidden)
+            HStack {
+                Spacer()
+                Button(L("Done")) { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 460)
+        .onAppear { SettingsShell.shared.sheetDidAppear() }
+        .onExitCommand { dismiss() }
+    }
+}
+
+/// The diagram and the ⌘-drag rules for an engine: the How to Arrange sheet's content, and onboarding's Arrange Your
+/// Icons step (0.4 H5).
+struct IconsArrangeGuide: View {
+    let engine: IconsEngineKind
+    let alwaysHidden: Bool
+
+    var body: some View {
+        let lines = IconsPageRules.arrangeLines(engine: engine, alwaysHidden: alwaysHidden)
+        VStack(alignment: .leading, spacing: 14) {
             diagram
             Text(IconsPageRules.arrangeIntro)
             VStack(alignment: .leading, spacing: 6) {
@@ -33,16 +55,7 @@ struct IconsArrangeSheet: View {
             Text(lines.closing)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack {
-                Spacer()
-                Button(L("Done")) { dismiss() }
-                    .keyboardShortcut(.defaultAction)
-            }
         }
-        .padding(20)
-        .frame(width: 460)
-        .onAppear { SettingsShell.shared.sheetDidAppear() }
-        .onExitCommand { dismiss() }
     }
 
     // MARK: Diagram
