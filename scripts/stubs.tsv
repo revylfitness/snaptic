@@ -596,3 +596,9 @@ Sources/SnapticKit/IconsLayout.swift	lead	L	-	-
 Tests/SnapticKitTests/IconsLayoutTests.swift	lead	L	-	-
 Sources/SnapticKit/IconsEngineCore.swift	lead	L	-	-
 Tests/SnapticKitTests/IconsEngineCoreTests.swift	lead	L	-	-
+Sources/SnapticKit/IconsPolicy.swift	lead	L	-	-
+Sources/SnapticKit/IconsIntentQueue.swift	lead	L	-	-
+Sources/SnapticKit/IconsActivationRule.swift	lead	L	-	-
+Tests/SnapticKitTests/IconsPolicyTests.swift	lead	L	-	-
+Tests/SnapticKitTests/IconsIntentQueueTests.swift	lead	L	-	-
+Tests/SnapticKitTests/IconsActivationRuleTests.swift	lead	L	-	-
