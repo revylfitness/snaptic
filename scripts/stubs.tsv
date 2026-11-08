@@ -586,3 +586,9 @@ Sources/SnapticKit/UpdatePolicy.swift	T-update	L	-	-
 Tests/SnapticKitTests/UpdatePolicyTests.swift	T-update	L	-	-
 Sources/Snaptic/Core/SelfTestLaunch.swift	T-update	L	-	-
 Tests/SnapticKitTests/LidWatchdogShellTests.swift	T-lid-kit	L	-	-
+Sources/Snaptic/Icons/IconsModule.swift	lead	L	-	-
+Sources/SnapticKit/IconsModel.swift	lead	L	-	-
+Sources/SnapticKit/Config/ConfigIcons.swift	lead	L	-	-
+Sources/SnapticKit/KnownMenuBarHiders.swift	lead	L	-	-
+Tests/SnapticKitTests/ConfigIconsTests.swift	lead	L	-	-
+Tests/SnapticKitTests/KnownMenuBarHidersTests.swift	lead	L	-	-

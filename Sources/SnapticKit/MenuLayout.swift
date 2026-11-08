@@ -101,6 +101,7 @@ extension ModuleID {
         case .windowSwitcher: return L("Switcher")
         case .displays: return L("Displays")
         case .awake: return L("Awake")
+        case .hiddenIcons: return L("Icons")
         }
     }
 }

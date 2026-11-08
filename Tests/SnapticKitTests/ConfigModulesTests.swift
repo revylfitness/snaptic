@@ -12,7 +12,10 @@ final class ConfigModulesTests: XCTestCase {
 
     func testFreshDefaultsEnableEveryModuleInTheSharedMenu() {
         let c = ModulesConfig()
-        XCTAssertEqual(c.enabledModules, ModuleID.allCases)
+        // 0.4: Hidden Icons is off until the user turns it on (H2).
+        XCTAssertEqual(c.enabledModules, ModuleID.allCases.filter { $0 != .hiddenIcons })
+        XCTAssertFalse(c.isEnabled(.hiddenIcons))
+        XCTAssertEqual(c.presence(.hiddenIcons), .inSnapticMenu)
         // 0.3: per-id defaults; Awake is shown when active (C11), so placement(.awake) is no longer .shared.
         for id in [ModuleID.windowSwitcher, .displays] { XCTAssertEqual(c.placement(id), .shared) }
         XCTAssertEqual(c.presence(.awake), .ownIconWhenActive)
@@ -280,7 +283,7 @@ final class ConfigModulesTests: XCTestCase {
         XCTAssertTrue(stored.needsOnboarding)
         XCTAssertEqual(stored.resumeStep, .welcome)
         XCTAssertFalse(stored.showNewDisplaysCard)
-        XCTAssertEqual(stored.enabledModules, ModuleID.allCases)
+        XCTAssertEqual(stored.enabledModules, ModuleID.allCases.filter { $0 != .hiddenIcons })
     }
 
     func testFirstRunOfAnEarlierUserIsTheUpgrade() {
@@ -313,6 +316,10 @@ final class ConfigModulesTests: XCTestCase {
         var p = c.preferences(.displays)
         p.hideWithoutExternalDisplay = true
         c.modules[.displays] = p
+        XCTAssertTrue(c.iconsNeedExternalDisplay)
+        c.setEnabled(true, for: .hiddenIcons)
+        XCTAssertFalse(c.iconsNeedExternalDisplay)       // 0.4: Hidden Icons' arrow always shows
+        c.setEnabled(false, for: .hiddenIcons)
         XCTAssertTrue(c.iconsNeedExternalDisplay)
         c.setPlacement(.ownIcon, for: .windowSwitcher)
         XCTAssertFalse(c.iconsNeedExternalDisplay)       // the switcher's icon still shows

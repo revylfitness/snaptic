@@ -4,10 +4,12 @@ import XCTest
 final class SettingsShellRulesTests: XCTestCase {
     private let roots = Set(SettingsRootID.all)
 
-    func testSevenRootsInSidebarOrder() {
+    func testEightRootsInSidebarOrder() {
+        // 0.4 H1: Hidden Icons after Awake, before Permissions.
         XCTAssertEqual(SettingsRootID.all,
-                       ["general", "menuBar", "windowSwitcher", "displays", "awake", "permissions", "about"])
-        XCTAssertEqual(roots.count, 7)
+                       ["general", "menuBar", "windowSwitcher", "displays", "awake", "hiddenIcons", "permissions",
+                        "about"])
+        XCTAssertEqual(roots.count, 8)
         XCTAssertEqual(SettingsRootID.groups.count, 3)
         for id in ModuleID.allCases { XCTAssertTrue(roots.contains(id.rawValue)) }
     }
@@ -16,6 +18,11 @@ final class SettingsShellRulesTests: XCTestCase {
 
     func testResolveRoots() {
         XCTAssertEqual(SettingsLocation.resolve("displays", roots: roots), SettingsLocation(root: "displays"))
+        // 0.4 H1: the root id, and "icons.<sub-page>" through the alias (bare aliases don't resolve, as "switcher").
+        XCTAssertEqual(SettingsLocation.resolve("hiddenIcons", roots: roots), SettingsLocation(root: "hiddenIcons"))
+        XCTAssertEqual(SettingsLocation.resolve("icons.sections", roots: roots),
+                       SettingsLocation(root: "hiddenIcons", route: SettingsRoute("icons.sections")))
+        XCTAssertNil(SettingsLocation.resolve("icons", roots: roots))
         XCTAssertEqual(SettingsLocation.resolve("about", roots: roots), SettingsLocation(root: "about"))
     }
 
@@ -169,7 +176,7 @@ final class SettingsHelpAnchorsTests: XCTestCase {
 
     /// Headings the README doesn't have yet: the docs step (lead, step 5) adds them, then removes them here. Once a
     /// heading exists this test fails until it is removed from the list, so the list only shrinks.
-    private static let awaitingREADME: Set<String> = []
+    private static let awaitingREADME: Set<String> = ["Hidden Icons"]   // 0.4 D1
 
     /// Review round 2 ux N4: every (?) anchor is a real heading of README.md (no "#anchor" that lands on the top).
     func testEveryAnchorIsAReadmeHeading() throws {

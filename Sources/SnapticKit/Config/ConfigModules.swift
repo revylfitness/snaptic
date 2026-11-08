@@ -205,7 +205,7 @@ package struct ModulesConfig: ConfigModel {
         for (id, prefs) in c.modules.values {
             var p = prefs
             if !Self.isCuratedSymbol(p.symbol) { p.symbol = "" }
-            if !MenuPresence.allowed(for: id).contains(p.presence) { p.presence = .ownIcon }
+            if !MenuPresence.allowed(for: id).contains(p.presence) { p.presence = MenuPresence.fallback(for: id) }
             c.modules[id] = p
         }
         c.newModuleCards = newModuleCards.uniqued()
@@ -218,12 +218,13 @@ package struct ModulesConfig: ConfigModel {
 
     // MARK: Defaults
 
-    /// A fresh install, per module: every module on; Window Switcher and Displays in the shared menu, Awake shown
-    /// when active (0.3 C11).
+    /// A fresh install, per module: Window Switcher and Displays on in the shared menu, Awake on and shown when
+    /// active (0.3 C11), Hidden Icons off with a Snaptic-menu section (0.4 H2, H10).
     package static func defaultPreferences(_ id: ModuleID) -> ModulePreferences {
         switch id {
         case .windowSwitcher, .displays: return ModulePreferences(enabled: true, presence: .inSnapticMenu)
         case .awake: return ModulePreferences(enabled: true, presence: .ownIconWhenActive)
+        case .hiddenIcons: return ModulePreferences(enabled: false, presence: .inSnapticMenu)
         }
     }
 
@@ -272,13 +273,15 @@ package struct ModulesConfig: ConfigModel {
             showNewDisplaysCard = false
             newModuleCards.removeAll { $0 == .displays }
         }
+        // 0.4 H10: turning Hidden Icons on clears its "New: Hidden Icons" card.
+        if id == .hiddenIcons && enabled { newModuleCards.removeAll { $0 == .hiddenIcons } }
     }
 
     package func presence(_ id: ModuleID) -> MenuPresence { preferences(id).presence }
 
     package mutating func setPresence(_ presence: MenuPresence, for id: ModuleID) {
         var p = preferences(id)
-        p.presence = MenuPresence.allowed(for: id).contains(presence) ? presence : .ownIcon
+        p.presence = MenuPresence.allowed(for: id).contains(presence) ? presence : MenuPresence.fallback(for: id)
         modules[id] = p
     }
 
@@ -402,8 +405,10 @@ extension ModulesConfig {
     /// Every icon that could show is the Displays icon set to "Hide the icon when no
     /// external display is connected": without an external display nothing shows in the
     /// menu bar (General → Menu warns). "Everything hidden" has its own notice.
-    /// Awake shown only when active doesn't count: it isn't there at rest either.
+    /// Awake shown only when active doesn't count: it isn't there at rest either. Hidden Icons' arrow always shows
+    /// while it's on, whatever its presence (0.4 H2), so then the bar is never empty.
     package var iconsNeedExternalDisplay: Bool {
+        guard !isEnabled(.hiddenIcons) else { return false }
         let shown = enabledModules.filter { id in
             presence(id) != .hidden && !(id == .awake && presence(id) == .ownIconWhenActive)
         }

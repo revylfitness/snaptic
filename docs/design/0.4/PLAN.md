@@ -237,12 +237,12 @@ The Kit core never sees an `NSStatusItem`. It talks to `IconsItemsPort` (`frame(
   - **`SnapticIconsAppsV1`** is `ConfigStore<IconsAppsState>`, which holds everything that contains a bundle id:
     - the layout cache with `readAt`;
     - `knownBundles` (bundle → last section, firstSeen, lastSeen; cap 512, LRU);
-    - `newAllowed` (cap 64, LRU);
+    - `newShown` (cap 64, LRU);
     - `choices` (bundle → alwaysShow | alwaysHide);
     - the per-app daily toast ledger.
 
     It is excluded from backup and diagnostics. Reset clears it, and Restore Defaults clears `choices` and
-    `newAllowed`.
+    `newShown`.
   - Both stores are wired into `ModuleHost.init`, `runMigrations` (forced save), `shutdown` (flush),
     `resetAllSettings` and Safe Mode's store list.
   - `ModulesConfig.defaultPreferences(.hiddenIcons)` is off. An absent entry already reads as the default.
@@ -383,7 +383,7 @@ in-process frame unchanged, and that a macOS-overflowed item legitimately sits o
      `com.apple.TextInputMenuAgent` (R2-1);
    - visible-section bundles;
    - `Bundle.main.bundleIdentifier`;
-   - `newAllowed`;
+   - `newShown`;
    - Always Show choices.
 
    Remove Always Hide choices.
@@ -395,7 +395,7 @@ in-process frame unchanged, and that a macOS-overflowed item legitimately sits o
   relaunch.
 - **Expand:**
   - A plain expand with Always Hidden on keeps a **restricted** assertion: system + visible + hidden + own +
-    `newAllowed`, minus the AH bundles.
+    `newShown`, minus the AH bundles.
   - A plain expand with AH off, a ⌥ expand, fail-safe and `stop()` all invalidate, leaving the bar unrestricted.
   - After every expand that invalidates, the token is released, so the framework holds nothing it could re-acquire
     (X-5).
@@ -433,7 +433,7 @@ in-process frame unchanged, and that a macOS-overflowed item legitimately sits o
 
 | State | Length: `\|` | Length: `⋮` (AH on) | Native: `\|` | Native: `⋮` (AH on) | Native assertion |
 |---|---|---|---|---|---|
-| Collapsed | L | 0 (Hidden's L already covers it) | 0 | 0 | system + visible + own + newAllowed |
+| Collapsed | L | 0 (Hidden's L already covers it) | 0 | 0 | system + visible + own + newShown |
 | Expanded, plain | 20, or 0 if dividers off | **L** (AH stays off-screen) | 0 | 20, or 0 if dividers off | restricted: + hidden, minus AH |
 | Expanded, ⌥ | 20, or 0 if dividers off | 20, or 0 if dividers off | 0 | 20, or 0 if dividers off | none (invalidated) |
 | AH off | as above | removed | 0 | removed | as above, without the AH split |
@@ -547,7 +547,7 @@ in-process frame unchanged, and that a macOS-overflowed item legitimately sits o
 - **Stable-inventory gate**, for the first collapse after start: two matching reads 2 s apart, system uptime > 60 s,
   capped at 30 s. If the gate doesn't pass by then, launch collapse is skipped this time.
 - **Native, Advanced pop-up “New apps’ icons”: Show (default) / Hide.**
-  - **Show:** a new bundle joins `newAllowed` and stays shown until the next unrestricted read records its section,
+  - **Show:** a new bundle joins `newShown` and stays shown until the next unrestricted read records its section,
     the user picks it in Sections, or 30 days pass unseen. G-8's movement rule is dropped: positions aren't
     observable while restricted.
   - **Hide:** Hidden Bar's behaviour. The icon is hidden and listed in the hidden list.
@@ -718,7 +718,7 @@ Keep your menu bar tidy: click the arrow to hide the icons to its left, and clic
   it is.”**
 - [**Restore Defaults**] [**Cancel**]
 
-It clears `choices` and `newAllowed`, and keeps `arranged`.
+It clears `choices` and `newShown`, and keeps `arranged`.
 
 **Reset All Settings** confirmation adds: **“Hidden Icons’ arrow and dividers go back next to the Snaptic icon, so
 you’ll arrange your icons again.”**
@@ -1168,7 +1168,7 @@ with the reason. Where a finding is accepted, the plan section that carries it i
 | G-5 | A | §4.12 |
 | G-6 | M | §4.9 Sections; **Show All Icons and Refresh** leaves the icons shown (auto-collapse re-arms) instead of re-collapsing |
 | G-7 | A | §4.9 per-app choices |
-| G-8 | M | §4.5: strings accepted; the "until I move it" rule is dropped (positions aren't observable while restricted); `newAllowed` lifetime instead |
+| G-8 | M | §4.5: strings accepted; the "until I move it" rule is dropped (positions aren't observable while restricted); `newShown` lifetime instead |
 | G-9 | A | §4.7 |
 | G-10 | A | §4.17 (range 5–300 per G-31) |
 | G-11 | M | §4.17: a pop-up (Arrow and Snaptic Menu / Arrow Only) instead of a fixed value row and a switch; strings adapted |

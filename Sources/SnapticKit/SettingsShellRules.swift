@@ -10,16 +10,17 @@ package enum SettingsRootID {
     package static let windowSwitcher = ModuleID.windowSwitcher.rawValue
     package static let displays = ModuleID.displays.rawValue
     package static let awake = ModuleID.awake.rawValue
+    package static let hiddenIcons = ModuleID.hiddenIcons.rawValue
     package static let permissions = "permissions"
     package static let about = "about"
 
     /// Sidebar order; groups are separated by spacing.
-    package static let groups: [[String]] = [[general, menuBar], [windowSwitcher, displays, awake], [permissions, about]]
+    package static let groups: [[String]] = [[general, menuBar], [windowSwitcher, displays, awake, hiddenIcons], [permissions, about]]
     package static var all: [String] { groups.flatMap { $0 } }
 
     /// First words of page ids that name a root ("switcher.features" is Window Switcher).
     package static let aliases: [String: String] = [
-        "switcher": windowSwitcher, "menubar": menuBar, "menu": menuBar, "about": about,
+        "switcher": windowSwitcher, "menubar": menuBar, "menu": menuBar, "about": about, "icons": hiddenIcons,
     ]
 
     /// 0.2 page ids whose 0.3 home is a root of its own.
@@ -146,6 +147,7 @@ package enum SettingsHelpAnchors {
         "displays.automations": "Automations",
         "awake.drives": "Drive Alive",
         SettingsRootID.awake: "Awake",
+        SettingsRootID.hiddenIcons: "Hidden Icons",
         SettingsRootID.permissions: "Permissions",
         SettingsRootID.about: "Snaptic",
     ]

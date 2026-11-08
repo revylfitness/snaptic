@@ -36,7 +36,10 @@ package enum KitBackup {
     /// 0.3 §3.6: Awake's settings, written from `AwakeConfig.exportable(includeTriggers:)` and read back through
     /// `importAwake(current:imported:)` (`importable(current:)` last).
     package static let awakeSection = "awake"
-    package static let sections = [switcherSection, modulesSection, displaysSection, awakeSection]
+    /// 0.4 H7: Hidden Icons' settings (`SnapticIconsV1` without `arranged`). `SnapticIconsAppsV1` (bundle ids) is
+    /// never written or read.
+    package static let iconsSection = "icons"
+    package static let sections = [switcherSection, modulesSection, displaysSection, awakeSection, iconsSection]
 
     /// Sections whose backups are an allowlist (0.3 §3.6): only these paths (below the section, "*" = any one key)
     /// are written or read; everything else in the section (history, runtime state, salts, a newer Snaptic's fields)
@@ -55,6 +58,7 @@ package enum KitBackup {
             ["indicator"],
             ["shortcuts"],
         ],
+        iconsSection: IconsConfig.exportedKeys.map { [$0] },
     ]
 
     /// Keys removed at any depth inside one section (exact names). Awake: the salted router, Bluetooth and USB
@@ -127,6 +131,9 @@ package enum KitBackup {
         [awakeSection, "sessions", "presets"],
         [awakeSection, "sessions", "defaultOptions"],
         [awakeSection, "sessions", "behavior"],
+        // Hidden Icons (0.4 H7): a hotkey, and running alongside another menu bar hider.
+        [iconsSection, "shortcut"],
+        [iconsSection, "otherHiders"],
     ]
 
     /// Keys removed at any depth (case-insensitive substrings): the DisplayKey salt, DDC
@@ -263,6 +270,33 @@ package enum KitBackup {
               let merged = merge(current: before, imported: overlay, section: awakeSection),
               let decoded = try? JSONDecoder().decode(AwakeConfig.self, from: merged) else { return nil }
         return decoded.sanitized().importable(current: current)
+    }
+
+    // MARK: Hidden Icons (0.4 H7)
+
+    /// The `icons` section of an export: the settings through the allowlist (so never `arranged`).
+    package static func iconsSectionData(_ config: IconsConfig) -> Data? {
+        guard let data = try? JSONEncoder().encode(config.sanitized()),
+              let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        let stripped = strip(object, section: iconsSection)
+        guard JSONSerialization.isValidJSONObject(stripped) else { return nil }
+        return try? JSONSerialization.data(withJSONObject: stripped, options: [.sortedKeys])
+    }
+
+    /// The Hidden Icons settings an import of the `icons` section results in: stripped again, laid over `current`
+    /// (which keeps this Mac's `arranged`), decoded lossily and sanitized. The apps store isn't touched. Nil when
+    /// the result isn't usable.
+    package static func importIcons(current: IconsConfig, imported: Data) -> IconsConfig? {
+        guard nestingDepth(imported, limit: maxDepth) != nil,
+              let object = try? JSONSerialization.jsonObject(with: imported), object is [String: Any] else { return nil }
+        let stripped = strip(object, section: iconsSection)
+        guard JSONSerialization.isValidJSONObject(stripped),
+              let overlay = try? JSONSerialization.data(withJSONObject: stripped, options: [.sortedKeys]),
+              let before = try? JSONEncoder().encode(current),
+              let merged = merge(current: before, imported: overlay, section: iconsSection),
+              var decoded = try? JSONDecoder().decode(IconsConfig.self, from: merged) else { return nil }
+        decoded.arranged = current.arranged
+        return decoded.sanitized()
     }
 
     // MARK: JSON helpers

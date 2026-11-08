@@ -25,6 +25,7 @@ struct ModuleSwitchRow: View {
         case .windowSwitcher: return L("Switch between windows, not just apps, with ⌥⇥.")
         case .displays: return L("Brightness, resolution, and arrangement for every display.")
         case .awake: return L("Keep your Mac awake for a while. Its icon appears while your Mac is being kept awake.")
+        case .hiddenIcons: return L("Hide the menu bar icons you don’t need behind an arrow.")
         }
     }
 

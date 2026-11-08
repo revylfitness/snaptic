@@ -49,6 +49,7 @@ import SnapticKit
     let switcher: WindowSwitcherModule
     let displays: DisplaysModule
     let awake: AwakeModule
+    let icons: IconsModule
 
     /// 0.3.1 B3.4: sleep left off by an earlier lid-closed session (host level: whatever Awake's state, also in Safe
     /// Mode). StatusMenu and IndicatorController draw its rows; T-lid-app fills it in.
@@ -142,6 +143,7 @@ import SnapticKit
         switcher = WindowSwitcherModule()
         displays = DisplaysModule(config: displaysConfig)
         awake = AwakeModule(config: awakeConfig, state: awakeState, history: awakeHistory)
+        icons = IconsModule()
         m1Toast = Self.pendingM1Toast(m1, ledger: ledger, awake: awakeConfig)
     }
 
@@ -384,6 +386,7 @@ import SnapticKit
         case .windowSwitcher: return switcher
         case .displays: return displays
         case .awake: return awake
+        case .hiddenIcons: return icons
         }
     }
 
@@ -449,8 +452,9 @@ import SnapticKit
             setPresence: { [weak self] id, presence in self?.modulesStore.value.setPresence(presence, for: id) },
             hostSignals: signals,
             moduleDiagnostics: { [weak self] id in
-                guard let self, id == .awake, self.awake.state == .running else { return [] }
-                return self.awake.diagnosticsLines()
+                guard let self else { return [] }
+                let module = self.module(id)
+                return module.state == .running ? module.diagnosticsLines() : []
             })
         module(id).start(context)
         EventLog.shared.record(.modules, "Module \(id.rawValue) started")
@@ -521,11 +525,12 @@ import SnapticKit
             return .ok(rows.map { $0.0 + "\t" + $0.1 }.joined(separator: "\n"))
         }
         commands.register("module disable", policy: .low, offOnly: true, cliAllowed: true,
-                          summary: L("Turn a module off: module disable <windowSwitcher|displays|awake>"),
+                          summary: L("Turn a module off: module disable <windowSwitcher|displays|awake|hiddenIcons>"),
                           lifetime: lifetime) { [weak self] request, _ in
             guard let self else { return .failure(ControlExit.unavailable, "") }
             guard let name = request.arguments.first?.lowercased(),
-                  let id = ModuleID.allCases.first(where: { $0.rawValue.lowercased() == name || (name == "switcher" && $0 == .windowSwitcher) })
+                  let id = ModuleID.allCases.first(where: { $0.rawValue.lowercased() == name
+                      || (name == "switcher" && $0 == .windowSwitcher) || (name == "icons" && $0 == .hiddenIcons) })
             else { return .failure(ControlExit.notFound, L("No such module.")) }
             self.setEnabled(false, id)
             return .ok()

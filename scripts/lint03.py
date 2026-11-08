@@ -24,6 +24,10 @@
   `kit-linux` (lint, actionlint, Linux tests) and `build`; and the secret-free `rehearse` job runs sign's and
   publish's secret-free steps with byte-identical scripts.
 
+PLAN 0.4 (K1, H11 / §4.15) adds L20: under Icons/, `NSLog`/`os_log`/`print`/`debugPrint`/`dump` take one plain string
+literal (no interpolation, no format arguments), `Logger` isn't used, and an `EventLog` `record(…)` interpolates only
+`….rawValue` (a reason code), so no bundle id, app name, AX title or error text reaches a log.
+
 Run by scripts/lint.sh (which passes LINT_MODE=check|write and LINT_STRICT=0|1). Comments are stripped before
 matching (string literals are kept); counts are occurrences, not lines.
 """
@@ -248,6 +252,32 @@ def self_check():
         if got != expected:
             problems.append(f"self-check: menu contributors found {sorted(got)} in {source!r}, expected {sorted(expected)}")
     problems += self_check_031()
+    problems += self_check_04()
+    return problems
+
+
+def self_check_04():
+    """Pins L20 on cases it must report or let pass."""
+    q = '"'
+    icons = "Sources/Snaptic/Icons/IconsModule.swift"
+    cases = [
+        (icons, f"NSLog({q}icons: started{q})", False),
+        (icons, f"NSLog({q}icons: %@{q}, bundle)", True),
+        (icons, f"print({q}x \\(bundle){q})", True),
+        (icons, "print(error)", True),
+        (icons, f"os_log({q}%{{public}}@{q}, name)", True),
+        (icons, "let log = Logger(subsystem: s, category: c)", True),
+        (icons, f"EventLog.shared.record(.icons, {q}icons.collapse{q})", False),
+        (icons, f"EventLog.shared.record(.icons, {q}icons.failSafe.\\(reason.rawValue){q})", False),
+        (icons, f"EventLog.shared.record(.icons, {q}new icon \\(bundleID){q})", True),
+        (icons, f"EventLog.shared.record(.icons, {q}n=\\(f(x.rawValue)){q})", True),
+        (icons, "let p = blueprint(x)", False),
+        ("Sources/Snaptic/Awake/Core/X.swift", f"print({q}\\(x){q})", False),
+    ]
+    problems = []
+    for path, source, flagged in cases:
+        if bool(l20_file(path, source)) != flagged:
+            problems.append(f"self-check: l20_file {'missed' if flagged else 'wrongly reported'} {source!r} in {path}")
     return problems
 
 
@@ -443,7 +473,7 @@ def is_menu_file(path):
     return "Menu" in os.path.basename(path)
 
 
-SETTINGS_VIEWS = ("Displays/UI/", "Awake/UI/", "SettingsUI/", "Switcher/SettingsView.swift", "Switcher/SwitcherPages.swift",
+SETTINGS_VIEWS = ("Displays/UI/", "Awake/UI/", "Icons/UI/", "SettingsUI/", "Switcher/SettingsView.swift", "Switcher/SwitcherPages.swift",
                   "Core/GeneralPages.swift", "Core/Onboarding.swift", "Core/SettingsWindowHost.swift",
                   "Core/MenuBarPage.swift", "Core/CustomizeMenuSheet.swift")
 
@@ -512,10 +542,11 @@ def ratcheted_counts():
         base = os.path.basename(p)
         if ((under(p, "Core/") and (base.startswith("Menu") or base == "StatusMenu.swift"))
                 or (under(p, "Displays/UI/") and "Menu" in base)
-                or p in ("Sources/Snaptic/Awake/UI/AwakeMenuRows.swift", "Sources/Snaptic/Awake/UI/IndicatorController.swift")):
+                or p in ("Sources/Snaptic/Awake/UI/AwakeMenuRows.swift", "Sources/Snaptic/Awake/UI/IndicatorController.swift",
+                         "Sources/Snaptic/Icons/UI/IconsMenuRows.swift")):
             add("L13", p, count(r"NSHostingView", t))
-        # L14 .common run-loop modes in menus and Awake.
-        if under(p, "Awake/") or is_menu_file(p):
+        # L14 .common run-loop modes in menus, Awake and Hidden Icons (0.4 H11).
+        if under(p, "Awake/") or under(p, "Icons/") or is_menu_file(p):
             add("L14", p, count(r"scheduledTimer\(|RunLoop\.main\.perform(?!\(inModes:)|receive\(on:\s*RunLoop\.main|"
                                 r"scheduler:\s*RunLoop\.main|forMode:\s*(?:\.default|RunLoop\.Mode\.default)\b|"
                                 r"\bin:\s*(?:\.default|RunLoop\.Mode\.default)\b|\.defaultRunLoopMode\b", t))
@@ -533,16 +564,18 @@ def unratcheted_problems():
         if p == "Sources/Snaptic/Core/CLIClient.swift" and re.search(r"\bshutdown\(", t):
             problems.append(f"{p}: L16 shutdown( is banned (the client never half-closes)")
     problems += l16_lid()
-    # L17 duplicate keys never trap in Awake.
+    # L17 duplicate keys never trap in Awake or Hidden Icons (0.4).
     for p in SOURCES:
         base = os.path.basename(p)
-        awake = (p.startswith("Sources/Snaptic/Awake/") or (p.startswith("Sources/SnapticKit/") and base.startswith("Awake"))
-                 or (p.startswith("Sources/SnapticKit/Config/") and base.startswith("ConfigAwake")))
+        awake = (p.startswith("Sources/Snaptic/Awake/") or p.startswith(ICONS_DIR)
+                 or (p.startswith("Sources/SnapticKit/") and base.startswith(("Awake", "Icons", "KnownMenuBarHiders")))
+                 or (p.startswith("Sources/SnapticKit/Config/") and base.startswith(("ConfigAwake", "ConfigIcons"))))
         if awake and "uniqueKeysWithValues" in TEXT[p]:
-            problems.append(f"{p}: L17 uniqueKeysWithValues is banned in Awake (use uniquingKeysWith: {{ first, _ in first }})")
+            problems.append(f"{p}: L17 uniqueKeysWithValues is banned in Awake and Hidden Icons (use uniquingKeysWith: {{ first, _ in first }})")
     problems += l15()
     problems += l18()
     problems += l19()
+    problems += l20()
     problems += workflows()
     problems += rule2()
     problems += menu_contributors()
@@ -660,6 +693,50 @@ def l19_file(p, t):
                 for m in re.findall(r"(?<![A-Za-z0-9_])SU[A-Z][a-z]\w*", s):   # SUFeedURL, not SUPPORT
                     problems.append(f"{p}: L19 the Sparkle key “{m}” is only allowed in UpdateDefaultsKeys ({UPDATE_KEYS})")
     return sorted(set(problems)), imported
+
+
+# PLAN 0.4 L20 (H11, §4.15): nothing that names an app reaches a log from Hidden Icons.
+ICONS_DIR = "Sources/Snaptic/Icons/"
+L20_LOG = re.compile(r"(?<![\w.])(NSLog|os_log|print|debugPrint|dump)\(")
+L20_RECORD = re.compile(r"\.record\(")
+
+
+def l20():
+    problems = []
+    for p in APP:
+        problems += l20_file(p, TEXT[p])
+    return problems
+
+
+def l20_interpolations(args):
+    """The expressions inside `\\(…)` in `args` (strings included)."""
+    found = []
+    i = args.find("\\(")
+    while i >= 0:
+        end = code_end(args, i + 2)
+        found.append(args[i + 2:end - 1])
+        i = args.find("\\(", end)
+    return found
+
+
+def l20_file(p, t):
+    if not p.startswith(ICONS_DIR):
+        return []
+    problems = []
+    for m in L20_LOG.finditer(t):
+        args = t[m.end():code_end(t, m.end()) - 1].strip()
+        single = bool(args) and starts_string(args, 0) and string_end(args, 0) == len(args)
+        if not single or l20_interpolations(args):
+            problems.append(f"{p}: L20 {m.group(1)}(…) under Icons/ takes one plain string literal (§4.15)")
+    if re.search(r"(?<![\w.])Logger\(", t):
+        problems.append(f"{p}: L20 Logger isn't used under Icons/ (§4.15)")
+    for m in L20_RECORD.finditer(t):
+        args = t[m.end():code_end(t, m.end()) - 1]
+        for expr in l20_interpolations(args):
+            if not re.fullmatch(r"\s*[A-Za-z_][\w.]*\.rawValue\s*", expr):
+                problems.append(f"{p}: L20 record(…) under Icons/ interpolates only a reason code’s rawValue, "
+                                f"not {expr.strip()!r} (§4.15)")
+    return sorted(set(problems))
 
 
 def l19_package(manifest, imports, resolved):

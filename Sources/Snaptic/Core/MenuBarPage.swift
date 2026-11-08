@@ -56,7 +56,8 @@ private struct MenuBarPageContent: View {
             SettingsPageHeader(L("Menu Bar"), summary: L("Choose where Window Switcher, Displays, and Awake appear in the menu bar."),
                                symbol: "menubar.rectangle", tint: .graphite)
             Section {
-                ForEach(ModuleID.allCases, id: \.self) { id in
+                // 0.4: the Hidden Icons row (its own pop-up titles, H2) arrives with A7.
+                ForEach(ModuleID.allCases.filter { $0 != .hiddenIcons }, id: \.self) { id in
                     moduleRows(id)
                 }
             } footer: {
@@ -213,11 +214,12 @@ private struct MenuBarPageContent: View {
                        })
     }
 
-    private static func presenceControl(_ id: ModuleID) -> ControlID {
+    private static func presenceControl(_ id: ModuleID) -> ControlID? {
         switch id {
         case .windowSwitcher: return ControlID("menubar.page.switcherPresence")
         case .displays: return ControlID("menubar.page.displaysPresence")
         case .awake: return ControlID("menubar.page.awakePresence")
+        case .hiddenIcons: return nil   // not listed by `moduleRows` (A7 adds its row)
         }
     }
 
@@ -225,7 +227,7 @@ private struct MenuBarPageContent: View {
         switch id {
         case .windowSwitcher: return ControlID("menubar.page.switcherIcon")
         case .displays: return ControlID("menubar.page.displaysIcon")
-        case .awake: return nil
+        case .awake, .hiddenIcons: return nil
         }
     }
 
@@ -315,7 +317,7 @@ private struct MenuBarPageContent: View {
         switch id {
         case .windowSwitcher: extra = ["rectangle.stack", "macwindow.on.rectangle"]
         case .displays: extra = ["display", "sun.max"]
-        case .awake: extra = []
+        case .awake, .hiddenIcons: extra = []
         }
         return unique([symbol] + extra + (current.isEmpty ? [] : [current]))
     }

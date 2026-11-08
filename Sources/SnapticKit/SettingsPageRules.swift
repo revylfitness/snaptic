@@ -10,6 +10,7 @@ package enum GeneralCardRules {
         switch card {
         case .displays: return .displays
         case .awake, .awakeMigrated: return .awake
+        case .hiddenIcons: return .hiddenIcons
         }
     }
 
@@ -24,6 +25,7 @@ package enum GeneralCardRules {
             case .displays: return !enabled.contains(.displays)
             case .awake: return !enabled.contains(.awake) && !cards.contains(.awakeMigrated)
             case .awakeMigrated: return true
+            case .hiddenIcons: return !enabled.contains(.hiddenIcons)
             }
         }
     }
