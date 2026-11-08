@@ -1262,7 +1262,7 @@ Results are in `STEP0-NOTES.md`. No Blocker row failed. These changes follow fro
 | R2-8 | The completion arrives on a background thread; off-main `invalidate` is safe (S0-5). | No change: the shim hops to main, and the watchdog calls `invalidateAll` off main. |
 | R2-9 | Rows carried forward: S0-7 camera/mic/location and S0-8 (a)/(c) before A2; S0-9 before A3; S0-13/14 and Bartender's team id at R. | Listed in `STEP0-NOTES.md` › Carried forward. |
 
-## R3. Implementation changes (K5, B1, A1, A2, A3, A4, A5, A6, A7, A8, A9, D1, 2026-11-07)
+## R3. Implementation changes (K5, B1, A1, A2, A3, A4, A5, A6, A7, A8, A9, D1, D2, 2026-11-07)
 
 Where the code departs from the text above, the code and this table win.
 
@@ -1351,3 +1351,6 @@ Where the code departs from the text above, the code and this table win.
 | R3-81 | D1, H7, A5 | `Backup.swift` never wrote or read the `icons` section, though K1 added it to `KitBackup` (allowlist, `iconsSectionData`, `importIcons`, tests). D1 found it while writing the backup list and wired it: export adds `iconsSectionData(iconsStore.value)`, import previews "Hidden Icons: …" lines and applies `importIcons(current:imported:)` (this Mac's `arranged` kept; the apps store never touched). M37 at R: export, change a setting, import, check the preview and the result. |
 | R3-82 | D1, §4.14 | README documents the CLI as built: refusals (paused, needs permission, unavailable, arrangement) exit 5 with their lines, any other refused hide answers with the status row (exit 5), usage errors exit 2, and `status` counts are apps from the last layout read (Snaptic left out), not icons. Showing hidden icons is never refused (a collapsed bar skips the refusal). The exit-codes table drops "a retired command such as `prevent-sleep`" from 2 and adds Hidden Icons refusals to 5. |
 | R3-83 | D1 | README additions beyond the D1 row: Safety and Permissions bullets, Troubleshooting (icons came back, can't find the arrow, `icons` unknown), a How it works row for `Sources/Snaptic/Icons/`, the Hidden Icons undocumented-API bullet, and the hardware-testing bullet (S0-7, S0-8, S0-9, S0-13, S0-14, other hiders). The (?) anchor test's `awaitingREADME` is now empty. |
+| R3-84 | D2 | The release notes are `docs/design/0.4/RELEASE-NOTES-0.4.0.md`: the release workflow looks for `RELEASE-NOTES-$VERSION.md` (the full version) under `docs/design/0.4/` or `docs/design/0.4.0/`. README's intro links them first. |
+| R3-85 | D2 | The version check is in `.github/workflows/build.yml` (tag, `CFBundleShortVersionString`, and `CFBundleVersion` = major·10000 + minor·100 + patch), not `scripts/build-app.sh`, which only copies `Info.plist`. Info.plist is 0.4.0 / 400; no test pins the version. |
+| R3-86 | D2 | The Hidden Bar credit is also in Settings › About › Acknowledgements, in its own section ("Hidden Icons’ design follows"), so Awake’s "Awake’s behavior follows" section is unchanged. THIRD_PARTY_NOTICES.md adds a "Menu bar hiding reference (Hidden Icons)" section, MenuBarClientCore in the undocumented frameworks, and Hidden Bar, Bartender, Ice, and Thaw under Names of other products (detected by `KnownMenuBarHiders`). |

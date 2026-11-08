@@ -186,6 +186,11 @@ private struct AcknowledgementsSheet: View {
         Credit(name: "KeepingYouAwake", detail: L("Low Power Mode and power-source rules (MIT, no code used)")),
     ]
 
+    /// 0.4 D2: Hidden Icons follows Hidden Bar's design (THIRD_PARTY_NOTICES.md), none of its code.
+    private let iconsReferences: [Credit] = [
+        Credit(name: "Hidden Bar", detail: L("Menu bar hiding design (MIT, no code used)")),
+    ]
+
     var body: some View {
         VStack(spacing: 0) {
             Text(L("Acknowledgements"))
@@ -211,6 +216,17 @@ private struct AcknowledgementsSheet: View {
                     Text(L("Awake’s behavior follows"))
                 } footer: {
                     Text(L("Snaptic studied what these apps do and follows some of their rules. It includes none of their code."))
+                }
+                Section {
+                    ForEach(iconsReferences) { credit in
+                        LabeledContent(credit.name) {
+                            Text(credit.detail).foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text(L("Hidden Icons’ design follows"))
+                } footer: {
+                    Text(L("Hidden Icons follows Hidden Bar’s design in Snaptic’s own code, with none of its code."))
                 }
                 Section(L("License")) {
                     Text(Self.license)
