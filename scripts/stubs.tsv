@@ -592,3 +592,5 @@ Sources/SnapticKit/Config/ConfigIcons.swift	lead	L	-	-
 Sources/SnapticKit/KnownMenuBarHiders.swift	lead	L	-	-
 Tests/SnapticKitTests/ConfigIconsTests.swift	lead	L	-	-
 Tests/SnapticKitTests/KnownMenuBarHidersTests.swift	lead	L	-	-
+Sources/SnapticKit/IconsLayout.swift	lead	L	-	-
+Tests/SnapticKitTests/IconsLayoutTests.swift	lead	L	-	-
