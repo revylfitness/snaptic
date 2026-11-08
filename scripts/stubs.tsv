@@ -624,3 +624,6 @@ Sources/Snaptic/Icons/NativeBackend.swift	lead	L	-	-
 Sources/Snaptic/Icons/LengthBackend.swift	lead	L	-	-
 Sources/Snaptic/Icons/AXInventory.swift	lead	L	-	-
 Sources/Snaptic/Icons/IconsWatchdog.swift	lead	L	-	-
+Sources/SnapticKit/IconsMonitorRules.swift	lead	L	-	-
+Sources/Snaptic/Icons/IconsMonitors.swift	lead	L	-	-
+Tests/SnapticKitTests/IconsMonitorRulesTests.swift	lead	L	-	-
