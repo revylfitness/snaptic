@@ -647,7 +647,7 @@ package final class IconsEngineCore {
         if case .expanded(let mode) = stored { collapseFrom = mode }
         generation += 1
         pending = nil  // A plain activation in flight is stale now.
-        waiters = [completion]
+        waiters.append(completion)
         setState(.calibrating)
         // While a restriction is held, only its allow-list's frames are fresh (R2-5).
         let held = Set(self.held.values.joined())

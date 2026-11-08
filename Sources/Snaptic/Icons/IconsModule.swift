@@ -281,8 +281,9 @@ import SnapticKit
         sinks.removeAll()
         watchdog.stop()
         watchdog.onRelease = nil
-        hiders.stop()
+        // `stop()` recomputes and would call back mid-teardown.
         hiders.onChange = nil
+        hiders.stop()
         monitors.stop()
         clearMonitorCallbacks()
         items.stop()
@@ -568,8 +569,8 @@ import SnapticKit
             return
         }
         if case .command(let command) = intent, asksFirst(command, from: source, core: core) {
-            // The CLI never asks (`asksFirst`), so `done` is nil here.
-            askBeforeFirstCollapse(intent, from: source)
+            // The CLI never asks (`asksFirst`); `done` still gets its one answer, after the alert.
+            askBeforeFirstCollapse(intent, from: source, done: done)
             return
         }
         let result = queue.submit(intent, from: source, now: Self.uptime)
@@ -578,6 +579,11 @@ import SnapticKit
             run(step, seq: seq, source: source, core: core, done: done)
         case .noChange:
             if case .command = intent, source == .timer || source == .launch { auto.disarm() }
+            // A hide while a collapse is still calibrating joins it, so its caller hears how it ended.
+            if let done, case .calibrating = core.state {
+                core.collapse { done($0) }
+                return
+            }
             done?(nil)
         case .dropped(let drop):
             if drop == .timerSuppressed { armAuto() }
@@ -601,7 +607,8 @@ import SnapticKit
                                                       newShown: Set(appsValue.newShown.keys))
     }
 
-    private func askBeforeFirstCollapse(_ intent: IconsIntent, from source: IconsIntentSource) {
+    private func askBeforeFirstCollapse(_ intent: IconsIntent, from source: IconsIntentSource,
+                                        done: ((IconsCollapseResult?) -> Void)?) {
         firstCollapseAsking = true
         let alert = NSAlert()
         alert.messageText = IconsPageRules.firstCollapseTitle
@@ -611,11 +618,17 @@ import SnapticKit
         hide.keyEquivalent = ""
         cancel.keyEquivalent = "\r"
         SettingsAlert.present(alert) { [weak self] response in
-            guard let self else { return }
+            guard let self else {
+                done?(nil)
+                return
+            }
             self.firstCollapseAsking = false
             self.firstCollapseAsked = true
-            guard response == .alertFirstButtonReturn, self.core != nil else { return }
-            self.submit(intent, from: source)
+            guard response == .alertFirstButtonReturn, self.core != nil else {
+                done?(nil)
+                return
+            }
+            self.submit(intent, from: source, done: done)
         }
     }
 
