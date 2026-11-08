@@ -1262,7 +1262,7 @@ Results are in `STEP0-NOTES.md`. No Blocker row failed. These changes follow fro
 | R2-8 | The completion arrives on a background thread; off-main `invalidate` is safe (S0-5). | No change: the shim hops to main, and the watchdog calls `invalidateAll` off main. |
 | R2-9 | Rows carried forward: S0-7 camera/mic/location and S0-8 (a)/(c) before A2; S0-9 before A3; S0-13/14 and Bartender's team id at R. | Listed in `STEP0-NOTES.md` › Carried forward. |
 
-## R3. Implementation changes (K5, B1, A1, A2, A3, A4, A5, A6, A7, A8, A9, D1, D2, D3, 2026-11-07)
+## R3. Implementation changes (K5, B1, A1, A2, A3, A4, A5, A6, A7, A8, A9, D1, D2, D3, D4, 2026-11-07)
 
 Where the code departs from the text above, the code and this table win.
 
@@ -1355,3 +1355,4 @@ Where the code departs from the text above, the code and this table win.
 | R3-85 | D2 | The version check is in `.github/workflows/build.yml` (tag, `CFBundleShortVersionString`, and `CFBundleVersion` = major·10000 + minor·100 + patch), not `scripts/build-app.sh`, which only copies `Info.plist`. Info.plist is 0.4.0 / 400; no test pins the version. |
 | R3-86 | D2 | The Hidden Bar credit is also in Settings › About › Acknowledgements, in its own section ("Hidden Icons’ design follows"), so Awake’s "Awake’s behavior follows" section is unchanged. THIRD_PARTY_NOTICES.md adds a "Menu bar hiding reference (Hidden Icons)" section, MenuBarClientCore in the undocumented frameworks, and Hidden Bar, Bartender, Ice, and Thaw under Names of other products (detected by `KnownMenuBarHiders`). |
 | R3-87 | D3 | The repo publishes `site/index.html` (snaptic.dev), so D3 updated it: a “Fewer icons.” section (`#icons`, with a nav link) after Awake, a Hidden Icons card (shown off) in “Use only what you want”, “Eight pages”, the meta descriptions and hero lede, and the permissions and affiliation lines. No new assets or third-party code. |
+| R3-88 | D4 | The repo has no DESIGN-SYSTEM.md; the design system is `docs/design/0.3/design-spec.md` (the “DS” of the r1 reviews), so the exception went there: §3.3’s menu-symbol rule and the Icons rules now allow Hidden Icons’ hidden-icon rows an app icon at 16 pt, on every row of the list (a generic app icon when none), as `IconsMenuRows` already does. |
