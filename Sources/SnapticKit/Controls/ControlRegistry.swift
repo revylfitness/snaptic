@@ -31,6 +31,11 @@ package enum ControlState: String, Hashable, Sendable {
     // 0.3.1: lid-closed mode is on; sleep was left off by an earlier lid-closed session (B3.4); the user can change
     // Snaptic's bundle (B1, E1); Sparkle is loaded; an update is offered; the 0.3.1 welcome card shows (E1a).
     case lidModeOn, lidLeftover, bundleWritable, updaterAvailable, updateAvailable, v031Welcome
+    // 0.4 K5 (Hidden Icons, PLAN 0.4 §4.3, §4.9): the engine state's status rows and menu items. `iconsRestricted`:
+    // a Native layout read is limited until the icons are shown (§4.9 Sections); `iconsChoicesExist`: some app has
+    // Always Show or Always Hide; `iconsArrowMissing`: the arrow was dragged off (Show Arrow).
+    case iconsCollapsed, iconsExpanded, iconsNeedsPermission, iconsNotEffective, iconsUnavailable, iconsPaused,
+         iconsFirstRun, iconsCrashGuard, iconsArrowMissing, iconsChoicesExist, iconsRestricted
 }
 
 /// Availability as data (the §4.2 States rules); every condition must hold for the control to exist.
@@ -42,6 +47,8 @@ package enum ControlCondition: Hashable, Sendable {
     /// One instance per list item: "display", "rule", "preset", "customAction", …
     case perItem(String)
     case state(ControlState)
+    /// 0.4 K5: Hidden Icons' engine on this Mac (Native on macOS 27+, Length on 14–26).
+    case iconsEngine(IconsEngineKind)
 }
 
 package enum ControlKind: String, Hashable, Sendable {
@@ -180,6 +187,11 @@ package enum ControlRegistry {
             IndicatorControllerControls.self,
             DrivesPageControls.self,
             MenuBarOverlaysSectionControls.self,
+            IconsPageControls.self,
+            IconsAdvancedSheetControls.self,
+            IconsSectionsPageControls.self,
+            IconsMenuRowsControls.self,
+            IconsItemsControls.self,
         ]
     }
 }

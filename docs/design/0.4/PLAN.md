@@ -1260,3 +1260,15 @@ Results are in `STEP0-NOTES.md`. No Blocker row failed. These changes follow fro
 | R2-7 | A restriction doesn't change the in-process status-item frame. | The Y-5 on-screen frame check is dropped (§4.2.1); the identity check stays. `icons.failSafe.ownHidden` is removed. |
 | R2-8 | The completion arrives on a background thread; off-main `invalidate` is safe (S0-5). | No change: the shim hops to main, and the watchdog calls `invalidateAll` off main. |
 | R2-9 | Rows carried forward: S0-7 camera/mic/location and S0-8 (a)/(c) before A2; S0-9 before A3; S0-13/14 and Bartender's team id at R. | Listed in `STEP0-NOTES.md` › Carried forward. |
+
+## R3. Implementation changes (K5, 2026-11-07)
+
+Where the code departs from the text above, the code and this table win.
+
+| ID | Where | Change |
+|---|---|---|
+| R3-1 | §4.2.5, §4.14, M33 | Exit codes are the house `ControlExit` values: refusals (paused, needs permission, unavailable, invalid arrangement) exit **5** (`unavailable`), not 2; usage errors exit **2** (`usage`), not 64. Read "exit 2" above as exit 5 and "exit 64" as exit 2. |
+| R3-2 | §4.14 | The CLI grammar type is `IconsCLICommand`; `IconsCommand` stays K4's queue command. `IconsCLICommand.command` maps one to the other (`status` → nil). |
+| R3-3 | §4.14 | `snaptic icons …` lines count as ordinary `.control` verbs. `KitControl.counterKey` stays Awake-only; the icons rules live in `KitControl.iconsVerbRules` (status `.read`, the rest `.low`). |
+| R3-4 | §4.3, A7 | The Menu Bar page row for Hidden Icons lands with A7 (it needs the page's view). K5 adds only the Kit tables and the H2 `MenuLayout` rules (`effectivePresence`). |
+| R3-5 | K5, lint | Lint L15 carries `L15_PENDING` for the five Icons tables until their A-item views alias them; it fails once a pending table gains an alias, so the set empties itself by A7. |

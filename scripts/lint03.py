@@ -1424,6 +1424,15 @@ def without_string_text(code):
     return "".join(out)
 
 
+# 0.4 K5: Hidden Icons' tables land before their views (A1, A6, A7). While no app file declares
+# `typealias Controls = <table>` for one of these, "declared but no view or builder uses it" is skipped for it; every
+# other L15 check applies. Once a view declares the alias, the entry must go (reported below). R checks it is empty.
+L15_PENDING = {
+    "IconsPageControls", "IconsAdvancedSheetControls", "IconsSectionsPageControls", "IconsMenuRowsControls",
+    "IconsItemsControls",
+}
+
+
 def l15():
     problems = []
     controls_dir = "Sources/SnapticKit/Controls"
@@ -1468,7 +1477,17 @@ def l15():
                 if lit not in tables[table]:
                     problems.append(f"{p}: L15 ControlID(\"{lit}\") is not in {table}")
                 used.setdefault(table, set()).add(lit)
+    aliased = set()
+    for p in APP:
+        aliased.update(re.findall(r"typealias\s+Controls\s*=\s*(\w+)", TEXT[p]))
+    for table in sorted(L15_PENDING):
+        if table in aliased:
+            problems.append(f"scripts/lint03.py: L15 {table} has a view now; remove it from L15_PENDING")
+        elif table not in tables:
+            problems.append(f"scripts/lint03.py: L15 L15_PENDING names {table}, which is no table")
     for table, ids in tables.items():
+        if table in L15_PENDING and table not in aliased:
+            continue
         for i in ids:
             if i not in used.get(table, set()):
                 problems.append(f"{controls_dir}/{table}.swift: L15 {i} is declared but no view or builder uses it")

@@ -602,3 +602,11 @@ Sources/SnapticKit/IconsActivationRule.swift	lead	L	-	-
 Tests/SnapticKitTests/IconsPolicyTests.swift	lead	L	-	-
 Tests/SnapticKitTests/IconsIntentQueueTests.swift	lead	L	-	-
 Tests/SnapticKitTests/IconsActivationRuleTests.swift	lead	L	-	-
+Sources/SnapticKit/Controls/IconsPageControls.swift	lead	L	-	-
+Sources/SnapticKit/Controls/IconsAdvancedSheetControls.swift	lead	L	-	-
+Sources/SnapticKit/Controls/IconsSectionsPageControls.swift	lead	L	-	-
+Sources/SnapticKit/Controls/IconsMenuRowsControls.swift	lead	L	-	-
+Sources/SnapticKit/Controls/IconsItemsControls.swift	lead	L	-	-
+Sources/SnapticKit/IconsCommandGrammar.swift	lead	L	-	-
+Tests/SnapticKitTests/IconsControlsTests.swift	lead	L	-	-
+Tests/SnapticKitTests/IconsCommandGrammarTests.swift	lead	L	-	-

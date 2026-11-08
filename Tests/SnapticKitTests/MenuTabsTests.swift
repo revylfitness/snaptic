@@ -227,4 +227,40 @@ final class MenuTabsTests: XCTestCase {
         XCTAssertEqual(MenuTabs.fullKeyboardAccessDomain, "com.apple.Accessibility")
         XCTAssertEqual(MenuTabs.fullKeyboardAccessKey, "FullKeyboardAccessEnabled")
     }
+
+    // MARK: Four tabs (0.4 H2)
+
+    func testFourTabsWithHiddenIcons() {
+        let four: [ModuleID] = [.windowSwitcher, .displays, .awake, .hiddenIcons]
+        var c = ModulesConfig()
+        c.modules[.hiddenIcons] = ModulePreferences(enabled: true, presence: .inSnapticMenu)
+        let p = c.statusItemPlan(running: Set(four), awakeActive: false, displaysActive: false,
+                                 awakeShortcutBound: false, sharedShownAtRest: true)
+        XCTAssertEqual(MenuTabs.tabs(plan: p), four)
+        XCTAssertEqual(four.compactMap { MenuTabs.keyIndex(for: $0, tabs: four) }, [1, 2, 3, 4])
+        XCTAssertEqual(MenuTabs.tab(atKeyIndex: 4, tabs: four), .hiddenIcons)
+        XCTAssertNil(MenuTabs.tab(atKeyIndex: 5, tabs: four))
+        XCTAssertEqual(MenuTabs.keyIndex(characters: "4", keyCode: 21, commandOnly: true, tabCount: 4), 4)
+        XCTAssertNil(MenuTabs.keyIndex(characters: "5", keyCode: 23, commandOnly: true, tabCount: 4))
+        XCTAssertEqual(MenuTabs.barHelp(tabCount: 4), "Press Command-1 to Command-4 to switch tabs.")
+        XCTAssertEqual(four.map(\.shortTitle), ["Switcher", "Displays", "Awake", "Icons"])
+        XCTAssertEqual(MenuTabs.showTabTitle("Hidden Icons"), "Show Hidden Icons Tab")
+        XCTAssertEqual(MenuTabs.segmentToolTip(title: "Hidden Icons", keyIndex: 4, active: false), "Hidden Icons (⌘4)")
+        // 272 shared by four: 68 each. Full titles that don't fit fall back to the short ones, then to fitting.
+        let a = 272.0
+        XCTAssertEqual(MenuTabs.labelStyle(fullWidths: [60, 60, 50, 66], shortWidths: [60, 60, 50, 40], imageWidth: 14,
+                                           attention: [false, false, false, false], available: a), .fullEqual)
+        XCTAssertEqual(MenuTabs.labelStyle(fullWidths: [110, 60, 50, 90], shortWidths: [60, 60, 50, 40],
+                                           imageWidth: 14, attention: [false, false, false, false], available: a),
+                       .shortEqual)
+        XCTAssertEqual(MenuTabs.labelStyle(fullWidths: [110, 60, 50, 90], shortWidths: [72, 60, 50, 40],
+                                           imageWidth: 14, attention: [false, false, false, false], available: a),
+                       .shortFit)
+    }
+
+    func testRememberedHiddenIconsTabFallsBackWithoutBeingRewritten() {
+        let three: [ModuleID] = [.windowSwitcher, .displays, .awake]
+        XCTAssertEqual(MenuTabs.selected(stored: "hiddenIcons", tabs: three), .windowSwitcher)
+        XCTAssertEqual(MenuTabs.selected(stored: "hiddenIcons", tabs: three + [.hiddenIcons]), .hiddenIcons)
+    }
 }
