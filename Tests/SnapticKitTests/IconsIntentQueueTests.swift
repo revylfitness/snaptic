@@ -120,7 +120,8 @@ final class IconsIntentQueueTests: XCTestCase {
                 XCTAssertEqual(step(result), .collapse, source.rawValue)
             }
         }
-        XCTAssertEqual(IconsIntentSource.allCases.filter(\.isUser), [.click, .shortcut, .cli, .menu, .hiddenList, .hover])
+        XCTAssertEqual(IconsIntentSource.allCases.filter(\.isUser),
+                       [.click, .shortcut, .cli, .menu, .hiddenList, .hover, .settings])
         XCTAssertEqual(IconsIntentSource.allCases.filter(\.isDebounced), [.click, .shortcut])
     }
 

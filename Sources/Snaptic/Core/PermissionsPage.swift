@@ -37,6 +37,7 @@ private struct PermissionsPageContent: View {
                                    neededBy: neededBy(.accessibility), reAdd: showsReAdd(.accessibility),
                                    open: { permissions.presentGuide(.accessibility) })
                     .modifier(SettingsAnchor(ControlID("permissions.page.accessibility")))
+                iconsAccessibilityNotes
                 PermissionStateRow(permission: .screenRecording, granted: permissions.granted.contains(.screenRecording),
                                    neededBy: neededBy(.screenRecording), reAdd: showsReAdd(.screenRecording),
                                    open: { permissions.presentGuide(.screenRecording) })
@@ -112,10 +113,35 @@ private struct PermissionsPageContent: View {
                                                            granted: permissions.granted.contains(permission))
     }
 
-    /// The running modules whose current settings need `permission`.
+    /// The running modules whose current settings need `permission`. 0.4 H4: Hidden Icons on 14–26 asks on demand
+    /// (its `requiredPermissions` is empty there) and is named all the same while it runs.
     private func neededBy(_ permission: Permission) -> String {
-        let names = host.modules.filter { host.isRunning($0.id) && $0.requiredPermissions.contains(permission) }.map { $0.title }
+        var names = host.modules.filter { host.isRunning($0.id) && $0.requiredPermissions.contains(permission) }.map { $0.title }
+        if permission == .accessibility, let icons = runningIcons, !names.contains(icons.title) {
+            names.append(icons.title)
+        }
         return SettingsText.neededBy(names)
+    }
+
+    private var runningIcons: IconsModule? {
+        guard host.isRunning(.hiddenIcons) else { return nil }
+        return host.modules.first { $0.id == .hiddenIcons } as? IconsModule
+    }
+
+    /// 0.4 H4, §4.12, §4.17: what Hidden Icons uses Accessibility for and, on macOS 27 once allowed but not yet in
+    /// effect, the relaunch hint.
+    @ViewBuilder private var iconsAccessibilityNotes: some View {
+        if let icons = runningIcons {
+            let native = icons.engineKind == .native
+            Text(IconsPageRules.permissionsNeededFor(native: native))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if native, icons.accessState.offersRelaunch {
+                SettingsRowNote(IconsPageRules.notEffectiveText,
+                                fix: StatusAction(title: IconsStatusAction.relaunch.title) { icons.relaunch() })
+            }
+        }
     }
 }
 

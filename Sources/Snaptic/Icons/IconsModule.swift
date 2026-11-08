@@ -83,6 +83,12 @@ import SnapticKit
     private var launchWaiting = false
     private var lastGateRead: Double = 0
     private var knownOwnIDs: Set<String>?
+    /// The Privacy pane [Open Privacy Settings] opened: watched until System Settings stops being frontmost.
+    private var privacyPane: PrivacyPane = .closed
+    private enum PrivacyPane { case closed, opened, front }
+    /// The 27 first-collapse question was answered this process (§4.0).
+    private var firstCollapseAsked = false
+    private var firstCollapseAsking = false
 
     // MARK: Status (A6/A7 read these)
 
@@ -310,11 +316,23 @@ import SnapticKit
         return menuRows.items(arrow: false)
     }
 
-    func settingsRoot() -> SettingsRoot {
-        let module = self
-        return SettingsRoot(id: SettingsRootID.hiddenIcons, title: title, symbol: symbolName, tint: tint) {
-            AnyView(IconsShellPage(title: module.title, symbol: module.symbolName, tint: module.tint))
-        }
+    func settingsRoot() -> SettingsRoot { IconsPage.settingsRoot(module: self) }
+
+    /// Sections › (§4.9).
+    func settingsDestination(_ route: SettingsRoute) -> AnyView? {
+        guard route.id == IconsSectionsPageControls.surface else { return nil }
+        return AnyView(IconsSectionsPage(module: self))
+    }
+
+    var highlights: [FeatureHighlight] { IconsPage.highlights }
+    func settingsIndex() -> [SettingsSearchEntry] { IconsPage.searchEntries() }
+
+    /// §4.12: the tab's attention mark shows for needs-permission (27), unavailable and paused.
+    var menuAttention: Bool {
+        guard state == .running else { return false }
+        if case .unavailable(let reason) = engineState, reason != .stopped { return true }
+        if pausedFor != nil || examPaused { return true }
+        return engineKind == .native && access.state.needsPermission
     }
 
     // MARK: Commands (the menu, the CLI and Settings use this; A6, A7, A8)
@@ -324,9 +342,134 @@ import SnapticKit
         submit(.command(command), from: source)
     }
 
-    /// Sections › Refresh (A7).
+    /// Sections › Refresh (A7). Native while the read is limited is **Show All Icons and Refresh**: it expands with ⌥
+    /// (the read follows the expand) and leaves the icons shown; auto-collapse re-arms.
     func refreshLayout() {
-        core?.refreshLayout()
+        guard let core else { return }
+        if layoutLimited {
+            perform(.showAll, from: .settings)
+        } else {
+            core.refreshLayout()
+        }
+    }
+
+    /// Native's read is restricted or the icons are hidden, so Sections shows the cached list.
+    var layoutLimited: Bool {
+        guard let core, core.engine == .native else { return false }
+        return core.isRestricted || core.state.isCollapsed
+    }
+
+    // MARK: Settings (A7)
+
+    /// What decides the status row.
+    func pageFacts() -> IconsPageFacts {
+        let value = config.value
+        let all = screens()
+        let toggle = items.frame(of: .toggle)
+        let separator = items.frame(of: .separator)
+        var facts = IconsPageFacts(engine: engineKind, state: engineState, access: access.state,
+                                   pausedFor: pausedFor, examPaused: examPaused)
+        facts.arrowVisible = items.isVisible(.toggle)
+        facts.dividerVisible = engineKind != .length || items.isVisible(.separator)
+        facts.alwaysHidden = value.alwaysHidden
+        facts.alwaysHiddenVisible = !value.alwaysHidden || items.isVisible(.alwaysHidden)
+        // A collapsed bar was valid when it collapsed; Length's wide `|` makes frames meaningless until it expands.
+        if let engineKind, !engineState.isCollapsed {
+            facts.arrangementValid = IconsGuards.arrangementValid(engine: engineKind, toggle: toggle,
+                                                                  separator: separator,
+                                                                  rightToLeft: items.rightToLeft)
+            if value.alwaysHidden {
+                let screen = toggle.flatMap { IconsGeometry.screen(holding: $0, in: all) } ?? all.first
+                facts.alwaysHiddenPlaced = IconsGuards.alwaysHiddenPlaced(
+                    engine: engineKind, toggle: toggle, separator: separator,
+                    alwaysHidden: items.frame(of: .alwaysHidden), screen: screen?.frame,
+                    rightToLeft: items.rightToLeft)
+            }
+        }
+        facts.arranged = value.arranged
+        facts.hiddenCount = hiddenCount
+        facts.refusal = lastRefusal
+        facts.ownItems = ownItemsDecision.row
+        facts.failSafe = lastFailSafe
+        facts.failSafeTime = lastFailSafeAt.map { DateFormatter.localizedString(from: $0, dateStyle: .none,
+                                                                                timeStyle: .short) }
+        if let readAt = apps.value.layout?.readAt, readAt > 0 { facts.cacheAge = max(Self.wall - readAt, 0) }
+        return facts
+    }
+
+    /// Hidden and Always Hidden icons in the last read; nil without one.
+    var hiddenCount: Int? {
+        core?.layout.map { layout in layout.sections.values.filter { $0 != .shown }.count }
+    }
+
+    /// The Sections page's lists: the live layout, else the cached one (Native while limited).
+    func sectionsList() -> IconsSectionsList {
+        let appsValue = apps.value
+        let sections = core?.layout?.sections ?? appsValue.layout?.sections ?? [:]
+        let system = core?.layout?.systemBundles ?? []
+        let own = Bundle.main.bundleIdentifier ?? ""
+        var names: [String: String] = [:]
+        for app in NSWorkspace.shared.runningApplications {
+            guard let bundle = app.bundleIdentifier, sections[bundle] != nil, names[bundle] == nil else { continue }
+            names[bundle] = app.localizedName ?? ""
+        }
+        return IconsPageRules.sections(sections.filter { $0.key != own }, system: system,
+                                       choices: appsValue.choices, newShown: Set(appsValue.newShown.keys),
+                                       engine: engineKind ?? .length, names: names)
+    }
+
+    /// A Sections pop-up: nil is Where It Is.
+    func setChoice(_ choice: IconsAppChoice?, for bundle: String) {
+        var value = apps.value
+        value.choices[bundle] = choice
+        if choice != nil { value.newShown[bundle] = nil }
+        apps.value = value
+    }
+
+    /// [Show Arrow] / [Show Divider] (G-4).
+    func showItem(_ role: IconsItemRole) {
+        items.show(role)
+        refreshPresentation()
+        requestRefresh()
+    }
+
+    /// [Show Arrow] for whichever item is missing.
+    func showMissingItems() {
+        for role in IconsItemRole.allCases where !items.isVisible(role) {
+            if role == .separator, engineKind != .length { continue }
+            if role == .alwaysHidden, !config.value.alwaysHidden { continue }
+            items.show(role)
+        }
+        refreshPresentation()
+        requestRefresh()
+    }
+
+    /// Advanced › Reset Arrow Position… (§4.2.5): expand, remove the items, clear their position and visibility
+    /// keys, re-seed and recreate them (the next start does both), and arrange again.
+    func resetArrowPosition() {
+        guard let context else { return }
+        stop()
+        for role in IconsItemRole.allCases {
+            defaults.removeObject(forKey: IconsSeeding.key(role.autosaveName))
+            defaults.removeObject(forKey: "NSStatusItem Visible " + role.autosaveName)
+        }
+        var value = config.value
+        value.arranged = false
+        config.value = value
+        firstCollapseAsked = false
+        EventLog.shared.record(.icons, "Icons: arrow position reset")
+        start(context)
+    }
+
+    /// [Open Privacy Settings]: the pane opens, and its closing starts the 5 s not-effective check (§4.12).
+    func openPrivacy() {
+        privacyPane = .opened
+        context?.permissions.presentGuide(.accessibility, reason: L("Needed by Hidden Icons."))
+    }
+
+    /// [Relaunch Snaptic].
+    func relaunch() {
+        context?.relauncher.relaunch(reason: "icons permission")
     }
 
     /// A hidden-list row was pressed (A6): the auto-collapse timer waits a minute.
@@ -403,6 +546,10 @@ import SnapticKit
 
     private func submit(_ intent: IconsIntent, from source: IconsIntentSource) {
         guard let core else { return }
+        if case .command(let command) = intent, asksFirst(command, from: source, core: core) {
+            askBeforeFirstCollapse(intent, from: source)
+            return
+        }
         let result = queue.submit(intent, from: source, now: Self.uptime)
         switch result {
         case .run(let step, let seq):
@@ -411,6 +558,40 @@ import SnapticKit
             if case .command = intent, source == .timer || source == .launch { auto.disarm() }
         case .dropped(let drop):
             if drop == .timerSuppressed { armAuto() }
+        }
+    }
+
+    /// §4.0 on 27: a collapse a person asks for (not the CLI, which can't answer) that would hide every other app.
+    private func asksFirst(_ command: IconsCommand, from source: IconsIntentSource, core: IconsEngineCore) -> Bool {
+        guard source.isUser, source != .cli, source != .hover, !firstCollapseAsking else { return false }
+        switch command {
+        case .hide: break
+        case .toggle, .toggleAll: if queue.target.isCollapsed { return false }
+        case .show, .showAll: return false
+        }
+        let appsValue = apps.value
+        return IconsPageRules.asksBeforeFirstCollapse(engine: core.engine, arranged: config.value.arranged,
+                                                      asked: firstCollapseAsked, layout: core.layout,
+                                                      ownBundleID: Bundle.main.bundleIdentifier ?? "",
+                                                      choices: appsValue.choices,
+                                                      newShown: Set(appsValue.newShown.keys))
+    }
+
+    private func askBeforeFirstCollapse(_ intent: IconsIntent, from source: IconsIntentSource) {
+        firstCollapseAsking = true
+        let alert = NSAlert()
+        alert.messageText = IconsPageRules.firstCollapseTitle
+        alert.informativeText = IconsPageRules.firstCollapseMessage
+        let hide = alert.addButton(withTitle: L("Hide Icons"))
+        let cancel = alert.addButton(withTitle: L("Cancel"))
+        hide.keyEquivalent = ""
+        cancel.keyEquivalent = "\r"
+        SettingsAlert.present(alert) { [weak self] response in
+            guard let self else { return }
+            self.firstCollapseAsking = false
+            self.firstCollapseAsked = true
+            guard response == .alertFirstButtonReturn, self.core != nil else { return }
+            self.submit(intent, from: source)
         }
     }
 
@@ -595,11 +776,24 @@ import SnapticKit
             return
         }
         if changed { refreshPresentation() }
+        watchPrivacyPane()
         let before = access.state
         access.trust(AXIsProcessTrusted(), at: Self.uptime)
         if access.state != before { requestRefresh() }
         if core.engine == .length { checkOwnItems(core) }
         driveGate(core)
+    }
+
+    private func watchPrivacyPane() {
+        guard privacyPane != .closed else { return }
+        let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.systempreferences"
+        switch (privacyPane, front) {
+        case (.opened, true): privacyPane = .front
+        case (.front, false):
+            privacyPane = .closed
+            permissionPaneClosed()
+        default: break
+        }
     }
 
     /// Length's own-items guard (§4.2.5): window frames only, re-checked every second.
@@ -740,8 +934,7 @@ import SnapticKit
         }
         let engineState = core.state
         let collapsed = engineState.isCollapsed
-        let hidden = core.layout.map { layout in layout.sections.values.filter { $0 != .shown }.count }
-        items.update(collapsed: collapsed, hiddenCount: hidden)
+        items.update(collapsed: collapsed, hiddenCount: hiddenCount)
         ActivationPolicyController.shared.iconsShown(!collapsed, cause: IconsExpandCause(queue.expandSource),
                                                      fullBarOnExpand: config.value.fullBarOnExpand)
         monitors.setHover(IconsHoverDwell.active(hover: config.value.hover, collapsed: collapsed,
@@ -914,20 +1107,5 @@ extension IconsModule: @preconcurrency IconsEngineHost {
                             action: ToastAction(title: L("Show Icons")) { [weak self] in
                                 self?.perform(.show, from: .menu)
                             }, lifetime: context.lifetime)
-    }
-}
-
-/// The K1 placeholder page; A7 replaces it with `IconsPage`.
-private struct IconsShellPage: View {
-    let title: String
-    let symbol: String
-    let tint: SettingsTint
-
-    var body: some View {
-        SettingsPageScaffold(route: SettingsRoute(SettingsRootID.hiddenIcons)) {
-            SettingsPageHeader(title,
-                               summary: L("Keep your menu bar tidy: click the arrow to hide the icons to its left, and click again to show them."),
-                               symbol: symbol, tint: tint)
-        }
     }
 }

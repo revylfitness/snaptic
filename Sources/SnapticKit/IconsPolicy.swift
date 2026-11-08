@@ -543,7 +543,7 @@ package enum IconsNewIcons {
 
 // MARK: - Own-items guard (§4.2.5, Length)
 
-/// The rows the guard shows. Strings live in the Controls tables (§4.17).
+/// The rows the guard shows. Their strings are `IconsPageRules.ownItemsText` (§4.2.5).
 package enum IconsOwnItemsRow: String, Sendable {
     /// “The arrow is in the hidden area. ⌘-drag it to the right of the | divider.”
     case arrowHidden

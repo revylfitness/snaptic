@@ -631,3 +631,9 @@ Sources/Snaptic/Core/ActivationPolicyController.swift	lead	L	-	-
 Sources/SnapticKit/IconsHiddenList.swift	lead	L	-	-
 Tests/SnapticKitTests/IconsHiddenListTests.swift	lead	L	-	-
 Sources/Snaptic/Icons/IconsMenuRows.swift	lead	L	-	-
+Sources/SnapticKit/IconsPageRules.swift	lead	L	-	-
+Tests/SnapticKitTests/IconsPageRulesTests.swift	lead	L	-	-
+Sources/Snaptic/Icons/UI/IconsPage.swift	lead	L	-	-
+Sources/Snaptic/Icons/UI/IconsSectionsPage.swift	lead	L	-	-
+Sources/Snaptic/Icons/UI/IconsAdvancedSheet.swift	lead	L	-	-
+Sources/Snaptic/Icons/UI/IconsArrangeSheet.swift	lead	L	-	-

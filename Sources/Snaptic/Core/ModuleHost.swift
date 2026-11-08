@@ -710,7 +710,12 @@ import SnapticKit
     func resetAllSettings() {
         let alert = NSAlert()
         alert.messageText = L("Reset all Snaptic settings?")
-        alert.informativeText = L("Every module, shortcut, menu, and display setting goes back to its default. Snaptic then restarts.")
+        var text = L("Every module, shortcut, menu, and display setting goes back to its default. Snaptic then restarts.")
+        // 0.4 A7: the arrow's position goes too, so say so when Hidden Icons is on or was arranged.
+        if modulesStore.value.isEnabled(.hiddenIcons) || iconsStore.value.arranged {
+            text += " " + IconsPageRules.resetAllNote
+        }
+        alert.informativeText = text
         alert.addButton(withTitle: L("Reset"))
         alert.addButton(withTitle: L("Cancel"))
         alert.alertStyle = .warning

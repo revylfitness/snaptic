@@ -19,11 +19,12 @@ package enum IconsIntentSource: String, CaseIterable, Sendable {
     /// Wake, MenuBarAgent restart, another hider, an exam, a session event.
     case monitor
 
-    /// Sources a person drives. Any of them cancels a pending launch collapse.
+    /// Sources a person drives. Any of them cancels a pending launch collapse. Settings' Show Icons / Hide Icons
+    /// buttons count (A7): a collapse from them marks the icons arranged.
     package var isUser: Bool {
         switch self {
-        case .click, .shortcut, .cli, .menu, .hiddenList, .hover: true
-        case .timer, .launch, .settings, .monitor: false
+        case .click, .shortcut, .cli, .menu, .hiddenList, .hover, .settings: true
+        case .timer, .launch, .monitor: false
         }
     }
 

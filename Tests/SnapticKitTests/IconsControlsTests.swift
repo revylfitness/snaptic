@@ -100,4 +100,111 @@ final class IconsControlsTests: XCTestCase {
             XCTAssertNil(spec.search, spec.id.rawValue)
         }
     }
+
+    // MARK: Canonical strings (§4.17, A7)
+
+    /// The repository root (this file is Tests/SnapticKitTests/…), when the app sources are next to the tests.
+    private static var repositoryRoot: URL? {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let app = root.appendingPathComponent("Sources/Snaptic")
+        return FileManager.default.fileExists(atPath: app.path) ? root : nil
+    }
+
+    /// §4.17's strings as the sources spell them: counts, times and names are the interpolations that fill them
+    /// ("Hiding 7 icons" is `Hiding \(n) icons`, "9:41" is `\(time)`).
+    private static let canonical: [String] = [
+        #"Hidden Icons"#,
+        #"Use Hidden Icons"#,
+        #"Hide the menu bar icons you don’t need behind an arrow."#,
+        #"Keep your menu bar tidy: click the arrow to hide the icons to its left, and click again to show them."#,
+        #"Hidden Icons uses it to see where your menu bar icons are, so it can hide the right ones."#,
+        #"Hidden Icons uses it to list your hidden icons. Hiding works without it."#,
+        #"Hiding \(n) icons"#,
+        #"Hiding 1 icon"#,
+        #"Icons are hidden"#,
+        #"Showing all icons"#,
+        #"Arrange your icons, then click the arrow to hide them."#,
+        #"How to Arrange…"#,
+        #"Hidden Icons isn’t available on this version of macOS. Your icons stay shown."#,
+        #"Hidden Icons is turned off on this Mac, so your icons stay shown."#,
+        #"Move Snaptic to Applications to hide icons."#,
+        #"Hidden Icons stopped using the macOS 27 method after a problem, so your icons stay shown."#,
+        #"Try Again"#,
+        #"Paused while \(hider.name) runs"#,
+        #"Paused during an exam session"#,
+        #"Icons were shown at \(time) because Snaptic couldn’t confirm they were hidden safely."#,
+        #"Snaptic couldn’t hide icons, so they’re shown. Details are in Hidden Icons settings."#,
+        #"Open Settings"#,
+        #"Show Icons"#,
+        #"Hide Icons"#,
+        #"Hide icons automatically after \(seconds) seconds"#,
+        #"Hide icons when Snaptic opens"#,
+        #"Reopening Snaptic to show Settings doesn’t hide them."#,
+        #"Always Hidden section"#,
+        #"Icons left of the ⋮ divider stay hidden until you Option-click the arrow."#,
+        #"Section dividers"#,
+        #"Shows the | and ⋮ dividers while icons are shown."#,
+        #"Shows the ⋮ divider while icons are shown. On this version of macOS the arrow marks the edge of "#
+            + #"the hidden icons."#,
+        #"Show or hide icons"#,
+        #"Show or Hide Hidden Icons"#,
+        #"Sections"#,
+        #"\(hidden) hidden"#,
+        #"\(choices) choices"#,
+        #"Show Hidden Icons"#,
+        #"Hide Icons Again"#,
+        #"Show All Hidden Icons"#,
+        #"Hide Icons Automatically"#,
+        #"Hidden Icons Settings…"#,
+        #"No Hidden Icons"#,
+        #"Allow Accessibility to List Icons…"#,
+        #"Needs Permission"#,
+        #"Arrow and Snaptic Menu"#,
+        #"Arrow Only"#,
+        #"The arrow is always in the menu bar. Arrow and Snaptic Menu also lists hidden icons in the "#
+            + #"Snaptic menu, so you can open one without showing them all."#,
+        #"Off"#,
+        #"Choose where each module appears in the menu bar."#,
+        #"The Snaptic icon appears when a module is set to Show in Snaptic Menu, or Hidden Icons to Arrow "#
+            + #"and Snaptic Menu. With two or more, the Snaptic menu shows a tab for each; while it’s open, "#
+            + #"press ⌘1, ⌘2, and so on to switch tabs."#,
+        #"Where each module appears, their icons, and the Displays menu go back to their defaults. Your "#
+            + #"other Snaptic settings stay as they are."#,
+        #"macOS can also hide icons, including the Hidden Icons arrow, in System Settings › Menu Bar. "#
+            + #"Opening Snaptic again always shows Settings."#,
+        #"How to Arrange Your Icons"#,
+        #"Hold ⌘ and drag icons in the menu bar:"#,
+        #"To the right of the arrow ‹: always shown."#,
+        #"Between | and ‹: hidden when you click the arrow."#,
+        #"Left of ⋮: hidden until you Option-click the arrow."#,
+        #"New apps’ icons appear at the far left, so they start hidden."#,
+        #"To the left of the arrow ‹: hidden when you click it."#,
+        #"You can also choose Always Show or Always Hide for an app in Settings › Hidden Icons › Sections."#,
+        #"Done"#,
+        #"The arrow isn’t in the menu bar, so icons stay shown."#,
+        #"The | divider isn’t in the menu bar, so icons stay shown."#,
+        #"Hidden Icons needs Device Control and Data Access to see where your icons are."#,
+        #"macOS may need Snaptic to reopen before the permission takes effect."#,
+        #"Relaunch Snaptic"#,
+        #"Open Privacy Settings"#,
+        #"Show Arrow"#,
+    ]
+
+    /// Every §4.17 string is a whole literal somewhere in the app or Kit sources, so a reworded string fails here
+    /// until the plan and the code agree again.
+    func testEveryCanonicalStringIsInTheSources() throws {
+        guard let root = Self.repositoryRoot else { throw XCTSkip("App sources aren't next to the tests.") }
+        let sources = root.appendingPathComponent("Sources")
+        guard let walker = FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil) else {
+            return XCTFail("can't list \(sources.path)")
+        }
+        var text = ""
+        for case let url as URL in walker where url.pathExtension == "swift" {
+            text += (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        }
+        for string in Self.canonical {
+            XCTAssertTrue(text.contains("\"" + string + "\""), "§4.17 string not in the sources: \(string)")
+        }
+    }
 }

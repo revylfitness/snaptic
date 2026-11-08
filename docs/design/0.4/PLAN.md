@@ -1261,7 +1261,7 @@ Results are in `STEP0-NOTES.md`. No Blocker row failed. These changes follow fro
 | R2-8 | The completion arrives on a background thread; off-main `invalidate` is safe (S0-5). | No change: the shim hops to main, and the watchdog calls `invalidateAll` off main. |
 | R2-9 | Rows carried forward: S0-7 camera/mic/location and S0-8 (a)/(c) before A2; S0-9 before A3; S0-13/14 and Bartender's team id at R. | Listed in `STEP0-NOTES.md` › Carried forward. |
 
-## R3. Implementation changes (K5, B1, A1, A2, A3, A4, A5, A6, 2026-11-07)
+## R3. Implementation changes (K5, B1, A1, A2, A3, A4, A5, A6, A7, 2026-11-07)
 
 Where the code departs from the text above, the code and this table win.
 
@@ -1321,3 +1321,16 @@ Where the code departs from the text above, the code and this table win.
 | R3-52 | §4.13, A6 | A row's hint "Opens its menu." is set through `toolTip`. Its app icon has an empty `accessibilityDescription`, so it's decorative and the title names the app. |
 | R3-53 | §4.8, A6 | An AX title that only repeats the app name falls back to "Icon n"; a missing app name reads "App". Every extra the read found counts toward "several", including off-screen ones. |
 | R3-54 | A6 | `StatusMenu.assistiveInputInUse()` (static) is internal so the Show All row can use it. `AXInventory.press(pid:index:)` is replaced by `press(_:screen:completion:)`, which re-reads, waits for the icon to be on the arrow's screen, matches it and returns `PressOutcome`. |
+| R3-55 | §4.9, §4.17, A7 | The status row takes the first of: unavailable (Try Again only for the crash guard; stopped reads "Starting…"), paused, permission (27), arrow missing, `\|` missing (Length), `⋮` missing, arrangement (Length), identity refusal, an own-items row other than Some Hidden, then the engine state. Calibrating reads "Hiding icons…". Notes follow in order: Some Hidden, `⋮` misplaced, the fail-safe line (not for session or agent restart), stale; a note equal to the main line is dropped, and an unavailable engine has none. The rules are `IconsPageRules.status` over `IconsPageFacts` (the CLI already had `IconsStatusFacts`). |
+| R3-56 | §4.6, A7 | `IconsIntentQueue`'s user sources include `.settings`, so the status row's Show Icons and Hide Icons count as asked for. |
+| R3-57 | §4.0, A7 | The Native first-collapse confirm (`IconsPageRules.asksBeforeFirstCollapse`) runs in `submit` before a collapse asked for from the arrow, the menu, the shortcut or Settings (not the CLI or hover), at most once per process and again after Reset Arrow Position…. Cancel is the default button and leaves icons shown. |
+| R3-58 | §4.9, G-31, A7 | Auto-collapse is a switch titled with the current seconds plus an indented stepper (5–300, step 5) while it's on, instead of an inline field. |
+| R3-59 | §4.1, A7 | Show Arrow and both Show Divider buttons share `icons.page.showArrow` and call `showMissingItems()`, which makes every missing own item visible. |
+| R3-60 | §4.2.5, A7 | Reset Arrow Position… stops the engine, removes the items' position and visibility keys, clears `arranged`, then starts it again. It's an alert, since the Advanced sheet never presents another. |
+| R3-61 | §4.12, A7 | Open Privacy Settings watches for the pane closing by polling the frontmost app; Trusted still false 5 s later is `notEffective` (Relaunch Snaptic). |
+| R3-62 | §4.9, A7 | General › Reset All Settings… adds `IconsPageRules.resetAllNote` only while Hidden Icons is on or arranged. |
+| R3-63 | §4.9, A7 | Sections names come from the running apps (`NSRunningApplication.localizedName`), falling back to the bundle id. The page's summary ("Which apps’ icons are shown, hidden, and always hidden."), its off state ("Turn on Hidden Icons to see its sections.") and an empty section's "No icons" aren't in §4.17. |
+| R3-64 | §4.17, G-11, A7 | The Menu Bar page's "Off" for Hidden Icons is the pop-up's help while the module is off; the pop-up is dimmed as for the other modules. The spec is `menubar.page.iconsPresence`. |
+| R3-65 | §4.9, A7 | Reset Arrow Position… has the help "Puts the arrow and dividers back next to the Snaptic icon if you can’t find them." The Advanced sheet's Diagnostics section lists `diagnosticsLines()` above the kill switches. |
+| R3-66 | §4.12, A7 | The Permissions page lists Hidden Icons under Accessibility's "Needed by" on 14–26 while it runs, and on 27 adds the relaunch note (Relaunch Snaptic) when the grant isn't effective. |
+| R3-67 | §4.17, D1, A7 | The README's Menu Bar text, "eight pages" and the ⌘1–⌘4 line stay for D1. The §4.17 check is `IconsControlsTests.testEveryCanonicalStringIsInTheSources` (whole literals, counts and times as interpolations). `L15_PENDING` is empty. |

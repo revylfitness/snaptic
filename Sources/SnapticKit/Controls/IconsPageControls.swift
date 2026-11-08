@@ -6,6 +6,8 @@ import Foundation
 
 package enum IconsPageControls: ControlTable {
     package static let surface = "icons.page"
+    /// The How to Arrange sheet (no controls of its own; Done closes it).
+    package static let arrangeSheet = "icons.arrange"
 
     private static let root = SettingsRootID.hiddenIcons
     private static let icons: [ControlCondition] = [.module(.hiddenIcons)]

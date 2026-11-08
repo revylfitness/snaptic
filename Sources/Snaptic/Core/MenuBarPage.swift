@@ -13,6 +13,7 @@ import SnapticKit
 ///    Time (own icon only)            [Don't Show ▾]
 ///    Icon                            [cup] [eye] [bulb]
 ///    Show Keep Awake with the Lid Closed in the Awake menu   [◯]   (0.3.3; laptops; locked while the mode is on)
+/// Hidden Icons                       [Arrow and Snaptic Menu ▾]   (0.4; or Arrow Only)
 /// ⚠ status rows, only while true
 /// Displays menu: Style · Scroll over a slider to adjust it · Customize Displays Menu…
 /// Snaptic icon                       [◫] [◩] [◰]
@@ -53,11 +54,11 @@ private struct MenuBarPageContent: View {
 
     var body: some View {
         SettingsPageScaffold(route: SettingsRoute(SettingsRootID.menuBar)) {
-            SettingsPageHeader(L("Menu Bar"), summary: L("Choose where Window Switcher, Displays, and Awake appear in the menu bar."),
+            SettingsPageHeader(L("Menu Bar"), summary: L("Choose where each module appears in the menu bar."),
                                symbol: "menubar.rectangle", tint: .graphite)
             Section {
-                // 0.4: the Hidden Icons row (its own pop-up titles, H2) arrives with A7.
-                ForEach(ModuleID.allCases.filter { $0 != .hiddenIcons }, id: \.self) { id in
+                // 0.4 A7: Hidden Icons' row has its own pop-up titles (H2, `MenuPlacement.title(_:for:)`).
+                ForEach(ModuleID.allCases, id: \.self) { id in
                     moduleRows(id)
                 }
             } footer: {
@@ -101,13 +102,13 @@ private struct MenuBarPageContent: View {
                     .disabled(!hasSnapticItem)
             } footer: {
                 // 0.3.1 A3: always shown, because it is also where the tab keys are discoverable.
-                Text(L("The Snaptic icon appears when a module is set to Show in Snaptic Menu. With two or more, the Snaptic menu shows a tab for each; while it’s open, press ⌘1, ⌘2, or ⌘3 to switch tabs."))
+                Text(L("The Snaptic icon appears when a module is set to Show in Snaptic Menu, or Hidden Icons to Arrow and Snaptic Menu. With two or more, the Snaptic menu shows a tab for each; while it’s open, press ⌘1, ⌘2, and so on to switch tabs."))
             }
             PageFooterButtons(advanced: nil, help: SettingsRoute(SettingsRootID.menuBar),
                               restoreDefaults: RestoreDefaults(
                                   title: L("Restore Menu Bar Defaults…"),
                                   question: L("Restore menu bar settings to their defaults?"),
-                                  message: L("Where Window Switcher, Displays, and Awake appear, their icons, and the Displays menu go back to their defaults. Your other Snaptic settings stay as they are."),
+                                  message: L("Where each module appears, their icons, and the Displays menu go back to their defaults. Your other Snaptic settings stay as they are."),
                                   button: L("Restore Defaults"), destructive: false) { restoreDefaults() },
                               restoreControl: ControlID("menubar.page.restoreDefaults"))
         }
@@ -140,8 +141,10 @@ private struct MenuBarPageContent: View {
         let presence = modules.value.presence(id)
         // A module that's off shows nothing in the menu bar: its choice stays visible but can't change (ux m18).
         let on = modules.value.isEnabled(id)
+        // 0.4 §4.17: Hidden Icons' row reads "Off" while the module is off (its arrow isn't there to describe).
+        let offHelp = id == .hiddenIcons ? L("Off") : L("Turn on \(module.title) to choose where it appears.")
         PickerSetting(module.title,
-                      help: on ? MenuPlacement.help(presence, for: id) : L("Turn on \(module.title) to choose where it appears."),
+                      help: on ? MenuPlacement.help(presence, for: id) : offHelp,
                       selection: presenceBinding(id), options: presenceOptions(id), style: .popUp,
                       defaultValue: ModulesConfig.defaultPreferences(id).presence, anchor: Self.presenceControl(id))
             .disabled(!on)
@@ -219,7 +222,7 @@ private struct MenuBarPageContent: View {
         case .windowSwitcher: return ControlID("menubar.page.switcherPresence")
         case .displays: return ControlID("menubar.page.displaysPresence")
         case .awake: return ControlID("menubar.page.awakePresence")
-        case .hiddenIcons: return nil   // not listed by `moduleRows` (A7 adds its row)
+        case .hiddenIcons: return ControlID("menubar.page.iconsPresence")
         }
     }
 
@@ -240,10 +243,10 @@ private struct MenuBarPageContent: View {
     private var awakeShortcutBound: Bool { awakeShortcutStatus.isBound }
 
     /// Always Show in Menu Bar · Show When Active (Displays, Awake) · Show in Snaptic Menu · Don't Show; Awake's
-    /// Don't Show only with a Keep Awake shortcut (parity M2).
+    /// Don't Show only with a Keep Awake shortcut (parity M2). Hidden Icons: Arrow and Snaptic Menu · Arrow Only.
     private func presenceOptions(_ id: ModuleID) -> [PickerOption<MenuPresence>] {
         MenuPlacement.presences(for: id).map { presence in
-            PickerOption(presence, MenuPlacement.title(presence),
+            PickerOption(presence, MenuPlacement.title(presence, for: id),
                          enabled: MenuLayout.isSelectable(presence, for: id, awakeShortcutBound: awakeShortcutBound)
                             || modules.value.presence(id) == presence)
         }
@@ -267,7 +270,7 @@ private struct MenuBarPageContent: View {
             lines.append(hint)
         }
         if PermissionFlow.isMacOS27OrLater {
-            lines.append(L("macOS can also hide icons in System Settings › Menu Bar. Opening Snaptic again always shows Settings."))
+            lines.append(L("macOS can also hide icons, including the Hidden Icons arrow, in System Settings › Menu Bar. Opening Snaptic again always shows Settings."))
         }
         return lines.isEmpty ? nil : lines.joined(separator: " ")
     }
