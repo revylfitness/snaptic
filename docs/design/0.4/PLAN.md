@@ -344,8 +344,8 @@ The Kit core never sees an `NSStatusItem`. It talks to `IconsItemsPort` (`frame(
 **Identity check (Y-5).** Native refuses when `PermissionFlow.isTranslocated`, or when
 `NSWorkspace.urlForApplication(withBundleIdentifier: Bundle.main.bundleIdentifier)` ≠ `Bundle.main.bundleURL`. The
 status row then reads **“Move Snaptic to Applications to hide icons.”** It is checked at start and before each
-activation. After every successful activation, the arrow's window frame must be on screen within 500 ms. If it
-isn't, everything is invalidated (fails safe, `icons.failSafe.ownHidden`).
+activation. (R2-7: the earlier 500 ms on-screen frame check is dropped. S0 showed that a restriction leaves the
+in-process frame unchanged, and that a macOS-overflowed item legitimately sits off-screen.)
 
 #### 4.2.2 Native engine
 
@@ -379,14 +379,16 @@ isn't, everything is invalidated (fails safe, `icons.failSafe.ownHidden`).
 3. Resolve the layout.
 4. Allow:
    - system items: the full range S0 records, default `0..<64`;
+   - every system owner's bundle that the inventory skips (§4.2.6) other than `com.apple.MenuBarAgent`, e.g.
+     `com.apple.TextInputMenuAgent` (R2-1);
    - visible-section bundles;
    - `Bundle.main.bundleIdentifier`;
    - `newAllowed`;
    - Always Show choices.
 
    Remove Always Hide choices.
-5. Activate token N+1, then invalidate N. The order follows S0 test X-4: if the server replaces N, drop N without
-   calling `invalidate`; if it rejects N+1, invalidate N first and accept a one-frame flash.
+5. Activate token N+1, then invalidate N once N+1 completes. S0-4 showed the server unions every active assertion,
+   so the overlap shows old ∪ new for one frame at most and never hides an item that should show (R2-2).
 
 - **Activation timeout: 3 s** (X-3). On expiry the core bumps the generation, fails safe
   (`icons.activateTimeout`), and invalidates any late success. Two timeouts in a row make Native unavailable until
@@ -401,13 +403,16 @@ isn't, everything is invalidated (fails safe, `icons.failSafe.ownHidden`).
   - The cache is replaced only by an unrestricted read. That happens at module start (before the first collapse),
     on every expand that invalidates, on a ⌥ expand, on fail-safe, and on Sections › **Show All Icons and Refresh**.
   - During a restricted plain expand, the on-screen items (visible + hidden) are re-read on each collapse and only
-    those bundles are re-sectioned. AH bundles keep their cached section.
+    those bundles are re-sectioned. AH bundles keep their cached section. Only frames of bundles in the assertion's
+    allow-list are trusted: S0-10 showed that hidden third-party items stay in AX at stale frames (R2-5).
   - The cache stores `readAt`. When it is over 24 h old and AH is on, the status row adds **“Icon positions were
     last read 3 days ago. Option-click the arrow to refresh them.”**
   - Diagnostics show the layout age.
-- **System-item runtime check (X-6).** After each collapse, if an extra owned by a verified system owner
-  (`com.apple.controlcenter`, `com.apple.systemuiserver`, `com.apple.MenuBarAgent`, under `/System/`) that was
-  visible before is now missing, the engine expands, counts `icons.systemItemHidden`, and sets
+- **System-item runtime check (X-6, revised by R2-1).** After each collapse, the engine reads MenuBarAgent's extras
+  (`/System/Library/CoreServices/MenuBarAgent.app`), keyed by the first child's `AXIdentifier`
+  (`com.apple.menuextra.*`). Hidden MenuBarAgent items leave AX, so presence is a valid signal here. If an
+  identifier that was present before the collapse is missing, and it isn't `com.apple.menuextra.now-playing` (the
+  known casualty: hidden under any restriction), the engine expands, counts `icons.systemItemHidden`, and sets
   `Icons.native.disabledBuild` to the current OS build.
 
 #### 4.2.3 Length engine
@@ -463,7 +468,7 @@ isn't, everything is invalidated (fails safe, `icons.failSafe.ownHidden`).
   - **Any other Snaptic item left of `|`:** warning row **“Some Snaptic icons are in the hidden area. ⌘-drag them to
     the right of the arrow.”**
   - **A Snaptic item appearing for the first time while collapsed:** the bar expands, so the item gets a position.
-  - Native needs no own-items guard (the own bundle is allowed). The Y-5 frame check covers the identity failure.
+  - Native needs no own-items guard (the own bundle is allowed). The identity check (§4.2.1) covers a wrong bundle.
 - **Advanced › Reset Arrow Position…** confirms with **“Put the arrow back next to the Snaptic icon?”** /
   **“The arrow and dividers move back next to the Snaptic icon, and your icons are shown. You’ll arrange your icons
   again.”** / [**Reset Position**] [**Cancel**]. It then:
@@ -730,8 +735,9 @@ you’ll arrange your icons again.”**
 - **Pause Hidden Icons** (default). While a listed app runs, the module expands and pauses. A click opens the page.
   Status row **“Paused while Hidden Bar runs”**, menu row **Paused While Hidden Bar Runs** (the existing
   `pauseReason` pattern). It resumes when the app quits.
-- **Run Both Anyway.** Not offered for a MenuBarClientCore hider on 27 if S0 test X-4(3) shows last-writer-wins.
-  There the pause is mandatory, and the row explains why.
+- **Run Both Anyway.** Offered on every OS. S0-4(3) showed that MenuBarClientCore unions the allow-lists, so on 27
+  an icon hides only when both apps hide it. The option's footnote says so: **“On macOS 27, an icon stays shown
+  unless both apps hide it.”** (R2-2)
 - README **“Switching from Hidden Bar”**, after the Hidden Icons section:
   - Quit Hidden Bar and remove it from Login Items.
   - Positions don't carry over, so ⌘-drag the arrow once.
@@ -766,7 +772,8 @@ you’ll arrange your icons again.”**
   - Safe Mode skips the module (H6). Launch collapse is skipped after a version change, an OS change, or an
     unstable launch.
 - **MenuBarAgent restart (X-5).** Watch `com.apple.MenuBarAgent` launch and terminate, with the path under
-  `/System/Library/CoreServices/`.
+  `/System/Library/CoreServices/`. S0-6 showed that a held restriction survives the restart. The engine still
+  invalidates on terminate, so it never holds an assertion it can't re-read for, and AX may switch displays (R2-3).
   - On terminate: invalidate and release every token, `.expanded(reason: agentRestart)`, `icons.agentRestart`.
   - On launch +2 s: re-collapse only if the last intent was "hidden".
   - S0 runs `killall MenuBarAgent` while collapsed and while expanded.
@@ -780,9 +787,14 @@ you’ll arrange your icons again.”**
   If any disappears, the design changes before A2. Native then always allows every app holding an active capture
   session (public `AVCaptureDevice` in-use queries where available), or limits Native accordingly. The README states
   the result.
-- **Exam sessions (X-7).** While `/usr/libexec/assessmentagent` runs with an active assessment (best-effort
-  detection, defined in S0), Native expands, makes no activation calls, and shows **“Paused during an exam
-  session”**. It resumes after. The S0 side-effect checklist (§5) decides any Known limitations.
+- **Exam sessions (X-7, revised by R2-4).** `assessmentagent` runs with no exam open, so it isn't the signal. The
+  guard treats the system as in an exam while `NSApp.currentSystemPresentationOptions` contains
+  `.disableProcessSwitching`, `.disableForceQuit` or `.disableSessionTermination`, set by a process other than
+  Snaptic (we never set them). It is checked before every activation and on
+  `NSApplication.didChangeScreenParametersNotification` + a 1 s poll while Native holds an assertion. While it
+  holds, Native invalidates, makes no activation calls, and shows **“Paused during an exam session”**. Because
+  allow-lists union (S0-4), any assertion of ours during an exam would show icons the exam hid, so this guard is
+  mandatory. S0-9 confirms the signal against a real exam before A3. The S0 side-effect checklist (§5) decides any Known limitations.
 - **Kill switches:** H3.
 
 ### 4.12 Accessibility on macOS 27 (G-5)
@@ -1232,3 +1244,19 @@ with the reason. Where a finding is accepted, the plan section that carries it i
 | Y-14 | P | Debounce on click and shortcut only; the intent queue covers the rest (§4.4); failed collapse re-arms; hover off by default |
 | Y-15 | A | §1, §4.2.2, K2, K3 |
 | Y-16 | A | §9, H2 (one control), §4.17 per-engine sheet |
+
+## R2. Changes from S0 (2026-11-07, macOS 27.2 26B123)
+
+Results are in `STEP0-NOTES.md`. No Blocker row failed. These changes follow from what S0 measured.
+
+| ID | Finding | Change |
+|---|---|---|
+| R2-1 | Now Playing (`com.apple.menuextra.now-playing`) hides under any restriction and can't be allowed. Text Input (`com.apple.TextInputMenuAgent`, under `/System/`) hides unless allow-listed. | §4.2.2 allow-list adds skipped system owners' bundles. The X-6 check is keyed on `AXIdentifier` and excludes now-playing. README Known limitations (D1): **“On macOS 27, the Now Playing icon is hidden while icons are hidden.”** M-checks add Text Input staying visible. |
+| R2-2 | Allow-lists **union** across assertions and processes. | §4.2.2 step 5 is activate-then-invalidate with no replace/reject branches. §4.10 offers Run Both Anyway on 27 with the union footnote. K3's race matrix tests the order only. |
+| R2-3 | A held restriction survives a MenuBarAgent restart, and AX may then report another display. | §4.11 keeps invalidate-on-terminate (fails safe) and re-reads before re-collapsing. |
+| R2-4 | `assessmentagent` always runs. | The exam guard uses `currentSystemPresentationOptions` (§4.11). K4's exam-guard inputs become a presentation-options set. S0-9 is carried to before A3. |
+| R2-5 | Hidden third-party items stay in AX at stale frames; allowed ones refresh. | §4.2.2 trusts only allow-listed bundles' frames. K2's inventory decision takes the allow-list as an input. |
+| R2-6 | On a crowded display, overflowed extras are absent from AX, and MenuBarAgent adds “Show Hidden Menu Bar Items”. AX and in-process frames describe the same display. | That item is a system owner (skipped). An absent app keeps its last section (§4.2.6, already). §4.8 adds no 27 overflow rows. The arrow's frame sitting outside every screen counts as an unstable inventory: no re-section, no collapse. |
+| R2-7 | A restriction doesn't change the in-process status-item frame. | The Y-5 on-screen frame check is dropped (§4.2.1); the identity check stays. `icons.failSafe.ownHidden` is removed. |
+| R2-8 | The completion arrives on a background thread; off-main `invalidate` is safe (S0-5). | No change: the shim hops to main, and the watchdog calls `invalidateAll` off main. |
+| R2-9 | Rows carried forward: S0-7 camera/mic/location and S0-8 (a)/(c) before A2; S0-9 before A3; S0-13/14 and Bartender's team id at R. | Listed in `STEP0-NOTES.md` › Carried forward. |
