@@ -618,3 +618,9 @@ Tests/SnapticKitTests/IconsShimContractTests.swift	lead	L	-	-
 Sources/SnapticKit/IconsItemsPresentation.swift	lead	L	-	-
 Tests/SnapticKitTests/IconsItemsPresentationTests.swift	lead	L	-	-
 Sources/Snaptic/Icons/IconsItems.swift	lead	L	-	-
+Sources/SnapticKit/IconsBackendRules.swift	lead	L	-	-
+Tests/SnapticKitTests/IconsBackendRulesTests.swift	lead	L	-	-
+Sources/Snaptic/Icons/NativeBackend.swift	lead	L	-	-
+Sources/Snaptic/Icons/LengthBackend.swift	lead	L	-	-
+Sources/Snaptic/Icons/AXInventory.swift	lead	L	-	-
+Sources/Snaptic/Icons/IconsWatchdog.swift	lead	L	-	-
