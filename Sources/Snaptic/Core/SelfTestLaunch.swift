@@ -66,6 +66,9 @@ enum SelfTestLaunch {
         if host.modules.count != ModuleID.allCases.count { problems.append("ModuleHost has \(host.modules.count) modules") }
         if !host.runningModules.isEmpty { problems.append("a module started during the self-test") }
         if !host.ledgerStore.value.has(.v031Welcome) { problems.append("the 0.3.1 marker wasn't recorded") }
+        // 0.4 A1: building the modules creates no Hidden Icons item; only start() does.
+        report.append("selftest-launch: icons items \(IconsItems.liveCount)")
+        if IconsItems.liveCount != 0 { problems.append("IconsModule created \(IconsItems.liveCount) status items before start()") }
 
         // 0.4 H8: the Native shim's encodings, without activating an assertion or touching Accessibility.
         let shim = PrivateMenuBarAPI.verify()

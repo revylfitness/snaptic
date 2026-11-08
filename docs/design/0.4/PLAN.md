@@ -1261,7 +1261,7 @@ Results are in `STEP0-NOTES.md`. No Blocker row failed. These changes follow fro
 | R2-8 | The completion arrives on a background thread; off-main `invalidate` is safe (S0-5). | No change: the shim hops to main, and the watchdog calls `invalidateAll` off main. |
 | R2-9 | Rows carried forward: S0-7 camera/mic/location and S0-8 (a)/(c) before A2; S0-9 before A3; S0-13/14 and Bartender's team id at R. | Listed in `STEP0-NOTES.md` › Carried forward. |
 
-## R3. Implementation changes (K5, B1, 2026-11-07)
+## R3. Implementation changes (K5, B1, A1, 2026-11-07)
 
 Where the code departs from the text above, the code and this table win.
 
@@ -1277,3 +1277,7 @@ Where the code departs from the text above, the code and this table win.
 | R3-8 | H8, CI | `SNAPTIC_SELFTEST_EXPECT_ICONS_SHIM` (`available` or `unavailable`) turns the launch line into a check; CI sets `unavailable` on both launch runs. |
 | R3-9 | H12 | Diagnostics show the shim state plus **five** encoding rows (the table has five selectors), not six. |
 | R3-10 | B1 done-when | The local 27.2 `--selftest-launch` run that prints `available` is an owner check at R (it needs Snaptic quit); B1 verified the shim on 27.2 with a standalone probe (all five encodings match, refusals, poison). |
+| R3-11 | §4.3, A1 | Both dividers open the arrow's menu on any click (§4.3 named `|` on Length; `⋮` now does the same rather than nothing). The items listen for `.otherMouseUp` too, so the table's "other mouse button" row reaches `IconsClicks`. |
+| R3-12 | §2, A1, A2 | `IconsItemsPort.frame(of:)` returns the item's window frame in AppKit's global space; `AXInventory` (A2) converts Accessibility's y to match. |
+| R3-13 | §4.1, A1 | Seeding lives in Kit (`IconsSeeding`, step 1 pt): the arrow just left of the leftmost Snaptic item, `|` left of it, `⋮` left of `|`; nothing is seeded without an anchor or over a placed item. P-10 runs through `IconsItems.seedOwnItem(autosaveName:)`, which `StatusMenu` and Awake's indicator call before creating an item. |
+| R3-14 | A1 done-when | `--selftest-launch` prints `icons items 0` and fails on any other count. M1–M4 run at R: the items go live when A5 wires `IconsModule`. |

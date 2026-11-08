@@ -363,6 +363,8 @@ import SnapticKit
     // MARK: Items
 
     private func makeSlot(module: ModuleID?, autosaveName: String) -> Slot {
+        // 0.4 P-10: a first-time item lands right of the Hidden Icons arrow (Length only).
+        IconsItems.seedOwnItem(autosaveName: autosaveName)
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.autosaveName = autosaveName
         // The autosave name can restore "hidden" from an earlier removal; a planned item is always shown.

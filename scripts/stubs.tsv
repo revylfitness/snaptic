@@ -615,3 +615,6 @@ Sources/SnapticShims/SNMenuBarVisibility.m	lead	L	-	-
 Sources/Snaptic/Icons/PrivateMenuBarAPI.swift	lead	L	-	-
 Sources/SnapticKit/IconsShimContract.swift	lead	L	-	-
 Tests/SnapticKitTests/IconsShimContractTests.swift	lead	L	-	-
+Sources/SnapticKit/IconsItemsPresentation.swift	lead	L	-	-
+Tests/SnapticKitTests/IconsItemsPresentationTests.swift	lead	L	-	-
+Sources/Snaptic/Icons/IconsItems.swift	lead	L	-	-
