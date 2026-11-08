@@ -132,6 +132,21 @@ final class SettingsPageRulesTests: XCTestCase {
                                            commandLine: "Off", awake: []).last?.rows, [])
     }
 
+    func testReportIconsSectionFollowsAwake() {
+        let without = HostReport.sections(version: "v", system: "s", safeMode: false, modules: [], granted: [],
+                                          commandLine: "Off", awake: ["Assertion: off"])
+        XCTAssertFalse(without.contains { $0.title == "Hidden Icons" })
+        let with = HostReport.sections(version: "v", system: "s", safeMode: false, modules: [], granted: [],
+                                       commandLine: "Off", awake: ["Assertion: off"],
+                                       icons: ["Engine: Length", "Last fail-safe: none"])
+        XCTAssertEqual(with.map(\.title).suffix(2), ["Awake", "Hidden Icons"])
+        XCTAssertEqual(with.last?.rows, [DiagnosticsRow("Engine", "Length"), DiagnosticsRow("Last fail-safe", "none")])
+        let iconsOnly = HostReport.sections(version: "v", system: "s", safeMode: false, modules: [], granted: [],
+                                            commandLine: "Off", icons: [])
+        XCTAssertEqual(iconsOnly.last?.title, "Hidden Icons")
+        XCTAssertEqual(iconsOnly.last?.rows, [])
+    }
+
     func testReportRowParsing() {
         XCTAssertNil(HostReport.row("   "))
         XCTAssertEqual(HostReport.row(": x"), DiagnosticsRow("Note", ": x"))

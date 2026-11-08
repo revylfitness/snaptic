@@ -204,6 +204,23 @@ import SnapticKit
         }
     }
 
+    /// 0.4 A5: Snaptic's other status items for Hidden Icons' own-items guard (§4.2.5): the shared item, the
+    /// modules' own items and the providers' (Awake's indicator), by autosave name. Window frames only.
+    var iconsOwnItems: [IconsOwnItem] {
+        var items = [shared?.item].compactMap { $0 } + own.filter { $0.key != .hiddenIcons }.values.map(\.item)
+        if let host {
+            items += host.modules.compactMap { ($0 as? StatusItemProvider)?.statusItem }
+        }
+        return items.map { item in
+            let name = item.autosaveName ?? ""
+            let frame = item.button?.window.map { window -> IconsRect in
+                let f = window.frame
+                return IconsRect(x: f.origin.x, y: f.origin.y, width: f.width, height: f.height)
+            }
+            return IconsOwnItem(id: name, frame: frame, isAwake: name == IndicatorController.autosaveName)
+        }.sorted { $0.id < $1.id }
+    }
+
     private static func windowOnScreen(_ item: NSStatusItem) -> Bool? {
         guard let window = item.button?.window else { return nil }
         let frame = window.frame

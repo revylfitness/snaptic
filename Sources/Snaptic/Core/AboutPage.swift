@@ -138,6 +138,8 @@ private struct UpdatesSection: View {
             return HostReport.Module(title: module.title, state: state)
         }
         let awakeEnabled = host.modulesStore.value.isEnabled(.awake) && !host.disabledByDefaults.contains(.awake)
+        let iconsEnabled = host.modulesStore.value.isEnabled(.hiddenIcons)
+            && !host.disabledByDefaults.contains(.hiddenIcons)
         let commandLine: String
         switch host.controlServer.status {
         case .off: commandLine = L("Off")
@@ -148,7 +150,8 @@ private struct UpdatesSection: View {
                                            system: ProcessInfo.processInfo.operatingSystemVersionString,
                                            safeMode: host.safeMode.isActive, modules: modules,
                                            granted: host.permissions.granted, commandLine: commandLine,
-                                           awake: awakeEnabled ? host.awake.diagnosticsLines() : nil)
+                                           awake: awakeEnabled ? host.awake.diagnosticsLines() : nil,
+                                           icons: iconsEnabled ? host.icons.diagnosticsLines() : nil)
         let events = EventLog.shared.recent(100).map { entry in
             entry.date.formatted(date: .omitted, time: .standard) + " " + entry.category.rawValue + " " + entry.message
         }

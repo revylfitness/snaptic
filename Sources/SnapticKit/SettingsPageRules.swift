@@ -95,7 +95,7 @@ package enum HostReport {
     /// nil otherwise; it becomes an "Awake" section.
     package static func sections(version: String, system: String, safeMode: Bool, modules: [Module],
                                  granted: Set<Permission>, commandLine: String,
-                                 awake: [String]? = nil) -> [DiagnosticsSection] {
+                                 awake: [String]? = nil, icons: [String]? = nil) -> [DiagnosticsSection] {
         var result = [
             DiagnosticsSection(title: L("Snaptic"), rows: [
                 DiagnosticsRow(L("Version"), version),
@@ -109,6 +109,8 @@ package enum HostReport {
             }),
         ]
         if let awake { result.append(DiagnosticsSection(title: L("Awake"), rows: awake.compactMap(row))) }
+        // 0.4 H12: Hidden Icons, after Awake.
+        if let icons { result.append(DiagnosticsSection(title: L("Hidden Icons"), rows: icons.compactMap(row))) }
         return result
     }
 
