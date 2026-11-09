@@ -15,7 +15,7 @@ Branch `feature/v040-hidden-icons`, 2026-11-07. Automated state at R: `swift tes
 
 | # | Check | Status | Notes |
 |---|---|---|---|
-| H8 | Quit the running Snaptic, then `SNAPTIC_SELFTEST_EXPECT_ICONS_SHIM=available .build/debug/Snaptic --selftest-launch` prints `available` and 4 modules / 0 running; record in STEP0-NOTES | Pending | Blocked during R by the running copy |
+| H8 | Quit the running Snaptic, then `SNAPTIC_SELFTEST_EXPECT_ICONS_SHIM=available .build/debug/Snaptic --selftest-launch` prints `available` and 4 modules / 0 running; record in STEP0-NOTES | Pass | 2026-11-09, macOS 27.2 (26B123), 88a2c5f: 4 modules / 0 running, icons items 0, shim available, poison path ok |
 | S0-15 | Bartender's team id: `codesign -dv /Applications/Bartender*.app`, then fill `KnownMenuBarHiders` and STEP0-NOTES | Pending | Not installed on this host |
 
 ## S0 rows carried to R (STEP0-NOTES)

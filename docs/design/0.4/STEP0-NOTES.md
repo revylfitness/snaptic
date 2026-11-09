@@ -63,3 +63,16 @@ by bundle id only.
 | S0-9 | A Safari AAC exam page (or an `AEAssessmentSession` test app): record `NSApp.currentSystemPresentationOptions` during it, and confirm our collapse and expand never lift the exam's restriction once the R2-4 guard is in | A3 |
 | S0-13, S0-14 | macOS 15 VM: `Preferred Position` seeding, and Length at L = 10 000 | R (`MANUAL-CHECKS.md`, the L rows) |
 | S0-15 | Bartender's team id | K1 ships the bundle id only; the team is added at R |
+
+## H8: launch self-test (R, 2026-11-09)
+
+`SNAPTIC_SELFTEST_EXPECT_ICONS_SHIM=available .build/debug/Snaptic --selftest-launch` on macOS 27.2 (26B123), at 88a2c5f,
+exit 0:
+
+```
+selftest-launch: ModuleHost built, 4 modules, 0 running
+selftest-launch: icons items 0
+selftest-launch: icons shim available
+selftest-launch: icons shim poison path ok
+selftest-launch: Sparkle loaded, updater gate notAppBundle
+```
