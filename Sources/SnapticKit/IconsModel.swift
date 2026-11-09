@@ -221,6 +221,8 @@ package enum IconsRefusal: String, Codable, CaseIterable, Sendable {
     case needsPermission
     /// An exam session holds the screen (§4.11).
     case exam
+    /// The camera or microphone is in use and its indicator must stay visible (Native, R3-90).
+    case capture
     /// Another menu bar hider runs and the policy is Pause (§4.10).
     case paused
     /// The first collapse after start waits for two matching reads (§4.5).
@@ -244,6 +246,8 @@ package enum IconsFailSafeReason: String, Codable, CaseIterable, Sendable {
     case arrowHidden
     case ownItems
     case exam
+    /// The camera or microphone came on while hidden (Native, R3-90).
+    case capture
     case agentRestart
     /// Session resign/become active, wake, lock (§4.11).
     case session

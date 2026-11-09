@@ -1,8 +1,8 @@
 import SwiftUI
 import SnapticKit
 
-/// Hidden Icons › Advanced (lead; PLAN 0.4 §4.9, §4.5, §4.7, §4.10, §4.2.5, A7): Show icons on hover, New apps’ icons
-/// (macOS 27), When another menu bar app hides icons, Use the full menu bar while icons are shown, Reset Arrow
+/// Hidden Icons › Advanced (lead; PLAN 0.4 §4.9, §4.5, §4.7, §4.10, §4.2.5, A7, R3-90): Show icons on hover, New
+/// apps’ icons and Keep camera and microphone dots visible (macOS 27), When another menu bar app hides icons, Use the full menu bar while icons are shown, Reset Arrow
 /// Position… (an alert, since this sheet never presents another), and Diagnostics with the active kill switches as
 /// read-only `DefaultsLockRow`s. Footer: Restore Hidden Icons Defaults… resets this sheet's rows only.
 struct IconsAdvancedSheet: View, ControlDeclaring {
@@ -53,6 +53,12 @@ struct IconsAdvancedSheet: View, ControlDeclaring {
                               style: .popUp, defaultValue: IconsConfig().newApps,
                               anchor: ControlID("icons.advanced.newApps"))
                     .disabled(module.accessState.needsPermission)
+                ToggleSetting(L("Keep camera and microphone dots visible"), help: IconsPageRules.captureHelp,
+                              isOn: SettingsBinding.store(config, \.showDuringCapture),
+                              anchor: ControlID("icons.advanced.capture"))
+                if !config.value.showDuringCapture {
+                    footnote(IconsPageRules.captureOffFootnote)
+                }
             }
             PickerSetting(L("When another menu bar app hides icons"),
                           selection: SettingsBinding.store(config, \.otherHiders),

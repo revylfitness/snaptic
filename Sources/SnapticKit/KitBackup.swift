@@ -131,9 +131,11 @@ package enum KitBackup {
         [awakeSection, "sessions", "presets"],
         [awakeSection, "sessions", "defaultOptions"],
         [awakeSection, "sessions", "behavior"],
-        // Hidden Icons (0.4 H7): a hotkey, and running alongside another menu bar hider.
+        // Hidden Icons (0.4 H7, R3-90): a hotkey, running alongside another menu bar hider, and whether the camera and
+        // microphone dots stay visible.
         [iconsSection, "shortcut"],
         [iconsSection, "otherHiders"],
+        [iconsSection, "showDuringCapture"],
     ]
 
     /// Keys removed at any depth (case-insensitive substrings): the DisplayKey salt, DDC

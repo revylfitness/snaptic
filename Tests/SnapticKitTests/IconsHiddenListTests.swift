@@ -118,6 +118,9 @@ final class IconsHiddenListTests: XCTestCase {
                        .reason("Paused while Hidden Bar runs"))
         XCTAssertEqual(content(IconsListFacts(engine: .native, state: .collapsed, access: .granted, examPaused: true)),
                        .reason("Paused during an exam session"))
+        XCTAssertEqual(content(IconsListFacts(engine: .native, state: .expanded(.all), access: .granted,
+                                              capturePaused: true)),
+                       .reason("Paused while the camera or microphone is on"))
         XCTAssertEqual(content(IconsListFacts(engine: nil, state: .unavailable(.identity), access: .granted)),
                        .reason("Move Snaptic to Applications to hide icons."))
         XCTAssertEqual(content(IconsListFacts(engine: .length, state: .collapsed, access: .notGranted)),

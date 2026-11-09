@@ -7,7 +7,7 @@ Release gate: every **B** (Blocker) row passes on macOS 27.2 and, where **L** is
 Record the OS build and the date in the Notes column. The automated coverage listed under "Already covered" checks
 the logic only; it doesn't replace the row.
 
-Branch `feature/v040-hidden-icons`, 2026-11-07. Automated state at R: `swift test` 1917 tests, 0 failures;
+Branch `feature/v040-hidden-icons`, 2026-11-07. Automated state at R: `swift test` 1921 tests, 0 failures;
 `scripts/lint.sh --strict` clean; `--selftest-controls` and `scripts/selftest-control-server.sh` pass (including
 `iconsCases`).
 
@@ -22,7 +22,7 @@ Branch `feature/v040-hidden-icons`, 2026-11-07. Automated state at R: `swift tes
 
 | # | Check | B | Status | Notes |
 |---|---|---|---|---|
-| S0-7 | Camera (FaceTime), mic (Voice Memos) and location indicators stay visible with their apps hidden (27.2) | B | Pending | Screen recording passed at S0 |
+| S0-7 | Camera (FaceTime), mic (Voice Memos) and location indicators stay visible with their apps hidden (27.2) | B | Fail → R3-90 | Screen recording passed at S0. 2026-11-09, 27.2 (26B123): the camera dot was hidden while collapsed, and Native disabled itself for the build. Re-check under M38 |
 | S0-8 (a) | ⌘-drag an allowed item and the arrow while restricted | B | Pending | |
 | S0-8 (c) | Clock timer and FaceTime Live Activity while restricted | B | Pending | |
 | S0-8 (b), (d)–(f) | System Settings › Menu Bar, a banner, Control Center and Notification Center, Spotlight, screenshots, Dock | | Pending | (b) overflow chevron recorded at S0 |
@@ -30,7 +30,7 @@ Branch `feature/v040-hidden-icons`, 2026-11-07. Automated state at R: `swift tes
 | S0-13 | 15 VM: `Preferred Position` seeding for the arrow and a new item | | Not run | No VM on this host; README fallback if it fails |
 | S0-14 | 15 VM: Length collapse with L = 10 000 on a 5K display; widths ≥ L − 1 on the next tick | B | Not run | No VM on this host |
 
-## M1–M37
+## M1–M38
 
 | # | Check | B | L | 27.2 | 15 VM | Already covered | Notes |
 |---|---|---|---|---|---|---|---|
@@ -44,7 +44,7 @@ Branch `feature/v040-hidden-icons`, 2026-11-07. Automated state at R: `swift tes
 | M8 | Awake session with Awake's icon left of `\|`: collapse refused | B | L | Pending | Pending | `IconsPolicyTests` ownItemsGuard | |
 | M9 | Translocated copy (27): refuses with the identity text | B | | Pending | N/A | | |
 | M10 | Kill switch `Icons.disable.native` while collapsed: expands at once | B | | Pending | N/A | `IconsEngineCoreTests` preemption | |
-| M11 | Privacy indicators stay visible while their app is hidden | B | | Pending | N/A | | Same hardware session as S0-7 |
+| M11 | Privacy indicators stay visible while their app is hidden | B | | Fail → R3-90 | N/A | | Camera dot hidden on 27.2 (S0-7); the fix is M38. Length: never hides them |
 | M12 | Forced main-thread hang (`Debug.icons.hangMainSeconds`, DEBUG): icons return within 4 s (27) | B | | Pending | N/A | | |
 | M13 | Auto-collapse waits while the pointer is in the band, a menu is open, a popover is open, Settings is open | B | L | Pending | Pending | `IconsPolicyTests` | |
 | M14 | Auto-collapse resumes after 120 s of a stuck popover | | L | Pending | Pending | `IconsPolicyTests` 120 s cap | |
@@ -67,7 +67,8 @@ Branch `feature/v040-hidden-icons`, 2026-11-07. Automated state at R: `swift tes
 | M31 | Fresh install onboarding with Hidden Icons on: `.arrange` step; nothing hides | B | L | Pending | Pending | | |
 | M32 | Upgrade from 0.3.4: New card; Turn On flow; downgrade back to 0.3.4 keeps settings | B | L | Pending | Pending | `ConfigIconsTests` downgrade decode | |
 | M33 | `snaptic icons show/hide/toggle/status --json` and every exit-2 text | B | L | Pending | Pending | `IconsCommandGrammarTests`, `--selftest-controls` `iconsCases` | |
-| M34 | Quit while collapsed: icons return (both engines) | B | L | Pending | Pending | | S0-12 recorded SIGKILL |
+| M34 | Quit while collapsed: icons return (both engines) | B | L | Pass | Pending | | S0-12 recorded SIGKILL. 27.2: owner confirmed 2026-11-09 |
 | M35 | Safe Mode: Hidden Icons doesn't start | B | L | Pending | Pending | | |
 | M36 | Module off: no items, timers, monitors, or prompts (Activity Monitor + EventLog); on/off 20× with no leak (A5) | B | L | Pending | Pending | | |
 | M37 | Backup with Hidden Icons settings: export, change, import; the preview lists "Hidden Icons: …" and `arranged` and per-app choices stay (R3-81) | B | L | Pending | Pending | `KitBackupTests` | |
+| M38 | Keep camera and microphone dots visible (R3-90), 27.2. Setting on (default): hide, start FaceTime's camera: icons show within ~1 s with the camera dot, status says "Paused while the camera or microphone is on", no toast; end the call: icons hide again ~2 s later. Same with Voice Memos recording. Hide while the camera runs: refused with that line (`snaptic icons hide` exits 5). Setting off: icons stay hidden through a call and Native stays enabled (no "stopped using the macOS 27 method"). Record the indicator's AX identifier (Accessibility Inspector on MenuBarAgent) | B | | Pending | N/A | `IconsPolicyTests` capture guard, `IconsEngineCoreTests` system-item confirm | |

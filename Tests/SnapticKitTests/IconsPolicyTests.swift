@@ -471,6 +471,41 @@ final class IconsSafetyPolicyTests: XCTestCase {
         XCTAssertFalse(IconsExamGuard.polls(engine: .length, assertionActive: true))
     }
 
+    /// R3-90.
+    func testCaptureGuard() {
+        XCTAssertTrue(IconsCaptureGuard.pauses(engine: .native, keepVisible: true, inUse: true))
+        XCTAssertFalse(IconsCaptureGuard.pauses(engine: .native, keepVisible: false, inUse: true))
+        XCTAssertFalse(IconsCaptureGuard.pauses(engine: .native, keepVisible: true, inUse: false))
+        XCTAssertFalse(IconsCaptureGuard.pauses(engine: .length, keepVisible: true, inUse: true),
+                       "14–26 never hides the dots")
+        XCTAssertFalse(IconsCaptureGuard.pauses(engine: nil, keepVisible: true, inUse: true))
+
+        XCTAssertTrue(IconsCaptureGuard.polls(engine: .native, assertionActive: true, intentHidden: false))
+        XCTAssertTrue(IconsCaptureGuard.polls(engine: .native, assertionActive: false, intentHidden: true))
+        XCTAssertFalse(IconsCaptureGuard.polls(engine: .native, assertionActive: false, intentHidden: false))
+        XCTAssertFalse(IconsCaptureGuard.polls(engine: .length, assertionActive: true, intentHidden: true))
+
+        XCTAssertTrue(IconsCaptureGuard.expectsSystemItemChanges(inUse: true, lastInUse: nil, now: 100))
+        XCTAssertFalse(IconsCaptureGuard.expectsSystemItemChanges(inUse: false, lastInUse: nil, now: 100))
+        XCTAssertTrue(IconsCaptureGuard.expectsSystemItemChanges(inUse: false, lastInUse: 90, now: 100))
+        XCTAssertFalse(IconsCaptureGuard.expectsSystemItemChanges(inUse: false, lastInUse: 89, now: 100))
+
+        func action(_ inUse: Bool, keep: Bool = true, engine: IconsEngineKind = .native, hiding: Bool,
+                    intent: Bool) -> IconsCaptureGuard.Action {
+            IconsCaptureGuard.action(inUse: inUse, keepVisible: keep, engine: engine, hiding: hiding,
+                                     intentHidden: intent)
+        }
+        XCTAssertEqual(action(true, hiding: true, intent: true), .show)
+        XCTAssertEqual(action(true, hiding: true, intent: false), .show, "the Always Hidden restriction hides dots too")
+        XCTAssertEqual(action(true, hiding: false, intent: true), .none)
+        XCTAssertEqual(action(false, hiding: false, intent: true), .resume)
+        XCTAssertEqual(action(false, hiding: false, intent: false), .none)
+        XCTAssertEqual(action(false, hiding: true, intent: true), .none)
+        XCTAssertEqual(action(true, keep: false, hiding: true, intent: true), .none)
+        XCTAssertEqual(action(false, keep: false, hiding: false, intent: true), .none)
+        XCTAssertEqual(action(true, engine: .length, hiding: true, intent: true), .none)
+    }
+
     func testRecovery() {
         XCTAssertEqual(IconsRecovery.plan(.agentTerminated, intentHidden: true),
                        IconsRecoveryPlan(failSafe: .agentRestart, recollapseAfter: nil))
@@ -497,6 +532,8 @@ final class IconsSafetyPolicyTests: XCTestCase {
         XCTAssertEqual(IconsCollapseGates.refusal(f), .needsPermission)
         f.pausedFor = KnownMenuBarHiders.all[0]
         XCTAssertEqual(IconsCollapseGates.refusal(f), .paused)
+        f.capture = true
+        XCTAssertEqual(IconsCollapseGates.refusal(f), .capture)
         f.exam = true
         XCTAssertEqual(IconsCollapseGates.refusal(f), .exam)
 

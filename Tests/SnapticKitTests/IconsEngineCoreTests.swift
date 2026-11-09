@@ -213,6 +213,8 @@ private final class FakeScheduler: IconsSchedulerPort {
 private final class FakeHost: IconsEngineHost {
     var refusal: IconsRefusal?
     var killSwitch = false
+    /// `expectsSystemItemChanges()`: the camera or microphone is on or just went off.
+    var captureExpected = false
     var screenList = [IconsScreen(frame: screenFrame)]
     var skip = IconsSkipRules(ownPID: 1, ownBundlePath: "/Applications/Snaptic.app")
     private(set) var inFlight: [Bool] = []
@@ -232,6 +234,7 @@ private final class FakeHost: IconsEngineHost {
     func skipRules() -> IconsSkipRules { skip }
     func setActivationInFlight(_ inFlight: Bool) { self.inFlight.append(inFlight) }
     func disableNativeOnThisBuild() { disabledBuilds += 1 }
+    func expectsSystemItemChanges() -> Bool { captureExpected }
     func count(_ counter: IconsCounter) { counters.append(counter) }
     func engineStateChanged(_ state: IconsEngineState) { states.append(state) }
     func layoutRead(_ layout: IconsLayout) { layouts.append(layout) }
@@ -1016,11 +1019,55 @@ final class IconsEngineCoreTests: XCTestCase {
         let index = rig.collapse()
         rig.reads()
         rig.visibility.complete()
+        // R3-90: everything shows first, and Native turns off only if the item is back once nothing is restricted.
         XCTAssertEqual(rig.result(index), [.collapsed])
+        XCTAssertEqual(rig.core.state, .expanded(.all))
+        XCTAssertEqual(rig.host.count(of: .systemItemHidden), 1)
+        XCTAssertEqual(rig.host.disabledBuilds, 0)
+        XCTAssertTrue(rig.visibility.active.isEmpty)
+        rig.inventory.systemAfter = systemIDs
+        rig.scheduler.advance(IconsEngineCore.systemItemConfirmDelay)
         XCTAssertEqual(rig.host.disabledBuilds, 1)
         XCTAssertEqual(rig.core.state, .unavailable(.disabledBuild))
         XCTAssertEqual(rig.host.count(of: .systemItemHidden), 1)
+        XCTAssertEqual(rig.inventory.systemReads, 2)
         XCTAssertTrue(rig.visibility.active.isEmpty)
+    }
+
+    func testSystemItemThatStaysGoneIsTransient() {
+        // A dot that faded on its own (capture or screen recording just stopped) is still gone with everything shown.
+        let rig = Rig(.native).started()
+        rig.inventory.systemAfter = ["com.apple.menuextra.clock"]
+        rig.collapsed()
+        XCTAssertEqual(rig.core.state, .expanded(.all))
+        rig.scheduler.advance(IconsEngineCore.systemItemConfirmDelay)
+        XCTAssertEqual(rig.host.disabledBuilds, 0)
+        XCTAssertEqual(rig.core.state, .expanded(.all))
+        XCTAssertEqual(rig.inventory.systemReads, 2)
+        XCTAssertEqual(rig.core.lastFailSafe, .systemItemHidden)
+    }
+
+    func testSystemItemConfirmDroppedByANewIntent() {
+        let rig = Rig(.native).started()
+        rig.inventory.systemAfter = ["com.apple.menuextra.clock"]
+        rig.collapsed()
+        rig.inventory.systemAfter = systemIDs
+        rig.core.expand(.plain)
+        rig.scheduler.advance(IconsEngineCore.systemItemConfirmDelay)
+        XCTAssertEqual(rig.host.disabledBuilds, 0)
+        XCTAssertNotEqual(rig.core.state, .unavailable(.disabledBuild))
+    }
+
+    func testSystemItemCheckSkippedWhileCaptureExpected() {
+        let rig = Rig(.native).started()
+        rig.host.captureExpected = true
+        rig.inventory.systemAfter = ["com.apple.menuextra.clock"]
+        rig.collapsed()
+        XCTAssertEqual(rig.core.state, .collapsed)
+        XCTAssertEqual(rig.inventory.systemReads, 0)
+        XCTAssertEqual(rig.host.count(of: .systemItemHidden), 0)
+        rig.scheduler.advance(IconsEngineCore.systemItemConfirmDelay)
+        XCTAssertEqual(rig.host.disabledBuilds, 0)
     }
 
     func testNowPlayingMissingIsExpected() {

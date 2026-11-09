@@ -61,16 +61,20 @@ package struct IconsListFacts: Equatable, Sendable {
     package var access: IconsAccessState
     package var pausedFor: KnownMenuBarHider?
     package var examPaused: Bool
+    /// The capture guard pauses hiding (`IconsCaptureGuard.pauses`).
+    package var capturePaused: Bool
     /// `Icons.disable.inventory`.
     package var inventoryOff: Bool
 
     package init(engine: IconsEngineKind?, state: IconsEngineState, access: IconsAccessState,
-                 pausedFor: KnownMenuBarHider? = nil, examPaused: Bool = false, inventoryOff: Bool = false) {
+                 pausedFor: KnownMenuBarHider? = nil, examPaused: Bool = false, capturePaused: Bool = false,
+                 inventoryOff: Bool = false) {
         self.engine = engine
         self.state = state
         self.access = access
         self.pausedFor = pausedFor
         self.examPaused = examPaused
+        self.capturePaused = capturePaused
         self.inventoryOff = inventoryOff
     }
 }
@@ -103,9 +107,13 @@ package enum IconsHiddenListRules {
     package static func reason(_ facts: IconsListFacts) -> String? {
         if let hider = facts.pausedFor { return L("Paused while \(hider.name) runs") }
         if facts.examPaused { return L("Paused during an exam session") }
+        if facts.capturePaused { return capturePausedText }
         guard case .unavailable(let why) = facts.state else { return nil }
         return unavailableText(why)
     }
+
+    /// R3-90: hiding waits while the camera or microphone is on, so its dot stays visible.
+    package static let capturePausedText = L("Paused while the camera or microphone is on")
 
     /// Settings' status line for an unavailable engine, or nil once the module stopped.
     package static func unavailableText(_ reason: IconsUnavailableReason) -> String? {

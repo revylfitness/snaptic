@@ -50,6 +50,9 @@ package struct IconsConfig: ConfigModel {
     package var otherHiders: IconsOtherHiderPolicy
     /// Advanced › “Use the full menu bar while icons are shown” (§4.7).
     package var fullBarOnExpand: Bool
+    /// Advanced › “Keep camera and microphone dots visible” (R3-90; Native only): icons are shown while the camera or
+    /// microphone is on, because macOS 27 hides its dot with the other icons.
+    package var showDuringCapture: Bool
     /// The first collapse the user asked for has happened (§4.0). Until then nothing hides on its own. Never exported;
     /// Reset All Settings and Reset Arrow Position… clear it; Restore Defaults keeps it.
     package var arranged: Bool
@@ -65,12 +68,13 @@ package struct IconsConfig: ConfigModel {
         newApps = .show
         otherHiders = .pause
         fullBarOnExpand = false
+        showDuringCapture = true
         arranged = false
     }
 
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case autoCollapse, autoCollapseSeconds, collapseAtLaunch, alwaysHidden, dividers, shortcut, hover, newApps,
-             otherHiders, fullBarOnExpand, arranged
+             otherHiders, fullBarOnExpand, showDuringCapture, arranged
     }
 
     /// The keys a backup carries (H7): every setting except `arranged`, which describes this Mac's menu bar.
@@ -90,6 +94,7 @@ package struct IconsConfig: ConfigModel {
         newApps = c.lossy(.newApps, d.newApps)
         otherHiders = c.lossy(.otherHiders, d.otherHiders)
         fullBarOnExpand = c.lossy(.fullBarOnExpand, d.fullBarOnExpand)
+        showDuringCapture = c.lossy(.showDuringCapture, d.showDuringCapture)
         arranged = c.lossy(.arranged, d.arranged)
     }
 
@@ -116,6 +121,7 @@ package struct IconsConfig: ConfigModel {
         c.newApps = d.newApps
         c.otherHiders = d.otherHiders
         c.fullBarOnExpand = d.fullBarOnExpand
+        c.showDuringCapture = d.showDuringCapture
         return c
     }
 }

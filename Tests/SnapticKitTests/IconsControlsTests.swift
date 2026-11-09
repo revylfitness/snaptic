@@ -61,7 +61,7 @@ final class IconsControlsTests: XCTestCase {
         }
         XCTAssertEqual(spec("icons.page.useHiddenIcons")?.when, [])
         XCTAssertEqual(spec("icons.page.useHiddenIcons")?.keys, ["modules.*.enabled"])
-        for id in ["icons.advanced.newApps", "icons.sections.choice", "icons.sections.showAllAndRefresh",
+        for id in ["icons.advanced.newApps", "icons.advanced.capture", "icons.sections.choice", "icons.sections.showAllAndRefresh",
                    "menu.icons.needsPermission"] {
             XCTAssertTrue(spec(id)?.when.contains(.iconsEngine(.native)) == true, id)
         }

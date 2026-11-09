@@ -63,6 +63,9 @@ package protocol IconsEngineHost: AnyObject {
     func setActivationInFlight(_ inFlight: Bool)
     /// `Icons.native.disabledBuild = <OS build>`.
     func disableNativeOnThisBuild()
+    /// A MenuBarAgent item may come and go on its own right now: the camera or microphone is on or just went off,
+    /// so its dot is expected to change (R3-90). The system-item check is skipped.
+    func expectsSystemItemChanges() -> Bool
     func count(_ counter: IconsCounter)
     func engineStateChanged(_ state: IconsEngineState)
     /// A usable read. `layout.scope` says whether it may update `knownBundles` (unrestricted only, §4.5).
@@ -321,6 +324,8 @@ package final class IconsEngineCore {
     package static let activationTimeout: Double = 3
     package static let screenCoalesce: Double = 0.25
     package static let timeoutsBeforeUnavailable = 2
+    /// The system-item check reads again this long after showing everything (R3-90).
+    package static let systemItemConfirmDelay: Double = 1
 
     private enum Purpose: Equatable {
         /// Hide: completing sets `.collapsed` and answers the waiters.
@@ -370,6 +375,8 @@ package final class IconsEngineCore {
     /// Activations not yet completed or timed out (the crash guard's marker).
     private var outstanding: Set<UInt64> = []
     private var timers: [UInt64: IconsCancellable] = [:]
+    /// The system-item check's second read, after everything is shown.
+    private var confirmWork: IconsCancellable?
     private var markedInFlight = false
     private var waiters: [(IconsCollapseResult) -> Void] = []
     private var consecutiveTimeouts = 0
@@ -499,6 +506,8 @@ package final class IconsEngineCore {
         visibility?.invalidateAll()
         for (_, timer) in timers { timer.cancel() }
         timers.removeAll()
+        confirmWork?.cancel()
+        confirmWork = nil
         outstanding.removeAll()
         updateInFlight()
         applyLengths(.expanded(.all))
@@ -746,16 +755,37 @@ package final class IconsEngineCore {
         }
     }
 
-    /// After a collapse, a MenuBarAgent item that went missing (other than Now Playing) turns Native off on this
-    /// OS build.
+    /// After a collapse, a MenuBarAgent item that went missing (other than Now Playing) shows everything. If it's
+    /// back once everything is shown, the restriction hid it and Native turns off on this OS build; if it's still
+    /// gone, it went away on its own (a dot that faded) and the icons just stay shown (R3-90). Skipped while the
+    /// host expects system items to change.
     private func checkSystemItems() {
         guard let inventory, let before = systemBefore else { return }
+        guard !host.expectsSystemItemChanges() else { return }
         let gen = generation
         inventory.readSystemIdentifiers { [weak self] after in
             guard let self, gen == self.generation, self.stored == .collapsed else { return }
-            guard !IconsSystemItemCheck.missing(before: before, after: after).isEmpty else { return }
-            self.host.disableNativeOnThisBuild()
-            self.becomeUnavailable(.disabledBuild, cause: .systemItemHidden)
+            let missing = IconsSystemItemCheck.missing(before: before, after: after)
+            guard !missing.isEmpty, !self.host.expectsSystemItemChanges() else { return }
+            self.failSafe(.systemItemHidden)
+            self.confirmSystemItems(missing)
+        }
+    }
+
+    private func confirmSystemItems(_ missing: Set<String>) {
+        guard let inventory else { return }
+        let gen = generation
+        confirmWork?.cancel()
+        confirmWork = scheduler.after(Self.systemItemConfirmDelay) { [weak self] in
+            guard let self else { return }
+            self.confirmWork = nil
+            guard gen == self.generation, self.stored == .expanded(.all) else { return }
+            inventory.readSystemIdentifiers { [weak self] after in
+                guard let self, gen == self.generation, self.stored == .expanded(.all) else { return }
+                guard let after, !missing.isDisjoint(with: after) else { return }
+                self.host.disableNativeOnThisBuild()
+                self.becomeUnavailable(.disabledBuild)
+            }
         }
     }
 

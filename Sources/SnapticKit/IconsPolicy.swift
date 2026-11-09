@@ -636,6 +636,55 @@ package enum IconsExamGuard {
     }
 }
 
+// MARK: - Capture guard (R3-90)
+
+/// macOS 27's restriction hides MenuBarAgent's camera and microphone dots with the other system items, so with
+/// **Keep camera and microphone dots visible** on, Native shows the icons while capture runs and hides them again
+/// after. The app reads capture state from public CoreAudio and CoreMediaIO properties. Length never hides the dots.
+package enum IconsCaptureGuard {
+    /// The poll while Native holds an assertion, or a hide waits for capture to end.
+    package static let pollInterval: Double = 1
+    /// The wait after capture ends before hiding again; the dot fades out first.
+    package static let resumeDelay: Double = 2
+    /// A capture that ended this recently still explains a system item that went missing.
+    package static let recentWindow: Double = 10
+
+    /// Hiding pauses while capture runs and the setting keeps the dots visible. Native only.
+    package static func pauses(engine: IconsEngineKind?, keepVisible: Bool, inUse: Bool) -> Bool {
+        engine == .native && keepVisible && inUse
+    }
+
+    /// Poll only on Native while an assertion is active or a hide is wanted.
+    package static func polls(engine: IconsEngineKind, assertionActive: Bool, intentHidden: Bool) -> Bool {
+        engine == .native && (assertionActive || intentHidden)
+    }
+
+    /// A system item going missing after a collapse is expected while capture runs or just ended: the dot
+    /// belongs to it. `lastInUse` is when capture was last seen running.
+    package static func expectsSystemItemChanges(inUse: Bool, lastInUse: Double?, now: Double) -> Bool {
+        if inUse { return true }
+        guard let lastInUse else { return false }
+        return now - lastInUse <= recentWindow
+    }
+
+    /// What a change in capture state does.
+    package enum Action: Equatable, Sendable {
+        case none
+        /// Show everything now (the fail-safe `.capture`).
+        case show
+        /// Hide again after `resumeDelay`, if a hide is still wanted then.
+        case resume
+    }
+
+    /// `hiding` is collapsed or an assertion is active.
+    package static func action(inUse: Bool, keepVisible: Bool, engine: IconsEngineKind, hiding: Bool,
+                               intentHidden: Bool) -> Action {
+        guard engine == .native, keepVisible else { return .none }
+        if inUse { return hiding ? .show : .none }
+        return intentHidden && !hiding ? .resume : .none
+    }
+}
+
 // MARK: - Accessibility (§4.12)
 
 package enum IconsAccessState: String, CaseIterable, Sendable {
@@ -761,6 +810,8 @@ package enum IconsRecovery {
 package struct IconsCollapseFacts: Equatable, Sendable {
     package var engine: IconsEngineKind
     package var exam = false
+    /// The capture guard pauses hiding (`IconsCaptureGuard.pauses`).
+    package var capture = false
     package var pausedFor: KnownMenuBarHider?
     package var access: IconsAccessState = .granted
     /// The first collapse after start: the stable-inventory gate's status. Nil once the gate no longer applies.
@@ -778,6 +829,7 @@ package enum IconsCollapseGates {
     /// The first gate that refuses, in the order the status row explains them.
     package static func refusal(_ facts: IconsCollapseFacts) -> IconsRefusal? {
         if facts.exam { return .exam }
+        if facts.capture { return .capture }
         if facts.pausedFor != nil { return .paused }
         if IconsAccessTracker.blocksCollapse(engine: facts.engine, state: facts.access) { return .needsPermission }
         if let gate = facts.gate, gate != .passed { return .unstableInventory }

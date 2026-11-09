@@ -11,7 +11,7 @@
 - **You arrange your icons** by holding ⌘ and dragging them in the menu bar. Snaptic never moves another app’s icon. An optional **Always Hidden section** (left of a ⋮ divider) stays hidden until you Option-click the arrow.
 - **Showing and hiding:** click the arrow, use the Snaptic menu’s new **Icons** tab, the **Show or Hide Hidden Icons** shortcut (unset by default), or `snaptic icons show`, `hide`, `toggle`, and `status`. Icons hide again automatically after 10 seconds (5–300, on by default), and when Snaptic opens.
 - **The hidden-icon list:** choose a hidden icon in the Snaptic menu to open its menu without showing them all. On notched Macs with macOS 14–26, icons pushed behind the notch are listed too.
-- **Fails safe.** Icons come back within about 2 seconds if Snaptic quits, crashes, or is force quit. They’re shown on sleep, wake, locking, display changes, during exam sessions, in Safe Mode, when the arrow or a divider is missing, and whenever a hide can’t be confirmed; the page says why and offers the fix. Privacy indicators are never hidden.
+- **Fails safe.** Icons come back within about 2 seconds if Snaptic quits, crashes, or is force quit. They’re shown on sleep, wake, locking, display changes, during exam sessions, in Safe Mode, when the arrow or a divider is missing, and whenever a hide can’t be confirmed; the page says why and offers the fix. On macOS 27, icons are shown while an app uses the camera or microphone, so its dot stays visible (**Keep camera and microphone dots visible** in Advanced, on by default).
 - **Other menu bar hiders.** While Hidden Bar, Bartender, Ice, or Thaw runs, Hidden Icons shows your icons and pauses, unless you choose **Run Both Anyway** in **Advanced…**.
 - **Switching from Hidden Bar:** quit it and remove it from Login Items, then ⌘-drag Snaptic’s arrow once to where Hidden Bar’s was. The README maps each Hidden Bar setting to its Snaptic one. Hidden Icons follows Hidden Bar’s design in Snaptic’s own code; it includes none of Hidden Bar’s code (see [THIRD_PARTY_NOTICES.md](https://github.com/revylfitness/snaptic/blob/main/THIRD_PARTY_NOTICES.md)).
 - **Privacy:** the command line reports a method, a state, and counts, never an app’s name. Per-app choices are stored by bundle identifier, apart from your other settings, and never exported.
@@ -43,7 +43,7 @@
 
 Hidden Icons was tested on macOS 27.2. These checks (the manual checks in the [0.4 plan](https://github.com/revylfitness/snaptic/blob/main/docs/design/0.4/PLAN.md)) still need a hardware session:
 
-- The camera, microphone, and location indicators staying visible while their apps are hidden on macOS 27, and an exam session in Safari or an assessment app.
+- Icons showing while the camera or microphone is on and hiding again after, and the location indicator, on macOS 27, and an exam session in Safari or an assessment app.
 - ⌘-dragging icons while hidden, and Live Activities and other macOS 27 system items.
 - Seeding the dividers on a fresh macOS 15 account, and the 10 000-point divider on the widest displays.
 - Running beside Hidden Bar, Bartender, Ice, and Thaw.

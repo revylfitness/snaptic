@@ -1,7 +1,7 @@
 import Foundation
 
-// Hidden Icons › Advanced (lead; PLAN 0.4 §4.9, §4.7, §4.10, §4.2.5): hover, new apps' icons (macOS 27), other
-// hiders, the full menu bar, Reset Arrow Position…, and Diagnostics with the read-only kill switches. Footer: the
+// Hidden Icons › Advanced (lead; PLAN 0.4 §4.9, §4.7, §4.10, §4.2.5, R3-90): hover, new apps' icons and the camera
+// and microphone dots (macOS 27), other hiders, the full menu bar, Reset Arrow Position…, and Diagnostics with the read-only kill switches. Footer: the
 // sheet's own Restore Defaults (its rows only).
 
 package enum IconsAdvancedSheetControls: ControlTable {
@@ -19,6 +19,11 @@ package enum IconsAdvancedSheetControls: ControlTable {
         ControlSpec("icons.advanced.newApps", .setting, when: icons + [.iconsEngine(.native)], keys: ["newApps"],
                     search: SearchSpec("New apps’ icons", keywords: ["new app", "new icon", "install"], root: root,
                                        sheet: sheet)),
+        ControlSpec("icons.advanced.capture", .setting, when: icons + [.iconsEngine(.native)],
+                    keys: ["showDuringCapture"],
+                    search: SearchSpec("Keep camera and microphone dots visible",
+                                       keywords: ["camera", "microphone", "mic", "privacy", "indicator", "call"],
+                                       root: root, sheet: sheet)),
         ControlSpec("icons.advanced.otherHiders", .setting, when: icons, keys: ["otherHiders"],
                     search: SearchSpec("When another menu bar app hides icons",
                                        keywords: ["bartender", "hidden bar", "ice", "conflict", "pause"], root: root,
@@ -35,7 +40,7 @@ package enum IconsAdvancedSheetControls: ControlTable {
                                        root: root, sheet: sheet)),
         ControlSpec("icons.advanced.killSwitch", .list, when: icons + [.perItem("killSwitch")]),
         ControlSpec("icons.advanced.restore", .button, when: icons,
-                    keys: ["hover", "newApps", "otherHiders", "fullBarOnExpand"],
+                    keys: ["hover", "newApps", "showDuringCapture", "otherHiders", "fullBarOnExpand"],
                     search: SearchSpec("Restore Hidden Icons advanced defaults", keywords: ["reset", "defaults"],
                                        root: root, sheet: sheet)),
     ]

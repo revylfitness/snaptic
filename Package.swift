@@ -39,9 +39,11 @@ targets += [
             .unsafeFlags(["-Xfrontend", "-disable-autolink-framework", "-Xfrontend", "Sparkle"]),
         ],
         // Awake (0.3): audio state (AudioMonitor, BluetoothPresence), network state (NetworkMonitor) and volume
-        // facts for Drive Alive (VolumeMonitor). All public frameworks.
+        // facts for Drive Alive (VolumeMonitor). Hidden Icons (0.4 R3-90): camera and microphone in use
+        // (IconsCaptureMonitor). All public frameworks.
         linkerSettings: [
             .linkedFramework("CoreAudio"),
+            .linkedFramework("CoreMediaIO"),
             .linkedFramework("SystemConfiguration"),
             .linkedFramework("DiskArbitration"),
             .unsafeFlags(["-Xlinker", "-weak_framework", "-Xlinker", "Sparkle"]),

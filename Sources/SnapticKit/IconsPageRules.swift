@@ -38,6 +38,8 @@ package struct IconsPageFacts: Equatable, Sendable {
     package var access: IconsAccessState
     package var pausedFor: KnownMenuBarHider?
     package var examPaused: Bool
+    /// The capture guard pauses hiding (`IconsCaptureGuard.pauses`).
+    package var capturePaused: Bool
     package var arrowVisible: Bool
     package var dividerVisible: Bool
     package var alwaysHiddenVisible: Bool
@@ -58,7 +60,8 @@ package struct IconsPageFacts: Equatable, Sendable {
     package var cacheAge: Double?
 
     package init(engine: IconsEngineKind?, state: IconsEngineState, access: IconsAccessState = .granted,
-                 pausedFor: KnownMenuBarHider? = nil, examPaused: Bool = false, arrowVisible: Bool = true,
+                 pausedFor: KnownMenuBarHider? = nil, examPaused: Bool = false, capturePaused: Bool = false,
+                 arrowVisible: Bool = true,
                  dividerVisible: Bool = true, alwaysHiddenVisible: Bool = true, alwaysHidden: Bool = false,
                  alwaysHiddenPlaced: Bool = true, arrangementValid: Bool = true, arranged: Bool = true,
                  hiddenCount: Int? = nil, refusal: IconsRefusal? = nil, ownItems: IconsOwnItemsRow? = nil,
@@ -68,6 +71,7 @@ package struct IconsPageFacts: Equatable, Sendable {
         self.access = access
         self.pausedFor = pausedFor
         self.examPaused = examPaused
+        self.capturePaused = capturePaused
         self.arrowVisible = arrowVisible
         self.dividerVisible = dividerVisible
         self.alwaysHiddenVisible = alwaysHiddenVisible
@@ -175,7 +179,7 @@ package enum IconsPageRules {
             return IconsStatus(text, warning: true, action: why == .disabledBuild ? .tryAgain : nil)
         }
         let paused = IconsListFacts(engine: f.engine, state: f.state, access: f.access, pausedFor: f.pausedFor,
-                                    examPaused: f.examPaused)
+                                    examPaused: f.examPaused, capturePaused: f.capturePaused)
         if let reason = IconsHiddenListRules.reason(paused) { return IconsStatus(reason, warning: true) }
         if f.engine == .native, f.access.needsPermission {
             return f.access.offersRelaunch
@@ -222,7 +226,7 @@ package enum IconsPageRules {
         if f.alwaysHidden, f.alwaysHiddenVisible, !f.alwaysHiddenPlaced, let engine = f.engine {
             out.append(IconsStatusNote(alwaysHiddenMisplacedText(engine)))
         }
-        if let reason = f.failSafe, reason != .session, reason != .agentRestart, let time = f.failSafeTime {
+        if let reason = f.failSafe, ![.session, .agentRestart, .capture].contains(reason), let time = f.failSafeTime {
             out.append(IconsStatusNote(failSafeText(time)))
         }
         if f.engine == .native, f.alwaysHidden, let age = f.cacheAge, age > staleAfter {
@@ -422,6 +426,12 @@ package enum IconsPageRules {
     package static let hoverHelp = L("Shows hidden icons when the pointer rests on the menu bar.")
     package static let newAppsHelp =
         L("Show keeps a new app’s icon visible until you next show all icons or choose where it goes.")
+    /// R3-90.
+    package static let captureHelp =
+        L("Shows your icons while an app uses the camera or microphone, so its dot stays visible, then hides them again.")
+    /// R3-90, under the Advanced toggle while it's off.
+    package static let captureOffFootnote =
+        L("While icons are hidden, macOS 27 hides the camera and microphone dots with them.")
     package static let otherHidersFootnote = L("On macOS 27, an icon stays shown unless both apps hide it.")
     package static let fullBarHelp =
         L("Snaptic becomes the active app while icons are shown, so the current app loses focus.")
@@ -433,7 +443,7 @@ package enum IconsPageRules {
 
     package static let restoreTitle = L("Restore Hidden Icons settings to their defaults?")
     package static let restoreMessage =
-        L("Automatic hiding, Always Hidden, dividers, the shortcut, hover, new apps’ icons, the full menu bar, and every app’s Always Show or Always Hide choice go back to their defaults. Where your icons are in the menu bar stays as it is.")
+        L("Automatic hiding, Always Hidden, dividers, the shortcut, hover, new apps’ icons, the camera and microphone dots, the full menu bar, and every app’s Always Show or Always Hide choice go back to their defaults. Where your icons are in the menu bar stays as it is.")
 
     /// General › Reset All Settings… adds this while Hidden Icons is on or arranged (A7).
     package static let resetAllNote =

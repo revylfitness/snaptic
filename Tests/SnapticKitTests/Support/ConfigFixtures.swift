@@ -117,6 +117,7 @@ enum ConfigFixtures {
         c.newApps = .hide
         c.otherHiders = .runBoth
         c.fullBarOnExpand = true
+        c.showDuringCapture = false
         c.arranged = true
         return c
     }

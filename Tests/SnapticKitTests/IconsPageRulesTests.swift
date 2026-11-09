@@ -48,6 +48,10 @@ final class IconsPageRulesTests: XCTestCase {
         var exam = facts()
         exam.examPaused = true
         XCTAssertEqual(IconsPageRules.status(exam).text, L("Paused during an exam session"))
+        var capture = facts()
+        capture.capturePaused = true
+        XCTAssertEqual(IconsPageRules.status(capture).text, L("Paused while the camera or microphone is on"))
+        XCTAssertTrue(IconsPageRules.status(capture).warning)
     }
 
     // MARK: Status: permission
@@ -193,6 +197,8 @@ final class IconsPageRulesTests: XCTestCase {
         XCTAssertEqual(IconsPageRules.status(f).notes, [])
         f.failSafe = .agentRestart
         XCTAssertEqual(IconsPageRules.status(f).notes, [])
+        f.failSafe = .capture
+        XCTAssertEqual(IconsPageRules.status(f).notes, [], "showing for the camera or microphone isn't a problem")
     }
 
     func testStaleNoteIsNativeAlwaysHiddenAfterADay() {

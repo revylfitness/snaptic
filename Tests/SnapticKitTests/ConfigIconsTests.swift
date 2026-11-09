@@ -30,6 +30,7 @@ final class ConfigIconsTests: XCTestCase {
         XCTAssertEqual(c.newApps, .show)
         XCTAssertEqual(c.otherHiders, .pause)
         XCTAssertFalse(c.fullBarOnExpand)
+        XCTAssertTrue(c.showDuringCapture)
         XCTAssertFalse(c.arranged)
         XCTAssertEqual(IconsConfig.key, "SnapticIconsV1")
         XCTAssertEqual(c.sanitized(), c)
@@ -85,6 +86,7 @@ final class ConfigIconsTests: XCTestCase {
         XCTAssertEqual(r.newApps, .show)
         XCTAssertEqual(r.otherHiders, .pause)
         XCTAssertFalse(r.fullBarOnExpand)
+        XCTAssertTrue(r.showDuringCapture)
         // The page's rows stay.
         XCTAssertEqual(r.autoCollapse, full.autoCollapse)
         XCTAssertEqual(r.autoCollapseSeconds, full.autoCollapseSeconds)
@@ -265,6 +267,7 @@ final class ConfigIconsTests: XCTestCase {
     func testImportLooksUpSafetyPaths() {
         XCTAssertTrue(KitBackup.safetyPaths.contains(["icons", "shortcut"]))
         XCTAssertTrue(KitBackup.safetyPaths.contains(["icons", "otherHiders"]))
+        XCTAssertTrue(KitBackup.safetyPaths.contains(["icons", "showDuringCapture"]))
     }
 
     // MARK: Downgrade (K1 exit: a 0.4 config decodes with the 0.3.4 types)

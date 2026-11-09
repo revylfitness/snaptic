@@ -626,6 +626,7 @@ Sources/Snaptic/Icons/AXInventory.swift	lead	L	-	-
 Sources/Snaptic/Icons/IconsWatchdog.swift	lead	L	-	-
 Sources/SnapticKit/IconsMonitorRules.swift	lead	L	-	-
 Sources/Snaptic/Icons/IconsMonitors.swift	lead	L	-	-
+Sources/Snaptic/Icons/IconsCaptureMonitor.swift	lead	L	-	-
 Tests/SnapticKitTests/IconsMonitorRulesTests.swift	lead	L	-	-
 Sources/Snaptic/Core/ActivationPolicyController.swift	lead	L	-	-
 Sources/SnapticKit/IconsHiddenList.swift	lead	L	-	-

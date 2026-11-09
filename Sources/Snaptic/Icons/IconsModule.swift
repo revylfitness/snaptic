@@ -56,6 +56,8 @@ import SnapticKit
     private let monitors: IconsMonitors
     private let hiders = MenuBarHiderWatcher()
     private let watchdog = IconsWatchdog()
+    /// The camera and microphone (R3-90).
+    private let capture: IconsCaptureMonitor
 
     // MARK: One run
 
@@ -76,6 +78,10 @@ import SnapticKit
     private var tick: IconsCancellable?
     private var autoTimer: IconsCancellable?
     private var recollapse: IconsCancellable?
+    /// The hide that waits for the camera or microphone's dot to fade (R3-90).
+    private var captureResume: IconsCancellable?
+    /// `showDuringCapture` as last applied, to act on a change.
+    private var keepCaptureVisible = true
     private var sinks: [AnyCancellable] = []
     /// The source of the collapse being run, for the gates (the stable gate holds launch collapse only).
     private var collapseSource: IconsIntentSource?
@@ -118,6 +124,7 @@ import SnapticKit
         self.defaults = defaults
         items = IconsItems(defaults: defaults)
         monitors = IconsMonitors(scheduler: scheduler)
+        capture = IconsCaptureMonitor(scheduler: scheduler)
     }
 
     // MARK: Facts
@@ -146,6 +153,11 @@ import SnapticKit
     var accessState: IconsAccessState { access.state }
     var pausedFor: KnownMenuBarHider? { hiders.pausedFor }
     var examPaused: Bool { engineKind == .native && monitors.examReported }
+    /// R3-90: hiding waits while the camera or microphone is on.
+    var capturePaused: Bool {
+        IconsCaptureGuard.pauses(engine: engineKind, keepVisible: config.value.showDuringCapture,
+                                 inUse: capture.reported)
+    }
 
     // MARK: SnapticModule
 
@@ -251,6 +263,8 @@ import SnapticKit
         monitors.onRecovery = { [weak self] event in self?.recover(event) }
         monitors.onExamChange = { [weak self] active in self?.examChanged(active) }
         monitors.start()
+        keepCaptureVisible = config.value.showDuringCapture
+        capture.onChange = { [weak self] inUse in self?.captureChanged(inUse) }
         hiders.policy = config.value.otherHiders
         hiders.onChange = { [weak self] hider in self?.hiderChanged(hider) }
         hiders.start()
@@ -277,6 +291,9 @@ import SnapticKit
         autoTimer = nil
         recollapse?.cancel()
         recollapse = nil
+        captureResume?.cancel()
+        captureResume = nil
+        capture.stop()
         auto.disarm()
         sinks.removeAll()
         watchdog.stop()
@@ -375,7 +392,7 @@ import SnapticKit
         let toggle = items.frame(of: .toggle)
         let separator = items.frame(of: .separator)
         var facts = IconsPageFacts(engine: engineKind, state: engineState, access: access.state,
-                                   pausedFor: pausedFor, examPaused: examPaused)
+                                   pausedFor: pausedFor, examPaused: examPaused, capturePaused: capturePaused)
         facts.arrowVisible = items.isVisible(.toggle)
         facts.dividerVisible = engineKind != .length || items.isVisible(.separator)
         facts.alwaysHidden = value.alwaysHidden
@@ -507,7 +524,7 @@ import SnapticKit
 
     func listFacts() -> IconsListFacts {
         IconsListFacts(engine: engineKind, state: engineState, access: access.state, pausedFor: pausedFor,
-                       examPaused: examPaused, inventoryOff: inventory == nil)
+                       examPaused: examPaused, capturePaused: capturePaused, inventoryOff: inventory == nil)
     }
 
     /// The rows of the last good layout, named after their running apps.
@@ -682,6 +699,7 @@ import SnapticKit
             lastRefusal = refusal
             EventLog.shared.record(.icons, "Icons: collapse refused, \(refusal.rawValue)")
             if refusal == .needsPermission, source == .click { context?.openSettings(SettingsRootID.hiddenIcons) }
+            if refusal == .capture { capture.gateFoundInUse() }
             armAuto()
         case .failed:
             armAuto()
@@ -913,6 +931,48 @@ import SnapticKit
         requestRefresh()
     }
 
+    /// R3-90: show while capture runs (if the setting says so), and hide again once it ended.
+    private func captureChanged(_ inUse: Bool) {
+        guard let core else { return }
+        captureResume?.cancel()
+        captureResume = nil
+        let action = IconsCaptureGuard.action(inUse: inUse, keepVisible: config.value.showDuringCapture,
+                                              engine: core.engine, hiding: core.state.isCollapsed || core.isRestricted,
+                                              intentHidden: queue.intentHidden)
+        switch action {
+        case .show:
+            submit(.failSafe(.capture), from: .monitor)
+        case .resume:
+            captureResume = scheduler.after(IconsCaptureGuard.resumeDelay) { [weak self] in
+                guard let self else { return }
+                self.captureResume = nil
+                if self.queue.intentHidden { self.submit(.command(.hide), from: .monitor) }
+            }
+        case .none:
+            break
+        }
+        requestRefresh()
+    }
+
+    /// The Advanced toggle changed: turned on while hidden with capture running shows the icons; turned off while a
+    /// hide waits for capture hides them now.
+    private func captureSettingChanged() {
+        let keep = config.value.showDuringCapture
+        guard keep != keepCaptureVisible else { return }
+        keepCaptureVisible = keep
+        guard let core, core.engine == .native else { return }
+        let hiding = core.state.isCollapsed || core.isRestricted
+        if keep {
+            if hiding, capture.inUseNow() { submit(.failSafe(.capture), from: .monitor) }
+        } else {
+            captureResume?.cancel()
+            captureResume = nil
+            if !hiding, queue.intentHidden, capture.reported || lastRefusal == .capture {
+                submit(.command(.hide), from: .monitor)
+            }
+        }
+    }
+
     private func hiderChanged(_ hider: KnownMenuBarHider?) {
         if hider != nil, let core, core.state.isCollapsed {
             submit(.command(.show), from: .monitor)
@@ -946,6 +1006,7 @@ import SnapticKit
             auto.disarm()
         }
         cli.shortcutChanged()
+        captureSettingChanged()
         inputsChanged()
         refreshPresentation()
         requestRefresh()
@@ -986,6 +1047,8 @@ import SnapticKit
                                                                  assertionActive: core.isRestricted,
                                                                  collapsed: collapsed))
         monitors.setExamPolling(IconsExamGuard.polls(engine: core.engine, assertionActive: core.isRestricted))
+        capture.setPolling(IconsCaptureGuard.polls(engine: core.engine, assertionActive: core.isRestricted,
+                                                   intentHidden: queue.intentHidden))
         if case .unavailable(let reason) = engineState, reason != .stopped { unavailableReason = reason }
         if lastPresented != engineState {
             lastPresented = engineState
@@ -999,7 +1062,9 @@ import SnapticKit
     }
 
     private func showFailSafeToast(_ reason: IconsFailSafeReason) {
-        guard !Self.failSafeToastShown, reason != .session, reason != .agentRestart, let context else { return }
+        guard !Self.failSafeToastShown, ![.session, .agentRestart, .capture].contains(reason), let context else {
+            return
+        }
         Self.failSafeToastShown = true
         context.toasts.show(L("Snaptic couldn’t hide icons, so they’re shown. Details are in Hidden Icons settings."),
                             action: ToastAction(title: L("Open Settings")) { [weak context] in
@@ -1038,6 +1103,10 @@ import SnapticKit
         }
         if let lastRefusal { lines.append("Last refusal: " + lastRefusal.rawValue) }
         lines.append("Accessibility: " + access.state.rawValue)
+        if engineKind == .native {
+            let keep = config.value.showDuringCapture ? "shows icons" : "stays hidden"
+            lines.append("Camera or microphone: " + (capture.inUseNow() ? "in use" : "not in use") + " (" + keep + ")")
+        }
         return lines
     }
 
@@ -1057,6 +1126,7 @@ extension IconsModule: @preconcurrency IconsEngineHost {
     func collapseRefusal(engine: IconsEngineKind) -> IconsRefusal? {
         var facts = IconsCollapseFacts(engine: engine)
         facts.exam = monitors.examActive()
+        if engine == .native, config.value.showDuringCapture { facts.capture = capture.inUseNow() }
         facts.pausedFor = hiders.pausedFor
         facts.access = access.state
         if collapseSource == .launch { facts.gate = gate.status }
@@ -1089,6 +1159,10 @@ extension IconsModule: @preconcurrency IconsEngineHost {
 
     func disableNativeOnThisBuild() {
         defaults.set(osBuild, forKey: Self.disabledBuildKey)
+    }
+
+    func expectsSystemItemChanges() -> Bool {
+        capture.expectsSystemItemChanges()
     }
 
     func count(_ counter: IconsCounter) {
