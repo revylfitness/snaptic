@@ -9,6 +9,16 @@
 <meta property="og:title" content="Snaptic">
 <meta property="og:description" content="Every window. Every display. Awake on demand. A free, open-source window switcher, display toolkit, keep-awake tool, and menu bar icon hider for Mac.">
 <meta name="theme-color" content="#0d0d0f">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://snaptic.dev/">
+<meta property="og:image" content="https://snaptic.dev/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The Snaptic app icon beside the words: Snaptic. Every window. Every display. Awake on demand.">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap">
@@ -70,7 +80,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 }
 .nav .wrap { height: 60px; display: flex; align-items: center; gap: 28px; }
 .logo { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; font-size: 21px; margin-right: auto; }
-.logo svg { width: 24px; height: 24px; }
+.logo img { width: 30px; height: 30px; display: block; }
 .nav a.l { font-size: 15px; color: var(--mute); text-decoration: none; }
 .nav a.l:hover { color: var(--ink); }
 .btn {
@@ -91,14 +101,16 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 
 /* Hero */
 .hero { padding-block: 96px 0; }
+.hero .app-icon { display: block; width: 128px; height: 128px; margin: 0 0 28px -8px; animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.1, 1) both; }
 .hero .mega span { display: block; }
 .hero .lede { margin-top: 32px; }
 .hero .ctas { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 36px; }
 .word { display: inline-block; animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.1, 1) both; }
-.hero .mega span:nth-child(2) .word { animation-delay: 0.12s; }
-.hero .mega span:nth-child(3) .word { animation-delay: 0.24s; }
+.hero .mega span:nth-child(1) .word { animation-delay: 0.08s; }
+.hero .mega span:nth-child(2) .word { animation-delay: 0.2s; }
+.hero .mega span:nth-child(3) .word { animation-delay: 0.32s; }
 @keyframes rise { from { transform: translateY(0.35em); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .word { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .word, .hero .app-icon { animation: none; } }
 
 /* Device */
 .device { margin: 80px auto 0; max-width: 1080px; padding-inline: max(16px, 5.5%); }
@@ -366,6 +378,7 @@ footer .links a:hover { color: var(--ink); }
   .stagger .huge span:nth-child(2) { padding-left: 0.8em; }
   .stagger p { font-size: 19px; }
   .hero { padding-block: 64px 0; }
+  .hero .app-icon { width: 96px; height: 96px; margin: 0 0 20px -6px; }
   .device { margin-top: 56px; }
 }
 @media (max-width: 360px) {
@@ -378,7 +391,7 @@ footer .links a:hover { color: var(--ink); }
 <nav class="nav" aria-label="Snaptic">
   <div class="wrap">
     <a class="logo bold" href="#top">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1.5" y="5" width="14" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><rect x="8.5" y="9" width="14" height="11" rx="3" fill="currentColor"/></svg>
+      <img src="/icon.svg" alt="" width="30" height="30">
       snaptic
     </a>
     <a class="l opt" href="#how">How it works</a>
@@ -394,6 +407,7 @@ footer .links a:hover { color: var(--ink); }
 <main id="top">
   <section class="hero">
     <div class="wrap">
+      <img class="app-icon" src="/icon.svg" alt="" width="128" height="128">
       <h1 class="mega">
         <span><span class="word">Every window.</span></span>
         <span class="gray"><span class="word">Every display.</span></span>
@@ -663,7 +677,7 @@ footer .links a:hover { color: var(--ink); }
             <svg viewBox="0 0 96 96" aria-hidden="true"><path d="M48 10 18 22v22c0 20 13 34 30 42 17-8 30-22 30-42V22Z" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/><path d="m34 48 10 10 18-20" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </div>
           <h3>Fails safe.</h3>
-          <p>If Snaptic quits, crashes, or can’t be sure hiding is safe, your icons come back. Privacy indicators are never hidden.</p>
+          <p>If Snaptic quits, crashes, or can’t be sure hiding is safe, your icons come back. And the camera and microphone dots stay visible: on macOS 27, your icons show while an app is using either one.</p>
         </div>
         <div class="card span-3">
           <div class="art">
