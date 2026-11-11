@@ -25,6 +25,7 @@ enum SafeMode {
         L("Extra brightness"),
         L("Reconnecting displays automatically"),
         L("Awake rules, Drive Alive, and Appear active"),
+        L("Hiding menu bar icons"),
     ]
 
     static let stillRuns: [String] = [

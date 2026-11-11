@@ -1,12 +1,12 @@
 # Snaptic
 
-A free, open-source menu bar toolkit for macOS: a Windows-style **window switcher**, a set of **display utilities**, and **Awake**, which keeps your Mac awake when you want it to. Turn on only the parts you want; everything else stays off and costs nothing.
+A free, open-source menu bar toolkit for macOS: a Windows-style **window switcher**, a set of **display utilities**, **Awake**, which keeps your Mac awake when you want it to, and **Hidden Icons**, which tucks the menu bar icons you don’t need behind an arrow. Turn on only the parts you want; everything else stays off and costs nothing.
 
 **Website:** [snaptic.dev](https://snaptic.dev)
 
-Snaptic is MIT-licensed and written from scratch in Swift by revyl fitness technology, Inc. It isn’t affiliated with or derived from AltTab, BetterDisplay, MonitorControl, Lunar, Amphetamine, or Insomnia; it’s an independent take on the same ideas, with everything included and nothing behind a paywall. Third-party credits are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). What changed is in the release notes for [0.3.1](docs/design/0.3.1/RELEASE-NOTES-0.3.1.md) and [0.3](docs/design/0.3/RELEASE-NOTES-0.3.md).
+Snaptic is MIT-licensed and written from scratch in Swift by revyl fitness technology, Inc. It isn’t affiliated with or derived from AltTab, BetterDisplay, MonitorControl, Lunar, Amphetamine, or Insomnia; it’s an independent take on the same ideas, with everything included and nothing behind a paywall. Hidden Icons follows the design of [Hidden Bar](https://github.com/dwarvesf/hidden) (MIT) in its own code, and isn’t affiliated with it either. Third-party credits are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). What changed is in the release notes for [0.4.0](docs/design/0.4/RELEASE-NOTES-0.4.0.md), [0.3.1](docs/design/0.3.1/RELEASE-NOTES-0.3.1.md), and [0.3](docs/design/0.3/RELEASE-NOTES-0.3.md).
 
-- [Modules](#modules) · [Settings](#settings) · [Window Switcher](#window-switcher) · [Displays](#displays) · [Awake](#awake) · [Safety](#safety)
+- [Modules](#modules) · [Settings](#settings) · [Window Switcher](#window-switcher) · [Displays](#displays) · [Awake](#awake) · [Hidden Icons](#hidden-icons) · [Safety](#safety)
 - [Permissions](#permissions) · [Command line](#command-line) · [Hidden kill switches](#hidden-kill-switches) · [Install and build](#install-and-build) · [Updates](#updates)
 - [Privacy and security](#privacy-and-security) · [Upgrading and downgrading](#upgrading-and-downgrading) · [Troubleshooting](#troubleshooting) · [Known limitations](#known-limitations) · [Not included](#not-included) · [How it works](#how-it-works)
 
@@ -17,17 +17,19 @@ Snaptic is MIT-licensed and written from scratch in Swift by revyl fitness techn
 | **Window Switcher** | Hold **⌥ Option**, tap **Tab**, and pick any window, not just any app. |
 | **Displays** | Brightness and volume for external displays, resolutions and HiDPI, color, arrangement, virtual displays, Picture in Picture, and more. |
 | **Awake** | Keeps your Mac awake for a while, until a time, while an app runs, until downloads and tasks finish, or automatically when conditions you choose are met. A free replacement for Amphetamine and Insomnia that needs no administrator password, except for opt-in lid-closed mode, which asks for one each time. |
+| **Hidden Icons** | Hide the menu bar icons you don’t need behind an arrow. Click the arrow to hide the icons to its left, click again to show them, or open one from the Snaptic menu without showing them all. A free replacement for Hidden Bar. |
 
-Each module can be turned on or off on its own: in **Settings › General › Choose what Snaptic does**, or with the switch at the top of the module’s own page (“Use Window Switcher”, “Use Displays”, “Use Awake”). A module that is off runs nothing: no event taps, timers, observers, IOKit handles, power assertions, private-API calls, helper processes, or permission prompts. Inside Displays and Awake, each feature has its own switch where the feature is used, and anything that’s off costs nothing either.
+Each module can be turned on or off on its own: in **Settings › General › Choose what Snaptic does**, or with the switch at the top of the module’s own page (“Use Window Switcher”, “Use Displays”, “Use Awake”, “Use Hidden Icons”). A module that is off runs nothing: no event taps, timers, observers, IOKit handles, power assertions, private-API calls, helper processes, or permission prompts. Inside Displays and Awake, each feature has its own switch where the feature is used, and anything that’s off costs nothing either.
 
 - **First launch:** onboarding asks which modules you want, then asks only for the permissions those need, and whether Snaptic should keep itself up to date (**Check Automatically** or **Not Now**). It picks up where it left off if macOS makes Snaptic relaunch.
+- **Upgrading from 0.3.2 or later:** Snaptic updates itself and nothing changes until you turn on Hidden Icons (a “New: Hidden Icons” card in General). The app has a new icon.
 - **Upgrading from 0.3.0 or earlier:** download 0.3.1 by hand one last time; from then on Snaptic can update itself. Because 0.3.1 is the first release signed by its developer, macOS asks you to allow Accessibility and Screen Recording again once, and a “Welcome to Snaptic 0.3.1” card in General walks you through it (see [Upgrading and downgrading](#upgrading-and-downgrading)).
 - **Upgrading from 0.2:** Window Switcher and Displays stay as they were. Awake starts off, with a “New: Awake” card in General, unless you used Displays’ display sleep prevention in 0.2; then Awake is on and keeps doing that job (see [Upgrading and downgrading](#upgrading-and-downgrading)). As for 0.3.0, it’s one last manual download, and the “Welcome to Snaptic 0.3.1” card shows too.
 - **Upgrading from 0.1:** the switcher stays on; Displays and Awake start off, each with its own card. As for 0.3.0, it’s one last manual download, and the “Welcome to Snaptic 0.3.1” card shows too.
 
 ## Settings
 
-Settings has seven pages in its sidebar: [General](#general), [Menu Bar](#menu-bar), [Window Switcher](#window-switcher), [Displays](#displays) (with its own sub-pages), [Awake](#awake), [Permissions](#permissions), and About. The search field at the top of the sidebar finds any setting, including the ones in **Advanced…** sheets, and highlights it on its page. Every page that has a (?) button links to its section of this README.
+Settings has eight pages in its sidebar: [General](#general), [Menu Bar](#menu-bar), [Window Switcher](#window-switcher), [Displays](#displays) (with its own sub-pages), [Awake](#awake), [Hidden Icons](#hidden-icons), [Permissions](#permissions), and About. The search field at the top of the sidebar finds any setting, including the ones in **Advanced…** sheets, and highlights it on its page. Every page that has a (?) button links to its section of this README.
 
 Most pages show the settings people change often and keep the rest in an **Advanced…** sheet at the bottom. Every slider has a value field you can type into, and a reset button when it has a default. **Restore Defaults…** on a page or sheet resets only that page’s settings.
 
@@ -38,30 +40,30 @@ Most pages show the settings people change often and keep the rest in an **Advan
 - **Command-line control:** lets scripts and other apps control Snaptic with the `snaptic` command (off by default). **Copy Install Command** copies the Terminal command that installs it; see [Command line](#command-line).
 - **Backup:** **Export Settings…** and **Import Settings…** (see [Privacy and security](#privacy-and-security) for what an export leaves out).
 - **Advanced…:** “Commands can skip confirmation” (a display change sent with `--yes` applies without asking first), the exit codes the `snaptic` command uses, **Restart in Safe Mode…**, and **Reset All Settings…**.
-- New-module cards (“New: Awake”, “New: Displays”) and the “Welcome to Snaptic 0.3.1” card appear here once after an upgrade.
+- New-module cards (“New: Hidden Icons”, “New: Awake”, “New: Displays”) and the “Welcome to Snaptic 0.3.1” card appear here once after an upgrade.
 
 ## Menu Bar
 
 Everything about Snaptic’s menu bar icons lives on this page.
 
-- **Where each module appears:** one pop-up per module with the same choices Control Center uses: **Always Show in Menu Bar**, **Show When Active**, **Show in Snaptic Menu**, and **Don’t Show**. Window Switcher has no “Show When Active”. For Displays it means “while an external display is connected”; for Awake, “while your Mac is being kept awake” (Awake’s default).
+- **Where each module appears:** one pop-up per module with the same choices Control Center uses: **Always Show in Menu Bar**, **Show When Active**, **Show in Snaptic Menu**, and **Don’t Show**. Window Switcher has no “Show When Active”. For Displays it means “while an external display is connected”; for Awake, “while your Mac is being kept awake” (Awake’s default). Hidden Icons has its own two choices, **Arrow and Snaptic Menu** (default) and **Arrow Only**: “The arrow is always in the menu bar. Arrow and Snaptic Menu also lists hidden icons in the Snaptic menu, so you can open one without showing them all.” Its pop-up is dimmed with “Off” while Hidden Icons is off.
 - **Icons:** a choice of icon for each module that has its own item and for the Snaptic icon.
 - **Awake time:** **Don’t Show** (default), **Time Remaining**, or **End Time** next to Awake’s icon, in your system’s 12- or 24-hour setting, with seconds only in the last minute.
 - **Show Keep Awake with the Lid Closed in the Awake menu** (Macs with a battery; dimmed while Awake is off): lets you turn on [lid-closed mode](#keeping-awake-with-the-lid-closed) from the Awake menu, which asks for an administrator password each time. It’s the same switch as on the Awake page, and like that one it’s locked while lid-closed mode is on.
 - **Displays menu:** **Standard** or **Compact** style (one slider per display), “Scroll over a slider to adjust it”, and **Customize Displays Menu…**, where every optional menu item can be shown, moved into a submenu, or hidden.
-- **Restore Menu Bar Defaults…** resets where each module appears, the icons, Awake’s time, and the Displays menu. The lid-closed switch is Awake’s setting, so it stays; **Awake › Advanced… › Restore Awake Defaults…** resets it (not while lid-closed mode is on; it then stays on and Snaptic says so).
+- **Restore Menu Bar Defaults…** resets where each module appears (Hidden Icons’ choice too), the icons, Awake’s time, and the Displays menu. The lid-closed switch is Awake’s setting, so it stays; **Awake › Advanced… › Restore Awake Defaults…** resets it (not while lid-closed mode is on; it then stays on and Snaptic says so).
 
-**Tabs in the Snaptic menu.** The Snaptic icon appears when a module is set to Show in Snaptic Menu. With two or more, the Snaptic menu shows a tab for each, in the order Window Switcher, Displays, Awake (all three out of the box), and only the selected module’s items below the tabs. With one module the menu has no tabs and shows that module’s section as before.
+**Tabs in the Snaptic menu.** The Snaptic icon appears when a module is set to Show in Snaptic Menu, or Hidden Icons to Arrow and Snaptic Menu. With two or more, the Snaptic menu shows a tab for each, in the order Window Switcher, Displays, Awake, Icons (the first three out of the box; Icons once Hidden Icons is on), and only the selected module’s items below the tabs. With one module the menu has no tabs and shows that module’s section as before.
 
-- **Switching:** click a tab, or, while the menu is open, ⌘1–⌘3 choose a tab (⌘1–⌘2 with two tabs). A keyboard choice closes the menu, and the next open shows that tab. Each tab’s tooltip names its shortcut.
+- **Switching:** click a tab, or, while the menu is open, ⌘1–⌘4 choose a tab (one key per tab, by position). A keyboard choice closes the menu, and the next open shows that tab. Each tab’s tooltip names its shortcut.
 - **Remembered:** the menu opens on the tab you last chose, also after a relaunch. If that module isn’t in the menu right now, the first tab shows, and your choice comes back when the module does. No reset clears it.
-- **Nothing hidden:** Safe Mode and “Sleep Is Turned Off” rows stay above the tabs, whichever tab is showing. A tab whose module needs attention (Displays is degraded, paused after Restore All Displays, or unprotected, or Window Switcher is missing Accessibility; “Paused while … runs” doesn’t count) shows a small exclamation mark, and VoiceOver adds “needs attention”. While Awake keeps your Mac awake, VoiceOver reads its tab as “Awake, on”.
+- **Nothing hidden:** Safe Mode and “Sleep Is Turned Off” rows stay above the tabs, whichever tab is showing. A tab whose module needs attention (Displays is degraded, paused after Restore All Displays, or unprotected, or Window Switcher is missing Accessibility; “Paused while … runs” doesn’t count, except for Hidden Icons, whose tab is marked while it needs permission, is unavailable, or is paused) shows a small exclamation mark, and VoiceOver adds “needs attention”. While Awake keeps your Mac awake, VoiceOver reads its tab as “Awake, on”.
 - **Awake’s tab** has the full Awake menu rows except Awake Settings…. The compact Awake section is used only when Awake is the only module in the Snaptic menu.
-- **Keyboard and VoiceOver:** the tabs are one segmented control, so VoiceOver users reach it and pick a segment with VO-Space. While VoiceOver, Switch Control, or Full Keyboard Access is on, the menu also lists **Show Window Switcher Tab**, **Show Displays Tab**, and **Show Awake Tab** above Snaptic Settings…, with the same shortcuts. Type-select reaches only the visible tab.
+- **Keyboard and VoiceOver:** the tabs are one segmented control, so VoiceOver users reach it and pick a segment with VO-Space. While VoiceOver, Switch Control, or Full Keyboard Access is on, the menu also lists **Show Window Switcher Tab**, **Show Displays Tab**, **Show Awake Tab**, and **Show Hidden Icons Tab** above Snaptic Settings…, with the same shortcuts. Type-select reaches only the visible tab.
 - **Size:** the menu is as wide as its widest tab from the start, so a tab never moves under the pointer; its height changes when you switch.
 - The footer is unchanged: More Display Features… (while Displays is off), Recent Notices, an update row when one is waiting (see [Updates](#updates)), Snaptic Settings… (⌘,), and Quit Snaptic (⌘Q).
 
-A running Awake session is never invisible: whenever Awake keeps your Mac awake, the Snaptic icon shows its active look, and if no Snaptic icon is shown, Awake’s own icon appears for the session. With every icon hidden, open Snaptic again from Finder or Spotlight to get to Settings; shortcuts keep working. macOS can also hide menu bar icons (System Settings › Menu Bar, and the overflow on notched Macs), so every menu action is also available in Settings or as a shortcut.
+A running Awake session is never invisible: whenever Awake keeps your Mac awake, the Snaptic icon shows its active look, and if no Snaptic icon is shown, Awake’s own icon appears for the session. With every icon hidden, open Snaptic again from Finder or Spotlight to get to Settings; shortcuts keep working. macOS can also hide menu bar icons, including the Hidden Icons arrow (System Settings › Menu Bar, and the overflow on notched Macs), so every menu action is also available in Settings or as a shortcut. Opening Snaptic again always shows Settings.
 
 ## Window Switcher
 
@@ -378,6 +380,90 @@ rm -f ~/Library/Application\ Scripts/com.if.Amphetamine/powerProtect.scpt
 
 Insomnia can also turn Low Power Mode on while it runs; if `lowpowermode 1` shows and you don’t want it, turn it off in System Settings › Battery. Remove any leftover launch agent the listing shows the same way you’d remove any other: unload it with `launchctl bootout gui/$(id -u) <path>`, then delete the file.
 
+## Hidden Icons
+
+Hidden Icons keeps your menu bar tidy: click the arrow ‹ to hide the icons to its left, and click again to show them. It is off until you turn it on with **Use Hidden Icons** at the top of its page (or in General, or the “New: Hidden Icons” card). Turning it on opens **How to Arrange Your Icons**, and nothing hides until you click the arrow for the first time.
+
+It works differently on the two halves of Snaptic’s supported range:
+
+- **macOS 27 and later:** Snaptic asks macOS itself to hide other apps’ icons, with the mechanism macOS uses for exam sessions (see [Undocumented APIs](#undocumented-apis)). It needs **Device Control and Data Access** (Accessibility), to see where your icons are and so hide the right ones. The arrow marks the edge of the hidden icons, and you can choose **Always Show** or **Always Hide** for an app.
+- **macOS 14–26:** a | divider sits left of the arrow. To hide, Snaptic makes the divider very wide, so the icons to its left move off the screen; to show them, it makes it narrow again. Hiding needs no permission. Accessibility is asked for only when you open the hidden-icon list or Sections.
+
+### Arranging your icons
+
+Snaptic never moves another app’s icon: you arrange them yourself by holding ⌘ and dragging them in the menu bar. **How to Arrange…** on the page (also an onboarding step) shows this for your macOS:
+
+```
+macOS 14–26                                      macOS 27
+  ⋮  [A] [B]  |  [C] [D]  ‹  [E] [S]  ◷ 9:41       ⋮  [A] [B]  [C] [D]  ‹  [E] [S]  ◷ 9:41
+  └always┘   └─hidden─┘     └shown─┘               └always┘   └hidden─┘     └shown─┘
+```
+
+Hold ⌘ and drag icons in the menu bar:
+
+- To the right of the arrow ‹: always shown.
+- Between | and ‹ (macOS 14–26), or to the left of the arrow ‹ (macOS 27): hidden when you click the arrow.
+- Left of ⋮: hidden until you Option-click the arrow (only while **Always Hidden section** is on).
+
+On macOS 14–26, new apps’ icons appear at the far left, so they start hidden. On macOS 27, a new app’s icon stays shown until you next show all icons or choose where it goes (**New apps’ icons** in **Advanced…**), and you can also choose Always Show or Always Hide for an app in Settings › Hidden Icons › Sections. The dividers say what they are to VoiceOver (“Hidden Icons divider”, “Always Hidden divider”).
+
+The first time you hide icons on macOS 27 with no other app’s icon to the right of the arrow, Snaptic asks “Hide all other apps’ icons?” (Cancel is the default).
+
+### Showing and hiding
+
+- **The arrow:** click to show or hide icons; Option-click to include Always Hidden. Right-click it for the same menu as the Snaptic menu’s Hidden Icons section.
+- **The Snaptic menu** (with **Arrow and Snaptic Menu**, the default): **Show Hidden Icons** or **Hide Icons Again**, **Show All Hidden Icons** (Option, or a plain item under VoiceOver, Switch Control, and Full Keyboard Access), **Hide Icons Automatically**, the list of hidden icons, and **Hidden Icons Settings…**. Choose a hidden icon to open its menu without showing them all. On notched Macs with macOS 14–26, icons pushed behind the notch are listed too. With nothing hidden it says **No Hidden Icons**. On macOS 14–26 the list needs Accessibility (**Allow Accessibility to List Icons…**).
+- **Hide icons automatically after 10 seconds** (5–300; on by default). It waits while the pointer is over the menu bar, a menu is open, or a Snaptic window is open.
+- **Hide icons when Snaptic opens** (on by default): “Reopening Snaptic to show Settings doesn’t hide them.”
+- **Shortcut:** **Show or Hide Hidden Icons**, unset by default.
+- **Command line:** `snaptic icons show`, `hide`, `toggle`, and `status` (see [Hidden Icons commands](#hidden-icons-commands)).
+
+### The Hidden Icons page
+
+- **Status:** “Hiding 7 icons” or “Showing all icons” (“Icons are hidden” on macOS 14–26 without Accessibility), with **Show Icons** or **Hide Icons**. Before your first hide it says “Arrange your icons, then click the arrow to hide them.” with **How to Arrange…**. When something stops hiding, the row says why and offers the fix (see [When icons stay shown](#when-icons-stay-shown)).
+- **Hide icons automatically after … seconds**, **Hide icons when Snaptic opens**, **Always Hidden section** (“Icons left of the ⋮ divider stay hidden until you Option-click the arrow.”), **Section dividers** (shows the dividers while icons are shown), and the **Show or hide icons** shortcut.
+- **Sections ›** lists which apps’ icons are shown, hidden, and always hidden (“7 hidden · 2 choices”), as of the last time your icons were shown. On macOS 27 each app has **Where It Is**, **Always Show**, or **Always Hide**: “Always Show and Always Hide apply to all of an app’s icons and win over where you drag them.” macOS’s own icons and privacy indicators can’t take a choice, and icons that macOS hides in System Settings › Menu Bar aren’t listed.
+- **How to Arrange…**, **Advanced…**, and **Restore Defaults…**.
+- **Advanced…:** **Show icons on hover** (“Shows hidden icons when the pointer rests on the menu bar.”), **New apps’ icons** (macOS 27: **Show** or **Hide**), **When another menu bar app hides icons** (see below), **Keep camera and microphone dots visible** (macOS 27, on by default: “Shows your icons while an app uses the camera or microphone, so its dot stays visible, then hides them again.”), **Use the full menu bar while icons are shown** (“Snaptic becomes the active app while icons are shown, so the current app loses focus.” Snaptic also appears in the Dock and the app switcher until the icons are hidden), **Reset Arrow Position…** (puts the arrow and dividers back next to the Snaptic icon if you can’t find them), and **Diagnostics** (the method in use, the last time icons were shown to stay safe, and the kill switches).
+- **Restore Defaults…:** automatic hiding, Always Hidden, dividers, the shortcut, hover, new apps’ icons, the full menu bar, and every app’s Always Show or Always Hide choice go back to their defaults. Where your icons are in the menu bar stays as it is. **Reset All Settings…** also puts the arrow and dividers back next to the Snaptic icon, so you’ll arrange your icons again.
+
+### When icons stay shown
+
+Hidden Icons fails safe: whenever Snaptic can’t be sure hiding is safe, your icons are shown. Nothing it does can leave an icon hidden after Snaptic is gone.
+
+- **Snaptic quits, crashes, or is force quit:** every icon comes back within about 2 seconds, because macOS ties the hiding to Snaptic’s process (macOS 27) or the wide divider is Snaptic’s own item (macOS 14–26).
+- **Snaptic stops responding:** on macOS 27 a watchdog shows your icons after 3 seconds. If Snaptic stops responding while icons are hidden on macOS 14–26, force quit it (⌥⌘⎋). The icons come back as soon as it quits.
+- **The arrow or a divider is missing**, for example after macOS hid it in System Settings › Menu Bar: “The arrow isn’t in the menu bar, so icons stay shown.”, with **Show Arrow** (or **Show Divider**). The page’s button, the Snaptic menu, the shortcut, `snaptic icons show`, and opening Snaptic again still show icons.
+- **The arrangement doesn’t work** (for example the | divider is right of the arrow): the row says which item to ⌘-drag where. On macOS 14–26, if the arrow is left of |, icons stay shown (“The arrow is in the hidden area. ⌘-drag it to the right of the | divider.”). If Awake’s icon is in the hidden area, icons stay shown while Awake keeps your Mac awake. Other Snaptic icons there get a warning (“Some Snaptic icons are in the hidden area. ⌘-drag them to the right of the arrow.”), and a new Snaptic icon that appears while icons are hidden makes them show.
+- **Sleep, wake, locking, switching users, displays changing, or macOS restarting its menu bar:** icons are shown, then hidden again a moment later if you had hidden them.
+- **An exam session** (Safari’s or an app’s assessment mode): “Paused during an exam session”. Snaptic never adds to what an exam shows or hides.
+- **A problem with the macOS 27 method:** if hiding ever crashed Snaptic, or a macOS icon (other than Now Playing) disappeared, Snaptic stops using the method on that macOS version: “Hidden Icons stopped using the macOS 27 method after a problem, so your icons stay shown.” with **Try Again**.
+- **Snaptic couldn’t confirm a hide:** the icons are shown, the page says “Icons were shown at 9:41 because Snaptic couldn’t confirm they were hidden safely.”, and the first time per launch a notice says “Snaptic couldn’t hide icons, so they’re shown. Details are in Hidden Icons settings.”
+- **Not from Applications:** “Move Snaptic to Applications to hide icons.”
+- **Safe Mode:** Hidden Icons doesn’t start, so your icons are shown.
+
+**Camera and microphone dots.** On macOS 14–26 the privacy indicators sit at the far right and are never hidden. On macOS 27, hiding icons also hides the camera and microphone dots, so while an app uses the camera or microphone Hidden Icons shows your icons (the page says “Paused while the camera or microphone is on”) and hides them again about 2 seconds after it stops. Snaptic only asks macOS whether a camera or microphone is running; it never opens one, so nothing prompts and nothing is recorded. Turn off **Keep camera and microphone dots visible** in **Advanced…** to keep icons hidden during calls; the dots are then hidden with them. On macOS 27.2 the screen recording indicator stayed visible with its app hidden; the location indicator is listed under [Needs testing on hardware](#needs-testing-on-hardware).
+
+### Other menu bar hiders
+
+While Hidden Bar, Bartender, Ice, or Thaw runs, Hidden Icons shows your icons and pauses (“Paused while Hidden Bar runs”), and resumes when the other app quits. **Advanced… › When another menu bar app hides icons** can instead **Run Both Anyway**. On macOS 27, an icon stays shown unless both apps hide it.
+
+### Switching from Hidden Bar
+
+Quit Hidden Bar and remove it from Login Items (System Settings › General › Login Items), so the two don’t take turns. Icon positions don’t carry over: turn on Hidden Icons and ⌘-drag its arrow once to where Hidden Bar’s was.
+
+| Hidden Bar | Snaptic Hidden Icons |
+|---|---|
+| Start Hidden Bar when I log in | General › Open at login |
+| Show preferences on launch | Opening Snaptic again always shows Settings |
+| Automatically hide icon after | Hide icons automatically after … seconds |
+| Enable always hidden section | Always Hidden section |
+| Use the full MenuBar on expanding | Advanced… › Use the full menu bar while icons are shown |
+| Global Shortcut | Show or Hide Hidden Icons (Settings › Hidden Icons) |
+| ⌥-click to hide the separators | Section dividers (⌥-click now shows Always Hidden) |
+| Right-click ‹ for Notch Overflow | The Snaptic menu’s Hidden Icons section, or right-click the arrow |
+| `defaults write … hoverToExpand` | Advanced… › Show icons on hover |
+
 ## Safety
 
 Display changes can leave you without a usable screen. Snaptic is built so that never sticks.
@@ -386,9 +472,10 @@ Display changes can leave you without a usable screen. Snaptic is built so that 
 - **A separate safety helper.** Before a risky change, Snaptic arms a small helper process. If Snaptic hangs, crashes, or is killed, the helper reverts the change on its own, re-enables displays Snaptic turned off, and restores color. If the helper isn’t running, risky changes are refused; anything already applied is badged “Unprotected — restart Snaptic”.
 - **Never the last screen.** Changes that would leave no visible display are refused. Dimming to black, disconnecting, and mirroring always keep at least one display you can see.
 - **Restore All Displays: ⌃⌥⌘⎋** (⌃⌥⌘⇧⎋ if the first is taken; also in Display Tools and as `snaptic panic`). It undoes resolution changes from the last minute, reconnects displays Snaptic turned off, removes dimming and overlays, resets color tables, stops virtual displays and streams, and pauses automation (layouts, protection, hooks, re-creation) until you choose Resume. Rotation and HDR aren’t touched; they always go through the confirm panel. The shortcut can’t be turned off while a display is disconnected, mirrored to a virtual display, or dimmed to black. Awake isn’t affected: keeping your Mac awake isn’t a display hazard.
-- **Safe Mode: hold ⇧ while Snaptic starts** (or start it with `--safe-mode`, or choose General › Advanced… › Restart in Safe Mode…). It also starts automatically after two launches in a row that ended within a minute. Safe Mode skips brightness and color restore, virtual displays and Smart HiDPI, protection, layouts, remembered resolutions, hooks, automatic DDC writes, XDR, and reconnection planning. In Awake it pauses rules, appear active, pointer movement, and Drive Alive; sessions you start, holds, and guards still work. It still undoes unfinished display changes from the last run, and the switcher and your shortcuts keep working. **Leave Safe Mode…** relaunches normally.
+- **Safe Mode: hold ⇧ while Snaptic starts** (or start it with `--safe-mode`, or choose General › Advanced… › Restart in Safe Mode…). It also starts automatically after two launches in a row that ended within a minute. Safe Mode skips brightness and color restore, virtual displays and Smart HiDPI, protection, layouts, remembered resolutions, hooks, automatic DDC writes, XDR, and reconnection planning. In Awake it pauses rules, appear active, pointer movement, and Drive Alive; sessions you start, holds, and guards still work. Hidden Icons doesn’t start in Safe Mode, so your icons are shown. It still undoes unfinished display changes from the last run, and the switcher and your shortcuts keep working. **Leave Safe Mode…** relaunches normally.
 - **Journals.** Before a risky change Snaptic writes what it would take to undo it. If the Mac or Snaptic goes down mid-change, the next launch puts things back (and says so).
 - **Awake can’t drain your battery or cook your Mac:** the 5% floor and the heat guard have no setting and no kill switch (see [Guards](#guards)). Lid-closed mode adds its own battery limit (at least 10%), heat cutoff, and 24-hour limit, enforced both by Snaptic and by its root watchdog, and turns sleep back on if Snaptic stops responding (see [Keeping awake with the lid closed](#keeping-awake-with-the-lid-closed)).
+- **Hidden Icons fails safe:** whenever Snaptic can’t be sure hiding is safe, or it quits, crashes, or is force quit, your menu bar icons are shown (see [When icons stay shown](#when-icons-stay-shown)).
 
 ## Permissions
 
@@ -396,11 +483,11 @@ Snaptic asks only for what the features you turned on need, and only when you tu
 
 | Permission | Asked for when | Used for |
 |---|---|---|
-| **Accessibility** (called **Device Control and Data Access** on macOS 27) | Window Switcher is on; Brightness keys or Volume keys; Gather windows on first use; Awake’s pointer movement | Seeing the switcher shortcut and media keys, listing and focusing windows, and moving the pointer 1 point. |
+| **Accessibility** (called **Device Control and Data Access** on macOS 27) | Window Switcher is on; Brightness keys or Volume keys; Gather windows on first use; Awake’s pointer movement; Hidden Icons is on (macOS 27), or its hidden-icon list or Sections (macOS 14–26) | Seeing the switcher shortcut and media keys, listing and focusing windows, moving the pointer 1 point, and seeing where menu bar icons are and opening a hidden icon’s menu. |
 | **Screen Recording** (Screen & System Audio Recording) | Switcher thumbnails or preview; Picture in Picture | Thumbnails, the full-size preview, titles of windows on other Spaces, and Picture in Picture captures. |
 | **Removable Volumes** (Files & Folders) | The first time Drive Alive writes to a drive | Rewriting `.snaptic-keepalive` on the drives you chose. |
 
-Accessibility and Screen Recording are in **System Settings › Privacy & Security**. The permission window shows the exact app path, with “Show Snaptic in Finder” so you add *this* copy. On macOS 27 a grant often takes effect only after a relaunch; Snaptic offers **Relaunch Snaptic**. Without Accessibility the switcher stays idle and Awake only appears active instead of moving the pointer. Without Screen Recording the switcher shows app icons and only windows on the current Space. macOS Sequoia and later re-confirm Screen Recording about once a month; that prompt comes from macOS.
+Accessibility and Screen Recording are in **System Settings › Privacy & Security**. The permission window shows the exact app path, with “Show Snaptic in Finder” so you add *this* copy. On macOS 27 a grant often takes effect only after a relaunch; Snaptic offers **Relaunch Snaptic**. Without Accessibility the switcher stays idle, Awake only appears active instead of moving the pointer, and Hidden Icons shows your icons on macOS 27 (on macOS 14–26 it still hides them, without the list). Without Screen Recording the switcher shows app icons and only windows on the current Space. macOS Sequoia and later re-confirm Screen Recording about once a month; that prompt comes from macOS.
 
 Most Displays features need no permission at all. Awake needs none for sessions, rules, guards, holds, appear active, history, or the menu bar: its conditions read only system state that macOS gives any app without asking (no Location, Bluetooth, Microphone, Input Monitoring, Local Network, or Downloads folder access). Lid-closed mode needs no permission either; instead it asks for an administrator password each time you turn it on.
 
@@ -418,7 +505,7 @@ sudo ln -sf '/Applications/Snaptic.app/Contents/MacOS/Snaptic' /usr/local/bin/sn
 
 Without installing: `/Applications/Snaptic.app/Contents/MacOS/Snaptic cli help`.
 
-**Usage.** `snaptic [--json] [--yes] <command> [arguments]`. `snaptic help` lists the commands available right now (a command appears only while its feature is on); `snaptic help <command>` narrows it, for example `snaptic help awake`. `--` ends options, so `-10` is read as a value.
+**Usage.** `snaptic [--json] [--yes] <command> [arguments]`. `snaptic help` lists the commands available right now (a command appears only while its feature is on); `snaptic help <command>` narrows it, for example `snaptic help awake` or `snaptic help icons`. `--` ends options, so `-10` is read as a value.
 
 - `--json`: machine-readable output. Lists and `get`, `set`, `ddc`, `mode`, `layout`, `virtual`, `pip list`, and `awake status` print JSON arrays or objects; any other command prints `{"ok": true}` (with `"output"` when it has text). Errors, including the client’s own (an unknown option, Snaptic not running), print `{"exitCode": …, "error": …}`.
 - `--yes`: skips the “Keep this change?” panel, but only if you also turned on “Commands can skip confirmation” (General › Advanced…). The change is then kept right after the displays settle; the safety helper and the undo journal protect it exactly as they protect a confirmed change. Otherwise the panel shows and the command waits for your answer.
@@ -432,7 +519,7 @@ Without installing: `/Applications/Snaptic.app/Contents/MacOS/Snaptic cli help`.
 | Command | Feature | Notes |
 |---|---|---|
 | `version`, `modules`, `safe-mode` | — | Always available |
-| `module disable <windowSwitcher\|displays\|awake>` | — | Off only |
+| `module disable <windowSwitcher\|displays\|awake\|hiddenIcons>` | — | Off only |
 | `open-settings [page]` | — | Optionally at a page id, e.g. `displays.brightness` or `awake` |
 | `list`, `features` | Displays | Displays: number, key, name, size, state. Features: on or off |
 | `feature disable <feature>` | Displays | Off only |
@@ -463,9 +550,9 @@ Without installing: `/Applications/Snaptic.app/Contents/MacOS/Snaptic cli help`.
 
 Verbs are case-insensitive, so `toggle nightShift` and `toggle smartHiDPI` work too.
 
-**`prevent-sleep` is retired.** Display sleep prevention moved to Awake (your 0.2 setting became a rule; see [Upgrading and downgrading](#upgrading-and-downgrading)). The old verb answers “Moved to Awake: use “snaptic awake …”.” with exit code 2 whatever is turned on, and isn’t listed in help. It will be removed in 0.4. Use `snaptic awake start`, `snaptic awake hold`, or a rule instead.
+**`prevent-sleep` is gone.** Display sleep prevention moved to Awake in 0.3 (your 0.2 setting became a rule; see [Upgrading and downgrading](#upgrading-and-downgrading)), and 0.4 removed the old verb: it is now an unknown command (exit 2). Use `snaptic awake start`, `snaptic awake hold`, or a rule instead.
 
-**Never from the command line:** turning on anything off-only, and changing hooks, actions, command-line settings, disconnect, auto-disconnect, dim to black, DDC unlocks, “allow without asking” choices, layout trust, or any Awake setting (rules, sessions in the menu, guards, Drive Alive, appear active, pointer movement), and turning on lid-closed mode. Accessibility-using actions (Gather windows, pointer movement) are never command-line actions.
+**Never from the command line:** turning on anything off-only, and changing hooks, actions, command-line settings, disconnect, auto-disconnect, dim to black, DDC unlocks, “allow without asking” choices, layout trust, or any Awake setting (rules, sessions in the menu, guards, Drive Alive, appear active, pointer movement), Hidden Icons’ settings and per-app choices, and turning on lid-closed mode. Accessibility-using actions (Gather windows, pointer movement) are never command-line actions.
 
 ### Awake commands
 
@@ -513,34 +600,52 @@ release:
 	snaptic awake hold & hold=$$!; trap 'kill $$hold 2>/dev/null' EXIT INT TERM; ./build.sh && ./upload.sh
 ```
 
+### Hidden Icons commands
+
+Available while Hidden Icons is on and command-line control is on (otherwise `snaptic` answers “Unknown command.”, exit 2, or exits 5 if Snaptic isn’t running).
+
+| Command | What it does |
+|---|---|
+| `snaptic icons show [--all]` | Shows hidden icons; `--all` includes Always Hidden. |
+| `snaptic icons hide` | Hides icons again. |
+| `snaptic icons toggle [--all]` | Shows or hides icons. |
+| `snaptic icons status [--json]` | One line: `engine=<native\|length\|unavailable> state=<collapsed\|expanded\|needsPermission\|paused\|unavailable> hidden=<n> alwaysHidden=<n> shown=<n>`. The counts are apps, as of the last time your icons were read (Snaptic itself left out). `--json` prints one object with `engine`, `state`, `hidden`, `alwaysHidden`, `shown`, and `layoutAgeSeconds` (seconds since that read, at most a week, or `null`). No app names or bundle identifiers. |
+
+- **Never asks first.** `hide` and `toggle` never show the “Hide all other apps’ icons?” question (macOS 27); they hide what the arrangement says.
+- **Refusals exit 5** with one line, for example “Hidden Icons is paused while another menu bar app hides icons.”, “Hidden Icons needs Device Control and Data Access. Open Snaptic Settings › Permissions.”, “Hidden Icons isn’t available on this version of macOS.”, or “Drag the | divider to the left of the arrow (hold ⌘).” Any other reason a hide didn’t happen answers with the Hidden Icons page’s status row. Showing hidden icons is never refused.
+- Anything else, such as `snaptic icons hide --all` or an unknown flag, is a usage error: “Usage error. Run “snaptic help icons”.” (exit 2).
+- The commands do only what the arrow does: nothing moves an icon, changes a setting, or names an app.
+
 ### Exit codes
 
 | Code | Meaning |
 |---|---|
 | 0 | Success (also when a hold ends normally) |
-| 2 | Usage error, unknown command, a retired command such as `prevent-sleep`, or a name that matches several displays or items |
+| 2 | Usage error, unknown command, or a name that matches several displays or items |
 | 3 | Nothing matched (display, action, layout, configuration, Awake session in the menu) |
 | 4 | Refused by policy: off-only, a protected setting, the safety rules, or an Awake refusal (a guard, a session you started in Snaptic is running, 8 holds, a session without an end, extending a lid-closed session, a caller Snaptic couldn’t identify) |
-| 5 | Unavailable: Snaptic isn’t running or quit, command-line control is off, the feature is off or unsupported, or too many Awake requests |
+| 5 | Unavailable: Snaptic isn’t running or quit, command-line control is off, the feature is off or unsupported, too many Awake requests, or a Hidden Icons refusal (paused, needs permission, unavailable, or the arrangement) |
 | 6 | Cancelled or timed out (the confirmation was declined or expired; the client waits up to 90 s: the longest panel plus 30 s) |
 
-**Recipes.** A Stream Deck “Run shell” or Raycast script command can call `snaptic set brightness +10 mouse`, `snaptic input "HDMI 1" 2`, `snaptic layout apply Office`, or `snaptic awake start 2h`.
+**Recipes.** A Stream Deck “Run shell” or Raycast script command can call `snaptic set brightness +10 mouse`, `snaptic input "HDMI 1" 2`, `snaptic layout apply Office`, `snaptic awake start 2h`, or `snaptic icons toggle`.
 
 ## Hidden kill switches
 
-Kill switches turn a module or a feature off for this Mac, whatever Settings says. They are Boolean keys in Snaptic’s own preferences (`app.snaptic.Snaptic`), they only ever turn things off, and pages show what they turned off as “Turned off for this Mac by an administrator or a Terminal command.” with the command that undoes it. Quit and reopen Snaptic to apply a change. The Diagnostics Report lists the Displays and Awake feature switches that are set; a module turned off this way says so on its page, and a turned-off private API shows as unavailable.
+Kill switches turn a module or a feature off for this Mac, whatever Settings says. They are Boolean keys in Snaptic’s own preferences (`app.snaptic.Snaptic`), they only ever turn things off, and pages show what they turned off as “Turned off for this Mac by an administrator or a Terminal command.” with the command that undoes it. Quit and reopen Snaptic to apply a change (Hidden Icons’ switches also apply while it runs, see below). The Diagnostics Report lists the Displays, Awake, and Hidden Icons feature switches that are set; a module turned off this way says so on its page, and a turned-off private API shows as unavailable.
 
 ```bash
 defaults write app.snaptic.Snaptic Modules.disable.awake -bool true                # a whole module
+defaults write app.snaptic.Snaptic Modules.disable.hiddenIcons -bool true          # Hidden Icons, icons shown
 defaults write app.snaptic.Snaptic Awake.disable.pointerNudge -bool true           # one Awake feature
 defaults write app.snaptic.Snaptic Displays.disable.xdr -bool true                 # one Displays feature
 defaults write app.snaptic.Snaptic Displays.disable.symbol.MPDisplay -bool true    # one private API
 defaults delete app.snaptic.Snaptic Awake.disable.pointerNudge                     # undo
 ```
 
-- **Modules:** `Modules.disable.windowSwitcher`, `Modules.disable.displays`, `Modules.disable.awake`. A module turned off this way never starts, its page shows why with its switch disabled, and Awake also releases its assertion and doesn’t resume a session at the next launch.
+- **Modules:** `Modules.disable.windowSwitcher`, `Modules.disable.displays`, `Modules.disable.awake`, `Modules.disable.hiddenIcons`. A module turned off this way never starts, its page shows why with its switch disabled, Awake also releases its assertion and doesn’t resume a session at the next launch, and Hidden Icons shows your icons.
 - **Awake features:** `presets` (sessions in the menu), `triggers` (rules), `activity` (appear active, and so pointer movement), `pointerNudge` (pointer movement), `driveAlive`, `history`, `shortcuts`, `commandLine` (the `snaptic awake` commands), and `lidClosed` (lid-closed mode). `sessions`, `batteryGuard`, `thermalGuard`, and `indicator` are ignored, so the guards and a visible indicator always stay; use `Modules.disable.awake` to turn Awake off entirely.
 - **Displays features** (ids as in `snaptic features`): `resolution`, `hiddenModes`, `scaleMatch`, `brightness`, `brightnessApple`, `brightnessDDC`, `brightnessGamma`, `brightnessOverlay`, `brightnessRestore`, `dimToBlack`, `dimOnLock`, `nits`, `xdr`, `sync`, `autoBrightness`, `color`, `colorProfiles`, `nightShift`, `applePresets`, `ddcControls`, `ddcInput`, `ddcPower`, `ddcCustom`, `brightnessKeys`, `volumeKeys`, `shortcuts`, `osd`, `osdBroadcast`, `mainDisplay`, `arrangement`, `mirroring`, `rotation`, `underscan`, `hdrToggle`, `disconnect`, `autoDisconnectBuiltin`, `protection`, `layouts`, `virtualScreens`, `smartHiDPI`, `hdrVirtual`, `pip`, `pipFilters`, `menuBarOverlays`, `hooks`, and `customActions`. `Displays.disable.symbol.<name>` turns off one private API.
+- **Hidden Icons features** (`Icons.disable.<id>`): `native` (the macOS 27 method, so Hidden Icons is unavailable there), `length` (the macOS 14–26 method, likewise), `inventory` (reading where menu bar icons are: on macOS 27 Hidden Icons is then unavailable; on 14–26 hiding still works, without the hidden-icon list, Sections, or new-icon notices), `hover` (Show icons on hover), and `axpress` (opening a hidden icon’s menu from the list; the rows stay, dimmed). Snaptic reads these every second, and turning on the switch for the method in use shows your icons at once.
 
 ### Deploying kill switches in an organization
 
@@ -735,7 +840,9 @@ In every case, a note goes in this README and on the Releases page.
 - *Hooks and custom actions* (opt-in) run programs you chose, with a minimal environment (`SNAPTIC_EVENT`, `SNAPTIC_DISPLAY_NAME`, `SNAPTIC_DISPLAY_KEY`), without Snaptic’s permissions, stopped after 30 seconds. Programs must be absolute paths owned by you or root and not writable by others. Never in Safe Mode or while automation is paused.
 - *Awake’s power assertion* is visible to every app (`pmset -g assertions`), as all assertions are. Its name is always “Snaptic: keeping your Mac awake” and its details only say `manual` or `automatic`: never an app, rule, or condition.
 
-**On disk.** Settings (in Snaptic’s preferences), and under `~/Library/Application Support/Snaptic/` (0700): the single-instance lock, the command-line socket, undo journals for display changes, copies of imported LUTs, and, while lid-closed mode is on or its recovery is pending, a small journal (`awake/lid.json`, 0600). Lid-closed mode also keeps two empty files in a private folder (0700) of your temporary folder for its watchdog. The remembered Snaptic menu tab is a plain preference. Release builds add Sparkle’s update cache, `~/Library/Caches/app.snaptic.Snaptic/org.sparkle-project.Sparkle`, and Sparkle’s `SU…` keys in Snaptic’s preferences; **Reset All Settings…** clears those keys. Drive Alive’s only trace is the 8-byte `.snaptic-keepalive` file on drives you turned on. Backup export leaves out hooks, actions, command-line settings, the salts, DDC unlocks, “allow without asking” choices, layout trust, sensitive switches (disconnect, auto-disconnect, dim to black), Awake’s history, Drive Alive drives, pointer movement, lid-closed mode (import keeps this Mac’s choice), the update settings, the remembered menu tab, and the apps you used recently; Awake rules are included only if you tick “Include automatic-session rules”. Import strips the same things even if present, and can only make Awake’s guards stricter.
+**On disk.** Settings (in Snaptic’s preferences), and under `~/Library/Application Support/Snaptic/` (0700): the single-instance lock, the command-line socket, undo journals for display changes, copies of imported LUTs, and, while lid-closed mode is on or its recovery is pending, a small journal (`awake/lid.json`, 0600). Lid-closed mode also keeps two empty files in a private folder (0700) of your temporary folder for its watchdog. The remembered Snaptic menu tab is a plain preference. Release builds add Sparkle’s update cache, `~/Library/Caches/app.snaptic.Snaptic/org.sparkle-project.Sparkle`, and Sparkle’s `SU…` keys in Snaptic’s preferences; **Reset All Settings…** clears those keys. Drive Alive’s only trace is the 8-byte `.snaptic-keepalive` file on drives you turned on. Hidden Icons’ per-app choices, known apps, and new-icon list (app bundle identifiers, never names) are stored apart from your other settings and never exported. Backup export leaves out hooks, actions, command-line settings, the salts, DDC unlocks, “allow without asking” choices, layout trust, sensitive switches (disconnect, auto-disconnect, dim to black), Awake’s history, Drive Alive drives, pointer movement, lid-closed mode (import keeps this Mac’s choice), the update settings, the remembered menu tab, the apps you used recently, and Hidden Icons’ per-app choices, new-icon list, and icon positions; Awake rules are included only if you tick “Include automatic-session rules”. Import strips the same things even if present, and can only make Awake’s guards stricter.
+
+**Hidden Icons.** To know which icons are where, Snaptic reads other apps’ menu bar icon positions and app identities with Accessibility; on macOS 14–26 it does so only for the hidden-icon list and Sections. App names and bundle identifiers never go into the event log, diagnostics (which keep counts only), or the command line. Snaptic never moves, clicks, or changes another app’s icon, except opening one’s menu when you choose it in the hidden-icon list.
 
 **Command line.** Only your user account can connect, through a private socket (directory 0700, socket 0600); Snaptic never listens on the network. Requests are size-, rate-, and time-limited. See [Command line](#command-line) for what it can never change.
 
@@ -768,6 +875,10 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
 
 ## Upgrading and downgrading
 
+**0.3.4 → 0.4.0.** Snaptic updates itself, and no setting is lost. Hidden Icons starts off (a “New: Hidden Icons” card in General). The app has a new icon. `snaptic prevent-sleep` is gone (it has answered “Moved to Awake” since 0.3).
+
+- **Going back to 0.3.4:** your other settings stay, and Hidden Icons’ settings are kept for when you return. Quit 0.4 first so your icons are shown.
+
 **0.3.3 → 0.3.4.** Snaptic updates itself, and no setting is lost. Lid-closed mode turns on again on macOS 27, where every attempt used to fail.
 
 **0.3.2 → 0.3.3.** Snaptic updates itself, and no setting is lost. Lid-closed mode’s opt-in moved from **Awake › Advanced…** to the Awake page’s **Lid closed** section and the Menu Bar page; if it was on, it stays on.
@@ -785,7 +896,7 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
 - **Display sleep prevention moved to Awake.** If it was on in 0.2 (Displays on, the feature on, and at least one display set to prevent sleep), 0.3 turns Awake on with a rule “While a display is connected” for those displays (up to 8 per rule), keeping the display on. General shows “Your display sleep setting moved to Awake.”, and the first time the rule applies, a one-time notice says so. If it wasn’t in use, Awake starts off with a “New: Awake” card.
 - **Its shortcut** moves to Awake’s **Pause or Resume Rules** if a rule was created and that shortcut isn’t set yet; otherwise it’s removed, and Recent Notices says “Your display sleep shortcut was removed. Set Awake shortcuts in Settings › Awake › Keyboard Shortcuts.”
 - **Menu bar placement** (shared, own icon, hidden, and Displays’ “hide when no external display is connected”) becomes the new per-module pop-up on the Menu Bar page.
-- **`snaptic prevent-sleep`** is retired; see [Command line](#command-line).
+- **`snaptic prevent-sleep`** was retired, and 0.4 removed it; see [Command line](#command-line).
 - Each upgrade step runs once and records that it ran, so a later change you make isn’t undone at the next launch.
 
 **0.3 → 0.2 → 0.3.** You can go back to 0.2 and forward again:
@@ -806,7 +917,9 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
 - **My Mac doesn’t sleep and Awake is off.** Look at Awake › Advanced… › Other apps keeping your Mac awake, or run `pmset -g assertions`. If it says sleep is turned off for this Mac, see [If sleep stays off](#if-sleep-stays-off) when an earlier lid-closed session left it off, or [Switching from Amphetamine or Insomnia](#switching-from-amphetamine-or-insomnia).
 - **The display turns off during a session.** Turn on “Keep the display on” for the session (Keep Display On in the menu). On the lock screen, the display may sleep unless “Keep the display on while locked” is on.
 - **`awake hold` ended at once, or kept holding after the work.** See [the parent-shell pitfall](#awake-hold).
-- **`snaptic` says it isn’t running, or doesn’t know `awake`.** Turn on Settings › General › Command-line control, and make sure Awake is on. Exit code 5 means Snaptic isn’t running, control is off, the feature is off, or you sent Awake requests faster than once a second.
+- **Hidden icons came back by themselves.** That’s Hidden Icons failing safe; the status row on its page says why and offers the fix (see [When icons stay shown](#when-icons-stay-shown)).
+- **I can’t find the arrow.** The page offers **Show Arrow** when macOS hid it; otherwise use **Advanced… › Reset Arrow Position…**, which puts the arrow and dividers back next to the Snaptic icon.
+- **`snaptic` says it isn’t running, or doesn’t know `awake` or `icons`.** Turn on Settings › General › Command-line control, and make sure Awake or Hidden Icons is on. Exit code 5 means Snaptic isn’t running, control is off, the feature is off, or you sent Awake requests faster than once a second.
 - **Lid-closed mode won’t turn on.** The notice says why: battery too low (connect power), too hot, a Start Anyway session, Snaptic running from a temporary location (move it to Applications), or sleep still turned off from an earlier session. If the password dialog doesn’t appear, check whether security software blocks `osascript`.
 - **No update arrives.** Look at Settings › About › Updates: automatic checks may be off, the copy may be built from source, or an update may be waiting for lid-closed mode or a display change to finish. **Check for Updates…** checks now.
 - **Filing an issue.** Copy the report from Displays › Display Information (or `snaptic diagnostics`). It has no window titles, app names, or serial numbers; Awake contributes only counts.
@@ -826,6 +939,12 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
   - Appear active keeps macOS from idling, but chat apps may still mark you away; pointer movement is Experimental and limited by its safety rules.
   - History, rules, and recently used apps are plain preferences that other programs running as you can read.
   - Starting a session at login needs “Open at login” and **Start a session when Snaptic opens**.
+- **Hidden Icons:**
+  - On macOS 14–26, a Snaptic icon that first appears while icons are hidden can land in the hidden section. ⌘-drag it to the right of the arrow once.
+  - On macOS 27, the Now Playing icon is hidden while icons are hidden.
+  - Always Show and Always Hide work on macOS 27 only; on 14–26 they’re kept but unused.
+  - On macOS 27 the list has no behind-the-notch rows.
+  - On macOS 27, with **Run Both Anyway**, an icon stays shown unless both apps hide it.
 - **General:** English only (all text is ready for translation, but no translations exist yet) and no trackpad gesture. Updates need a release build: copies built from source don’t update themselves, and 0.3.0 and earlier need one manual download to reach 0.3.1.
 
 ### Needs testing on hardware
@@ -843,6 +962,7 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
 - **Menu tabs (0.3.1):** switching tabs in an open menu on 14, 15, 26, and 27 (resizing, highlight, with a submenu open, light and dark, Increase Contrast, Reduce Transparency, the largest text size on a 13″ display with three external displays); VoiceOver, Switch Control, and Full Keyboard Access reaching the tabs and hearing “needs attention” and “on”; ⌘1–⌘3 in an open menu while ⌘, and ⌘Q still work; sliders and switch rows in a newly shown tab.
 - **Lid-closed mode (0.3.1):** the password dialog from Developer ID and ad-hoc builds (its title, icon, text, Touch ID, Cancel); the output of `pmset`, `ioreg`, and `notifyutil` on Apple silicon and Intel, macOS 14 to 27; the lid closed on battery with and without an external display and with `caffeinate -d` running (staying awake, the built-in display going dark, Sleep grayed out, waking on lid open, the keyboard backlight, the icon); the watchdog surviving the dialog and restoring sleep after a quit, `kill -9`, a stopped Snaptic, the stop file, the 24-hour limit, a deleted heartbeat, a script error, and `sudo kill`; a restart while it’s on and both recovery buttons; the battery limit while Snaptic is stopped; the Mac sleeping within 30 seconds after each limit with the lid closed; the watchdog’s wakeups.
 - **Updates (0.3.1):** Sparkle loading in a Developer ID build; updating from a user-owned and a root-owned copy; permissions and Open at login surviving; no Gatekeeper prompt after relaunch; refusing a wrong signature, a non-Developer-ID build, and an edited feed; a root-owned copy staying `root:wheel`; waiting while lid-closed mode or a display change is pending; the menu row; no Sparkle window during onboarding or Safe Mode; a manual check in Safe Mode; installing at quit; the 0.3.0 → 0.3.1 permission re-grant; an ad-hoc build without Sparkle opening the Releases page.
+- **Hidden Icons (0.4):** icons showing while the camera or microphone is on and hiding again after, and the location indicator, on macOS 27; ⌘-dragging icons while hidden; Live Activities and other macOS 27 system items; an exam session in Safari or an assessment app; seeding the dividers on a fresh macOS 15 account and the 10 000-point divider on the widest displays; running beside Hidden Bar, Bartender, Ice, and Thaw.
 - **Hidden-config abuse:** pointer movement, Drive Alive, a battery floor of zero, and forged session state written with `defaults` while Snaptic is quit, stopped, and running: none of them may move the pointer, skip the 5% floor, or write to ineligible drives.
 - **From 0.2:** confirmed changes persisting across quit, relaunch, and reboot; the safety helper reverting after `kill -9` with virtual displays and a pending change; rotation and HDR reverts after a reboot; XDR extra brightness on M1–M5 XDR panels; gamma on virtual displays on M5; DDC over Apple silicon USB-C and HDMI, MCDP adapters, and Intel, and standby and wake through DDC; brightness and volume keys on Apple silicon laptops on macOS 26 and 27, and global shortcuts while a password field is focused; virtual displays and Smart HiDPI (HiDPI at creation, live mode changes, lock, sleep, Fast User Switching, lid closed with no external display, EDID colors on Apple silicon); Picture in Picture capture filters, window crop orientation, and the content-sharing picker on 14, 15, and 26; helper signature checks with ad-hoc and Developer ID builds and after an in-place update; Accessibility grants and relaunch on macOS 27; detecting password windows on macOS 26 without Screen Recording; Identify labels over full-screen apps and AirPlay.
 
@@ -862,16 +982,17 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
 
 | Path | Responsibility |
 |---|---|
-| `Sources/SnapticKit/` | Pure logic with unit tests that also run on Linux: the feature graphs, configuration and migrations, safety invariants, DDC and EDID parsing, the command-line protocol, Awake’s sessions, guards, rules, clock, and command grammar, and the control tables that map every 0.2 setting to its 0.3 home. |
-| `Sources/SnapticShims/` | Small Objective-C wrappers for private display APIs, each checked before use. |
+| `Sources/SnapticKit/` | Pure logic with unit tests that also run on Linux: the feature graphs, configuration and migrations, safety invariants, DDC and EDID parsing, the command-line protocol, Awake’s sessions, guards, rules, clock, and command grammar, Hidden Icons’ layout, engine, and command logic, and the control tables that map every 0.2 setting to its 0.3 home. |
+| `Sources/SnapticShims/` | Small Objective-C wrappers for private display and menu bar APIs, each checked before use. |
 | `Sources/Snaptic/Core/` | The host: modules, menus, permissions, onboarding, Safe Mode, the command-line server and client, helper spawning, and the General, Menu Bar, Permissions, and About pages. |
 | `Sources/Snaptic/SettingsUI/` | The shared Settings components (rows, sliders with value fields, sheets, search). |
 | `Sources/Snaptic/Switcher/` | The window switcher (event tap, window list, thumbnails, switcher UI). |
 | `Sources/Snaptic/Displays/` | The Displays module: services, one controller per feature group, the safety helper, transactions and journals, settings pages. |
 | `Sources/Snaptic/Awake/` | The Awake module: the assertion, sessions, guards, rules, activity, Drive Alive, history, the command-line verbs, the condition sources, its menu, and its pages. |
+| `Sources/Snaptic/Icons/` | The Hidden Icons module: the two engines (macOS 27 and 14–26), the arrow and dividers, the icon inventory and hidden-icon list, the command-line verbs, its menu section, and its pages. |
 | `site/` | The project website at [snaptic.dev](https://snaptic.dev), deployed by Vercel on every push to `main`. |
 | `Sources/Snaptic/Core/UpdaterController.swift` | The only file that uses Sparkle; in a build without Sparkle it’s never reached. |
-| `docs/design/` | The 0.2, 0.3, and 0.3.1 plans, their release notes, and platform research. |
+| `docs/design/` | The 0.2, 0.3, 0.3.1, and 0.4 plans, their release notes, and platform research. |
 
 ### How Awake keeps your Mac awake
 
@@ -885,10 +1006,11 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
 
 ### Undocumented APIs
 
-Snaptic uses private macOS functions where no public one exists. Every one is looked up at runtime (never linked), checked for the expected signature, behind a kill switch, and fails closed: if Apple removes or changes one, the feature that needs it becomes unavailable instead of crashing. This also means Snaptic can’t be sold through the Mac App Store.
+Snaptic uses private macOS functions where no public one exists. Every one is looked up at runtime (never linked), checked for the expected signature, behind a kill switch, and fails safe: if Apple removes or changes one, the feature that needs it becomes unavailable instead of crashing (for Hidden Icons, your icons are shown). This also means Snaptic can’t be sold through the Mac App Store.
 
 - **Switcher:** `_AXUIElementGetWindow`, `_SLPSSetFrontProcessWithOptions` and `SLPSPostEventRecordTo`, `SLSMainConnectionID` and `SLSCopySpacesForWindows`, `SLSSetSymbolicHotKeyEnabled` and `SLSIsSymbolicHotKeyEnabled`, and the deprecated `GetProcessForPID`. The focusing technique follows public reverse-engineering documented by [yabai](https://github.com/koekeishiya/yabai) (MIT).
 - **Displays:** DisplayServices (Apple brightness, auto-brightness), CoreBrightness (Night Shift), MonitorPanel (rotation, underscan, HDR, Apple presets), CoreGraphics `CGS…` calls (hidden modes, disconnect, HDR state), `CGVirtualDisplay` (virtual displays), `IOAVService` (DDC on Apple silicon), CoreDisplay (display info), the OSD framework, and libsystem’s process-responsibility calls for helpers.
+- **Hidden Icons:** on macOS 27, MenuBarClientCore’s `MBAssessmentModeConfiguration` and `MBAssessmentModeAssertion` (the mechanism macOS uses for exam sessions), through a small wrapper in `SnapticShims` that checks the classes and method encodings first; on macOS 14–26, only public `NSStatusItem` lengths.
 - **Awake:** no private functions. It reads undocumented keys with public calls: `CGSSessionScreenIsLocked` from `CGSessionCopyCurrentDictionary`, to know whether the screen is locked; the `SleepDisabled` power setting (`SystemPowerSettings` in the `com.apple.PowerManagement` preferences, through `CFPreferencesCopyValue`) and the kernel’s `SleepDisabled` and `AppleClamshellState` properties on `IOPMrootDomain` (through IOKit), to tell you when sleep is turned off and whether the lid is closed. It changes `SleepDisabled` only in lid-closed mode, and only through `pmset` after you enter an administrator password.
 
 ## License

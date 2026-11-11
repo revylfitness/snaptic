@@ -93,11 +93,32 @@ enum ConfigFixtures {
 
     static func fullModules() -> ModulesConfig {
         var c = ModulesConfig()
-        for id in ModuleID.allCases { c.modules[id] = ModulePreferences(enabled: true, presence: .ownIcon, symbol: "bolt") }
+        for id in ModuleID.allCases {
+            let presence = MenuPresence.allowed(for: id).first ?? .inSnapticMenu
+            c.modules[id] = ModulePreferences(enabled: true, presence: presence, symbol: "bolt")
+        }
         c.sharedSymbol = "bolt"
         c.newModuleCards = NewModuleCard.allCases
         c.commandLine = CommandLineSettings(enabled: true, maySkipConfirmation: true)
         c.onboardingPermissions = Permission.allCases
+        return c
+    }
+
+    /// Every Hidden Icons setting away from its default (0.4 K1).
+    static func fullIcons() -> IconsConfig {
+        var c = IconsConfig()
+        c.autoCollapse = false
+        c.autoCollapseSeconds = 45
+        c.collapseAtLaunch = false
+        c.alwaysHidden = true
+        c.dividers = false
+        c.shortcut = combo
+        c.hover = true
+        c.newApps = .hide
+        c.otherHiders = .runBoth
+        c.fullBarOnExpand = true
+        c.showDuringCapture = false
+        c.arranged = true
         return c
     }
 

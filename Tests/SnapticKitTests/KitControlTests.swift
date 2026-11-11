@@ -375,17 +375,15 @@ final class KitControlTests: XCTestCase {
 
     // MARK: Retired verbs (R5-12)
 
-    func testPreventSleepIsRetiredWithItsPointer() {
-        XCTAssertEqual(KitControl.retiredVerbs, ["prevent-sleep": "Moved to Awake: use “snaptic awake …”."])
-        for words in [["prevent-sleep"], ["prevent-sleep", "off"], ["PREVENT-SLEEP", "on"], ["Prevent-Sleep", "x", "y"]] {
-            let retired = KitControl.retiredVerb(words)
-            XCTAssertEqual(retired?.verb, "prevent-sleep", "\(words)")
-            XCTAssertEqual(retired?.message, "Moved to Awake: use “snaptic awake …”.")
-        }
-        for words in [[], ["prevent"], ["prevent", "sleep"], ["prevent-sleeps"], ["awake", "prevent-sleep"], ["help"],
-                      ["help", "prevent-sleep"]] {
+    /// 0.4 §4.16: `prevent-sleep` is removed, so it is no longer retired (no pointer); the registry answers
+    /// "Unknown command" (`--selftest-controls` and `selftest-control-server.sh` case 10 check the reply).
+    func testPreventSleepIsRemovedIn04() {
+        XCTAssertEqual(KitControl.retiredVerbs, [:])
+        for words in [[], ["prevent-sleep"], ["prevent-sleep", "off"], ["PREVENT-SLEEP", "on"], ["prevent", "sleep"],
+                      ["awake", "prevent-sleep"], ["help"], ["help", "prevent-sleep"]] {
             XCTAssertNil(KitControl.retiredVerb(words), "\(words)")
         }
+        XCTAssertNil(KitControl.verbRule("prevent-sleep"))
         // No retired verb is a live verb word or an Awake verb.
         for verb in KitControl.retiredVerbs.keys {
             XCTAssertTrue(verb.split(separator: " ").allSatisfy { KitControl.isVerbWord(String($0)) }, verb)

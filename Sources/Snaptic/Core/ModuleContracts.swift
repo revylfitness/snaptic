@@ -93,7 +93,7 @@ struct CustomItemRow: Equatable {
     func applyStatusItem(_ row: CustomItemRow)
 }
 
-/// A top-level utility (Window Switcher, Displays, Awake). PLAN §3.3.
+/// A top-level utility (Window Switcher, Displays, Awake, Hidden Icons). PLAN §3.3.
 @MainActor protocol SnapticModule: AnyObject {
     var id: ModuleID { get }
     var title: String { get }
@@ -124,6 +124,8 @@ struct CustomItemRow: Equatable {
     func settingsDestination(_ route: SettingsRoute) -> AnyView?
     /// Static per module; computed once.
     func settingsIndex() -> [SettingsSearchEntry]
+    /// 0.4 H1: lines for General › Diagnostics, read only while the module runs. No bundle ids or app names.
+    func diagnosticsLines() -> [String]
 }
 
 extension SnapticModule {
@@ -133,4 +135,5 @@ extension SnapticModule {
     func settingsIndex() -> [SettingsSearchEntry] { [] }
     func menuSection(tabbed: Bool) -> [NSMenuItem] { menuSection() }
     var menuAttention: Bool { false }
+    func diagnosticsLines() -> [String] { [] }
 }

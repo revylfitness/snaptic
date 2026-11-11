@@ -24,6 +24,15 @@
   `kit-linux` (lint, actionlint, Linux tests) and `build`; and the secret-free `rehearse` job runs sign's and
   publish's secret-free steps with byte-identical scripts.
 
+PLAN 0.4 (K1, H11 / §4.15) adds L20: under Icons/, `NSLog`/`os_log`/`print`/`debugPrint`/`dump` take one plain string
+literal (no interpolation, no format arguments), `Logger` isn't used, and an `EventLog` `record(…)` interpolates only
+`….rawValue` (a reason code), so no bundle id, app name, AX title or error text reaches a log.
+
+PLAN 0.4 (A4, H9) adds L21: `setActivationPolicy(` and activating Snaptic itself (`NSApp.activate(`,
+`NSApplication.shared.activate(`, `NSRunningApplication.current.activate(`) only in
+Core/ActivationPolicyController.swift and Core/SnapticEntry.swift (the launch default and the refusal alert).
+Activating another app is untouched.
+
 Run by scripts/lint.sh (which passes LINT_MODE=check|write and LINT_STRICT=0|1). Comments are stripped before
 matching (string literals are kept); counts are occurrences, not lines.
 """
@@ -248,6 +257,50 @@ def self_check():
         if got != expected:
             problems.append(f"self-check: menu contributors found {sorted(got)} in {source!r}, expected {sorted(expected)}")
     problems += self_check_031()
+    problems += self_check_04()
+    return problems
+
+
+def self_check_04():
+    """Pins L20 on cases it must report or let pass."""
+    q = '"'
+    icons = "Sources/Snaptic/Icons/IconsModule.swift"
+    cases = [
+        (icons, f"NSLog({q}icons: started{q})", False),
+        (icons, f"NSLog({q}icons: %@{q}, bundle)", True),
+        (icons, f"print({q}x \\(bundle){q})", True),
+        (icons, "print(error)", True),
+        (icons, f"os_log({q}%{{public}}@{q}, name)", True),
+        (icons, "let log = Logger(subsystem: s, category: c)", True),
+        (icons, f"EventLog.shared.record(.icons, {q}icons.collapse{q})", False),
+        (icons, f"EventLog.shared.record(.icons, {q}icons.failSafe.\\(reason.rawValue){q})", False),
+        (icons, f"EventLog.shared.record(.icons, {q}new icon \\(bundleID){q})", True),
+        (icons, f"EventLog.shared.record(.icons, {q}n=\\(f(x.rawValue)){q})", True),
+        (icons, "let p = blueprint(x)", False),
+        ("Sources/Snaptic/Awake/Core/X.swift", f"print({q}\\(x){q})", False),
+    ]
+    problems = []
+    for path, source, flagged in cases:
+        if bool(l20_file(path, source)) != flagged:
+            problems.append(f"self-check: l20_file {'missed' if flagged else 'wrongly reported'} {source!r} in {path}")
+    backup = "Sources/Snaptic/Core/Backup.swift"
+    l21_cases = [
+        (backup, "NSApp.activate()", True),
+        (backup, "NSApp.activate(ignoringOtherApps: true)", True),
+        (backup, "NSApplication.shared.activate()", True),
+        (backup, "NSRunningApplication.current.activate(options: [])", True),
+        (backup, "NSApp.setActivationPolicy(.regular)", True),
+        (backup, "app.setActivationPolicy(.accessory)", True),
+        (backup, "ActivationPolicyController.shared.activate(.alert)", False),
+        (backup, "app.activate(options: [])", False),
+        (backup, "remembered?.activate()", False),
+        (backup, "x.activationPolicy == .regular", False),
+        ("Sources/Snaptic/Core/SnapticEntry.swift", "app.setActivationPolicy(.accessory)", False),
+        ("Sources/Snaptic/Core/ActivationPolicyController.swift", "NSApp.activate()", False),
+    ]
+    for path, source, flagged in l21_cases:
+        if bool(l21_file(path, source)) != flagged:
+            problems.append(f"self-check: l21_file {'missed' if flagged else 'wrongly reported'} {source!r} in {path}")
     return problems
 
 
@@ -443,7 +496,7 @@ def is_menu_file(path):
     return "Menu" in os.path.basename(path)
 
 
-SETTINGS_VIEWS = ("Displays/UI/", "Awake/UI/", "SettingsUI/", "Switcher/SettingsView.swift", "Switcher/SwitcherPages.swift",
+SETTINGS_VIEWS = ("Displays/UI/", "Awake/UI/", "Icons/UI/", "SettingsUI/", "Switcher/SettingsView.swift", "Switcher/SwitcherPages.swift",
                   "Core/GeneralPages.swift", "Core/Onboarding.swift", "Core/SettingsWindowHost.swift",
                   "Core/MenuBarPage.swift", "Core/CustomizeMenuSheet.swift")
 
@@ -512,10 +565,11 @@ def ratcheted_counts():
         base = os.path.basename(p)
         if ((under(p, "Core/") and (base.startswith("Menu") or base == "StatusMenu.swift"))
                 or (under(p, "Displays/UI/") and "Menu" in base)
-                or p in ("Sources/Snaptic/Awake/UI/AwakeMenuRows.swift", "Sources/Snaptic/Awake/UI/IndicatorController.swift")):
+                or p in ("Sources/Snaptic/Awake/UI/AwakeMenuRows.swift", "Sources/Snaptic/Awake/UI/IndicatorController.swift",
+                         "Sources/Snaptic/Icons/UI/IconsMenuRows.swift")):
             add("L13", p, count(r"NSHostingView", t))
-        # L14 .common run-loop modes in menus and Awake.
-        if under(p, "Awake/") or is_menu_file(p):
+        # L14 .common run-loop modes in menus, Awake and Hidden Icons (0.4 H11).
+        if under(p, "Awake/") or under(p, "Icons/") or is_menu_file(p):
             add("L14", p, count(r"scheduledTimer\(|RunLoop\.main\.perform(?!\(inModes:)|receive\(on:\s*RunLoop\.main|"
                                 r"scheduler:\s*RunLoop\.main|forMode:\s*(?:\.default|RunLoop\.Mode\.default)\b|"
                                 r"\bin:\s*(?:\.default|RunLoop\.Mode\.default)\b|\.defaultRunLoopMode\b", t))
@@ -533,16 +587,19 @@ def unratcheted_problems():
         if p == "Sources/Snaptic/Core/CLIClient.swift" and re.search(r"\bshutdown\(", t):
             problems.append(f"{p}: L16 shutdown( is banned (the client never half-closes)")
     problems += l16_lid()
-    # L17 duplicate keys never trap in Awake.
+    # L17 duplicate keys never trap in Awake or Hidden Icons (0.4).
     for p in SOURCES:
         base = os.path.basename(p)
-        awake = (p.startswith("Sources/Snaptic/Awake/") or (p.startswith("Sources/SnapticKit/") and base.startswith("Awake"))
-                 or (p.startswith("Sources/SnapticKit/Config/") and base.startswith("ConfigAwake")))
+        awake = (p.startswith("Sources/Snaptic/Awake/") or p.startswith(ICONS_DIR)
+                 or (p.startswith("Sources/SnapticKit/") and base.startswith(("Awake", "Icons", "KnownMenuBarHiders")))
+                 or (p.startswith("Sources/SnapticKit/Config/") and base.startswith(("ConfigAwake", "ConfigIcons"))))
         if awake and "uniqueKeysWithValues" in TEXT[p]:
-            problems.append(f"{p}: L17 uniqueKeysWithValues is banned in Awake (use uniquingKeysWith: {{ first, _ in first }})")
+            problems.append(f"{p}: L17 uniqueKeysWithValues is banned in Awake and Hidden Icons (use uniquingKeysWith: {{ first, _ in first }})")
     problems += l15()
     problems += l18()
     problems += l19()
+    problems += l20()
+    problems += l21()
     problems += workflows()
     problems += rule2()
     problems += menu_contributors()
@@ -660,6 +717,70 @@ def l19_file(p, t):
                 for m in re.findall(r"(?<![A-Za-z0-9_])SU[A-Z][a-z]\w*", s):   # SUFeedURL, not SUPPORT
                     problems.append(f"{p}: L19 the Sparkle key “{m}” is only allowed in UpdateDefaultsKeys ({UPDATE_KEYS})")
     return sorted(set(problems)), imported
+
+
+# PLAN 0.4 L20 (H11, §4.15): nothing that names an app reaches a log from Hidden Icons.
+ICONS_DIR = "Sources/Snaptic/Icons/"
+L20_LOG = re.compile(r"(?<![\w.])(NSLog|os_log|print|debugPrint|dump)\(")
+L20_RECORD = re.compile(r"\.record\(")
+
+
+def l20():
+    problems = []
+    for p in APP:
+        problems += l20_file(p, TEXT[p])
+    return problems
+
+
+def l20_interpolations(args):
+    """The expressions inside `\\(…)` in `args` (strings included)."""
+    found = []
+    i = args.find("\\(")
+    while i >= 0:
+        end = code_end(args, i + 2)
+        found.append(args[i + 2:end - 1])
+        i = args.find("\\(", end)
+    return found
+
+
+def l20_file(p, t):
+    if not p.startswith(ICONS_DIR):
+        return []
+    problems = []
+    for m in L20_LOG.finditer(t):
+        args = t[m.end():code_end(t, m.end()) - 1].strip()
+        single = bool(args) and starts_string(args, 0) and string_end(args, 0) == len(args)
+        if not single or l20_interpolations(args):
+            problems.append(f"{p}: L20 {m.group(1)}(…) under Icons/ takes one plain string literal (§4.15)")
+    if re.search(r"(?<![\w.])Logger\(", t):
+        problems.append(f"{p}: L20 Logger isn't used under Icons/ (§4.15)")
+    for m in L20_RECORD.finditer(t):
+        args = t[m.end():code_end(t, m.end()) - 1]
+        for expr in l20_interpolations(args):
+            if not re.fullmatch(r"\s*[A-Za-z_][\w.]*\.rawValue\s*", expr):
+                problems.append(f"{p}: L20 record(…) under Icons/ interpolates only a reason code’s rawValue, "
+                                f"not {expr.strip()!r} (§4.15)")
+    return sorted(set(problems))
+
+
+# PLAN 0.4 L21 (A4, H9): one activation-policy owner.
+L21_ALLOWED = ("Sources/Snaptic/Core/ActivationPolicyController.swift", "Sources/Snaptic/Core/SnapticEntry.swift")
+L21_CALL = re.compile(r"\.\s*setActivationPolicy\s*\(|(?<![\w.])(?:NSApp|NSApplication\s*\.\s*shared|"
+                      r"NSRunningApplication\s*\.\s*current)\s*\.\s*activate\s*\(")
+
+
+def l21():
+    problems = []
+    for p in APP:
+        problems += l21_file(p, TEXT[p])
+    return problems
+
+
+def l21_file(p, t):
+    if p in L21_ALLOWED:
+        return []
+    return [f"{p}: L21 {' '.join(m.group(0).split())!r} goes through ActivationPolicyController (H9)"
+            for m in L21_CALL.finditer(t)]
 
 
 def l19_package(manifest, imports, resolved):
@@ -1347,6 +1468,12 @@ def without_string_text(code):
     return "".join(out)
 
 
+# 0.4 K5: Hidden Icons' tables land before their views (A1, A6, A7). While no app file declares
+# `typealias Controls = <table>` for one of these, "declared but no view or builder uses it" is skipped for it; every
+# other L15 check applies. Once a view declares the alias, the entry must go (reported below). R checks it is empty.
+L15_PENDING = set()
+
+
 def l15():
     problems = []
     controls_dir = "Sources/SnapticKit/Controls"
@@ -1391,7 +1518,17 @@ def l15():
                 if lit not in tables[table]:
                     problems.append(f"{p}: L15 ControlID(\"{lit}\") is not in {table}")
                 used.setdefault(table, set()).add(lit)
+    aliased = set()
+    for p in APP:
+        aliased.update(re.findall(r"typealias\s+Controls\s*=\s*(\w+)", TEXT[p]))
+    for table in sorted(L15_PENDING):
+        if table in aliased:
+            problems.append(f"scripts/lint03.py: L15 {table} has a view now; remove it from L15_PENDING")
+        elif table not in tables:
+            problems.append(f"scripts/lint03.py: L15 L15_PENDING names {table}, which is no table")
     for table, ids in tables.items():
+        if table in L15_PENDING and table not in aliased:
+            continue
         for i in ids:
             if i not in used.get(table, set()):
                 problems.append(f"{controls_dir}/{table}.swift: L15 {i} is declared but no view or builder uses it")

@@ -75,3 +75,95 @@ import SnapticKit
         if changed { onChange?() }
     }
 }
+
+/// The second watcher (PLAN 0.4 §4.10, P-15, A3): other menu bar hiders, only while Hidden Icons runs. A running app
+/// matches a `KnownMenuBarHiders` row by bundle id **and** its code-signing team, read from the running process off
+/// main and only for a listed bundle id (a renamed app with a listed id but another team is not paused for).
+/// `pausedFor` is the hider Hidden Icons pauses for under the policy; `onChange` runs when it changes.
+@MainActor final class MenuBarHiderWatcher {
+    private(set) var pausedFor: KnownMenuBarHider?
+    var onChange: ((KnownMenuBarHider?) -> Void)?
+
+    var policy: IconsOtherHiderPolicy = .pause {
+        didSet { if policy != oldValue { recompute() } }
+    }
+
+    private var tokens: [NSObjectProtocol] = []
+    private var running: [IconsRunningApp] = []
+    private var generation: UInt64 = 0
+    private let queue = DispatchQueue(label: "com.snaptic.icons.hiders", qos: .utility)
+
+    init() {}
+
+    var isStarted: Bool { !tokens.isEmpty }
+
+    func start() {
+        guard tokens.isEmpty else { return }
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+            tokens.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.scan() }
+            })
+        }
+        scan()
+    }
+
+    func stop() {
+        let center = NSWorkspace.shared.notificationCenter
+        for token in tokens { center.removeObserver(token) }
+        tokens = []
+        generation &+= 1
+        running = []
+        recompute()
+    }
+
+    /// Lists the running listed-id apps on main, reads their teams on `queue`, and decides on main.
+    func scan() {
+        guard isStarted else { return }
+        generation &+= 1
+        let gen = generation
+        let candidates: [(pid: pid_t, bundleID: String)] = NSWorkspace.shared.runningApplications.compactMap { app in
+            guard !app.isTerminated, let id = app.bundleIdentifier, KnownMenuBarHiders.candidate(bundleID: id) else {
+                return nil
+            }
+            return (app.processIdentifier, id)
+        }
+        guard !candidates.isEmpty else {
+            apply([], gen)
+            return
+        }
+        queue.async { [weak self] in
+            let apps = candidates.map { IconsRunningApp(bundleID: $0.bundleID, teamID: Self.teamID(pid: $0.pid)) }
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.apply(apps, gen) } }
+        }
+    }
+
+    private func apply(_ apps: [IconsRunningApp], _ gen: UInt64) {
+        guard gen == generation else { return }
+        running = apps
+        recompute()
+    }
+
+    private func recompute() {
+        let now = IconsHiderPause.pausedFor(policy: policy, running: running)
+        guard now != pausedFor else { return }
+        pausedFor = now
+        EventLog.shared.record(.modules, "Icons: other hider \(now.map { "running: \($0.name)" } ?? "none")")
+        onChange?(now)
+    }
+
+    /// The team a running process is validly signed by, or nil (unsigned, ad hoc, invalid, or gone).
+    nonisolated private static func teamID(pid: pid_t) -> String? {
+        var code: SecCode?
+        let attributes = [kSecGuestAttributePid: NSNumber(value: pid)] as CFDictionary
+        guard SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess, let code,
+              SecCodeCheckValidity(code, [], nil) == errSecSuccess else { return nil }
+        var staticCode: SecStaticCode?
+        guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode else { return nil }
+        var info: CFDictionary?
+        guard SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation),
+                                            &info) == errSecSuccess,
+              let dict = info as? [String: Any] else { return nil }
+        return dict[kSecCodeInfoTeamIdentifier as String] as? String
+    }
+}

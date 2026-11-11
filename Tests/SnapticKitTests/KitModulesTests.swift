@@ -37,14 +37,17 @@ final class KitModulesTests: XCTestCase {
     }
 
     func testModuleStartOrder() {
-        XCTAssertEqual(ModuleID.allCases, [.windowSwitcher, .displays, .awake])
+        XCTAssertEqual(ModuleID.allCases, [.windowSwitcher, .displays, .awake, .hiddenIcons])
         XCTAssertEqual(ModuleID.awake.rawValue, "awake")
+        XCTAssertEqual(ModuleID.hiddenIcons.rawValue, "hiddenIcons")
     }
 
     func testMenuPresenceAllowedPerModule() {
         XCTAssertEqual(MenuPresence.allowed(for: .displays), [.ownIcon, .ownIconWhenActive, .inSnapticMenu, .hidden])
         XCTAssertEqual(MenuPresence.allowed(for: .awake), MenuPresence.allCases)
         XCTAssertFalse(MenuPresence.allowed(for: .windowSwitcher).contains(.ownIconWhenActive))
+        // 0.4: the arrow is Hidden Icons' own icon, so it has no separate one (H2).
+        XCTAssertEqual(MenuPresence.allowed(for: .hiddenIcons), [.inSnapticMenu, .hidden])
         XCTAssertEqual(MenuPresence.allCases.map(\.rawValue), ["ownIcon", "ownIconWhenActive", "inSnapticMenu", "hidden"])
     }
 

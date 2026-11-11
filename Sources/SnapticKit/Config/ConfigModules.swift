@@ -101,9 +101,10 @@ package enum OtherAppsPolicy: String, Codable, CaseIterable, Sendable {
 }
 
 /// First-run onboarding progress (PLAN §3.7). Saved after every step, so onboarding
-/// resumes after a relaunch (permission grants on macOS 27 often need one).
+/// resumes after a relaunch (permission grants on macOS 27 often need one). 0.4 H5: `arrange` (Arrange Your Icons)
+/// shows while Hidden Icons is on; 0.3.4 decodes it as `.done` (lossy), so a downgrade mid-onboarding is safe.
 package enum OnboardingStep: String, Codable, CaseIterable, Sendable {
-    case welcome, modules, displays, permissions, done
+    case welcome, modules, displays, arrange, permissions, done
 }
 
 /// One page of onboarding (0.3.1 E1a): a saved step, or Keep Snaptic Up to Date, which sits before Done without a
@@ -205,7 +206,7 @@ package struct ModulesConfig: ConfigModel {
         for (id, prefs) in c.modules.values {
             var p = prefs
             if !Self.isCuratedSymbol(p.symbol) { p.symbol = "" }
-            if !MenuPresence.allowed(for: id).contains(p.presence) { p.presence = .ownIcon }
+            if !MenuPresence.allowed(for: id).contains(p.presence) { p.presence = MenuPresence.fallback(for: id) }
             c.modules[id] = p
         }
         c.newModuleCards = newModuleCards.uniqued()
@@ -218,12 +219,13 @@ package struct ModulesConfig: ConfigModel {
 
     // MARK: Defaults
 
-    /// A fresh install, per module: every module on; Window Switcher and Displays in the shared menu, Awake shown
-    /// when active (0.3 C11).
+    /// A fresh install, per module: Window Switcher and Displays on in the shared menu, Awake on and shown when
+    /// active (0.3 C11), Hidden Icons off with a Snaptic-menu section (0.4 H2, H10).
     package static func defaultPreferences(_ id: ModuleID) -> ModulePreferences {
         switch id {
         case .windowSwitcher, .displays: return ModulePreferences(enabled: true, presence: .inSnapticMenu)
         case .awake: return ModulePreferences(enabled: true, presence: .ownIconWhenActive)
+        case .hiddenIcons: return ModulePreferences(enabled: false, presence: .inSnapticMenu)
         }
     }
 
@@ -272,13 +274,15 @@ package struct ModulesConfig: ConfigModel {
             showNewDisplaysCard = false
             newModuleCards.removeAll { $0 == .displays }
         }
+        // 0.4 H10: turning Hidden Icons on clears its "New: Hidden Icons" card.
+        if id == .hiddenIcons && enabled { newModuleCards.removeAll { $0 == .hiddenIcons } }
     }
 
     package func presence(_ id: ModuleID) -> MenuPresence { preferences(id).presence }
 
     package mutating func setPresence(_ presence: MenuPresence, for id: ModuleID) {
         var p = preferences(id)
-        p.presence = MenuPresence.allowed(for: id).contains(presence) ? presence : .ownIcon
+        p.presence = MenuPresence.allowed(for: id).contains(presence) ? presence : MenuPresence.fallback(for: id)
         modules[id] = p
     }
 
@@ -316,9 +320,16 @@ package struct ModulesConfig: ConfigModel {
 
     package var needsOnboarding: Bool { onboarding != .done }
 
-    /// The steps shown, in order: the Displays step only while Displays is on.
+    /// The steps shown, in order: the Displays step only while Displays is on, Arrange Your Icons only while Hidden
+    /// Icons is on (0.4 H5).
     package func onboardingSteps() -> [OnboardingStep] {
-        OnboardingStep.allCases.filter { $0 != .displays || isEnabled(.displays) }
+        OnboardingStep.allCases.filter { step in
+            switch step {
+            case .displays: return isEnabled(.displays)
+            case .arrange: return isEnabled(.hiddenIcons)
+            case .welcome, .modules, .permissions, .done: return true
+            }
+        }
     }
 
     /// The step after `step` (`.done` after the last one).
@@ -328,9 +339,14 @@ package struct ModulesConfig: ConfigModel {
         return steps[i + 1]
     }
 
-    /// A saved step that no longer applies (Displays turned off meanwhile) moves on.
+    /// A saved step that no longer applies (Displays or Hidden Icons turned off meanwhile) moves on to the next one
+    /// that does.
     package var resumeStep: OnboardingStep {
-        onboardingSteps().contains(onboarding) ? onboarding : step(after: .modules)
+        let steps = onboardingSteps()
+        guard !steps.contains(onboarding) else { return onboarding }
+        let all = OnboardingStep.allCases
+        let after = all.firstIndex(of: onboarding).map { all[($0 + 1)...] } ?? []
+        return after.first(where: steps.contains) ?? step(after: .modules)
     }
 
     /// E1a: the pages in order (the progress dots and "Step 5 of 6"), with the updates page before Done when
@@ -402,8 +418,10 @@ extension ModulesConfig {
     /// Every icon that could show is the Displays icon set to "Hide the icon when no
     /// external display is connected": without an external display nothing shows in the
     /// menu bar (General → Menu warns). "Everything hidden" has its own notice.
-    /// Awake shown only when active doesn't count: it isn't there at rest either.
+    /// Awake shown only when active doesn't count: it isn't there at rest either. Hidden Icons' arrow always shows
+    /// while it's on, whatever its presence (0.4 H2), so then the bar is never empty.
     package var iconsNeedExternalDisplay: Bool {
+        guard !isEnabled(.hiddenIcons) else { return false }
         let shown = enabledModules.filter { id in
             presence(id) != .hidden && !(id == .awake && presence(id) == .ownIconWhenActive)
         }
@@ -452,6 +470,22 @@ extension ModulesConfig {
         c.modules[.awake] = Self.awakeUpgradePreferences
         // C7: upgraders see "New: Awake" on General (hidden by H's card rules once M1 migrated or Awake is on).
         if !c.newModuleCards.contains(.awake) { c.newModuleCards.append(.awake) }
+        return c
+    }
+
+    /// 0.4 H10, §4.16: an upgrader with Hidden Icons off gets its "New: Hidden Icons" card, once. Runs iff
+    /// `iconsCard.v1` is absent, then records it whatever it decided. `upgrader`: module settings existed before this
+    /// launch or an earlier version ran (`MigrationLedger.isV031Upgrader`). Someone still in first-run onboarding
+    /// gets no card (the modules step offers Hidden Icons), and neither does a fresh install, whose first launch
+    /// records the marker. Pure; ModuleHost runs it.
+    package func insertingIconsCard(upgrader: Bool, ledger: inout MigrationLedger) -> ModulesConfig {
+        guard !ledger.has(.iconsCard) else { return self }
+        ledger.record(.iconsCard)
+        guard upgrader, !needsOnboarding, !isEnabled(.hiddenIcons), !newModuleCards.contains(.hiddenIcons) else {
+            return self
+        }
+        var c = self
+        c.newModuleCards.append(.hiddenIcons)
         return c
     }
 }

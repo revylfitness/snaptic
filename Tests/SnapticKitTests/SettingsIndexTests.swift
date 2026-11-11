@@ -194,6 +194,8 @@ final class SettingsIndexTests: XCTestCase {
         let tables = ControlRegistry.tables
         XCTAssertEqual(SettingsIndex.masterSwitch(root: SettingsRootID.windowSwitcher, in: tables), "switcher.page.header")
         XCTAssertEqual(SettingsIndex.masterSwitch(root: SettingsRootID.displays, in: tables), "displays.root.useDisplays")
+        XCTAssertEqual(SettingsIndex.masterSwitch(root: SettingsRootID.hiddenIcons, in: tables),
+                       "icons.page.useHiddenIcons")
         XCTAssertNil(SettingsIndex.masterSwitch(root: SettingsRootID.general, in: tables))
         XCTAssertNil(SettingsIndex.masterSwitch(root: SettingsRootID.permissions, in: tables))
     }

@@ -144,6 +144,7 @@ package enum SettingsIndex {
         "displays.connection": L("Connection"),
         "displays.matchTextSize": L("Match Text Size"),
         "displays.virtual.editor": L("Virtual Display"),
+        "icons.sections": L("Sections"),
     ]
 
     /// A route's or sheet's title: the table, then "….advanced" → Advanced, "….shortcuts" → Keyboard Shortcuts.

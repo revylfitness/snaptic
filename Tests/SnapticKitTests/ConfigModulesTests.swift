@@ -12,7 +12,10 @@ final class ConfigModulesTests: XCTestCase {
 
     func testFreshDefaultsEnableEveryModuleInTheSharedMenu() {
         let c = ModulesConfig()
-        XCTAssertEqual(c.enabledModules, ModuleID.allCases)
+        // 0.4: Hidden Icons is off until the user turns it on (H2).
+        XCTAssertEqual(c.enabledModules, ModuleID.allCases.filter { $0 != .hiddenIcons })
+        XCTAssertFalse(c.isEnabled(.hiddenIcons))
+        XCTAssertEqual(c.presence(.hiddenIcons), .inSnapticMenu)
         // 0.3: per-id defaults; Awake is shown when active (C11), so placement(.awake) is no longer .shared.
         for id in [ModuleID.windowSwitcher, .displays] { XCTAssertEqual(c.placement(id), .shared) }
         XCTAssertEqual(c.presence(.awake), .ownIconWhenActive)
@@ -125,6 +128,41 @@ final class ConfigModulesTests: XCTestCase {
         XCTAssertEqual(c.resumeStep, .displays)
         c.setEnabled(false, for: .displays)
         XCTAssertEqual(c.resumeStep, .permissions)
+    }
+
+    /// 0.4 H5: Arrange Your Icons follows Displays (when shown) while Hidden Icons is on.
+    func testOnboardingStepsIncludeArrangeWhileHiddenIconsIsOn() {
+        var c = ModulesConfig()
+        XCTAssertFalse(c.onboardingSteps().contains(.arrange))
+        c.setEnabled(true, for: .hiddenIcons)
+        XCTAssertEqual(c.onboardingSteps(), [.welcome, .modules, .displays, .arrange, .permissions, .done])
+        XCTAssertEqual(c.step(after: .displays), .arrange)
+        XCTAssertEqual(c.step(after: .arrange), .permissions)
+        c.setEnabled(false, for: .displays)
+        XCTAssertEqual(c.step(after: .modules), .arrange)
+        XCTAssertEqual(c.onboardingPages(includesUpdates: true),
+                       [.step(.welcome), .step(.modules), .step(.arrange), .step(.permissions), .updates, .step(.done)])
+    }
+
+    /// A saved step that no longer applies moves on to the next step that does, never back.
+    func testResumeMovesPastArrangeOnceHiddenIconsIsOff() {
+        var c = ModulesConfig()
+        c.setEnabled(true, for: .hiddenIcons)
+        c.onboarding = .arrange
+        XCTAssertEqual(c.resumeStep, .arrange)
+        c.setEnabled(false, for: .hiddenIcons)
+        XCTAssertEqual(c.resumeStep, .permissions)
+        c.setEnabled(true, for: .hiddenIcons)
+        c.onboarding = .displays
+        c.setEnabled(false, for: .displays)
+        XCTAssertEqual(c.resumeStep, .arrange)
+    }
+
+    /// `arrange` round-trips; 0.3.4 reads it as an unknown step, i.e. `.done` (ConfigIconsTests' downgrade test).
+    func testArrangeStepRoundTrips() throws {
+        var c = ModulesConfig()
+        c.onboarding = .arrange
+        XCTAssertEqual(try roundTrip(c).onboarding, .arrange)
     }
 
     /// r1 U6: the updates page is in the run's pages whenever the run includes it, answered or not, so Done keeps
@@ -280,7 +318,7 @@ final class ConfigModulesTests: XCTestCase {
         XCTAssertTrue(stored.needsOnboarding)
         XCTAssertEqual(stored.resumeStep, .welcome)
         XCTAssertFalse(stored.showNewDisplaysCard)
-        XCTAssertEqual(stored.enabledModules, ModuleID.allCases)
+        XCTAssertEqual(stored.enabledModules, ModuleID.allCases.filter { $0 != .hiddenIcons })
     }
 
     func testFirstRunOfAnEarlierUserIsTheUpgrade() {
@@ -313,6 +351,10 @@ final class ConfigModulesTests: XCTestCase {
         var p = c.preferences(.displays)
         p.hideWithoutExternalDisplay = true
         c.modules[.displays] = p
+        XCTAssertTrue(c.iconsNeedExternalDisplay)
+        c.setEnabled(true, for: .hiddenIcons)
+        XCTAssertFalse(c.iconsNeedExternalDisplay)       // 0.4: Hidden Icons' arrow always shows
+        c.setEnabled(false, for: .hiddenIcons)
         XCTAssertTrue(c.iconsNeedExternalDisplay)
         c.setPlacement(.ownIcon, for: .windowSwitcher)
         XCTAssertFalse(c.iconsNeedExternalDisplay)       // the switcher's icon still shows
@@ -559,5 +601,60 @@ final class ConfigModulesTests: XCTestCase {
         XCTAssertFalse(plan.awakeCompactInShared)
         XCTAssertFalse(plan.sharedActiveGlyph)
         XCTAssertFalse(plan.sharedFooterInOwnMenus)
+    }
+
+    // MARK: Hidden Icons card (0.4 H10, marker iconsCard.v1)
+
+    func testIconsCardGoesToUpgradersOnce() {
+        var ledger = MigrationLedger()
+        var c = ModulesConfig()
+        c.onboarding = .done
+        c.newModuleCards = [.awake]
+        c = c.insertingIconsCard(upgrader: true, ledger: &ledger)
+        XCTAssertEqual(c.newModuleCards, [.awake, .hiddenIcons])
+        XCTAssertTrue(ledger.has(.iconsCard))
+        // Dismissed, then a later launch: the marker keeps it gone.
+        c = GeneralCardRules.dismissing(.hiddenIcons, in: c)
+        XCTAssertEqual(c.insertingIconsCard(upgrader: true, ledger: &ledger).newModuleCards, [.awake])
+    }
+
+    func testIconsCardSkipsFreshInstallsAcrossLaunches() {
+        var ledger = MigrationLedger()
+        var c = ModulesConfig.firstRun(launchedBefore: false)
+        c = c.insertingIconsCard(upgrader: false, ledger: &ledger)
+        XCTAssertFalse(c.newModuleCards.contains(.hiddenIcons))
+        XCTAssertTrue(ledger.has(.iconsCard))
+        // The second launch counts as an upgrader (module settings now exist) but the marker is recorded.
+        c.onboarding = .done
+        XCTAssertFalse(c.insertingIconsCard(upgrader: true, ledger: &ledger).newModuleCards.contains(.hiddenIcons))
+    }
+
+    func testIconsCardSkipsOnboardingAndHiddenIconsOn() {
+        var midOnboarding = ModulesConfig()
+        midOnboarding.onboarding = .modules
+        var ledger = MigrationLedger()
+        XCTAssertFalse(midOnboarding.insertingIconsCard(upgrader: true, ledger: &ledger)
+            .newModuleCards.contains(.hiddenIcons))
+        XCTAssertTrue(ledger.has(.iconsCard))
+        var on = ModulesConfig()
+        on.onboarding = .done
+        on.setEnabled(true, for: .hiddenIcons)
+        var other = MigrationLedger()
+        XCTAssertFalse(on.insertingIconsCard(upgrader: true, ledger: &other).newModuleCards.contains(.hiddenIcons))
+        // Already stored (a restored backup): never twice.
+        var stored = ModulesConfig()
+        stored.onboarding = .done
+        stored.newModuleCards = [.hiddenIcons]
+        var third = MigrationLedger()
+        XCTAssertEqual(stored.insertingIconsCard(upgrader: true, ledger: &third).newModuleCards, [.hiddenIcons])
+    }
+
+    /// A 0.1 user without module settings (`upgradeDefaults`, onboarding skipped) is an upgrader too.
+    func testIconsCardReachesZeroOneUpgraders() {
+        var ledger = MigrationLedger()
+        let c = ModulesConfig.firstRun(launchedBefore: true).insertingIconsCard(upgrader: true, ledger: &ledger)
+        XCTAssertTrue(c.newModuleCards.contains(.hiddenIcons))
+        XCTAssertEqual(GeneralCardRules.visible(c.newModuleCards, enabled: Set(c.enabledModules), blocked: [])
+            .last, .hiddenIcons)
     }
 }

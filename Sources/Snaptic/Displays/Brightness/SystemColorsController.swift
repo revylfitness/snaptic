@@ -86,7 +86,7 @@ import SnapticShims
             alert.informativeText = L("While a custom color profile is active, color-table dimming and color adjustments move to overlay dimming or turn off on all displays (a macOS black-screen bug). You can override this in Color settings.")
             alert.addButton(withTitle: L("Use Profile"))
             alert.addButton(withTitle: L("Cancel"))
-            NSApp.activate(ignoringOtherApps: true)
+            ActivationPolicyController.shared.activate(.alert, ignoringOtherApps: true)
             guard alert.runModal() == .alertFirstButtonReturn else { return }
         }
         if !context.colorSync.setProfile(profile?.url, for: key) {

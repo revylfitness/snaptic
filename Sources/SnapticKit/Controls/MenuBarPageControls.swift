@@ -1,6 +1,6 @@
 import Foundation
 
-// The Menu Bar page's controls (owner: M; PLAN 0.3 §4.3 Menu Bar, N7): one presence pop-up per module with its icon
+// The Menu Bar page's controls (owner: M; PLAN 0.3 §4.3 Menu Bar, N7; 0.4 §4.17): one presence pop-up per module with its icon
 // tiles, Awake's Time and Icon (and, 0.3.3, lid-closed mode's switch with its note), the hidden-icon warnings, the
 // Displays menu's Style and scrolling, Customize Displays Menu…, the Snaptic icon and the footer's Restore Menu Bar
 // Defaults….
@@ -41,6 +41,9 @@ package enum MenuBarPageControls: ControlTable {
                     keys: ["features.lidClosed"],
                     search: search("Keep Awake with the Lid Closed in the Awake menu",
                                    ["lid", "clamshell", "lid-closed mode", "Awake menu"])),
+        // 0.4 A7: Hidden Icons' row, Arrow and Snaptic Menu / Arrow Only (§4.17; its arrow is always in the bar).
+        ControlSpec("menubar.page.iconsPresence", .setting, when: [.module(.hiddenIcons)], keys: ["modules.*.presence"],
+                    search: search("Hidden Icons in the Snaptic menu", ["arrow", "hidden icons list", "arrow only"])),
         // r1 P1-2: the writable-bundle note's Learn More…, as under the Awake page's switch.
         ControlSpec("menubar.page.awakeLidBundleLearnMore", .statusAction,
                     when: [.module(.awake), .hardware(.battery), .parentOn(ControlID("menubar.page.awakeLidClosed")),

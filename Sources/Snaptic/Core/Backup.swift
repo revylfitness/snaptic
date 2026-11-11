@@ -9,6 +9,8 @@ import UniformTypeIdentifiers
 /// Awake (0.3 §3.6) goes through `AwakeConfig.exportable(includeTriggers:)` and `KitBackup.importAwake`
 /// (`importable(current:)` last): no Drive Alive, pointer movement, recent apps or launch session either way, rules
 /// only when the user ticks them, guards only stricter, and every safety-related change listed first in full.
+/// Hidden Icons (0.4 H7) goes through `KitBackup.iconsSectionData` and `importIcons`: its settings without `arranged`,
+/// never the apps store (bundle ids, choices, new-icon list) or icon positions.
 /// Picked files follow §4.10(6): O_NONBLOCK|O_NOFOLLOW, a regular file, ≤ 1 MB, read off main.
 @MainActor enum Backup {
     static let fileExtension = "snapticbackup"
@@ -27,7 +29,7 @@ import UniformTypeIdentifiers
         panel.nameFieldStringValue = "Snaptic Settings." + fileExtension
         panel.allowedContentTypes = [UTType(filenameExtension: fileExtension) ?? .json]
         panel.canCreateDirectories = true
-        NSApp.activate()
+        ActivationPolicyController.shared.activate(.savePanel)
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try document.write(to: url, options: [.atomic])
@@ -47,6 +49,7 @@ import UniformTypeIdentifiers
         if let data = KitBackup.awakeSectionData(host.awakeStore.value, includeTriggers: includeAwakeRules) {
             sections[KitBackup.awakeSection] = data
         }
+        if let data = KitBackup.iconsSectionData(host.iconsStore.value) { sections[KitBackup.iconsSection] = data }
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
         let created = ISO8601DateFormatter().string(from: Date())
         return KitBackup.makeDocument(sections: sections, created: created, appVersion: version)
@@ -60,7 +63,7 @@ import UniformTypeIdentifiers
         panel.allowedContentTypes = [UTType(filenameExtension: fileExtension) ?? .json, .json]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        NSApp.activate()
+        ActivationPolicyController.shared.activate(.savePanel)
         guard panel.runModal() == .OK, let url = panel.url else { return }
         let path = url.path
         Task { @MainActor [weak host] in
@@ -114,6 +117,7 @@ import UniformTypeIdentifiers
         var newModules: ModulesConfig?
         var newDisplays: DisplaysConfig?
         var newAwake: AwakeConfig?
+        var newIcons: IconsConfig?
 
         /// Builds the imported value from the section and the current JSON; collects the preview lines, which compare
         /// the current value with exactly what would be stored. Nil when nothing usable.
@@ -142,6 +146,10 @@ import UniformTypeIdentifiers
         let currentAwake = host.awakeStore.value
         newAwake = prepare(KitBackup.awakeSection, label: L("Awake: "), current: currentAwake) { imported, _ in
             KitBackup.importAwake(current: currentAwake, imported: imported)
+        }
+        let currentIcons = host.iconsStore.value
+        newIcons = prepare(KitBackup.iconsSection, label: L("Hidden Icons: "), current: currentIcons) { imported, _ in
+            KitBackup.importIcons(current: currentIcons, imported: imported)
         }
         let total = safety.count + other.count
         guard total > 0 else {
@@ -174,12 +182,13 @@ import UniformTypeIdentifiers
         }
         alert.addButton(withTitle: L("Import"))
         alert.addButton(withTitle: L("Cancel"))
-        NSApp.activate()
+        ActivationPolicyController.shared.activate(.alert)
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         if let newSwitcher { host.switcherSettings.config = newSwitcher }
         if let newModules { host.modulesStore.value = newModules }
         if let newDisplays { host.displaysStore.value = newDisplays }
         if let newAwake { host.awakeStore.value = newAwake }
+        if let newIcons { host.iconsStore.value = newIcons }
         EventLog.shared.record(.modules, "Settings imported: \(total) changes, \(safety.count) safety-related")
         host.toasts.show(L("Settings imported."))
     }

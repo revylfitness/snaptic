@@ -8,8 +8,16 @@ import SnapticKit
 enum MenuPlacement {
     static let defaultSharedSymbol = MenuLayout.snapticSymbol
 
-    /// The Menu Bar page's presence pop-up (C2, Control Center wording; one option order for every module).
-    static func title(_ presence: MenuPresence) -> String {
+    /// The Menu Bar page's presence pop-up (C2, Control Center wording; one option order for every module). Hidden
+    /// Icons' arrow is always in the menu bar, so its two choices say what else shows (0.4 §4.17, H2).
+    static func title(_ presence: MenuPresence, for id: ModuleID? = nil) -> String {
+        if id == .hiddenIcons {
+            switch presence {
+            case .inSnapticMenu: return L("Arrow and Snaptic Menu")
+            case .hidden: return L("Arrow Only")
+            case .ownIcon, .ownIconWhenActive: break
+            }
+        }
         switch presence {
         case .ownIcon: return L("Always Show in Menu Bar")
         case .ownIconWhenActive: return L("Show When Active")
@@ -21,6 +29,8 @@ enum MenuPlacement {
     /// Help under a presence choice (§4.3 Menu Bar), when it needs one.
     static func help(_ presence: MenuPresence, for id: ModuleID) -> String? {
         switch (presence, id) {
+        case (_, .hiddenIcons):
+            return L("The arrow is always in the menu bar. Arrow and Snaptic Menu also lists hidden icons in the Snaptic menu, so you can open one without showing them all.")
         case (.ownIconWhenActive, .displays): return L("Shows the icon while an external display is connected.")
         case (.ownIconWhenActive, .awake): return L("Shows the icon while your Mac is being kept awake.")
         case (.hidden, _): return L("Use the keyboard shortcut or Settings to reach it.")

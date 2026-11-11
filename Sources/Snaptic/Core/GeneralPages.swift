@@ -111,13 +111,21 @@ private struct GeneralPageContent: View {
         }
     }
 
-    /// Turn On Awake / Turn On Displays turn the module on; Show Awake doesn't. Each opens the module's page.
+    /// Turn On Awake / Displays / Hidden Icons turn the module on; Show Awake doesn't. Each opens the module's page;
+    /// Turn On Hidden Icons also presents How to Arrange (0.4 §4.16), on the next turn because `go(to:)` clears
+    /// the open sheet.
     private func act(on card: NewModuleCard) {
         let id = GeneralCardRules.module(of: card)
         var config = GeneralCardRules.dismissing(card, in: modules.value)
         if card != .awakeMigrated { config.setEnabled(true, for: id) }
         modules.value = config
         shell.go(to: SettingsLocation(root: id.rawValue))
+        if card == .hiddenIcons {
+            let shell = shell
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { shell.openSheet = IconsPageControls.arrangeSheet }
+            }
+        }
     }
 
     private func dismiss(_ card: NewModuleCard) {
@@ -243,6 +251,7 @@ private struct NewModuleCardView: View {
         case .displays: return L("New: Displays")
         case .awake: return L("New: Awake")
         case .awakeMigrated: return L("Your display sleep setting moved to Awake.")
+        case .hiddenIcons: return L("New: Hidden Icons")
         }
     }
 
@@ -251,6 +260,7 @@ private struct NewModuleCardView: View {
         case .displays: return L("Brightness, resolution, and arrangement for every display.")
         case .awake: return L("Keep your Mac awake for a while, or whenever you choose.")
         case .awakeMigrated: return L("Awake now keeps your Mac awake while the displays you chose are connected.")
+        case .hiddenIcons: return L("Hide the menu bar icons you don’t need behind an arrow, and open them from the Snaptic menu.")
         }
     }
 
@@ -259,6 +269,7 @@ private struct NewModuleCardView: View {
         case .displays: return L("Turn On Displays")
         case .awake: return L("Turn On Awake")
         case .awakeMigrated: return L("Show Awake")
+        case .hiddenIcons: return L("Turn On Hidden Icons")
         }
     }
 

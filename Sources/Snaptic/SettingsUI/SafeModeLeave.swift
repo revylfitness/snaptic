@@ -30,7 +30,7 @@ import SnapticKit
 /// closes when it resigns key).
 @MainActor enum SettingsAlert {
     static func present(_ alert: NSAlert, finish: @escaping @MainActor (NSApplication.ModalResponse) -> Void) {
-        NSApp.activate()
+        ActivationPolicyController.shared.activate(.alert)
         if let window = NSApp.keyWindow, window.isVisible, window.attachedSheet == nil, !(window is NSPanel) {
             alert.beginSheetModal(for: window) { response in
                 MainActor.assumeIsolated { finish(response) }

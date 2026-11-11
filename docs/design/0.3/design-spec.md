@@ -586,7 +586,7 @@ Rules:
 - Toggled items use a checkmark or a changeable label ("Turn Keep Awake Off") [S12].
 - Use submenus sparingly, one level deep, with at most about five items [S12].
 - Add an ellipsis only when more input follows.
-- Menu item symbols: macOS 26 put icons on nearly every item. macOS 27 hides symbol images by default, but only for apps linked against the 26 SDK or later, via `NSMenuItem.preferredImageVisibility` [S13][S14]. Our 15-SDK build will **show** any symbol we attach, so attach none. The exception is device rows, where the image identifies the device (display type). HIG: icons go on all items in a group or none [S12].
+- Menu item symbols: macOS 26 put icons on nearly every item. macOS 27 hides symbol images by default, but only for apps linked against the 26 SDK or later, via `NSMenuItem.preferredImageVisibility` [S13][S14]. Our 15-SDK build will **show** any symbol we attach, so attach none. The exceptions are device rows, where the image identifies the device (display type), and, from 0.4, Hidden Icons’ hidden-icon rows (see Icons, below). HIG: icons go on all items in a group or none [S12].
 
 ### 3.4 Embedding SwiftUI in NSMenu
 
@@ -715,7 +715,8 @@ final class HostingMenuItem<Content: View>: NSMenuItem {
 - **Motion.** Crossfades of 0.15–0.2 s only. No springs or slides in Settings. With `\.accessibilityReduceMotion` on, skip animated scrolling and search-highlight pulses. A live brightness preview is feedback, not motion, so it stays.
 - **Icons.**
   - SF Symbols at a weight that matches adjacent text.
-  - In menus, use no images except device rows and, from 0.3.1, the tab bar's attention marks (see 3.3).
+  - In menus, use no images except device rows, from 0.3.1 the tab bar's attention marks (see 3.3), and from 0.4 Hidden Icons’ hidden-icon rows.
+  - Hidden-icon rows (0.4, in the Snaptic menu’s Hidden Icons section and the arrow’s menu) show the app’s icon at 16 pt, because the icon is how people recognize a menu bar item. Every row in the list has one (a generic app icon when the app has none), so the group follows HIG’s all-or-none rule. The rows around the list (Show Hidden Icons, Hide Icons Automatically, Hidden Icons Settings…) stay without images.
   - Sidebar tiles: 20 pt. Header tiles: 40 pt. Menu device tiles: 26 pt circles.
 
 ---

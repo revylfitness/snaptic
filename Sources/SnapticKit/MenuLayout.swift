@@ -101,6 +101,7 @@ extension ModuleID {
         case .windowSwitcher: return L("Switcher")
         case .displays: return L("Displays")
         case .awake: return L("Awake")
+        case .hiddenIcons: return L("Icons")
         }
     }
 }
@@ -281,7 +282,9 @@ extension ModulesConfig {
         }
         let live = enabled.filter { running.contains($0) }
         let governing = awakeActive && live.contains(.awake)
-        var shared = live.filter { $0 != .awake && presence($0) == .inSnapticMenu }
+        // 0.4 H2: Hidden Icons joins the Snaptic item only with Arrow and Snaptic Menu (an unsanitized value is read as
+        // its fallback, which is that); its arrow is never an own icon.
+        var shared = live.filter { $0 != .awake && effectivePresence($0) == .inSnapticMenu }
         let own = ownIconIDs(running: running, displaysActive: displaysActive)
 
         var custom: [ModuleID] = []
@@ -307,25 +310,35 @@ extension ModulesConfig {
         shared = ModuleID.allCases.filter { shared.contains($0) }   // start order
 
         let showShared = !shared.isEmpty
+        // The arrow stays in the menu bar while Hidden Icons runs, so Snaptic is never wholly hidden then (H2).
         let everythingHidden = enabled.allSatisfy { presence($0) == .hidden } && custom.isEmpty
+            && !live.contains(.hiddenIcons)
         return StatusItemPlan(shared: shared, ownIcon: own, showShared: showShared, noModulesEnabled: false,
                               everythingHidden: everythingHidden, custom: custom, awakeCompactInShared: compact,
                               sharedActiveGlyph: governing && showShared,
                               sharedFooterInOwnMenus: !showShared && !(own.isEmpty && custom.isEmpty))
     }
 
-    /// The modules (not Awake, which builds its own item) shown with an icon of their own now: running, Always Show,
-    /// or Show When Active while it is active (only Displays offers it; anywhere else it is an unsanitized value
-    /// and means an own icon). The plan's `ownIcon`, and what the Menu Bar page's Snaptic icon steps aside for.
+    /// The modules (not Awake, which builds its own item, nor Hidden Icons, whose arrow and dividers aren't module
+    /// icons, H2) shown with an icon of their own now: running, Always Show, or Show When Active while it is active
+    /// (only Displays offers it; anywhere else it is an unsanitized value and means an own icon). The plan's
+    /// `ownIcon`, and what the Menu Bar page's Snaptic icon steps aside for.
     package func ownIconIDs(running: Set<ModuleID>, displaysActive: Bool) -> [ModuleID] {
         enabledModules.filter { id in
-            guard id != .awake, running.contains(id) else { return false }
+            guard id != .awake, id != .hiddenIcons, running.contains(id) else { return false }
             switch presence(id) {
             case .ownIcon: return true
             case .ownIconWhenActive: return id != .displays || displaysActive
             case .inSnapticMenu, .hidden: return false
             }
         }
+    }
+
+    /// The presence the plan acts on: the stored one when the module offers it, otherwise its fallback (what
+    /// `sanitized()` would store).
+    package func effectivePresence(_ id: ModuleID) -> MenuPresence {
+        let p = presence(id)
+        return MenuPresence.allowed(for: id).contains(p) ? p : MenuPresence.fallback(for: id)
     }
 
     /// The plan with the Snaptic item's "shown at rest" memory resolved the way StatusMenu does it: the item counts

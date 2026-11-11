@@ -57,6 +57,8 @@ import SnapticKit
     }
 
     private func createItem() {
+        // 0.4 P-10: a first-time item lands right of the Hidden Icons arrow (Length only).
+        IconsItems.seedOwnItem(autosaveName: Self.autosaveName)
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.autosaveName = Self.autosaveName
         item.behavior = .removalAllowed

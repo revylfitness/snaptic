@@ -5,7 +5,7 @@ final class ConfigMigrationsTests: XCTestCase {
     func testIDs() {
         XCTAssertEqual(MigrationID.allCases.map(\.rawValue),
                        ["fromDisplays.v1", "fromDisplays.toast", "newModuleCards.v1", "menuShortcuts.v1", "showNits.v1",
-                        "powerSwitch.v1", "awakeUpgrade.v1", "v031Welcome.v1", "v031Welcome.done"])
+                        "powerSwitch.v1", "awakeUpgrade.v1", "v031Welcome.v1", "v031Welcome.done", "iconsCard.v1"])
     }
 
     /// 0.3.1 E1a: recorded once per install; new users are done with the card at once, upgraders aren't.
@@ -84,7 +84,7 @@ final class ConfigMigrationsTests: XCTestCase {
         var l = MigrationLedger()
         for id in MigrationID.allCases.reversed() { l.record(id) }
         let text = String(decoding: try JSONEncoder().encode(l), as: UTF8.self)
-        XCTAssertEqual(text, #"{"done":["awakeUpgrade.v1","fromDisplays.toast","fromDisplays.v1","menuShortcuts.v1","newModuleCards.v1","powerSwitch.v1","showNits.v1","v031Welcome.done","v031Welcome.v1"]}"#)
+        XCTAssertEqual(text, #"{"done":["awakeUpgrade.v1","fromDisplays.toast","fromDisplays.v1","iconsCard.v1","menuShortcuts.v1","newModuleCards.v1","powerSwitch.v1","showNits.v1","v031Welcome.done","v031Welcome.v1"]}"#)
     }
 
     func testSanitizedBoundsTheLedgerButKeepsKnownIDs() {

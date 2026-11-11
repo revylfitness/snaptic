@@ -417,6 +417,14 @@ final class MenuLayoutTests: XCTestCase {
             XCTAssertTrue(Set(p.ownIcon).isSubset(of: live))
             XCTAssertTrue(Set(p.shared).isDisjoint(with: p.ownIcon))
             XCTAssertFalse(p.ownIcon.contains(.awake))
+            // 0.4 H2: the arrow is never a module icon; Hidden Icons is in the Snaptic item exactly when it runs
+            // with Arrow and Snaptic Menu (an unsanitized presence reads as that), and Snaptic is never wholly
+            // hidden while it runs.
+            XCTAssertFalse(p.ownIcon.contains(.hiddenIcons))
+            XCTAssertFalse(p.custom.contains(.hiddenIcons))
+            XCTAssertEqual(p.shared.contains(.hiddenIcons),
+                           live.contains(.hiddenIcons) && c.presence(.hiddenIcons) != .hidden)
+            if live.contains(.hiddenIcons) { XCTAssertFalse(p.everythingHidden) }
             XCTAssertTrue(p.custom.allSatisfy { $0 == .awake } && Set(p.custom).isSubset(of: live))
             XCTAssertEqual(p.awakeCompactInShared, p.shared.contains(.awake))
             XCTAssertEqual(p.noModulesEnabled, c.enabledModules.isEmpty)
@@ -465,5 +473,69 @@ final class MenuLayoutTests: XCTestCase {
             XCTAssertNil(MenuTabs.tab(atKeyIndex: 0, tabs: tabs))
             XCTAssertNil(MenuTabs.tab(atKeyIndex: tabs.count + 1, tabs: tabs))
         }
+    }
+
+    // MARK: Hidden Icons (0.4 H2)
+
+    private func withIcons(_ presence: MenuPresence, base: ModulesConfig = ModulesConfig()) -> ModulesConfig {
+        var c = base
+        c.modules[.hiddenIcons] = ModulePreferences(enabled: true, presence: presence)
+        return c
+    }
+
+    func testHiddenIconsIsOffByDefaultAndChangesNothing() {
+        let p = plan(ModulesConfig())
+        XCTAssertFalse(p.shared.contains(.hiddenIcons))
+        XCTAssertEqual(p.shared, [.windowSwitcher, .displays, .awake])
+    }
+
+    func testArrowAndSnapticMenuJoinsTheSnapticItemInStartOrder() {
+        let p = plan(withIcons(.inSnapticMenu))
+        XCTAssertEqual(p.shared, [.windowSwitcher, .displays, .awake, .hiddenIcons])
+        XCTAssertEqual(p.ownIcon, [])
+        XCTAssertEqual(MenuTabs.tabs(plan: p).count, 4)
+    }
+
+    func testHiddenIconsAsTheOnlySharedModuleIsOneSectionWithoutTabs() {
+        let c = withIcons(.inSnapticMenu, base: config(switcher: .ownIcon, displays: .ownIcon, awake: .ownIcon))
+        let p = plan(c)
+        XCTAssertEqual(p.shared, [.hiddenIcons])
+        XCTAssertTrue(p.showShared)
+        XCTAssertEqual(MenuTabs.tabs(plan: p), [])
+        XCTAssertEqual(p.ownIcon, [.windowSwitcher, .displays])
+        XCTAssertFalse(p.sharedFooterInOwnMenus)
+    }
+
+    func testArrowOnlyKeepsHiddenIconsOutOfTheSnapticItem() {
+        let p = plan(withIcons(.hidden))
+        XCTAssertEqual(p.shared, [.windowSwitcher, .displays, .awake])
+        XCTAssertFalse(p.ownIcon.contains(.hiddenIcons))
+        // Everything else Don't Show: the arrow is still there, so Snaptic isn't wholly hidden.
+        let alone = plan(withIcons(.hidden, base: config(switcher: .hidden, displays: .hidden, awake: .hidden)))
+        XCTAssertEqual(alone.shared, [])
+        XCTAssertFalse(alone.showShared)
+        XCTAssertFalse(alone.everythingHidden)
+        XCTAssertFalse(alone.sharedFooterInOwnMenus, "the arrow's menu never carries the shared footer")
+        // Not running (a kill switch): back to the 0.3 rule.
+        let stopped = plan(withIcons(.hidden, base: config(switcher: .hidden, displays: .hidden, awake: .hidden)),
+                           running: [.windowSwitcher, .displays, .awake])
+        XCTAssertTrue(stopped.everythingHidden)
+    }
+
+    func testUnsanitizedHiddenIconsPresenceReadsAsItsFallback() {
+        for raw in [MenuPresence.ownIcon, .ownIconWhenActive] {
+            let c = withIcons(raw)
+            XCTAssertEqual(c.effectivePresence(.hiddenIcons), .inSnapticMenu)
+            let p = plan(c)
+            XCTAssertTrue(p.shared.contains(.hiddenIcons), "\(raw)")
+            XCTAssertFalse(p.ownIcon.contains(.hiddenIcons), "\(raw)")
+            XCTAssertEqual(p, plan(c.sanitized()), "\(raw)")
+        }
+        XCTAssertEqual(ModulesConfig().effectivePresence(.displays), ModulesConfig().presence(.displays))
+    }
+
+    func testHiddenIconsNotRunningIsInNoList() {
+        let p = plan(withIcons(.inSnapticMenu), running: [.windowSwitcher, .displays, .awake])
+        XCTAssertFalse(p.shared.contains(.hiddenIcons))
     }
 }

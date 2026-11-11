@@ -186,17 +186,26 @@ package enum KitControl {
         ControlVerbRule("awake pause", .low, offOnly: true),
     ]
 
+    /// 0.4 §4.14: the Hidden Icons verbs. `status` reads; the others only show or hide icons, so they're low and
+    /// may turn icons on as well as off.
+    package static let iconsVerbRules: [ControlVerbRule] = [
+        ControlVerbRule("icons show", .low),
+        ControlVerbRule("icons hide", .low),
+        ControlVerbRule("icons toggle", .low),
+        ControlVerbRule("icons status", .read),
+    ]
+
     /// The host's rule for a verb, if it has one.
     package static func verbRule(_ verb: String) -> ControlVerbRule? {
-        awakeVerbRules.first { $0.verb == verb }
+        awakeVerbRules.first { $0.verb == verb } ?? iconsVerbRules.first { $0.verb == verb }
     }
 
-    /// Security S-4 (0.3 §3.6): what dispatch may remember about a verb with a host rule (the Awake verbs). These
+    /// Security S-4 (0.3 §3.6): what dispatch may remember about an Awake verb. These
     /// are only counted, under a fixed key with no time (`EventLog` counts, shown in the Awake diagnostics section),
     /// so the exported `.control` log never holds a timeline of when scripts kept the Mac awake. Nil for every other
     /// verb: those get an ordinary `.control` line.
     package static func counterKey(verb: String, outcome: ControlVerbOutcome) -> String? {
-        guard let rule = verbRule(verb) else { return nil }
+        guard let rule = awakeVerbRules.first(where: { $0.verb == verb }) else { return nil }
         return "cli." + rule.verb.split(separator: " ").joined(separator: ".") + "." + outcome.rawValue
     }
 
@@ -353,11 +362,10 @@ package enum KitControl {
         return (best.verb, Array(words.dropFirst(best.count)))
     }
 
-    /// 0.2 verbs that are gone, with the answer the CLI gets (R5-12): `ControlCommandRegistry.dispatch` answers them
-    /// before lookup with exit 2 (usage), whatever modules run; help never lists them. Removed in 0.4.
-    package static let retiredVerbs: [String: String] = [
-        "prevent-sleep": "Moved to Awake: use “snaptic awake …”.",
-    ]
+    /// Verbs that are gone, with the answer the CLI gets (R5-12): `ControlCommandRegistry.dispatch` answers them
+    /// before lookup with exit 2 (usage), whatever modules run; help never lists them. Empty since 0.4 removed
+    /// `prevent-sleep` (0.4 §4.16): it is an unknown command now. The mechanism stays for the next retirement.
+    package static let retiredVerbs: [String: String] = [:]
 
     /// The retired verb `words` start with (verb words compare case-insensitively, like `match`), or nil.
     package static func retiredVerb(_ words: [String]) -> (verb: String, message: String)? {

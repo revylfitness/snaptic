@@ -18,6 +18,8 @@ import SnapticKit
     static let awakeStateKey = AwakeRuntimeSnapshot.key
     static let awakeHistoryKey = "SnapticAwakeHistoryV1"
     static let ledgerKey = MigrationLedger.key
+    static let iconsKey = IconsConfig.key
+    static let iconsAppsKey = IconsAppsState.key
     /// 0.3.1 E1a: `CFBundleVersion`, written at every launch so later versions can tell an upgrade apart. Navigation
     /// state: not backed up and not cleared by Reset.
     static let lastRunVersionKey = "SnapticLastRunVersion"
@@ -33,6 +35,8 @@ import SnapticKit
     let awakeStateStore: ConfigStore<AwakeRuntimeSnapshot>
     let awakeHistoryStore: ConfigStore<AwakeHistory>
     let ledgerStore: ConfigStore<MigrationLedger>
+    let iconsStore: ConfigStore<IconsConfig>
+    let iconsAppsStore: ConfigStore<IconsAppsState>
     let switcherSettings = AppSettings.shared
     let signals = HostSignals()
     /// Modules turned off by `Modules.disable.<id>`, read once at launch (N14).
@@ -49,6 +53,7 @@ import SnapticKit
     let switcher: WindowSwitcherModule
     let displays: DisplaysModule
     let awake: AwakeModule
+    let icons: IconsModule
 
     /// 0.3.1 B3.4: sleep left off by an earlier lid-closed session (host level: whatever Awake's state, also in Safe
     /// Mode). StatusMenu and IndicatorController draw its rows; T-lid-app fills it in.
@@ -117,11 +122,14 @@ import SnapticKit
         let awakeState = ConfigStore<AwakeRuntimeSnapshot>(key: Self.awakeStateKey)
         let awakeHistory = ConfigStore<AwakeHistory>(key: Self.awakeHistoryKey)
         let ledger = ConfigStore<MigrationLedger>(key: Self.ledgerKey)
+        let iconsConfig = ConfigStore<IconsConfig>(key: Self.iconsKey)
+        let iconsApps = ConfigStore<IconsAppsState>(key: Self.iconsAppsKey)
         let disabled = KillSwitches.read(domain, prefix: "Modules", as: ModuleID.self)
         let v031Upgrader = MigrationLedger.isV031Upgrader(modulesExisted: modulesExisted, launchedBefore: launchedBefore)
         let firstV031 = !ledger.value.has(.v031Welcome) && v031Upgrader
         let m1 = Self.runMigrations(modules: store, modulesExisted: modulesExisted, v031Upgrader: v031Upgrader,
-                                    displays: displaysConfig, awake: awakeConfig, ledger: ledger, toasts: toasts)
+                                    displays: displaysConfig, awake: awakeConfig, icons: iconsConfig,
+                                    iconsApps: iconsApps, ledger: ledger, toasts: toasts)
         isFirstV031Launch = firstV031
         if let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String {
             UserDefaults.standard.set(build, forKey: Self.lastRunVersionKey)
@@ -138,19 +146,42 @@ import SnapticKit
         awakeStateStore = awakeState
         awakeHistoryStore = awakeHistory
         ledgerStore = ledger
+        iconsStore = iconsConfig
+        iconsAppsStore = iconsApps
         disabledByDefaults = disabled
         switcher = WindowSwitcherModule()
         displays = DisplaysModule(config: displaysConfig)
         awake = AwakeModule(config: awakeConfig, state: awakeState, history: awakeHistory)
+        icons = IconsModule(config: iconsConfig, apps: iconsApps)
         m1Toast = Self.pendingM1Toast(m1, ledger: ledger, awake: awakeConfig)
+        // H9 (P-24): Snaptic doesn't activate over the Window Switcher panel.
+        let signals = self.signals
+        ActivationPolicyController.shared.switcherPanelOpen = { [weak signals] in signals?.switcherVisible ?? false }
+        wireIcons()
     }
 
-    /// The one-time migrations, in the R5-2 order: ledger → M3 (modules) → M4, M5, M10 (displays) → Awake inserted
-    /// off for upgraders (§2.13, once: marker `awakeUpgrade.v1`) → M1 → forced saves: modules, displays, Awake, then the ledger last (the commit
-    /// point; a crash before it re-runs migrations that are idempotent over what that run wrote). Returns M1's
-    /// result when it ran in this launch.
+    /// 0.4 A5: the facts Hidden Icons reads from the other modules and the status menu.
+    private func wireIcons() {
+        icons.displayTrialPending = { [weak self] in
+            guard let self, self.isRunning(.displays),
+                  let ctx = self.displays.pageEnvironment.context else { return false }
+            return ctx.transactions.hasPendingTrial || ctx.transactions.isBusy
+        }
+        icons.awakeHolding = { [weak self] in
+            guard let self, self.isRunning(.awake) else { return false }
+            return self.awake.runtime.assertion != .off || self.awake.runtime.lidMode != .off
+        }
+        icons.ownItems = { [weak self] in self?.statusMenu.iconsOwnItems ?? [] }
+    }
+
+    /// The one-time migrations, in the R5-2 order: ledger → M3 (modules) → M4, M5, M10 (displays) → Awake
+    /// inserted off for upgraders (§2.13, once: marker `awakeUpgrade.v1`) → 0.3.1 welcome → "New: Hidden Icons"
+    /// for upgraders (0.4 H10, once: marker `iconsCard.v1`) → M1 → forced saves: modules, displays, Awake, then the
+    /// ledger last (the commit point; a crash before it re-runs migrations that are idempotent over what that run
+    /// wrote). Returns M1's result when it ran in this launch.
     private static func runMigrations(modules: ConfigStore<ModulesConfig>, modulesExisted: Bool, v031Upgrader: Bool,
                                       displays: ConfigStore<DisplaysConfig>, awake: ConfigStore<AwakeConfig>,
+                                      icons: ConfigStore<IconsConfig>, iconsApps: ConfigStore<IconsAppsState>,
                                       ledger: ConfigStore<MigrationLedger>, toasts: ToastPresenter) -> AwakeMigrationResult? {
         var marks = ledger.value
         modules.value = modules.value.migrated(ledger: &marks)
@@ -159,6 +190,8 @@ import SnapticKit
         // 0.3.1 E1a: an upgrader's module settings existed before this launch (0.3.0 stored no last-run version), or
         // an earlier version ran (0.1 and 0.2 users skip onboarding; r2 C2-1).
         marks.recordV031Welcome(upgrader: v031Upgrader, canAsk: UpdaterController.gate == .ready)
+        // 0.4 H10: "New: Hidden Icons" for upgraders with it off, once (marker `iconsCard.v1`).
+        modules.value = modules.value.insertingIconsCard(upgrader: v031Upgrader, ledger: &marks)
         // M1 (§4.6, R5-12): G's pure migration over the raw 0.2 JSON; the marker is recorded whatever it found.
         var m1: AwakeMigrationResult?
         if !marks.has(.fromDisplays) {
@@ -184,6 +217,9 @@ import SnapticKit
         modules.save(force: true)
         displays.save(force: true)
         awake.save(force: true)
+        // 0.4 A5: Hidden Icons' stores, sanitized on load, written back before the ledger commits.
+        icons.save(force: true)
+        iconsApps.save(force: true)
         ledger.save(force: true)
         return m1
     }
@@ -370,6 +406,8 @@ import SnapticKit
         awakeStore.flush()
         awakeStateStore.flush()
         awakeHistoryStore.flush()
+        iconsStore.flush()
+        iconsAppsStore.flush()
         ledgerStore.flush()
         switcherSettings.flush()
         lifetime.end()
@@ -384,6 +422,7 @@ import SnapticKit
         case .windowSwitcher: return switcher
         case .displays: return displays
         case .awake: return awake
+        case .hiddenIcons: return icons
         }
     }
 
@@ -449,8 +488,9 @@ import SnapticKit
             setPresence: { [weak self] id, presence in self?.modulesStore.value.setPresence(presence, for: id) },
             hostSignals: signals,
             moduleDiagnostics: { [weak self] id in
-                guard let self, id == .awake, self.awake.state == .running else { return [] }
-                return self.awake.diagnosticsLines()
+                guard let self else { return [] }
+                let module = self.module(id)
+                return module.state == .running ? module.diagnosticsLines() : []
             })
         module(id).start(context)
         EventLog.shared.record(.modules, "Module \(id.rawValue) started")
@@ -521,11 +561,12 @@ import SnapticKit
             return .ok(rows.map { $0.0 + "\t" + $0.1 }.joined(separator: "\n"))
         }
         commands.register("module disable", policy: .low, offOnly: true, cliAllowed: true,
-                          summary: L("Turn a module off: module disable <windowSwitcher|displays|awake>"),
+                          summary: L("Turn a module off: module disable <windowSwitcher|displays|awake|hiddenIcons>"),
                           lifetime: lifetime) { [weak self] request, _ in
             guard let self else { return .failure(ControlExit.unavailable, "") }
             guard let name = request.arguments.first?.lowercased(),
-                  let id = ModuleID.allCases.first(where: { $0.rawValue.lowercased() == name || (name == "switcher" && $0 == .windowSwitcher) })
+                  let id = ModuleID.allCases.first(where: { $0.rawValue.lowercased() == name
+                      || (name == "switcher" && $0 == .windowSwitcher) || (name == "icons" && $0 == .hiddenIcons) })
             else { return .failure(ControlExit.notFound, L("No such module.")) }
             self.setEnabled(false, id)
             return .ok()
@@ -672,7 +713,12 @@ import SnapticKit
     func resetAllSettings() {
         let alert = NSAlert()
         alert.messageText = L("Reset all Snaptic settings?")
-        alert.informativeText = L("Every module, shortcut, menu, and display setting goes back to its default. Snaptic then restarts.")
+        var text = L("Every module, shortcut, menu, and display setting goes back to its default. Snaptic then restarts.")
+        // 0.4 A7: the arrow's position goes too, so say so when Hidden Icons is on or was arranged.
+        if modulesStore.value.isEnabled(.hiddenIcons) || iconsStore.value.arranged {
+            text += " " + IconsPageRules.resetAllNote
+        }
+        alert.informativeText = text
         alert.addButton(withTitle: L("Reset"))
         alert.addButton(withTitle: L("Cancel"))
         alert.alertStyle = .warning
@@ -686,6 +732,10 @@ import SnapticKit
         awakeStore.value = AwakeConfig().restoringDefaults()
         awakeStateStore.value = AwakeRuntimeSnapshot()
         awakeHistoryStore.value = AwakeHistory()
+        // 0.4 H6: both Hidden Icons stores (`arranged` too), the items' positions, visibility and the launch marker.
+        iconsStore.value = IconsConfig()
+        iconsAppsStore.value = IconsAppsState()
+        Self.removeIconsDefaults()
         switcherSettings.reset()
         // 0.3.1 E4: Sparkle's own keys go too (the update consent is asked again).
         for key in UpdateDefaultsKeys.all { UserDefaults.standard.removeObject(forKey: key) }
@@ -694,8 +744,21 @@ import SnapticKit
         awakeStore.flush()
         awakeStateStore.flush()
         awakeHistoryStore.flush()
+        iconsStore.flush()
+        iconsAppsStore.flush()
         switcherSettings.flush()
         EventLog.shared.record(.modules, "All settings reset")
         relauncher.relaunch(reason: "settings reset")
+    }
+
+    /// The status items' `NSStatusItem Preferred Position Snaptic.icons.*` / `Visible` keys and the launch marker.
+    private static func removeIconsDefaults() {
+        let prefixes = [IconsSeeding.keyPrefix + IconsItemRole.autosavePrefix,
+                        "NSStatusItem Visible " + IconsItemRole.autosavePrefix]
+        let defaults = UserDefaults.standard
+        for key in defaults.dictionaryRepresentation().keys where prefixes.contains(where: key.hasPrefix) {
+            defaults.removeObject(forKey: key)
+        }
+        defaults.removeObject(forKey: IconsModule.launchSeenKey)
     }
 }

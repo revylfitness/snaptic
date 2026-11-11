@@ -61,11 +61,12 @@ import SnapticKit
         SettingsRootID.windowSwitcher: ("rectangle.on.rectangle", .indigo),
         SettingsRootID.displays: ("sun.max.fill", .blue),
         SettingsRootID.awake: ("cup.and.saucer.fill", .orange),
+        SettingsRootID.hiddenIcons: ("eye.slash.fill", .teal),
         SettingsRootID.permissions: ("hand.raised.fill", .blue),
         SettingsRootID.about: ("info.circle.fill", .gray),
     ]
 
-    /// The seven roots in sidebar order: the host's pages and every module's `settingsRoot()` (rendered whether the
+    /// The eight roots in sidebar order: the host's pages and every module's `settingsRoot()` (rendered whether the
     /// module runs or not).
     func roots() -> [SettingsRoot] {
         guard let host else { return [] }

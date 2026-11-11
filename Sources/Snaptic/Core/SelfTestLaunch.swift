@@ -66,6 +66,22 @@ enum SelfTestLaunch {
         if host.modules.count != ModuleID.allCases.count { problems.append("ModuleHost has \(host.modules.count) modules") }
         if !host.runningModules.isEmpty { problems.append("a module started during the self-test") }
         if !host.ledgerStore.value.has(.v031Welcome) { problems.append("the 0.3.1 marker wasn't recorded") }
+        // 0.4 A1: building the modules creates no Hidden Icons item; only start() does.
+        report.append("selftest-launch: icons items \(IconsItems.liveCount)")
+        if IconsItems.liveCount != 0 { problems.append("IconsModule created \(IconsItems.liveCount) status items before start()") }
+
+        // 0.4 H8: the Native shim's encodings, without activating an assertion or touching Accessibility.
+        let shim = PrivateMenuBarAPI.verify()
+        report.append(IconsShimContract.launchLine(shim.state))
+        problems += IconsShimContract.selfTestProblems(
+            state: shim.state, present: shim.present, mismatches: shim.mismatches,
+            expect: ProcessInfo.processInfo.environment[IconsShimContract.expectVariable])
+        #if DEBUG
+        // The poison path. The shim stays poisoned for the rest of this process; nothing after this uses it.
+        let forced = PrivateMenuBarAPI.forcePoisonForSelfTest()
+        problems += IconsShimContract.poisonProblems(poisoned: forced.poisoned, available: forced.available)
+        report.append("selftest-launch: icons shim poison path " + (forced.poisoned && !forced.available ? "ok" : "failed"))
+        #endif
 
         // The gate `UpdaterController.make()` uses (r1 C6, C8). When it is closed, `startUpdater()` runs for real (no
         // Sparkle, no network) and must leave no updater and no welcome card.

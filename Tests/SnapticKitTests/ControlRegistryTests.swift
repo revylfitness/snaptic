@@ -210,7 +210,8 @@ final class ControlRegistryTests: XCTestCase {
         for (_, _, spec) in specs { declared.formUnion(spec.keys) }
         let configs: [(String, Any)] = [("DisplaysConfig", ConfigFixtures.fullDisplays()),
                                         ("ModulesConfig", ConfigFixtures.fullModules()),
-                                        ("AwakeConfig", ConfigFixtures.fullAwake())]
+                                        ("AwakeConfig", ConfigFixtures.fullAwake()),
+                                        ("IconsConfig", ConfigFixtures.fullIcons())]
         for (name, value) in configs {
             let paths = ConfigFixtures.keyPaths(value)
             XCTAssertFalse(paths.isEmpty, name)

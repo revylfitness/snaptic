@@ -204,6 +204,23 @@ import SnapticKit
         }
     }
 
+    /// 0.4 A5: Snaptic's other status items for Hidden Icons' own-items guard (§4.2.5): the shared item, the
+    /// modules' own items and the providers' (Awake's indicator), by autosave name. Window frames only.
+    var iconsOwnItems: [IconsOwnItem] {
+        var items = [shared?.item].compactMap { $0 } + own.filter { $0.key != .hiddenIcons }.values.map(\.item)
+        if let host {
+            items += host.modules.compactMap { ($0 as? StatusItemProvider)?.statusItem }
+        }
+        return items.map { item in
+            let name = item.autosaveName ?? ""
+            let frame = item.button?.window.map { window -> IconsRect in
+                let f = window.frame
+                return IconsRect(x: f.origin.x, y: f.origin.y, width: f.width, height: f.height)
+            }
+            return IconsOwnItem(id: name, frame: frame, isAwake: name == IndicatorController.autosaveName)
+        }.sorted { $0.id < $1.id }
+    }
+
     private static func windowOnScreen(_ item: NSStatusItem) -> Bool? {
         guard let window = item.button?.window else { return nil }
         let frame = window.frame
@@ -363,6 +380,8 @@ import SnapticKit
     // MARK: Items
 
     private func makeSlot(module: ModuleID?, autosaveName: String) -> Slot {
+        // 0.4 P-10: a first-time item lands right of the Hidden Icons arrow (Length only).
+        IconsItems.seedOwnItem(autosaveName: autosaveName)
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.autosaveName = autosaveName
         // The autosave name can restore "hidden" from an earlier removal; a planned item is always shown.
@@ -689,7 +708,7 @@ import SnapticKit
     /// VoiceOver, Switch Control, Keyboard navigation (`isFullKeyboardAccessEnabled`, `AppleKeyboardUIMode`) or
     /// Accessibility › Full Keyboard Access, which has no public API and no change notification: its preference is
     /// read on every open (r1 U2; HW-25 confirms the key). Unreadable counts as off.
-    private static func assistiveInputInUse() -> Bool {
+    static func assistiveInputInUse() -> Bool {
         let workspace = NSWorkspace.shared
         let domain = MenuTabs.fullKeyboardAccessDomain as CFString
         // Another process writes this domain; drop any cached copy first.

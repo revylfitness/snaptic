@@ -180,6 +180,16 @@ Their MIT licenses ask for their notices in copies of their code. Snaptic includ
 
 **Apple open source.** Apple publishes parts of macOS power management (for example `caffeinate.c` and `pmconfigd` in the PowerManagement project, `IOPMLibPrivate.h`, and xnu’s `IOPMrootDomain.cpp`) under the Apple Public Source License. These were read only to understand how power assertions and the `SleepDisabled` setting behave (for example that macOS releases a process’s assertions when it exits, and that the kernel doesn’t re-check a closed lid when `SleepDisabled` clears). **No code from APSL sources is included or adapted**; Snaptic calls only the public API declared in the macOS SDK’s `IOKit/pwr_mgt/IOPMLib.h`. This is behavior only.
 
+## Menu bar hiding reference (Hidden Icons)
+
+Hidden Icons (0.4) follows the design of Hidden Bar, from reading its source and using it. No code from it was copied, and Snaptic adds parts Hidden Bar doesn’t have: on macOS 27 it asks macOS itself to hide other apps’ icons (see Apple frameworks, below), and on every macOS it shows icons whenever it can’t be sure hiding is safe.
+
+| Project | License | What Snaptic follows | Where |
+|---|---|---|---|
+| [Hidden Bar](https://github.com/dwarvesf/hidden) | MIT | The arrow and | divider, hiding by making the divider very wide and showing by making it narrow; the click cases (click, Option-click, right-click); the optional Always Hidden section and its divider; automatic hiding after a delay; listing icons pushed behind the notch | `Sources/SnapticKit/IconsPolicy.swift`, `IconsLayout.swift`, `IconsEngineCore.swift`, `Sources/Snaptic/Icons/` |
+
+Its MIT license asks for its notice in copies of its code. Snaptic includes none of it, so this credit is thanks rather than a license condition. It is also credited in Settings › About › Acknowledgements.
+
 ## Standards and formats
 
 Snaptic implements these from their public descriptions. No specification text is included.
@@ -196,7 +206,7 @@ VESA, DDC/CI, MCCS, and E-EDID are trademarks or standards of the Video Electron
 Apart from Sparkle (above), Snaptic links or loads only frameworks that ship with macOS; none are redistributed.
 
 - **Public:** Foundation, AppKit, SwiftUI, Combine, CoreGraphics, QuartzCore, CoreImage, CoreVideo, CoreMedia, IOSurface, Metal, ScreenCaptureKit, ColorSync, IOKit (including its power-management API), ApplicationServices (Accessibility), Carbon (HIToolbox, for hotkeys and keyboard type), CoreAudio, SystemConfiguration, DiskArbitration, Security, CryptoKit, ServiceManagement, UniformTypeIdentifiers, and libSystem’s `notify` API.
-- **Undocumented, loaded at runtime and never linked:** SkyLight, CoreDisplay, DisplayServices, CoreBrightness, MonitorPanel, OSD, plus private symbols in CoreGraphics, IOKit, and libsystem. Awake uses none of these; it only reads undocumented keys through public calls: `CGSSessionScreenIsLocked` from `CGSessionCopyCurrentDictionary`, the `SleepDisabled` power setting from the `com.apple.PowerManagement` preferences with `CFPreferencesCopyValue`, and the `SleepDisabled` and `AppleClamshellState` properties of `IOPMrootDomain` through IOKit. Its opt-in lid-closed mode runs Apple’s own command-line tools (`osascript`, `pmset`, `ioreg`, `notifyutil`, and standard shell tools), which ship with macOS. See “Undocumented APIs” in the [README](README.md).
+- **Undocumented, loaded at runtime and never linked:** SkyLight, CoreDisplay, DisplayServices, CoreBrightness, MonitorPanel, OSD, MenuBarClientCore (Hidden Icons on macOS 27, `Sources/SnapticShims/SNMenuBarVisibility.m`), plus private symbols in CoreGraphics, IOKit, and libsystem. Awake uses none of these; it only reads undocumented keys through public calls: `CGSSessionScreenIsLocked` from `CGSessionCopyCurrentDictionary`, the `SleepDisabled` power setting from the `com.apple.PowerManagement` preferences with `CFPreferencesCopyValue`, and the `SleepDisabled` and `AppleClamshellState` properties of `IOPMrootDomain` through IOKit. Its opt-in lid-closed mode runs Apple’s own command-line tools (`osascript`, `pmset`, `ioreg`, `notifyutil`, and standard shell tools), which ship with macOS. See “Undocumented APIs” in the [README](README.md).
 
 SF Symbols are used through the system APIs and are not bundled. Apple, Mac, macOS, Sidecar, AirPlay, XDR, Night Shift, True Tone, and SF Symbols are trademarks of Apple Inc. Snaptic is not affiliated with or endorsed by Apple.
 
@@ -205,6 +215,7 @@ SF Symbols are used through the system APIs and are not bundled. Apple, Mac, mac
 Snaptic refers to other products by name only to detect them or to describe compatibility. No names, icons, identifiers, or other assets of these products are used as Snaptic’s own.
 
 - **BetterDisplay**, **MonitorControl**, and **Lunar** are detected by bundle-identifier prefix (`Sources/SnapticKit/OtherDisplayApps.swift`) so Snaptic can pause overlapping features while they run.
+- **Hidden Bar**, **Bartender**, **Ice**, and **Thaw** are detected by bundle identifier, and by team identifier where known (`Sources/SnapticKit/KnownMenuBarHiders.swift`), so Hidden Icons can pause while they run. Hidden Bar is also named in the README and Settings to explain how to switch.
 - **AltTab** is named in the README only to say Snaptic is not derived from it.
 - **1Password, Bitwarden, Apple Passwords, Tor Browser**, and other password managers and private browsers appear in the default “never capture” list by bundle identifier. **Firefox, Edge, and Chrome** private-window titles are recognized so those windows are left out of captures.
 - **Parallels** and other virtual-machine and remote-desktop apps are matched by bundle identifier in the switcher’s exceptions.

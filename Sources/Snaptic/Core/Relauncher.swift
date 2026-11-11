@@ -65,7 +65,7 @@ import SnapticKit
                         let alert = NSAlert()
                         alert.messageText = L("Snaptic couldn’t restart itself")
                         alert.informativeText = L("Quit Snaptic and open it again.")
-                        NSApp.activate()
+                        ActivationPolicyController.shared.activate(.alert)
                         alert.runModal()
                     }
                 }
