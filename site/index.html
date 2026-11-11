@@ -101,16 +101,14 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 
 /* Hero */
 .hero { padding-block: 96px 0; }
-.hero .app-icon { display: block; width: 128px; height: 128px; margin: 0 0 28px -8px; animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.1, 1) both; }
 .hero .mega span { display: block; }
 .hero .lede { margin-top: 32px; }
 .hero .ctas { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 36px; }
 .word { display: inline-block; animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.1, 1) both; }
-.hero .mega span:nth-child(1) .word { animation-delay: 0.08s; }
-.hero .mega span:nth-child(2) .word { animation-delay: 0.2s; }
-.hero .mega span:nth-child(3) .word { animation-delay: 0.32s; }
+.hero .mega span:nth-child(2) .word { animation-delay: 0.12s; }
+.hero .mega span:nth-child(3) .word { animation-delay: 0.24s; }
 @keyframes rise { from { transform: translateY(0.35em); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .word, .hero .app-icon { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .word { animation: none; } }
 
 /* Device */
 .device { margin: 80px auto 0; max-width: 1080px; padding-inline: max(16px, 5.5%); }
@@ -378,7 +376,6 @@ footer .links a:hover { color: var(--ink); }
   .stagger .huge span:nth-child(2) { padding-left: 0.8em; }
   .stagger p { font-size: 19px; }
   .hero { padding-block: 64px 0; }
-  .hero .app-icon { width: 96px; height: 96px; margin: 0 0 20px -6px; }
   .device { margin-top: 56px; }
 }
 @media (max-width: 360px) {
@@ -407,7 +404,6 @@ footer .links a:hover { color: var(--ink); }
 <main id="top">
   <section class="hero">
     <div class="wrap">
-      <img class="app-icon" src="/icon.svg" alt="" width="128" height="128">
       <h1 class="mega">
         <span><span class="word">Every window.</span></span>
         <span class="gray"><span class="word">Every display.</span></span>
@@ -761,10 +757,10 @@ footer .links a:hover { color: var(--ink); }
       <div class="download">
         <div>
           <h3>Download Snaptic.</h3>
-          <p>The latest version, for Apple silicon and Intel. Unzip it and drag Snaptic to Applications.</p>
+          <p>The latest version, for Apple silicon and Intel. Open it and drag Snaptic to Applications.</p>
           <p>Signed by its developer and notarized by Apple, and it keeps itself up to date if you allow it. On 0.3.1 or earlier? Download it one last time; after that, updates come to you.</p>
         </div>
-        <a class="btn big" href="https://github.com/revylfitness/snaptic/releases/latest/download/Snaptic.zip">
+        <a class="btn big" href="https://github.com/revylfitness/snaptic/releases/latest/download/Snaptic.dmg">
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10m0 0-4-4m4 4 4-4M4 16h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           Download for Mac
         </a>
@@ -803,6 +799,8 @@ INSTALL=1 ./scripts/build-app.sh</code></pre></div>
     <p>Snaptic isn’t affiliated with BetterDisplay, MonitorControl, Lunar, Amphetamine, Insomnia, Hidden Bar, Bartender, Ice, or Thaw. Hidden Icons follows Hidden Bar’s design in Snaptic’s own code.</p>
     <div class="links">
       <a href="https://github.com/revylfitness/snaptic">Source code</a>
+      <a href="https://github.com/revylfitness/snaptic/blob/main/docs/guide.md">Guide</a>
+      <a href="https://github.com/revylfitness/snaptic/releases/latest">What’s new</a>
       <a href="https://github.com/revylfitness/snaptic/issues">Report an issue</a>
       <a href="https://github.com/revylfitness/snaptic/blob/main/LICENSE">License</a>
       <a href="https://github.com/revylfitness/snaptic/blob/main/THIRD_PARTY_NOTICES.md">Third-party notices</a>
