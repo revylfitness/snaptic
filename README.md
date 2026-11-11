@@ -39,7 +39,7 @@ Everything is included and nothing is behind a paywall. No accounts, telemetry, 
 Snaptic runs on **macOS 14 Sonoma or later**, on Apple silicon and Intel. Releases are signed with a Developer ID and notarized by Apple, and they keep themselves up to date with [Sparkle](https://sparkle-project.org), but only if you allow it.
 
 > [!NOTE]
-> On 0.3.0 or earlier, download the latest release by hand once. Snaptic updates itself after that, and macOS asks you to allow Accessibility and Screen Recording again one time. See [Upgrading and downgrading](docs/guide.md#upgrading-and-downgrading).
+> On 0.3.1 or earlier, download the latest release by hand once: 0.3.0 and earlier can’t update themselves, and 0.3.1 doesn’t start. Snaptic updates itself after that, and macOS asks you to allow Accessibility and Screen Recording again one time. See [Upgrading and downgrading](docs/guide.md#upgrading-and-downgrading).
 
 ## Window Switcher
 

@@ -25,7 +25,7 @@ Each module can be turned on or off on its own: in **Settings › General › Ch
 
 - **First launch:** onboarding asks which modules you want, then asks only for the permissions those need, and whether Snaptic should keep itself up to date (**Check Automatically** or **Not Now**). It picks up where it left off if macOS makes Snaptic relaunch.
 - **Upgrading from 0.3.2 or later:** Snaptic updates itself and nothing changes until you turn on Hidden Icons (a “New: Hidden Icons” card in General). The app has a new icon.
-- **Upgrading from 0.3.0 or earlier:** download 0.3.1 by hand one last time; from then on Snaptic can update itself. Because 0.3.1 is the first release signed by its developer, macOS asks you to allow Accessibility and Screen Recording again once, and a “Welcome to Snaptic 0.3.1” card in General walks you through it (see [Upgrading and downgrading](#upgrading-and-downgrading)).
+- **Upgrading from 0.3.1 or earlier:** download the latest release by hand one last time (0.3.0 and earlier have no updater, and 0.3.1 doesn’t start); from then on Snaptic updates itself. Because releases from 0.3.1 on are signed by their developer, macOS asks you to allow Accessibility and Screen Recording again once, and a “Welcome to Snaptic 0.3.1” card in General walks you through it (see [Upgrading and downgrading](#upgrading-and-downgrading)).
 - **Upgrading from 0.2:** Window Switcher and Displays stay as they were. Awake starts off, with a “New: Awake” card in General, unless you used Displays’ display sleep prevention in 0.2; then Awake is on and keeps doing that job (see [Upgrading and downgrading](#upgrading-and-downgrading)). As for 0.3.0, it’s one last manual download, and the “Welcome to Snaptic 0.3.1” card shows too.
 - **Upgrading from 0.1:** the switcher stays on; Displays and Awake start off, each with its own card. As for 0.3.0, it’s one last manual download, and the “Welcome to Snaptic 0.3.1” card shows too.
 
@@ -493,7 +493,7 @@ Accessibility and Screen Recording are in **System Settings › Privacy & Securi
 
 Most Displays features need no permission at all. Awake needs none for sessions, rules, guards, holds, appear active, history, or the menu bar: its conditions read only system state that macOS gives any app without asking (no Location, Bluetooth, Microphone, Input Monitoring, Local Network, or Downloads folder access). Lid-closed mode needs no permission either; instead it asks for an administrator password each time you turn it on.
 
-Release builds are signed with a Developer ID, so permissions you grant survive updates. Going from 0.3.0 or earlier (ad hoc) to 0.3.1 (Developer ID) resets Accessibility and Screen Recording once: remove the old Snaptic with − in each list, then turn on the new one.
+Release builds are signed with a Developer ID, so permissions you grant survive updates. Going from 0.3.0 or earlier (ad hoc) to 0.3.2 or later (Developer ID) resets Accessibility and Screen Recording once: remove the old Snaptic with − in each list, then turn on the new one.
 
 ## Command line
 
@@ -725,7 +725,7 @@ Grab `Snaptic.dmg` from the [latest release](https://github.com/revylfitness/sna
 
 From 0.3.1 on, releases are signed with the Developer ID of Snaptic’s developer, Sean Frasure, and notarized by Apple, so macOS opens them without an **Open Anyway** step. Run Snaptic from Applications: if macOS starts it from a temporary “translocated” location, Snaptic tells you to move it first (lid-closed mode refuses to run from there).
 
-**Coming from 0.3.0 or earlier?** Those versions can’t update themselves, so download 0.3.1 one last time and replace the old copy in Applications. After that, Snaptic can keep itself up to date (see [Updates](#updates)), and macOS asks you to allow Accessibility and Screen Recording once more (see [Upgrading and downgrading](#upgrading-and-downgrading)).
+**Coming from 0.3.1 or earlier?** 0.3.0 and earlier can’t update themselves, and 0.3.1 doesn’t start, so download the latest release one last time and replace the old copy in Applications. After that, Snaptic can keep itself up to date (see [Updates](#updates)), and macOS asks you to allow Accessibility and Screen Recording once more (see [Upgrading and downgrading](#upgrading-and-downgrading)).
 
 To check a download yourself:
 
@@ -947,7 +947,7 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
   - Always Show and Always Hide work on macOS 27 only; on 14–26 they’re kept but unused.
   - On macOS 27 the list has no behind-the-notch rows.
   - On macOS 27, with **Run Both Anyway**, an icon stays shown unless both apps hide it.
-- **General:** English only (all text is ready for translation, but no translations exist yet) and no trackpad gesture. Updates need a release build: copies built from source don’t update themselves, and 0.3.0 and earlier need one manual download to reach 0.3.1.
+- **General:** English only (all text is ready for translation, but no translations exist yet) and no trackpad gesture. Updates need a release build: copies built from source don’t update themselves, and 0.3.1 and earlier need one manual download to reach the latest release.
 
 ### Needs testing on hardware
 
