@@ -1,8 +1,9 @@
 import Foundation
 
 // Dock Previews' shared Kit types (lead; PLAN 0.5 §2.1, H6). K1 adds the kill-switch features; K4 and K2 add the
-// geometry value types (`DockRect`, also `CatalogWindow.bounds`; `DockPoint`, `DockScreen`, `DockEdge`); the hover,
-// click and key rules arrive in K3 as their own files.
+// geometry value types (`DockRect`, also `CatalogWindow.bounds`; `DockPoint`, `DockScreen`, `DockEdge`); K3 adds the
+// selection the hover, click and key rules take. Kit never sees an AXUIElement, an NSPanel or a clock: the app
+// converts what it reads into these and passes `now` in.
 
 /// Per-feature kill switches (H6): `Dock.disable.<rawValue>` = true in Snaptic's persistent domain turns the feature
 /// off, read with `KillSwitches.read(domain, prefix: "Dock", as: DockFeature.self)` once per batch (no polling).
@@ -99,7 +100,7 @@ package struct DockRect: Codable, Equatable, Hashable, Sendable {
 }
 
 /// One display, in AppKit global coordinates (`NSScreen.frame`, `visibleFrame`, `backingScaleFactor`).
-package struct DockScreen: Codable, Equatable, Sendable {
+package struct DockScreen: Codable, Hashable, Sendable {
     /// The `CGDirectDisplayID`.
     package var id: UInt32
     package var frame: DockRect
@@ -124,4 +125,47 @@ package enum DockEdge: String, Codable, CaseIterable, Sendable {
 
     /// Bottom: the Dock runs along x. Left and right: along y.
     package var isHorizontal: Bool { self == .bottom }
+}
+
+/// What a Dock item is (§4.1 rule 3; §4.8).
+package enum DockItemKind: String, CaseIterable, Sendable {
+    case app
+    case folder
+    case trash
+    case minimizedWindow
+    case separator
+    case other
+}
+
+/// The Dock's selection, as `DockObserver` reads it (§2.1, §4.1).
+package struct DockSelection: Hashable, Sendable {
+    package var kind: DockItemKind
+    /// The running app's pid; nil when the item's app isn't running (S0-1: `AXIsApplicationRunning` = 1 only).
+    package var pid: Int32?
+    /// The item's live frame (magnified while the Dock magnifies).
+    package var itemFrame: DockRect
+    /// The Dock's frame. S0-1 (§R4): the hit area is the union of item frames, which the app passes here.
+    package var listFrame: DockRect
+    /// False when the VoiceOver cursor moved the selection and VoiceOver previews are on (§4.1 rule 5, G2-5).
+    package var byPointer: Bool
+
+    package init(kind: DockItemKind, pid: Int32?, itemFrame: DockRect, listFrame: DockRect, byPointer: Bool = true) {
+        self.kind = kind
+        self.pid = pid
+        self.itemFrame = itemFrame
+        self.listFrame = listFrame
+        self.byPointer = byPointer
+    }
+
+    /// A running app's item: the only kind that shows a panel (§4.1 rules 1 and 3).
+    package var showsPanel: Bool { kind == .app && pid != nil }
+
+    /// The same Dock item: the same app, or for other kinds the same frame centre (a magnified frame keeps its
+    /// centre along the Dock).
+    package func sameItem(as other: DockSelection) -> Bool {
+        guard kind == other.kind else { return false }
+        if let pid, let otherPID = other.pid { return pid == otherPID }
+        if pid != nil || other.pid != nil { return false }
+        return itemFrame.midX == other.itemFrame.midX && itemFrame.midY == other.itemFrame.midY
+    }
 }

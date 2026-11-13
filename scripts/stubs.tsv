@@ -659,3 +659,11 @@ Tests/SnapticKitTests/WindowCatalogRulesTests.swift	lead	L	-	-
 Tests/SnapticKitTests/WindowLeaseLedgerTests.swift	lead	L	-	-
 Sources/SnapticKit/DockGeometry.swift	lead	L	-	-
 Tests/SnapticKitTests/DockGeometryTests.swift	lead	L	-	-
+Sources/SnapticKit/DockPreviewPolicy.swift	lead	L	-	-
+Sources/SnapticKit/DockClickRules.swift	lead	L	-	-
+Sources/SnapticKit/DockKeyRules.swift	lead	L	-	-
+Sources/SnapticKit/DockPageRules.swift	lead	L	-	-
+Tests/SnapticKitTests/DockPreviewPolicyTests.swift	lead	L	-	-
+Tests/SnapticKitTests/DockClickRulesTests.swift	lead	L	-	-
+Tests/SnapticKitTests/DockKeyRulesTests.swift	lead	L	-	-
+Tests/SnapticKitTests/DockPageRulesTests.swift	lead	L	-	-

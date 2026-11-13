@@ -2210,3 +2210,11 @@ changed, and why.
 | K2 | Panel padding is 12 pt, card spacing 12 pt and the header 32 pt | §4.3 gives no values. The owner can tune them at M19 |
 | K2 | On the Dock's side the panel sits 6 pt off the Dock, with no 8 pt margin added. The 8 pt margin applies at the other three edges | §4.3's 6 pt gap and 8 pt margin would otherwise apply to the same edge |
 | K2 | A scrolled panel loads thumbnails for the visible cards plus one card past each edge | §4.9 asks for visible cards only; one card hides the pop-in while scrolling |
+| K3 | Two new policy events. `panelPlaced` carries the panel's frame, which the corridor and the heading-in check need. `moduleStopped` sends the `stopped` hide reason | §2.4 names the reason but no event for it |
+| K3 | The policy takes its geometry through `DockPolicyGeometry` closures. Its built-in `plain…` defaults are for tests only, and A4a passes `DockGeometry`'s edge, zone and hit band | K2 and K3 were built in parallel. The hit band must be K2's (X2-10, with K2's 24 pt row) |
+| K3 | `appTerminated` applies the 8 pt lockout and clears the selection. `dragStarted` hides with `clickOutside`. `raised` sets the latch, so the panel doesn't come back under the pointer | Covers the reflow and hovered-app-quits races (S0-22). §2.4 has no drag reason |
+| K3 | "Starting" is the page state when rows 1–4 don't apply and row 5 doesn't yet. "Advanced…" is two actions, because rows 6 and 7 open the sheet at different places | Row order in §4.15; one action couldn't scroll to both places |
+| K3 | Kit takes time as `Double` seconds passed in; the app converts from `mach_absolute_time`. Crash-guard and poisoned rows take display names as strings | Kit is Foundation-only, Linux-tested, and can't look up bundles |
+| K3 | The pointer monitor stays on during the 8 pt lockout and while latched, so it sees the move that ends them. Engagement counts only real movement | Without the monitor the lockout could never end on a still pointer |
+| K3 | A stale selection is judged by when it arrived, plus the pointer-agrees rule. So A4a must send one `pointerMoved` when it starts watching | §4.1 rule 4 needs a pointer time to compare with |
+| K3 | A held swap runs 0.12 s after the pointer last headed into the panel | X2-23 gives the rule but not the timer start |
