@@ -166,6 +166,113 @@ struct WindowList {
     var frontPID: pid_t?
 }
 
+/// One app's windows for Dock Previews (PLAN 0.5 §4.8): `WindowManager.windows(for:budget:allowUntitled:)`.
+struct DockWindowRead {
+    var items: [WindowItem] = []
+    /// The budget ran out after at least one window was read, so the app may have more ("More windows…").
+    var unreadRemain = false
+    /// AX couldn't read even the first window in time, or the app is in its 30 s skip after that: `items` are
+    /// `CGWindowList` windows only, with titles only.
+    var timedOut = false
+    /// Served from the 2 s cache.
+    var fromCache = false
+
+    /// The windows a caller lists (`allowUntitled`, §2.6). The read itself keeps untitled ones for every caller.
+    fileprivate func listing(allowUntitled: Bool, fromCache: Bool) -> DockWindowRead {
+        var read = self
+        read.items = items.filter { DockReaderRules.listed($0.catalog, allowUntitled: allowUntitled) }
+        read.fromCache = fromCache
+        return read
+    }
+}
+
+/// One app's AX read. `ranOut`: the budget ran out before the read was done. `listTimedOut`: the window list itself
+/// still timed out (`kAXErrorCannotComplete`) when the read ended.
+private struct AppRead: Sendable {
+    var windows: [RawWindow]
+    var ranOut: Bool
+    var listTimedOut: Bool
+}
+
+/// A window read only from `CGWindowList`, before it becomes a `WindowItem`.
+private struct ListOnlyWindow: Sendable {
+    var catalog: CatalogWindow
+    /// Sanitized.
+    var title: String
+    var hasPrivateMarker: Bool
+    var frame: CGRect
+}
+
+/// What the window-read thread gives back for one app (§4.8). The ids of AX windows without a real one are filled in
+/// on main.
+private struct DockAppScan: @unchecked Sendable {
+    var ax: [(raw: RawWindow, catalog: CatalogWindow)] = []
+    var listOnly: [ListOnlyWindow] = []
+    var ranOut = false
+    var timedOut = false
+}
+
+/// Dock Previews' window reads (§4.8): one `ObserverThread`, so an app that stalls never holds main or a pool thread.
+/// Created on the first read and ended with the module (`WindowManager.endWindowReads()`).
+private final class WindowReadQueue: @unchecked Sendable {
+    private let thread = ObserverThread()
+    private let lock = NSLock()
+    private var stopped = false
+    private var nextID = 0
+    private var pending: [Int: CheckedContinuation<DockAppScan?, Never>] = [:]
+
+    @MainActor init() {
+        thread.name = "Snaptic window reads"
+        thread.qualityOfService = .userInitiated
+        thread.start()
+        thread.waitUntilReady()
+    }
+
+    /// Runs `work` on the thread. Nil once the queue has stopped.
+    func submit(_ work: @escaping @Sendable () -> DockAppScan) async -> DockAppScan? {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            guard !stopped else {
+                lock.unlock()
+                continuation.resume(returning: nil)
+                return
+            }
+            let id = nextID
+            nextID += 1
+            pending[id] = continuation
+            lock.unlock()
+            thread.perform {
+                let result = self.isStopped ? nil : work()
+                self.finish(id, result)
+            }
+        }
+    }
+
+    private var isStopped: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return stopped
+    }
+
+    private func finish(_ id: Int, _ result: DockAppScan?) {
+        lock.lock()
+        let continuation = pending.removeValue(forKey: id)
+        lock.unlock()
+        continuation?.resume(returning: result)
+    }
+
+    /// Every waiting read gets nil; a read in progress finishes on the thread first.
+    func stop() {
+        lock.lock()
+        let waiting = stopped ? [] : Array(pending.values)
+        stopped = true
+        pending = [:]
+        lock.unlock()
+        for continuation in waiting { continuation.resume(returning: nil) }
+        thread.cancel()
+        thread.perform { CFRunLoopStop(CFRunLoopGetCurrent()) }
+    }
+}
+
 /// Window-server facts gathered in one pass.
 private struct ServerSnapshot {
     var zOrder: [CGWindowID: Int] = [:]          // layer-0 on-screen windows, front to back
@@ -207,7 +314,7 @@ final class WindowManager {
         guard !isStarted else { return }
         isStarted = true
         // Seed with the current stacking order, front first.
-        mru = serverSnapshot().zOrder.sorted { $0.value < $1.value }.map { $0.key }
+        mru = Self.serverSnapshot().zOrder.sorted { $0.value < $1.value }.map { $0.key }
     }
 
     /// Idempotent. Forgets the window order. `WindowServices` calls it on the last `.recency` release, after
@@ -263,7 +370,7 @@ final class WindowManager {
         let snapshots = apps.map { AppSnapshot(pid: $0.processIdentifier) }
         let recent = recentFocus
         let frontPID = effectiveFrontPID
-        let server = serverSnapshot()
+        let server = Self.serverSnapshot()
         let owners = server.owner
 
         // Accessibility calls can block on a busy app, so they never run on the
@@ -348,11 +455,12 @@ final class WindowManager {
 
     /// The shared inclusion rule. The Spaces check is a window-server call, so it runs only for a window whose
     /// verdict turns on it (`WindowCatalogRules.needsSpaceCheck`), as the switcher always has.
-    private static func include(_ window: inout CatalogWindow) -> CatalogVerdict {
-        if WindowCatalogRules.needsSpaceCheck(window, appListed: true, options: .switcher) {
+    nonisolated private static func include(_ window: inout CatalogWindow,
+                                            options: CatalogInclusion = .switcher) -> CatalogVerdict {
+        if WindowCatalogRules.needsSpaceCheck(window, appListed: true, options: options) {
             window.spaceKnown = PrivateWindowAPI.isOnAnySpace(window.id)
         }
-        return WindowCatalogRules.inclusion(window, appListed: true, options: .switcher)
+        return WindowCatalogRules.inclusion(window, appListed: true, options: options)
     }
 
     nonisolated private static func enumerate(_ apps: [AppSnapshot], owners: [CGWindowID: pid_t]) -> [RawWindow] {
@@ -365,31 +473,48 @@ final class WindowManager {
     }
 
     nonisolated private static func windows(of app: AppSnapshot, owners: [CGWindowID: pid_t], deadline: UInt64) -> [RawWindow] {
-        let appDeadline = min(deadline, DispatchTime.now().uptimeNanoseconds + UInt64(perAppBudget * 1_000_000_000))
-        // Checked before every request, so one slow app costs at most its budget.
-        func outOfTime() -> Bool { DispatchTime.now().uptimeNanoseconds > appDeadline }
+        read(app.pid, owners: owners, deadline: deadline, budget: perAppBudget, options: .switcher,
+             retryList: false).windows
+    }
 
-        let appElement = AXUIElementCreateApplication(app.pid)
+    /// One app's AX windows, within `budget` seconds and `deadline`. `retryList`: a window list that timed out is
+    /// asked for again while time is left (Dock Previews, §4.8), so a timeout means the whole budget went by.
+    nonisolated private static func read(_ pid: pid_t, owners: [CGWindowID: pid_t], deadline: UInt64, budget: Double,
+                                         options: CatalogInclusion, retryList: Bool) -> AppRead {
+        let appDeadline = min(deadline, DispatchTime.now().uptimeNanoseconds + UInt64(budget * 1_000_000_000))
+        var ranOut = false
+        // Checked before every request, so one slow app costs at most its budget.
+        func outOfTime() -> Bool {
+            guard DispatchTime.now().uptimeNanoseconds > appDeadline else { return false }
+            ranOut = true
+            return true
+        }
+
+        let appElement = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(appElement, WindowServices.axTimeout)
+        var list = AX.read(appElement, kAXWindowsAttribute)
+        while retryList, list.error == .cannotComplete, !outOfTime() {
+            list = AX.read(appElement, kAXWindowsAttribute)
+        }
         var result: [RawWindow] = []
-        for window in AX.elements(appElement, kAXWindowsAttribute).prefix(maxWindowsPerApp) {
+        for window in AX.elements(in: list.value).prefix(maxWindowsPerApp) {
             if outOfTime() { break }
             AXUIElementSetMessagingTimeout(window, WindowServices.axTimeout)
             // The subrole and size parts of the shared inclusion rule, checked before the title is read.
             let kind = CatalogWindowKind(subrole: AX.string(window, kAXSubroleAttribute))
-            guard WindowCatalogRules.kindLeftOut(kind, hasTitle: nil, options: .switcher) == nil,
+            guard WindowCatalogRules.kindLeftOut(kind, hasTitle: nil, options: options) == nil,
                   !outOfTime() else { continue }
             let size = AX.size(window) ?? .zero
             guard WindowCatalogRules.sizeLeftOut(width: Double(size.width), height: Double(size.height),
-                                                 minimum: CatalogInclusion.switcher.minAXSide) == nil,
+                                                 minimum: options.minAXSide) == nil,
                   !outOfTime() else { continue }
 
             let windowID = WindowCatalogRules.trustedWindowID(claimed: PrivateWindowAPI.windowID(of: window),
-                                                              pid: app.pid, owners: owners)
+                                                              pid: pid, owners: owners)
             let fullTitle = outOfTime() ? "" : (AX.string(window, kAXTitleAttribute) ?? "")
 
             result.append(RawWindow(
-                pid: app.pid,
+                pid: pid,
                 element: window,
                 windowID: windowID,
                 kind: kind,
@@ -400,7 +525,7 @@ final class WindowManager {
                 isFullscreen: AX.bool(window, "AXFullScreen") ?? false
             ))
         }
-        return result
+        return AppRead(windows: result, ranOut: ranOut, listTimedOut: list.error == .cannotComplete)
     }
 
     nonisolated private static func focusedWindowID(pid: pid_t) -> CGWindowID? {
@@ -410,7 +535,7 @@ final class WindowManager {
         return PrivateWindowAPI.windowID(of: window)
     }
 
-    private func serverSnapshot() -> ServerSnapshot {
+    nonisolated private static func serverSnapshot() -> ServerSnapshot {
         var snapshot = ServerSnapshot()
         let onScreenList = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
             as? [[String: Any]]) ?? []
@@ -441,52 +566,204 @@ final class WindowManager {
         alreadySeen: Set<CGWindowID>
     ) -> (items: [WindowItem], pids: Set<pid_t>) {
         var byPID: [pid_t: NSRunningApplication] = [:]
-        for app in apps { byPID[app.processIdentifier] = app }
+        var hidden: [pid_t: Bool] = [:]
+        for app in apps {
+            byPID[app.processIdentifier] = app
+            hidden[app.processIdentifier] = app.isHidden
+        }
+        let found = Self.listOnlyWindows(hidden: hidden, primaryHeight: Screens.primaryHeight,
+                                         alreadySeen: alreadySeen, options: .switcher, onScreenToo: false)
+        let items = found.windows.compactMap { window in
+            byPID[window.catalog.pid].map { Self.item(window, app: $0) }
+        }
+        return (items, found.pids)
+    }
 
+    /// The windows `CGWindowList` reports for the apps in `hidden` (pid → hidden), past the shared inclusion rule.
+    /// `onScreenToo`: on-screen windows are listed as well (an app AX timed out on, §4.8). Also returns every app that
+    /// has a real window somewhere, titled or not.
+    nonisolated private static func listOnlyWindows(
+        hidden: [pid_t: Bool],
+        primaryHeight: CGFloat,
+        alreadySeen: Set<CGWindowID>,
+        options: CatalogInclusion,
+        onScreenToo: Bool
+    ) -> (windows: [ListOnlyWindow], pids: Set<pid_t>) {
         let list = (CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID)
             as? [[String: Any]]) ?? []
-        var items: [WindowItem] = []
+        var windows: [ListOnlyWindow] = []
         var pids = Set<pid_t>()
         for info in list {
             guard let layer = (info[kCGWindowLayer as String] as? NSNumber)?.intValue,
                   let id = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
                   !alreadySeen.contains(id),
                   let pid = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
-                  let app = byPID[pid],
+                  let isHidden = hidden[pid],
                   let boundsInfo = info[kCGWindowBounds as String] as? NSDictionary,
                   let bounds = CGRect(dictionaryRepresentation: boundsInfo as CFDictionary)
             else { continue }
             let rawTitle = info[kCGWindowName as String] as? String ?? ""
             // Layer, on-screen, size, alpha and the Spaces check (inactive native tabs and hidden helper windows
             // belong to no Space) are the shared inclusion rule's.
+            let cocoa = CGRect(x: bounds.minX, y: primaryHeight - bounds.maxY, width: bounds.width,
+                               height: bounds.height)
             var window = CatalogWindow(
                 id: id,
                 pid: pid,
                 hasTitle: !rawTitle.isEmpty,
-                hidden: app.isHidden,
+                hidden: isHidden,
                 onScreen: (info[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue == true,
                 layer: layer,
-                bounds: DockRect(cocoa: Screens.cocoaRect(fromGlobal: bounds)),
+                bounds: DockRect(cocoa: cocoa),
                 hasAXElement: false,
                 kind: .unknown,
                 alpha: (info[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1
             )
-            let verdict = Self.include(&window)
+            let verdict = include(&window, options: options)
             if verdict.appHasWindow { pids.insert(pid) }
-            guard verdict.included else { continue }
-
-            items.append(WindowItem(
+            guard verdict.included || (onScreenToo && DockReaderRules.listedOnTimeout(window, options: options))
+            else { continue }
+            windows.append(ListOnlyWindow(
                 catalog: window,
-                axElement: nil,
-                appName: Self.appName(app),
-                bundleID: app.bundleIdentifier,
-                title: TextSanitizer.clean(rawTitle, maxScalars: Self.maxTitleLength),
-                icon: app.icon ?? NSImage(),
-                frame: bounds,
-                hasPrivateMarker: TextSanitizer.hasPrivateMarker(rawTitle)
+                title: TextSanitizer.clean(rawTitle, maxScalars: maxTitleLength),
+                hasPrivateMarker: TextSanitizer.hasPrivateMarker(rawTitle),
+                frame: bounds
             ))
         }
-        return (items, pids)
+        return (windows, pids)
+    }
+
+    private static func item(_ window: ListOnlyWindow, app: NSRunningApplication) -> WindowItem {
+        WindowItem(
+            catalog: window.catalog,
+            axElement: nil,
+            appName: appName(app),
+            bundleID: app.bundleIdentifier,
+            title: window.title,
+            icon: app.icon ?? NSImage(),
+            frame: window.frame,
+            hasPrivateMarker: window.hasPrivateMarker
+        )
+    }
+
+    // MARK: Dock Previews
+
+    /// The last read of each app, 2 s, marked dirty by the freshness lease (§4.8).
+    private var dockCache = DockWindowCache<DockWindowRead>()
+    private var windowReadQueue: WindowReadQueue?
+    /// Bumped by `endWindowReads()`, so a read that finishes after it is dropped.
+    private var windowReadEpoch = 0
+    private var reading: [pid_t: Int] = [:]
+    /// Apps the lease marked dirty while a read was in progress: that read isn't cached.
+    private var dirtiedWhileReading = Set<pid_t>()
+
+    nonisolated private static var uptime: Double { ProcessInfo.processInfo.systemUptime }
+
+    /// One app's windows for Dock Previews (§4.8): AX, within `budget` seconds, on the window-read thread; windows on
+    /// other Spaces from `CGWindowList`. Cached 2 s unless the lease marks the app dirty. When the budget runs out
+    /// after at least one window, the list is partial (`unreadRemain`). When AX can't read even the first window in
+    /// time, the app isn't read through AX for 30 s and its `CGWindowList` windows are listed, titles only
+    /// (`timedOut`). `allowUntitled` (§2.6): untitled windows read only from `CGWindowList` are listed.
+    func windows(for pid: pid_t, budget: Double = WindowManager.perAppBudget,
+                 allowUntitled: Bool = true) async -> DockWindowRead {
+        let now = Self.uptime
+        dockCache.prune(now: now)
+        if let cached = dockCache.value(for: pid, now: now) {
+            return cached.listing(allowUntitled: allowUntitled, fromCache: true)
+        }
+        guard let app = NSRunningApplication(processIdentifier: pid), !app.isTerminated else { return DockWindowRead() }
+        let budget = budget.isFinite ? min(max(budget, 0), Self.totalBudget) : Self.perAppBudget
+        let skip = dockCache.isSkipped(pid, now: now)
+        let hidden = app.isHidden
+        let primaryHeight = Screens.primaryHeight
+        let epoch = windowReadEpoch
+        let queue = windowReadQueue ?? WindowReadQueue()
+        windowReadQueue = queue
+        reading[pid, default: 0] += 1
+        let scan = await queue.submit {
+            Self.scan(pid: pid, hidden: hidden, primaryHeight: primaryHeight, budget: budget, skip: skip)
+        }
+        guard epoch == windowReadEpoch else { return DockWindowRead() }
+        let dirtied = finishReading(pid)
+        guard let scan else { return DockWindowRead() }
+
+        let done = Self.uptime
+        if scan.timedOut, !skip { dockCache.timedOut(pid, now: done) }
+        let name = Self.appName(app)
+        let icon = app.icon ?? NSImage()
+        var items: [WindowItem] = []
+        for (raw, catalog) in scan.ax {
+            var window = catalog
+            if raw.windowID == nil { window.id = makeSyntheticID() }
+            items.append(WindowItem(catalog: window, axElement: raw.element, appName: name,
+                                    bundleID: app.bundleIdentifier, title: raw.title, icon: icon, frame: raw.frame,
+                                    hasPrivateMarker: raw.hasPrivateMarker))
+        }
+        items += scan.listOnly.map { Self.item($0, app: app) }
+        let read = DockWindowRead(items: items, unreadRemain: scan.ranOut && !scan.timedOut, timedOut: scan.timedOut)
+        if !dirtied { dockCache.store(read, for: pid, now: done) }
+        return read.listing(allowUntitled: allowUntitled, fromCache: false)
+    }
+
+    /// One read of `pid` ended. True when the lease marked the app dirty while it ran.
+    private func finishReading(_ pid: pid_t) -> Bool {
+        let left = (reading[pid] ?? 1) - 1
+        reading[pid] = left > 0 ? left : nil
+        return left > 0 ? dirtiedWhileReading.contains(pid) : dirtiedWhileReading.remove(pid) != nil
+    }
+
+    /// The freshness lease saw the app's windows change (`WindowServices` `onWindowsChanged`).
+    func markWindowsDirty(_ pid: pid_t) {
+        dockCache.markDirty(pid)
+        if reading[pid] != nil { dirtiedWhileReading.insert(pid) }
+    }
+
+    /// The module stopped: the window-read thread ends, waiting reads get an empty answer and the cache is dropped.
+    func endWindowReads() {
+        windowReadEpoch += 1
+        windowReadQueue?.stop()
+        windowReadQueue = nil
+        dockCache.removeAll()
+        reading = [:]
+        dirtiedWhileReading = []
+    }
+
+    /// The read itself, on the window-read thread.
+    nonisolated private static func scan(pid: pid_t, hidden: Bool, primaryHeight: CGFloat, budget: Double,
+                                         skip: Bool) -> DockAppScan {
+        var scan = DockAppScan()
+        var seen = Set<CGWindowID>()
+        if skip {
+            scan.timedOut = true
+        } else {
+            let server = serverSnapshot()
+            let read = read(pid, owners: server.owner, deadline: .max, budget: budget, options: .dock,
+                            retryList: true)
+            for raw in read.windows {
+                if let id = raw.windowID, !seen.insert(id).inserted { continue }
+                let frame = raw.frame
+                var window = CatalogWindow(
+                    id: raw.windowID ?? WindowItem.firstSyntheticID,
+                    pid: pid,
+                    hasTitle: !raw.title.isEmpty,
+                    minimized: raw.isMinimized,
+                    hidden: hidden,
+                    onScreen: raw.windowID.map { server.onScreen.contains($0) } ?? true,
+                    fullscreen: raw.isFullscreen,
+                    layer: raw.windowID.flatMap { server.layer[$0] } ?? 0,
+                    bounds: DockRect(cocoa: CGRect(x: frame.minX, y: primaryHeight - frame.maxY, width: frame.width,
+                                                   height: frame.height)),
+                    kind: raw.kind
+                )
+                guard include(&window, options: .dock).included else { continue }
+                scan.ax.append((raw, window))
+            }
+            scan.ranOut = read.ranOut
+            scan.timedOut = read.windows.isEmpty && (read.ranOut || read.listTimedOut)
+        }
+        scan.listOnly = listOnlyWindows(hidden: [pid: hidden], primaryHeight: primaryHeight, alreadySeen: seen,
+                                        options: .dock, onScreenToo: scan.timedOut).windows
+        return scan
     }
 
     private static func appName(_ app: NSRunningApplication) -> String {

@@ -2225,3 +2225,13 @@ changed, and why.
 | K5 | Kill-switch lock rows are one row per feature, adding `dock.page.clickActionsLock` | One lock per kill switch reads as a list |
 | K5 | The Advanced sheet repeats the two shared privacy rows under Dock ids, so their search titles match the switcher's. Neither Restore Defaults button touches the privacy keys | The privacy settings are shared (§4.10) and owned by the switcher's store |
 | K5 | `menubar.page.dockPresence` sits in a controls table whose view has no Dock row until A7. Lint lists it in `L15_PENDING_IDS`, which A7 empties | Keeps the K5 tables complete without drawing UI early |
+| A3 | The health check reads the pointer with `CGEvent(source: nil)` on the observer's thread, not `NSEvent.mouseLocation` on main | The check runs off main and must not wait on main |
+| A3 | "Login" for the attach ladder is loginwindow's start time, or Snaptic's launch when loginwindow can't be read | Snaptic can launch long after login; the ladder's window is about the Dock coming up |
+| A3 | Re-attaches count only a new Dock pid. An `AXList` rebuild under the same pid is counted on its own (Observer rebuilds) | Keeps the `killall Dock` check (10 kills → 10 re-attaches) exact |
+| A3 | `AXSpacerDockItem` maps to `separator` | It's the Dock's spacer tile; it never shows a panel |
+| A3 | When an app's AX read times out before its first window, its on-screen `CGWindowList` windows are listed too, titles only | Otherwise a stalled app shows an empty panel while its windows are visible |
+| A3 | Every Dock event tries one attach before the back-off ladder | A Dock that came back between ladder steps is picked up on the next hover |
+| A3 | After a list rebuild the `AXList` is checked again at 0.5 s and 1.5 s, and its destroyed notification is watched (S0-3) | The Dock can rebuild the list twice in a row when items are added |
+| A3 | A window-list read that times out is retried once within the per-app budget | One slow first call is common right after an app launches |
+| A3 | The 2 s cache keeps the full read and applies `allowUntitled` per call | Two callers with different settings share one read |
+| A3 | DEBUG builds time `windows(for:)` on each selection that would show a panel (Window reads: n, p95, last count) | S0-23 and the AX stall check need a number before A4a's panel exists |

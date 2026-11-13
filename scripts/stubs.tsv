@@ -673,3 +673,7 @@ Sources/SnapticKit/Controls/DockAdvancedSheetControls.swift	lead	L	-	-
 Sources/SnapticKit/Controls/DockMenuRowsControls.swift	lead	L	-	-
 Tests/SnapticKitTests/DockCommandGrammarTests.swift	lead	L	-	-
 Tests/SnapticKitTests/DockControlsTests.swift	lead	L	-	-
+Sources/SnapticKit/DockReaderRules.swift	lead	L	-	-
+Tests/SnapticKitTests/DockReaderRulesTests.swift	lead	L	-	-
+Sources/Snaptic/Dock/DockReader.swift	lead	L	-	-
+Sources/Snaptic/Dock/DockObserver.swift	lead	L	-	-

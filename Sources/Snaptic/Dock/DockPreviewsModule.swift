@@ -33,6 +33,15 @@ import SnapticKit
     private(set) var killSwitches: Set<DockFeature> = []
     /// Captures this module asked for since it started; A4a counts them (§4.22 "captures by path").
     private var captures = 0
+    /// A3: the Dock observer, while the module runs and isn't paused.
+    private var observer: DockObserver?
+    #if DEBUG
+    /// A3's owner checks before the panel exists (S0-23, the AX stall): `windows(for:)` timed on each selection that
+    /// would show a panel, one read at a time.
+    private var readTimings = DockReadTimings()
+    private var lastWindowCount = 0
+    private var windowReadInFlight = false
+    #endif
 
     /// §4.14: Accessibility, plus Screen Recording while Window thumbnails is on.
     var requiredPermissions: Set<Permission> { config.value.requiredPermissions }
@@ -54,7 +63,14 @@ import SnapticKit
         }
         killSwitches = Self.readKillSwitches(defaults)
         leaseNeeds = Self.windowNeeds(config.value)
-        lease = WindowServices.shared.acquire(id, needs: leaseNeeds)
+        lease = WindowServices.shared.acquire(id, needs: leaseNeeds, onWindowsChanged: { pid in
+            WindowManager.shared.markWindowsDirty(pid)
+        })
+        let observer = DockObserver()
+        observer.onSelection = { [weak self] selection in self?.selectionChanged(selection) }
+        self.observer = observer
+        observer.start()
+        Self.liveCount(.observer, up: true)
         config.$value
             .dropFirst()
             .receive(on: DispatchQueue.main)
@@ -69,6 +85,17 @@ import SnapticKit
         guard let context else { return }
         let wasRunning = state == .running
         sinks.removeAll()
+        if let observer {
+            observer.stop()
+            self.observer = nil
+            Self.liveCount(.observer, up: false)
+            WindowManager.shared.endWindowReads()
+        }
+        #if DEBUG
+        readTimings = DockReadTimings()
+        lastWindowCount = 0
+        windowReadInFlight = false
+        #endif
         if let lease { WindowServices.shared.release(lease) }
         lease = nil
         leaseNeeds = []
@@ -97,7 +124,11 @@ import SnapticKit
         var lines: [String] = []
         lines.append("State: " + Self.stateName(state))
         lines.append("Pause reason: " + (pausedInSafeMode ? "safeMode" : "none"))
-        lines.append("Observer attached: " + (Self.live[.observer] > 0 ? "yes" : "no"))
+        lines += (observer?.stats ?? DockObserverStats()).diagnosticsLines(observerLive: Self.live[.observer] > 0)
+        #if DEBUG
+        let p95 = readTimings.p95.map { String(format: "%.1f ms", $0) } ?? "none"
+        lines.append("Window reads: \(readTimings.total), p95 \(p95), last \(lastWindowCount) windows")
+        #endif
         lines.append("Leases: \(lease == nil ? 0 : 1)")
         lines.append("Captures: \(captures)")
         lines.append("Cache entries: \(ThumbnailStore.shared.liveEntries)")
@@ -125,6 +156,36 @@ import SnapticKit
             live.decrement(counter)
         }
     }
+
+    // MARK: Dock
+
+    /// The Dock's selection, coalesced to the latest (§2.4). A4a's preview policy takes it from here; until then
+    /// only the observer's counters see it.
+    private func selectionChanged(_ selection: DockSelection?) {
+        guard observer != nil else { return }
+        #if DEBUG
+        if let selection, selection.showsPanel, let pid = selection.pid { timeWindowRead(pid) }
+        #endif
+    }
+
+    #if DEBUG
+    private func timeWindowRead(_ pid: pid_t) {
+        guard !windowReadInFlight else { return }
+        windowReadInFlight = true
+        let current = observer
+        Task { @MainActor [weak self] in
+            let started = ProcessInfo.processInfo.systemUptime
+            let read = await WindowManager.shared.windows(for: pid)
+            let elapsed = (ProcessInfo.processInfo.systemUptime - started) * 1000
+            // A stop (and maybe a new start) since the read began: it isn't this run's.
+            guard let self, self.observer != nil, self.observer === current else { return }
+            self.windowReadInFlight = false
+            guard !read.fromCache else { return }
+            self.readTimings.add(elapsed)
+            self.lastWindowCount = read.items.count
+        }
+    }
+    #endif
 
     // MARK: Settings
 
