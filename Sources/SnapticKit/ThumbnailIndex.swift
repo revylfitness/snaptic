@@ -1,10 +1,10 @@
 import Foundation
 
-// The thumbnail store's bookkeeping, without images (lead; PLAN 0.5 §2.3, §2.5, P2-3): keys (windowID, pixel bucket),
-// client tags, a generation per client, the epoch, the stamp check, invalidate, prune, purge, purgeAll, LRU eviction,
-// expiry and the bucket lookup. The app's `ThumbnailStore` keeps the images under these keys and drops the ones each
-// call returns. The index never reads a clock: callers pass `now` (seconds, any monotonic origin).
-// A2a adds the byte budget, the oversize skip, 30-minute retention and `nextExpiry`.
+// The thumbnail store's bookkeeping, without images (lead; PLAN 0.5 §2.3, §2.5, §4.9, P2-3): keys (windowID, pixel
+// bucket), client tags, a generation per client, the epoch, the stamp check, invalidate, prune, purge, purgeAll, LRU
+// eviction by entries and bytes, the oversize skip, expiry, `nextExpiry`, the bucket lookup, the privacy drop and the
+// 30 s pacing rule. The app's `ThumbnailStore` keeps the images under these keys and drops the ones each call returns.
+// The index never reads a clock: callers pass `now` (seconds, any monotonic origin that runs through sleep).
 
 /// One cached thumbnail: a window at one pixel bucket (§2.3). Buckets: 720 for the Dock; 640 and 2400 for the
 /// switcher (§4.9).
@@ -26,19 +26,38 @@ package struct ThumbnailStamp: Equatable, Sendable {
     package let epoch: Int
 }
 
+/// Where an entry's image came from (§4.9).
+package enum ThumbnailSource: String, Equatable, Sendable {
+    case sck
+    /// `CGSHWCaptureWindowList` (A2b).
+    case privateCapture = "private"
+}
+
 /// How much the index keeps.
 package struct ThumbnailLimits: Equatable, Sendable {
     package var maxEntries: Int
+    /// The images' bytes in total, counted as `bytesPerRow × height` (§4.9).
+    package var maxBytes: Int
+    /// One image over this many bytes is skipped, not stored.
+    package var maxEntryBytes: Int
     /// An entry is gone this many seconds after its capture.
     package var maxAge: Double
 
-    package init(maxEntries: Int, maxAge: Double) {
+    package init(maxEntries: Int, maxAge: Double, maxBytes: Int = .max, maxEntryBytes: Int = .max) {
         self.maxEntries = maxEntries
+        self.maxBytes = maxBytes
+        self.maxEntryBytes = maxEntryBytes
         self.maxAge = maxAge
     }
 
-    /// 0.4's limits: 40 entries for 5 minutes. A1a and A1b keep them; A2a switches (D2-22).
+    /// 0.4's limits: 40 entries for 5 minutes, with no byte count. A1a and A1b kept them (D2-22).
     package static let v04 = ThumbnailLimits(maxEntries: 40, maxAge: 5 * 60)
+
+    /// 0.5's limits from A2a (§2.3, §4.9, X2-13): 120 entries and 96 MB, one entry at most 16 MB, kept 30 minutes.
+    /// MB are decimal (1 MB = 1,000,000 bytes), so a 2400-pixel preview of a window squarer than about 3:2
+    /// (2400 × 1600 × 4 = 15.36 MB) is over 16 MB and isn't cached (X3-10).
+    package static let v05 = ThumbnailLimits(maxEntries: 120, maxAge: 30 * 60, maxBytes: 96_000_000,
+                                              maxEntryBytes: 16_000_000)
 }
 
 package struct ThumbnailIndex: Equatable, Sendable {
@@ -46,6 +65,20 @@ package struct ThumbnailIndex: Equatable, Sendable {
         /// The client whose capture this is. A later capture of the same key by another client takes it over.
         package var client: ModuleID
         package var capturedAt: Double
+        /// `bytesPerRow × height` of the image.
+        package var bytes: Int
+        package var source: ThumbnailSource
+        /// The window changed since this capture, so the next batch captures it even while it's fresh (§4.9).
+        package var dirty: Bool
+
+        package init(client: ModuleID, capturedAt: Double, bytes: Int = 0, source: ThumbnailSource = .sck,
+                     dirty: Bool = false) {
+            self.client = client
+            self.capturedAt = capturedAt
+            self.bytes = bytes
+            self.source = source
+            self.dirty = dirty
+        }
     }
 
     package enum InsertResult: Equatable, Sendable {
@@ -53,6 +86,9 @@ package struct ThumbnailIndex: Equatable, Sendable {
         case stored(evicted: [ThumbnailKey])
         /// The stamp is stale, or its client holds no `.thumbnails`: the image is dropped, not stored.
         case refused
+        /// The image is over the one-entry limit: the caller may show it, but nothing is stored and the key's
+        /// previous entry stays (§4.9; X3-10).
+        case skipped
     }
 
     package let limits: ThumbnailLimits
@@ -62,13 +98,20 @@ package struct ThumbnailIndex: Equatable, Sendable {
     package private(set) var epoch = 0
     /// The clients whose lease holds `.thumbnails`. Only they store, and only they get thumbnails (X2-11).
     package private(set) var thumbnailClients: Set<ModuleID> = []
+    /// The entries' bytes in total.
+    package private(set) var totalBytes = 0
     private var generations: [ModuleID: Int] = [:]
 
-    package init(limits: ThumbnailLimits = .v04) {
+    package init(limits: ThumbnailLimits = .v05) {
         self.limits = limits
     }
 
     package var count: Int { entries.count }
+
+    /// When the oldest entry expires: the store's one retention timer is set for it (§2.5). Nil when empty.
+    package var nextExpiry: Double? {
+        entries.values.map(\.capturedAt).min().map { $0 + limits.maxAge }
+    }
 
     package func generation(of client: ModuleID) -> Int { generations[client] ?? 0 }
 
@@ -114,17 +157,21 @@ package struct ThumbnailIndex: Equatable, Sendable {
 
     // MARK: Store and look up
 
-    /// Stores a capture taken under `stamp`. Evicts the least recently stored entries over `maxEntries`, whoever
-    /// owns them.
-    package mutating func insert(_ key: ThumbnailKey, stamp: ThumbnailStamp, now: Double) -> InsertResult {
+    /// Stores a capture of `bytes` taken under `stamp`. One over the one-entry limit is skipped. Evicts the least
+    /// recently stored entries, whoever owns them, while there are more than `maxEntries` or more than `maxBytes`.
+    package mutating func insert(_ key: ThumbnailKey, stamp: ThumbnailStamp, now: Double, bytes: Int = 0,
+                                 source: ThumbnailSource = .sck) -> InsertResult {
         guard isCurrent(stamp), thumbnailClients.contains(stamp.client) else { return .refused }
-        entries[key] = Entry(client: stamp.client, capturedAt: now)
+        guard bytes >= 0, bytes <= min(limits.maxEntryBytes, limits.maxBytes) else { return .skipped }
+        if let old = entries[key] { totalBytes -= old.bytes }
+        entries[key] = Entry(client: stamp.client, capturedAt: now, bytes: bytes, source: source)
+        totalBytes += bytes
         order.removeAll { $0 == key }
         order.append(key)
         var evicted: [ThumbnailKey] = []
-        while order.count > limits.maxEntries {
+        while order.count > limits.maxEntries || totalBytes > limits.maxBytes {
             let oldest = order.removeFirst()
-            entries[oldest] = nil
+            totalBytes -= entries.removeValue(forKey: oldest)?.bytes ?? 0
             evicted.append(oldest)
         }
         return .stored(evicted: evicted)
@@ -146,6 +193,22 @@ package struct ThumbnailIndex: Equatable, Sendable {
         }
         guard let found = larger ?? smaller else { return nil }
         return ThumbnailKey(windowID: windowID, bucket: found)
+    }
+
+    // MARK: Pacing (§4.9)
+
+    /// Whether `client` should capture `windowID` at `bucket` now: each window is captured at most once per 30 s
+    /// unless it's dirty. True when the lookup finds nothing, only a smaller bucket, or an entry that is dirty or no
+    /// longer fresh. Another client's fresh entry counts, as the lookup would show it.
+    package func needsCapture(windowID: UInt32, bucket: Int, client: ModuleID, now: Double) -> Bool {
+        guard let key = lookup(windowID: windowID, bucket: bucket, client: client, now: now),
+              key.bucket >= bucket, let entry = entries[key] else { return true }
+        return entry.dirty || !WindowCatalogRules.isFresh(capturedAt: entry.capturedAt, now: now)
+    }
+
+    /// Marks every entry of `windowIDs` dirty, whoever owns it. A new capture of the key clears it.
+    package mutating func markDirty(_ windowIDs: Set<UInt32>) {
+        for key in order where windowIDs.contains(key.windowID) { entries[key]?.dirty = true }
     }
 
     // MARK: Invalidate, prune, purge
@@ -177,7 +240,21 @@ package struct ThumbnailIndex: Equatable, Sendable {
         let dropped = order
         entries = [:]
         order = []
+        totalBytes = 0
         return dropped
+    }
+
+    /// The retention sweep (§2.5): drops every entry 30 minutes after its capture, whoever owns it.
+    package mutating func expire(now: Double) -> [ThumbnailKey] {
+        let maxAge = limits.maxAge
+        return drop { _, entry in now - entry.capturedAt >= maxAge }
+    }
+
+    /// The cache refuses private windows (§4.10): drops every client's entries of `windowIDs`, the windows that
+    /// turned private.
+    package mutating func forget(windowIDs: Set<UInt32>) -> [ThumbnailKey] {
+        guard !windowIDs.isEmpty else { return [] }
+        return drop { key, _ in windowIDs.contains(key.windowID) }
     }
 
     private func isExpired(_ entry: Entry, now: Double) -> Bool {
@@ -189,6 +266,7 @@ package struct ThumbnailIndex: Equatable, Sendable {
         for key in order {
             guard let entry = entries[key], shouldDrop(key, entry) else { continue }
             entries[key] = nil
+            totalBytes -= entry.bytes
             dropped.append(key)
         }
         if !dropped.isEmpty { order.removeAll { entries[$0] == nil } }

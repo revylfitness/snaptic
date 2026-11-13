@@ -3,7 +3,8 @@ import XCTest
 
 // 0.5 A1b (§2.3, §2.5, D2-14, X2-11, X2-12, D2-22): the thumbnail index's client cases — isolation between clients,
 // stamps, the last release, last-seen entries across a switcher open, `.thumbnails` lookups, the bucket lookup and
-// 0.4's limits. The budget cases (120 entries, 96 MB, the oversize skip, 30-minute expiry, `nextExpiry`) are A2a's.
+// 0.4's limits. A2a (§2.3, §2.5, §4.9, §4.10, X2-13, X3-10): the budget cases — 120 entries, 96 MB, the oversize
+// skip, the 30-minute expiry and `nextExpiry` — plus the privacy drop and the 30 s pacing rule.
 
 private let dockBucket = 720
 private let listBucket = 640
@@ -12,18 +13,21 @@ private let previewBucket = 2400
 private func key(_ id: UInt32, _ bucket: Int) -> ThumbnailKey { ThumbnailKey(windowID: id, bucket: bucket) }
 
 /// Both clients hold `.thumbnails`, as their leases would after `acquire`.
-private func bothClients() -> ThumbnailIndex {
-    var index = ThumbnailIndex()
+private func bothClients(_ limits: ThumbnailLimits = .v05) -> ThumbnailIndex {
+    var index = ThumbnailIndex(limits: limits)
     index.setThumbnails(true, client: .windowSwitcher)
     index.setThumbnails(true, client: .dockPreviews)
     return index
 }
 
 @discardableResult
-private func store(_ index: inout ThumbnailIndex, _ key: ThumbnailKey, _ client: ModuleID, now: Double = 0)
-    -> ThumbnailIndex.InsertResult {
-    index.insert(key, stamp: index.stamp(for: client), now: now)
+private func store(_ index: inout ThumbnailIndex, _ key: ThumbnailKey, _ client: ModuleID, now: Double = 0,
+                   bytes: Int = 0) -> ThumbnailIndex.InsertResult {
+    index.insert(key, stamp: index.stamp(for: client), now: now, bytes: bytes)
 }
+
+/// `bytesPerRow × height` of a 32-bit image, as `WindowCapture` counts it.
+private func imageBytes(_ width: Int, _ height: Int) -> Int { width * 4 * height }
 
 final class ThumbnailIndexTests: XCTestCase {
     // MARK: Client isolation
@@ -236,15 +240,16 @@ final class ThumbnailIndexTests: XCTestCase {
         store(&index, key(1, listBucket), .windowSwitcher)
         store(&index, key(1, listBucket), .dockPreviews, now: 5)
         XCTAssertEqual(index.entries[key(1, listBucket)], .init(client: .dockPreviews, capturedAt: 5))
+        XCTAssertEqual(index.totalBytes, 0)
         XCTAssertEqual(index.count, 1)
         XCTAssertEqual(index.purge(client: .windowSwitcher), [])
         XCTAssertEqual(index.purge(client: .dockPreviews), [key(1, listBucket)])
     }
 
-    // MARK: 0.4's limits until A2a (D2-22)
+    // MARK: 0.4's limits, no longer the default (D2-22)
 
-    func testAnIndexKeepsFortyEntries() {
-        var index = bothClients()
+    func testTheV04LimitsKeepFortyEntries() {
+        var index = bothClients(.v04)
         XCTAssertEqual(index.limits, ThumbnailLimits(maxEntries: 40, maxAge: 300))
         for id in UInt32(1)...40 { store(&index, key(id, listBucket), .windowSwitcher, now: Double(id)) }
         XCTAssertEqual(index.count, 40)
@@ -258,8 +263,8 @@ final class ThumbnailIndexTests: XCTestCase {
         XCTAssertEqual(store(&index, key(42, dockBucket), .dockPreviews, now: 43), .stored(evicted: [key(3, listBucket)]))
     }
 
-    func testAnEntryExpiresFiveMinutesAfterItsCapture() {
-        var index = bothClients()
+    func testAV04EntryExpiresFiveMinutesAfterItsCapture() {
+        var index = bothClients(.v04)
         store(&index, key(1, listBucket), .windowSwitcher, now: 100)
         XCTAssertEqual(index.lookup(windowID: 1, bucket: listBucket, client: .windowSwitcher, now: 399.9),
                        key(1, listBucket))
@@ -271,5 +276,153 @@ final class ThumbnailIndexTests: XCTestCase {
         // Prune drops the client's expired entries even for windows it keeps.
         XCTAssertEqual(index.prune(keeping: [1], client: .windowSwitcher, now: 400), [key(1, listBucket)])
         XCTAssertEqual(index.order, [key(1, previewBucket)])
+    }
+
+    // MARK: A2a's budget (§2.3, §4.9, X2-13)
+
+    func testTheDefaultLimitsAre120Entries96MBAnd30Minutes() {
+        let index = ThumbnailIndex()
+        XCTAssertEqual(index.limits, .v05)
+        XCTAssertEqual(index.limits.maxEntries, 120)
+        XCTAssertEqual(index.limits.maxBytes, 96_000_000)
+        XCTAssertEqual(index.limits.maxEntryBytes, 16_000_000)
+        XCTAssertEqual(index.limits.maxAge, 30 * 60)
+    }
+
+    func testAnIndexKeeps120Entries() {
+        var index = bothClients()
+        // Small images, so the entry count binds before the bytes do (120 × 160 KB = 19.2 MB).
+        let small = imageBytes(200, 200)
+        for id in UInt32(1)...120 {
+            store(&index, key(id, listBucket), .windowSwitcher, now: Double(id), bytes: small)
+        }
+        XCTAssertEqual(index.count, 120)
+        XCTAssertEqual(index.totalBytes, 120 * small)
+        // The 121st evicts the least recently stored, whoever owns it.
+        XCTAssertEqual(store(&index, key(121, dockBucket), .dockPreviews, now: 121, bytes: small),
+                       .stored(evicted: [key(1, listBucket)]))
+        XCTAssertEqual(index.count, 120)
+        XCTAssertEqual(index.totalBytes, 120 * small)
+    }
+
+    func testAnIndexKeeps96MBEvictingTheLeastRecentlyStored() {
+        var index = bothClients()
+        store(&index, key(1, dockBucket), .dockPreviews, now: 1, bytes: 5_000_000)
+        store(&index, key(2, dockBucket), .dockPreviews, now: 2, bytes: 5_000_000)
+        for id in UInt32(3)...8 {
+            store(&index, key(id, previewBucket), .windowSwitcher, now: Double(id), bytes: 14_000_000)
+        }
+        XCTAssertEqual(index.totalBytes, 94_000_000)
+        // Storing a key again counts only its new bytes, and makes it the most recent.
+        store(&index, key(2, dockBucket), .dockPreviews, now: 9, bytes: 1_000)
+        XCTAssertEqual(index.totalBytes, 89_001_000)
+        // 16 MB more is over 96 MB: the least recently stored go, whoever owns them, until it fits.
+        XCTAssertEqual(store(&index, key(9, previewBucket), .windowSwitcher, now: 10, bytes: 16_000_000),
+                       .stored(evicted: [key(1, dockBucket), key(3, previewBucket)]))
+        XCTAssertEqual(index.totalBytes, 86_001_000)
+        XCTAssertEqual(index.count, 7)
+        // Purges give the bytes back.
+        _ = index.purge(client: .dockPreviews)
+        XCTAssertEqual(index.totalBytes, 86_000_000)
+        _ = index.purgeAll()
+        XCTAssertEqual(index.totalBytes, 0)
+    }
+
+    func testAnEntryOver16MBIsSkippedNotStored() {
+        var index = bothClients()
+        // A 2400-pixel preview of a 3:2 window fits; a squarer 4:3 one is over 16 MB (X3-10).
+        XCTAssertEqual(imageBytes(2400, 1600), 15_360_000)
+        XCTAssertEqual(store(&index, key(1, previewBucket), .windowSwitcher, now: 1, bytes: imageBytes(2400, 1600)),
+                       .stored(evicted: []))
+        XCTAssertEqual(store(&index, key(1, previewBucket), .windowSwitcher, now: 2, bytes: imageBytes(2400, 1800)),
+                       .skipped)
+        // The key's previous entry stays, and nothing else moves.
+        XCTAssertEqual(index.entries[key(1, previewBucket)]?.capturedAt, 1)
+        XCTAssertEqual(index.totalBytes, 15_360_000)
+        XCTAssertEqual(store(&index, key(2, previewBucket), .windowSwitcher, now: 3, bytes: 16_000_000),
+                       .stored(evicted: []))
+        XCTAssertEqual(store(&index, key(3, previewBucket), .windowSwitcher, now: 4, bytes: 16_000_001), .skipped)
+        XCTAssertNil(index.entries[key(3, previewBucket)])
+        // A stale stamp is refused before its size counts.
+        let stale = index.stamp(for: .windowSwitcher)
+        index.invalidate(client: .windowSwitcher)
+        XCTAssertEqual(index.insert(key(4, previewBucket), stamp: stale, now: 5, bytes: 20_000_000), .refused)
+    }
+
+    func testAnEntryExpiresThirtyMinutesAfterItsCapture() {
+        var index = bothClients()
+        store(&index, key(1, listBucket), .windowSwitcher, now: 100)
+        XCTAssertEqual(index.lookup(windowID: 1, bucket: listBucket, client: .windowSwitcher, now: 1_899.9),
+                       key(1, listBucket))
+        XCTAssertNil(index.lookup(windowID: 1, bucket: listBucket, client: .windowSwitcher, now: 1_900))
+        // Five minutes no longer expire anything.
+        XCTAssertEqual(index.prune(keeping: [1], client: .windowSwitcher, now: 400), [])
+        XCTAssertEqual(index.prune(keeping: [1], client: .windowSwitcher, now: 1_900), [key(1, listBucket)])
+    }
+
+    func testNextExpiryIsTheOldestEntrysAndTheSweepDropsWhatExpired() {
+        var index = bothClients()
+        XCTAssertNil(index.nextExpiry)   // an empty store has no timer
+        store(&index, key(1, listBucket), .windowSwitcher, now: 100, bytes: 10)
+        store(&index, key(2, dockBucket), .dockPreviews, now: 50, bytes: 20)
+        store(&index, key(3, listBucket), .windowSwitcher, now: 300, bytes: 30)
+        XCTAssertEqual(index.nextExpiry, 1_850)
+        XCTAssertEqual(index.expire(now: 1_849), [])
+        // The sweep drops every client's expired entries, then the timer moves to the next one.
+        XCTAssertEqual(index.expire(now: 1_910), [key(1, listBucket), key(2, dockBucket)])
+        XCTAssertEqual(index.nextExpiry, 2_100)
+        XCTAssertEqual(index.totalBytes, 30)
+        XCTAssertEqual(index.expire(now: 2_100), [key(3, listBucket)])
+        XCTAssertNil(index.nextExpiry)
+        XCTAssertEqual(index.totalBytes, 0)
+    }
+
+    func testEachEntryRecordsItsSourceAndCaptureTime() {
+        var index = bothClients()
+        store(&index, key(1, listBucket), .windowSwitcher, now: 5, bytes: 100)
+        let stamp = index.stamp(for: .dockPreviews)
+        XCTAssertEqual(index.insert(key(2, dockBucket), stamp: stamp, now: 6, bytes: 200, source: .privateCapture),
+                       .stored(evicted: []))
+        XCTAssertEqual(index.entries[key(1, listBucket)],
+                       .init(client: .windowSwitcher, capturedAt: 5, bytes: 100, source: .sck))
+        XCTAssertEqual(index.entries[key(2, dockBucket)]?.source, .privateCapture)
+        XCTAssertEqual(ThumbnailSource.privateCapture.rawValue, "private")
+    }
+
+    // MARK: Privacy (§4.10)
+
+    func testAWindowThatTurnsPrivateLosesEveryClientsEntries() {
+        var index = bothClients()
+        store(&index, key(1, listBucket), .windowSwitcher, bytes: 10)
+        store(&index, key(1, previewBucket), .windowSwitcher, bytes: 20)
+        store(&index, key(1, dockBucket), .dockPreviews, bytes: 30)
+        store(&index, key(2, listBucket), .windowSwitcher, bytes: 40)
+        XCTAssertEqual(index.forget(windowIDs: [1]), [key(1, listBucket), key(1, previewBucket), key(1, dockBucket)])
+        XCTAssertEqual(index.order, [key(2, listBucket)])
+        XCTAssertEqual(index.totalBytes, 40)
+        XCTAssertNil(index.lookup(windowID: 1, bucket: dockBucket, client: .dockPreviews, now: 1))
+        XCTAssertEqual(index.forget(windowIDs: []), [])
+    }
+
+    // MARK: Pacing (§4.9)
+
+    func testAWindowIsCapturedAtMostOncePer30SecondsUnlessItsDirty() {
+        var index = bothClients()
+        XCTAssertTrue(index.needsCapture(windowID: 1, bucket: listBucket, client: .windowSwitcher, now: 0))
+        store(&index, key(1, listBucket), .windowSwitcher, now: 0)
+        XCTAssertFalse(index.needsCapture(windowID: 1, bucket: listBucket, client: .windowSwitcher, now: 29.9))
+        XCTAssertTrue(index.needsCapture(windowID: 1, bucket: listBucket, client: .windowSwitcher, now: 30))
+        // A dirty window is captured again at once; the new capture clears it.
+        index.markDirty([1])
+        XCTAssertTrue(index.needsCapture(windowID: 1, bucket: listBucket, client: .windowSwitcher, now: 1))
+        store(&index, key(1, listBucket), .windowSwitcher, now: 2)
+        XCTAssertFalse(index.needsCapture(windowID: 1, bucket: listBucket, client: .windowSwitcher, now: 3))
+        // Another client's fresh, larger capture counts; a smaller one doesn't.
+        store(&index, key(2, dockBucket), .dockPreviews, now: 0)
+        XCTAssertFalse(index.needsCapture(windowID: 2, bucket: listBucket, client: .windowSwitcher, now: 1))
+        XCTAssertTrue(index.needsCapture(windowID: 1, bucket: dockBucket, client: .dockPreviews, now: 3))
+        // Without `.thumbnails` the lookup is empty, so nothing counts as fresh.
+        index.setThumbnails(false, client: .dockPreviews)
+        XCTAssertTrue(index.needsCapture(windowID: 1, bucket: dockBucket, client: .dockPreviews, now: 3))
     }
 }

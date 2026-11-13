@@ -30,6 +30,8 @@ struct WindowLease: Equatable {
     private var ownFreshness: OwnFreshnessSession?
     /// One one-shot at the ledger's next freshness deadline; nil while nothing lingers.
     private var lingerItem: DispatchWorkItem?
+    /// The window focus last moved to, while a lease holds `.recency`.
+    private var lastFocused: CGWindowID?
 
     private init() {}
 
@@ -101,12 +103,16 @@ struct WindowLease: Equatable {
                 break   // the purge observers follow the `.thumbnails` union below
             case .startRecency:
                 WindowManager.shared.start()
-                focusTracker.onFocus = { pid, id in WindowManager.shared.focusChanged(pid: pid, windowID: id) }
+                focusTracker.onFocus = { [weak self] pid, id in
+                    WindowManager.shared.focusChanged(pid: pid, windowID: id)
+                    self?.focusMoved(to: id)
+                }
                 focusTracker.onWindowsChanged = { [weak self] pid in self?.windowsChanged(pid) }
                 focusTracker.start()
             case .stopRecency:
                 focusTracker.stop()
                 WindowManager.shared.stop()
+                lastFocused = nil
             case .startFreshness(let pid, .focusTracker):
                 focusTracker.startFreshness(pid)
             case .stopFreshness(let pid, .focusTracker):
@@ -121,6 +127,13 @@ struct WindowLease: Equatable {
         }
         syncPurgeObservers()
         armLinger()
+    }
+
+    /// The window you moved to and the one you left are where things change: both are captured again at the next
+    /// batch even while their thumbnails are fresh (§4.9).
+    private func focusMoved(to id: CGWindowID) {
+        ThumbnailStore.shared.markDirty(Set([id] + (lastFocused.map { [$0] } ?? [])))
+        lastFocused = id
     }
 
     // MARK: Freshness (§2.3, X-9, D2-5)
@@ -181,11 +194,13 @@ struct WindowLease: Equatable {
         }
     }
 
-    /// Forget every captured thumbnail when the Mac locks, the displays sleep or the user switches away.
+    /// Forget every captured thumbnail when the Mac locks, the displays or the Mac sleep, or the user switches away.
     private func addPurgeObservers() {
         guard purgeTokens.isEmpty else { return }
         let workspace = NSWorkspace.shared.notificationCenter
-        for name in [NSWorkspace.screensDidSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
+        let names = [NSWorkspace.screensDidSleepNotification, NSWorkspace.willSleepNotification,
+                     NSWorkspace.sessionDidResignActiveNotification]
+        for name in names {
             purgeTokens.append(workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.purgeTriggered() }
             })
@@ -208,6 +223,14 @@ struct WindowLease: Equatable {
     private func purgeTriggered() {
         for client in ModuleID.allCases where ledger.holds(client) { purgeHandlers[client]?() }
         ThumbnailStore.shared.purgeAll()
+    }
+
+    /// Screen Recording was found off, at a capture batch or by a permission check (§2.5, M39): the store is purged,
+    /// but no client closes; each shows text from then on. Snaptic never asks for the permission here.
+    func screenRecordingRevoked() {
+        let hadThumbnails = ThumbnailStore.shared.liveEntries > 0
+        ThumbnailStore.shared.purgeAll()
+        if hadThumbnails { EventLog.shared.record(.permissions, "screenRecording off: thumbnails purged") }
     }
 }
 

@@ -1,188 +1,143 @@
 import AppKit
-import ScreenCaptureKit
 import SnapticKit
 
-/// A window Snaptic wants to capture, and the process that should own it.
-struct CaptureTarget: Equatable {
-    let id: CGWindowID
-    let pid: pid_t
-}
-
-/// Captures window thumbnails with ScreenCaptureKit and keeps the images.
+/// Keeps window thumbnails, in memory only, under Kit `ThumbnailIndex`'s keys (PLAN 0.5 §2.3, §2.5, P2-3).
 ///
-/// Every rule lives in Kit `ThumbnailIndex` (PLAN 0.5 §2.3, P2-3): client tags, each client's generation, the stamp
-/// check, LRU eviction, expiry and the bucket lookup. This store holds only the images under the index's keys, and
-/// each call names its client.
+/// Every rule lives in the index: client tags, each client's generation, the stamp check, LRU eviction by 120 entries
+/// and 96 MB, the oversize skip, 30-minute expiry, the privacy drop, the 30 s pacing rule and the bucket lookup. This
+/// store holds only the images, and the one retention timer. `WindowCapture` takes the pictures; each call names its
+/// client.
 ///
-/// Privacy: images live only in memory, the cache is small, least-recently used and expires after a few minutes,
-/// entries for closed windows are dropped, nothing is kept from a capture its client no longer wants, and everything
-/// is purged when the screen sleeps or locks. The caller decides which windows may be captured; this store
-/// double-checks ownership with ScreenCaptureKit itself.
+/// Privacy: captured only while the Window Switcher or a Dock preview is showing. Kept in memory for at most
+/// 30 minutes, and purged on lock, sleep, fast user switching and when the last module using them stops. Nothing is
+/// ever written to disk, nothing is kept from a capture its client no longer wants, a window that turns private loses
+/// its thumbnails, and everything goes when Screen Recording is found revoked.
 @MainActor
 final class ThumbnailStore {
     static let shared = ThumbnailStore()
 
-    private var index = ThumbnailIndex(limits: .v04)
+    private var index = ThumbnailIndex(limits: .v05)
     private var images: [ThumbnailKey: NSImage] = [:]
-    /// ScreenCaptureKit's windows from the last capture batch: capture state, not bookkeeping. A2a's `WindowCapture`
-    /// takes it over.
-    private var shareable: [CGWindowID: SCWindow] = [:]
+    /// One one-shot at the index's next expiry plus `retentionLeeway`; nil while the store is empty (§2.5).
+    private var retentionItem: DispatchWorkItem?
+
+    /// The retention timer fires this long after the earliest expiry, so one sweep takes several entries (X3-10).
+    private static let retentionLeeway: Double = 60
 
     /// Cached thumbnails (§2.3 counters).
     var liveEntries: Int { index.count }
+    /// Their bytes, counted as `bytesPerRow × height` (§2.3 counters).
+    var liveBytes: Int { index.totalBytes }
 
-    /// Monotonic seconds that keep counting while the Mac sleeps, so an entry ages as it did under 0.4's `Date`.
-    private static var now: Double { Double(clock_gettime_nsec_np(CLOCK_MONOTONIC)) / 1_000_000_000 }
+    /// Monotonic seconds that keep counting while the Mac sleeps (§R4 A1b): an entry ages through sleep.
+    static var now: Double { Double(clock_gettime_nsec_np(CLOCK_MONOTONIC)) / 1_000_000_000 }
 
-    // MARK: Leases
+    // MARK: Leases and purges
 
     /// Runs the purges in a batch of lease commands and follows each client's `.thumbnails` need (§2.3).
     func apply(_ commands: [WindowLeaseCommand], ledger: WindowLeaseLedger) {
-        let dropped = index.apply(commands, ledger: ledger)
-        forget(dropped)
-        if commands.contains(.purgeAll) { shareable = [:] }
+        forget(index.apply(commands, ledger: ledger))
+        for case .purge(let client) in commands { WindowCapture.shared.stop(client: client) }
+        if commands.contains(.purgeAll) { WindowCapture.shared.purged() }
     }
 
     /// The §2.5 purge: every image goes, and every capture in flight is dropped when it lands.
     func purgeAll() {
         forget(index.purgeAll())
-        shareable = [:]
-    }
-
-    // MARK: Client calls
-
-    /// `client`'s cached thumbnails of `ids` at `maxPixels`, or the nearest size cached (§2.3 lookup rule). Nothing
-    /// for a client without `.thumbnails`.
-    func cached(_ ids: [CGWindowID], maxPixels: CGFloat, client: ModuleID) -> [CGWindowID: NSImage] {
-        let now = Self.now
-        var result: [CGWindowID: NSImage] = [:]
-        for id in ids {
-            if let key = index.lookup(windowID: id, bucket: Self.bucket(maxPixels), client: client, now: now),
-               let image = images[key] {
-                result[id] = image
-            }
-        }
-        return result
+        WindowCapture.shared.purged()
     }
 
     /// Stops `client`'s captures in flight; its images stay. The switcher calls it whenever it closes.
     func invalidate(client: ModuleID) {
         index.invalidate(client: client)
-        shareable = [:]
     }
 
     /// Drops `client`'s images of windows that no longer exist (or that may no longer be captured) and anything too
-    /// old. Another client's images are never touched.
+    /// old. Another client's images are never touched; a window in `allowed` keeps its last-seen image (D2-14).
     func prune(keeping allowed: Set<CGWindowID>, client: ModuleID) {
         forget(index.prune(keeping: allowed, client: client, now: Self.now))
     }
 
-    /// Captures `targets` one at a time, `priority` first, for `client`. Its previous batch stops.
-    func refresh(
-        _ targets: [CaptureTarget],
-        blockedBundleIDs: [String],
-        maxPixels: CGFloat,
-        priority: CGWindowID?,
-        client: ModuleID,
-        onImage: @escaping @MainActor (CGWindowID, NSImage) -> Void
-    ) {
-        guard !targets.isEmpty, CGPreflightScreenCaptureAccess() else { return }
-        index.invalidate(client: client)
-        let stamp = index.stamp(for: client)
-        let bucket = Self.bucket(maxPixels)
-        let scale = NSScreen.main?.backingScaleFactor ?? 2
-
-        var reordered = targets
-        if let priority, let position = reordered.firstIndex(where: { $0.id == priority }) {
-            let first = reordered.remove(at: position)
-            reordered.insert(first, at: 0)
-        }
-        let ordered = reordered
-
-        Task { @MainActor in
-            guard let windows = await Self.shareableWindows(), self.index.isCurrent(stamp) else { return }
-            self.shareable = windows
-            for target in ordered {
-                guard self.index.isCurrent(stamp) else { return }
-                guard let window = windows[target.id],
-                      Self.isOwned(window, by: target.pid, blockedBundleIDs: blockedBundleIDs),
-                      let image = await Self.capture(window, maxPixels: maxPixels, scale: scale) else { continue }
-                // The client may have closed, been purged or lost `.thumbnails` while we waited: don't keep the image.
-                guard self.store(ThumbnailKey(windowID: target.id, bucket: bucket), image, stamp: stamp) else { return }
-                onImage(target.id, image)
-            }
-        }
+    /// The cache refuses private windows (§4.10): every client's images of `windowIDs` go.
+    func forget(windowIDs: Set<CGWindowID>) {
+        forget(index.forget(windowIDs: windowIDs))
     }
 
-    /// A one-off high-resolution capture for `client`'s full-size preview. Not cached, and dropped if `client` is
-    /// invalidated or purged first.
-    func captureForPreview(_ target: CaptureTarget, blockedBundleIDs: [String], maxPixels: CGFloat,
-                           client: ModuleID) async -> NSImage? {
-        guard CGPreflightScreenCaptureAccess() else { return nil }
-        let stamp = index.stamp(for: client)
-        var found = shareable[target.id]
-        if found == nil {
-            guard let windows = await Self.shareableWindows(), index.isCurrent(stamp) else { return nil }
-            shareable = windows
-            found = windows[target.id]
-        }
-        guard let window = found, Self.isOwned(window, by: target.pid, blockedBundleIDs: blockedBundleIDs) else {
-            return nil
-        }
-        let scale = NSScreen.main?.backingScaleFactor ?? 2
-        let image = await Self.capture(window, maxPixels: maxPixels, scale: scale)
-        return index.isCurrent(stamp) ? image : nil
+    /// `windowIDs` changed since their capture: the next batch captures them even while they're fresh (§4.9).
+    func markDirty(_ windowIDs: Set<CGWindowID>) {
+        index.markDirty(windowIDs)
     }
 
-    // MARK: Images
+    // MARK: Lookups
 
-    /// Keeps `image` if the index takes it, and drops the images it evicts.
-    private func store(_ key: ThumbnailKey, _ image: NSImage, stamp: ThumbnailStamp) -> Bool {
-        guard case .stored(let evicted) = index.insert(key, stamp: stamp, now: Self.now) else { return false }
-        images[key] = image
-        forget(evicted)
-        return true
+    /// `client`'s cached thumbnails of `ids` at `maxPixels`, or the nearest size cached (§2.3 lookup rule). Nothing
+    /// for a client without `.thumbnails`.
+    func cached(_ ids: [CGWindowID], maxPixels: CGFloat, client: ModuleID) -> [CGWindowID: NSImage] {
+        var result: [CGWindowID: NSImage] = [:]
+        for id in ids {
+            if let image = cached(id, maxPixels: maxPixels, client: client) { result[id] = image }
+        }
+        return result
     }
+
+    func cached(_ id: CGWindowID, maxPixels: CGFloat, client: ModuleID) -> NSImage? {
+        index.lookup(windowID: id, bucket: Self.bucket(maxPixels), client: client, now: Self.now).flatMap { images[$0] }
+    }
+
+    // MARK: For `WindowCapture`
+
+    func holdsThumbnails(_ client: ModuleID) -> Bool { index.thumbnailClients.contains(client) }
+
+    func stamp(for client: ModuleID) -> ThumbnailStamp { index.stamp(for: client) }
+
+    func isCurrent(_ stamp: ThumbnailStamp) -> Bool { index.isCurrent(stamp) }
+
+    /// Whether `client` should capture `id` at `maxPixels` now: at most once per 30 s unless it's dirty (§4.9).
+    func needsCapture(_ id: CGWindowID, maxPixels: CGFloat, client: ModuleID) -> Bool {
+        index.needsCapture(windowID: id, bucket: Self.bucket(maxPixels), client: client, now: Self.now)
+    }
+
+    /// Keeps `image` if the index takes it, and drops the images it evicts. `.skipped` (over 16 MB) may still be
+    /// shown; `.refused` may not be kept.
+    func store(_ image: NSImage, for id: CGWindowID, maxPixels: CGFloat, bytes: Int, source: ThumbnailSource,
+               stamp: ThumbnailStamp) -> ThumbnailIndex.InsertResult {
+        let key = ThumbnailKey(windowID: id, bucket: Self.bucket(maxPixels))
+        let result = index.insert(key, stamp: stamp, now: Self.now, bytes: bytes, source: source)
+        if case .stored(let evicted) = result {
+            images[key] = image
+            forget(evicted)
+        }
+        return result
+    }
+
+    // MARK: Images and retention
 
     private func forget(_ keys: [ThumbnailKey]) {
         for key in keys { images[key] = nil }
+        syncRetention()
     }
 
     private static func bucket(_ maxPixels: CGFloat) -> Int { Int(maxPixels.rounded()) }
 
-    // MARK: ScreenCaptureKit
-
-    /// ScreenCaptureKit's own view of who owns the window must match what we
-    /// expect, and the owner must not be a protected app.
-    private static func isOwned(_ window: SCWindow, by pid: pid_t, blockedBundleIDs: [String]) -> Bool {
-        guard let owner = window.owningApplication, owner.processID == pid else { return false }
-        return !Config.bundleID(owner.bundleIdentifier, matchesAny: blockedBundleIDs)
+    /// One one-shot for the earliest expiry while anything is stored; none while the store is empty (§2.5).
+    private func syncRetention() {
+        guard let expiry = index.nextExpiry else {
+            retentionItem?.cancel()
+            retentionItem = nil
+            return
+        }
+        guard retentionItem == nil else { return }
+        let item = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated { self?.retentionFired() }
+        }
+        retentionItem = item
+        let delay = max(0, expiry + Self.retentionLeeway - Self.now)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
     }
 
-    private static func shareableWindows() async -> [CGWindowID: SCWindow]? {
-        guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true) else {
-            return nil
-        }
-        var byID: [CGWindowID: SCWindow] = [:]
-        for window in content.windows { byID[window.windowID] = window }
-        return byID
-    }
-
-    private static func capture(_ window: SCWindow, maxPixels: CGFloat, scale: CGFloat) async -> NSImage? {
-        let frame = window.frame
-        guard frame.width > 1, frame.height > 1 else { return nil }
-        let pixelRatio = min(scale, maxPixels / max(frame.width, frame.height))
-
-        let config = SCStreamConfiguration()
-        config.width = max(1, Int(frame.width * pixelRatio))
-        config.height = max(1, Int(frame.height * pixelRatio))
-        config.showsCursor = false
-        config.ignoreShadowsSingleWindow = true
-
-        let filter = SCContentFilter(desktopIndependentWindow: window)
-        guard let cgImage = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config) else {
-            return nil
-        }
-        return NSImage(cgImage: cgImage, size: NSSize(width: frame.width, height: frame.height))
+    /// The sweep, then the timer is armed again for the next expiry.
+    private func retentionFired() {
+        retentionItem = nil
+        forget(index.expire(now: Self.now))
     }
 }

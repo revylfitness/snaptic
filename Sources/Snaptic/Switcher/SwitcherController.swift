@@ -52,6 +52,8 @@ final class SwitcherController {
     /// Keys whose keyDown we swallowed; only their keyUp is swallowed too.
     private var swallowedKeys = Set<Int>()
     private var hiResPreview: (id: CGWindowID, image: NSImage)?
+    /// When the panel last appeared, in `ThumbnailStore.now` seconds: captures start 150 ms later (0.5 §4.9).
+    private var visibleSince: Double = 0
 
     private var loadTask: Task<Void, Never>?
     private var showTask: Task<Void, Never>?
@@ -250,6 +252,10 @@ final class SwitcherController {
     private func finishLoading(_ list: WindowList, shortcut: Shortcut, reverse: Bool, keepSelection: Int? = nil) {
         var items = list.items.map { markPrivacy($0) }
 
+        // The cache refuses private windows (0.5 §4.10): a window that turned private loses every client's thumbnails.
+        ThumbnailStore.shared.forget(windowIDs: Set(items.filter { $0.isPrivate && $0.hasRealWindowID }.map(\.id)))
+        // The window you're in has likely changed since its last capture (§4.9 "unless it's dirty").
+        if let focused = list.focusedID { ThumbnailStore.shared.markDirty([focused]) }
         if config.isOn(.thumbnails) {
             // Drop cached images of windows that closed or may no longer be captured. A minimized, hidden or
             // other-Space window keeps its last-seen image (0.5 §2.3, D2-14).
@@ -344,6 +350,7 @@ final class SwitcherController {
         relayout()
         window.show()
         visible = true
+        visibleSince = ThumbnailStore.now
         if model.loaded {
             loadThumbnails()
             selectionChanged()
@@ -417,7 +424,7 @@ final class SwitcherController {
         watchdog = nil
         previewTask = nil
         removeDismissMonitors()
-        ThumbnailStore.shared.invalidate(client: .windowSwitcher)
+        WindowCapture.shared.stop(client: .windowSwitcher)
         window.hide()
         preview?.hide()
         model.reset()
@@ -519,8 +526,8 @@ final class SwitcherController {
         )
     }
 
-    /// A real, visible window on this Space that isn't private: the shared capture rule's SCK path. `ThumbnailStore`
-    /// still checks consent, the owner and the protected list on each capture.
+    /// A real, visible window on this Space that isn't private: the shared capture rule's SCK path. `WindowCapture`
+    /// checks consent once per batch, and the owner and the protected list again on each capture.
     private func capturePermitted(_ item: WindowItem) -> Bool {
         WindowCatalogRules.capturePath(item.catalog, gate: .switcherList) == .screenCaptureKit
     }
@@ -556,14 +563,16 @@ final class SwitcherController {
         }
 
         // Then swap in a sharp, full-resolution capture.
-        let target = CaptureTarget(id: item.id, pid: item.pid)
+        let target = CaptureTarget(window: item.catalog)
         let blocked = blockedBundleIDs
+        let since = visibleSince
         previewTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(90))
             guard !Task.isCancelled,
-                  let image = await ThumbnailStore.shared.captureForPreview(target, blockedBundleIDs: blocked,
-                                                                            maxPixels: Self.previewPixels,
-                                                                            client: .windowSwitcher),
+                  let image = await WindowCapture.shared.captureForPreview(target, client: .windowSwitcher,
+                                                                           maxPixels: Self.previewPixels,
+                                                                           visibleSince: since,
+                                                                           protectedBundleIDs: blocked),
                   !Task.isCancelled,
                   let self, self.visible,
                   let current = self.model.selected, current.id == target.id else { return }
@@ -574,21 +583,37 @@ final class SwitcherController {
 
     private func loadThumbnails() {
         guard config.isOn(.thumbnails) else { return }
-        let eligible = model.allItems.filter { capturePermitted($0) }
-        model.thumbnails = ThumbnailStore.shared.cached(eligible.map { $0.id }, maxPixels: Self.listPixels,
+        // Consent once per batch, never requested. Found off, the store is purged and the cards show text (§2.5).
+        guard WindowCapture.shared.screenRecordingAllowed() else {
+            dropThumbnails()
+            return
+        }
+        // A minimized, hidden or other-Space window shows its last-seen thumbnail, with its badge (M5).
+        let kept = model.allItems.filter { mayKeepThumbnail($0) }
+        model.thumbnails = ThumbnailStore.shared.cached(kept.map { $0.id }, maxPixels: Self.listPixels,
                                                         client: .windowSwitcher)
         guard let shortcut = active, config.effectiveStyle(shortcut) == .thumbnails else { return }
-        ThumbnailStore.shared.refresh(
-            eligible.map { CaptureTarget(id: $0.id, pid: $0.pid) },
-            blockedBundleIDs: blockedBundleIDs,
+        WindowCapture.shared.refresh(
+            model.allItems.filter { capturePermitted($0) }.map { CaptureTarget(window: $0.catalog) },
+            client: .windowSwitcher,
             maxPixels: Self.listPixels,
             priority: model.selected?.id,
-            client: .windowSwitcher
+            visibleSince: visibleSince,
+            protectedBundleIDs: blockedBundleIDs
         ) { [weak self] id, image in
             guard let self, self.active != nil else { return }
             self.model.thumbnails[id] = image
             if self.model.selected?.id == id { self.updatePreview() }
         }
+    }
+
+    /// Screen Recording was found off: no thumbnail or preview stays on screen, and the open panel goes on with text.
+    func dropThumbnails() {
+        previewTask?.cancel()
+        previewTask = nil
+        hiResPreview = nil
+        model.thumbnails = [:]
+        preview?.hide()
     }
 
     // MARK: Window actions (keys and hover buttons)

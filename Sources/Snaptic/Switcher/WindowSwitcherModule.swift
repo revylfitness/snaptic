@@ -68,6 +68,11 @@ import SnapticKit
         context.permissions.observe(lifetime: life) { [weak self] permission, granted in
             guard let self, self.context != nil else { return }
             if permission == .accessibility, granted, !self.tapIsRunning { self.startTap() }
+            if permission == .screenRecording, !granted {
+                // Found revoked by a permission check (0.5 §2.5): purge, and an open panel goes on with text.
+                WindowServices.shared.screenRecordingRevoked()
+                self.controller.dropThumbnails()
+            }
             self.context?.requestMenuRebuild()
         }
         startTap()

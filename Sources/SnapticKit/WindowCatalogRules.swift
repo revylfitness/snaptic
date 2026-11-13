@@ -299,8 +299,9 @@ package struct CaptureGate: Equatable, Sendable {
         self.hasLastSeen = hasLastSeen
     }
 
-    /// The switcher's list-time gate, until A2a moves its store onto `WindowServices`: `ThumbnailStore` checks consent,
-    /// the owner and the protected list on each capture, and the switcher has no private path or last-seen yet.
+    /// The switcher's list-time gate: which items are captured, or keep a last-seen thumbnail. `WindowCapture` checks
+    /// consent once per batch and the owner and the protected list on each capture; last-seen is the store's lookup,
+    /// and the private path is A2b's.
     package static let switcherList = CaptureGate(client: .windowSwitcher, screenRecording: true, thumbnailsLease: true,
                                                   ownerMatches: true, protectedApp: false, hiddenFromDock: false,
                                                   privatePath: false, hasLastSeen: false)

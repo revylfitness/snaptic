@@ -134,6 +134,7 @@ Sources/Snaptic/Switcher/SystemHotkeys.swift	A	L	-	-
 Sources/Snaptic/Windows/ObserverThread.swift	A	L	-	-
 Sources/Snaptic/Windows/PrivateWindowAPI.swift	A	L	-	-
 Sources/Snaptic/Windows/ThumbnailStore.swift	A	L	-	-
+Sources/Snaptic/Windows/WindowCapture.swift	A	L	-	-
 Sources/Snaptic/Windows/WindowManager.swift	A	L	-	-
 Sources/Snaptic/Windows/WindowServices.swift	A	L	-	-
 Sources/Snaptic/Switcher/WindowSwitcherModule.swift	A	K5	WindowSwitcherModule	-
