@@ -118,8 +118,8 @@ private struct UpdatesSection: View {
 }
 
 /// The host's own report (About, while Displays doesn't run): version, macOS, Safe Mode, command line, module
-/// states, permissions, Awake's lines while Awake is enabled, and the recent event log (all free of names and
-/// identifiers, §4.10(2)).
+/// states, permissions, Awake's, Hidden Icons' and Dock Previews' lines while each is enabled, and the recent event
+/// log (all free of names and identifiers, §4.10(2)).
 @MainActor enum HostDiagnostics {
     static func report(host: ModuleHost) -> String {
         let modules = host.modules.map { module -> HostReport.Module in
@@ -140,6 +140,8 @@ private struct UpdatesSection: View {
         let awakeEnabled = host.modulesStore.value.isEnabled(.awake) && !host.disabledByDefaults.contains(.awake)
         let iconsEnabled = host.modulesStore.value.isEnabled(.hiddenIcons)
             && !host.disabledByDefaults.contains(.hiddenIcons)
+        let dockEnabled = host.modulesStore.value.isEnabled(.dockPreviews)
+            && !host.disabledByDefaults.contains(.dockPreviews)
         let commandLine: String
         switch host.controlServer.status {
         case .off: commandLine = L("Off")
@@ -151,7 +153,8 @@ private struct UpdatesSection: View {
                                            safeMode: host.safeMode.isActive, modules: modules,
                                            granted: host.permissions.granted, commandLine: commandLine,
                                            awake: awakeEnabled ? host.awake.diagnosticsLines() : nil,
-                                           icons: iconsEnabled ? host.icons.diagnosticsLines() : nil)
+                                           icons: iconsEnabled ? host.icons.diagnosticsLines() : nil,
+                                           dock: dockEnabled ? host.dock.diagnosticsLines() : nil)
         let events = EventLog.shared.recent(100).map { entry in
             entry.date.formatted(date: .omitted, time: .standard) + " " + entry.category.rawValue + " " + entry.message
         }

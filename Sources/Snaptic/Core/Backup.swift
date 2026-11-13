@@ -11,6 +11,8 @@ import UniformTypeIdentifiers
 /// only when the user ticks them, guards only stricter, and every safety-related change listed first in full.
 /// Hidden Icons (0.4 H7) goes through `KitBackup.iconsSectionData` and `importIcons`: its settings without `arranged`,
 /// never the apps store (bundle ids, choices, new-icon list) or icon positions.
+/// Dock Previews (0.5 H10) goes through `KitBackup.dockSectionData` and `importDock`: every setting, the apps hidden
+/// from Dock previews included. The protected apps stay in the switcher section, and an import only adds to them.
 /// Picked files follow §4.10(6): O_NONBLOCK|O_NOFOLLOW, a regular file, ≤ 1 MB, read off main.
 @MainActor enum Backup {
     static let fileExtension = "snapticbackup"
@@ -50,6 +52,7 @@ import UniformTypeIdentifiers
             sections[KitBackup.awakeSection] = data
         }
         if let data = KitBackup.iconsSectionData(host.iconsStore.value) { sections[KitBackup.iconsSection] = data }
+        if let data = KitBackup.dockSectionData(host.dockStore.value) { sections[KitBackup.dockSection] = data }
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
         let created = ISO8601DateFormatter().string(from: Date())
         return KitBackup.makeDocument(sections: sections, created: created, appVersion: version)
@@ -118,6 +121,7 @@ import UniformTypeIdentifiers
         var newDisplays: DisplaysConfig?
         var newAwake: AwakeConfig?
         var newIcons: IconsConfig?
+        var newDock: DockConfig?
 
         /// Builds the imported value from the section and the current JSON; collects the preview lines, which compare
         /// the current value with exactly what would be stored. Nil when nothing usable.
@@ -150,6 +154,10 @@ import UniformTypeIdentifiers
         let currentIcons = host.iconsStore.value
         newIcons = prepare(KitBackup.iconsSection, label: L("Hidden Icons: "), current: currentIcons) { imported, _ in
             KitBackup.importIcons(current: currentIcons, imported: imported)
+        }
+        let currentDock = host.dockStore.value
+        newDock = prepare(KitBackup.dockSection, label: L("Dock Previews: "), current: currentDock) { imported, _ in
+            KitBackup.importDock(current: currentDock, imported: imported)
         }
         let total = safety.count + other.count
         guard total > 0 else {
@@ -189,6 +197,7 @@ import UniformTypeIdentifiers
         if let newDisplays { host.displaysStore.value = newDisplays }
         if let newAwake { host.awakeStore.value = newAwake }
         if let newIcons { host.iconsStore.value = newIcons }
+        if let newDock { host.dockStore.value = newDock }
         EventLog.shared.record(.modules, "Settings imported: \(total) changes, \(safety.count) safety-related")
         host.toasts.show(L("Settings imported."))
     }

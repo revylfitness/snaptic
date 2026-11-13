@@ -26,6 +26,9 @@ enum SafeMode {
         L("Reconnecting displays automatically"),
         L("Awake rules, Drive Alive, and Appear active"),
         L("Hiding menu bar icons"),
+        // 0.5 §4.13 (A6a): Dock Previews starts paused; the switcher keeps to ScreenCaptureKit captures.
+        L("Dock previews"),
+        L("Thumbnails of minimized windows and windows on other Spaces"),
     ]
 
     static let stillRuns: [String] = [
