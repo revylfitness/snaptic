@@ -16,6 +16,9 @@ import SnapticKit
 /// - Thumbnails come from the shared store and `WindowCapture` at the Dock's 720 px bucket, for the cards in view
 ///   plus one each side (§4.3, §4.9), never for a private window, a protected app or an app hidden from Dock
 ///   previews (§4.10).
+/// - A4b: the actions (§4.4) are internal methods A5's keys call too. Each one checks the card's window again first
+///   (§4.8), and its AX calls run off main (`WindowManager`). With VoiceOver and “Show previews while VoiceOver is
+///   on”, the selection alone drives the panel and each show is announced (§4.16).
 /// - No window titles, app names or bundle ids are logged.
 @MainActor
 final class DockPreviewController {
@@ -25,6 +28,13 @@ final class DockPreviewController {
     static let settleFallback = 0.25
     /// The tick while a panel is shown.
     static let tickInterval = 0.1
+    /// A window action's AX change lands a moment later; the panel reads once more after this.
+    static let followUpDelay = 0.3
+    /// Finder has no Quit (§4.4).
+    static let finderBundleID = "com.apple.finder"
+    /// SwiftUI's VoiceOver focus can pass through nil between two of the panel's elements, so focus leaving the
+    /// panel counts only once it has lasted this long (§4.16).
+    static let focusLeaveDelay = 0.15
 
     /// The policy's clock.
     private static var now: Double { ProcessInfo.processInfo.systemUptime }
@@ -41,6 +51,8 @@ final class DockPreviewController {
         /// The windows in card order, as the view lists them.
         var cards: [WindowItem] = []
         var built = false
+        /// VoiceOver heard this show's announcement (§4.16).
+        var announced = false
         let startedAt: Double
     }
 
@@ -94,13 +106,35 @@ final class DockPreviewController {
     private var lastAction: DockAction?
     private var lastActionAt: Double?
 
+    // A4b: keys, menus, the pointer's card and VoiceOver.
+    /// `Dock.disable.keys` as read at the module's start (H6).
+    private let keysKilled: Bool
+    /// The panel's own right-click menus report opening and closing here (`ownMenuOpened`, `ownMenuClosed`).
+    private var menuDelegate: DockMenuDelegate?
+    /// The card under the pointer, as the view's tracking reports it; nil over the header, a gap or outside.
+    private(set) var hoveredCardID: CGWindowID?
+    /// VoiceOver's focus is on an element in the panel (§4.16).
+    private var voiceOverFocused = false
+    /// Runs `voiceOverFocusInPanel(false)` once focus has stayed out for `focusLeaveDelay`.
+    private var focusTimer: Int?
+    /// A5 sets this: its key tap runs, its breaker hasn't tripped and secure input is off (§4.5). Until A5 runs, no
+    /// tooltip or menu offers a key.
+    var keysAvailable = false {
+        didSet { syncKeysWork() }
+    }
+
+    /// §4.5: keys work, so tooltips and menus show them. The setting is on, `Dock.disable.keys` isn't set and A5
+    /// says its tap can take them (`keysAvailable`).
+    var keysWork: Bool { config.keys && !keysKilled && keysAvailable }
+
     /// §4.22: counts and enums only.
     private var counts = DockPreviewCounts()
 
-    init(observer: DockObserver, config: DockConfig, onFreshness: @escaping @MainActor (Int32?) -> Void,
-         onCapture: @escaping @MainActor (Int) -> Void) {
+    init(observer: DockObserver, config: DockConfig, keysKilled: Bool,
+         onFreshness: @escaping @MainActor (Int32?) -> Void, onCapture: @escaping @MainActor (Int) -> Void) {
         self.observer = observer
         self.config = config
+        self.keysKilled = keysKilled
         self.onFreshness = onFreshness
         self.onCapture = onCapture
         let store = observer.geometry
@@ -113,10 +147,11 @@ final class DockPreviewController {
     /// The Dock observer's selection (coalesced, §2.4).
     func selectionChanged(_ raw: DockSelection?) {
         guard !stopped else { return }
-        let hidden = isHiddenFromDock(raw?.pid)
-        lastSelection = DockPreviewRules.mapped(raw, hiddenFromDock: hidden, buttonDown: false)
+        let hidden = isHiddenFromDock(raw?.pid), voiceOver = voiceOverPreviews
+        lastSelection = DockPreviewRules.mapped(raw, hiddenFromDock: hidden, buttonDown: false, voiceOver: voiceOver)
         send(.selectionChanged(DockPreviewRules.mapped(raw, hiddenFromDock: hidden,
-                                                       buttonDown: NSEvent.pressedMouseButtons != 0)))
+                                                       buttonDown: NSEvent.pressedMouseButtons != 0,
+                                                       voiceOver: voiceOver)))
     }
 
     /// The lease's freshness notification for `pid` (§2.3).
@@ -140,6 +175,7 @@ final class DockPreviewController {
         config = value
         policy.delay = value.delay
         if !value.thumbnails { dropThumbnails() }
+        syncKeysWork()
         if old != value, showing?.built == true { build() }
     }
 
@@ -153,6 +189,7 @@ final class DockPreviewController {
         tickTimer = nil
         flushTimer = nil
         settleTimer = nil
+        focusTimer = nil
         if let panel {
             panel.close()
             self.panel = nil
@@ -372,6 +409,13 @@ final class DockPreviewController {
             guard let pid else { return }
             controller.send(.appTerminated(pid: pid))
         }
+        // §4.4 (G2-1): the header's Hide button reads Show while the app is hidden, and the cards' states follow.
+        for name in [NSWorkspace.didHideApplicationNotification, NSWorkspace.didUnhideApplicationNotification] {
+            observe(workspace, name) { controller, pid in
+                guard let pid, pid == controller.showing?.pid else { return }
+                controller.send(.windowsChanged(pid: pid))
+            }
+        }
         observe(workspace, NSWorkspace.activeSpaceDidChangeNotification) { controller, _ in
             controller.send(.spaceChanged)
         }
@@ -533,7 +577,10 @@ final class DockPreviewController {
         let cards = plan.order.map { index in
             let item = items[index]
             return DockPreviewCard(id: item.id, text: Self.text(item, privacy: privacies[index]),
-                                   badge: Self.badge(item, displays: displays), hasAXElement: item.axElement != nil)
+                                   badge: Self.badge(item, displays: displays), hasAXElement: item.axElement != nil,
+                                   minimized: item.isMinimized, fullScreen: item.isFullscreen,
+                                   label: DockPreviewRules.cardLabel(item.catalog, privacy: privacies[index],
+                                                                     title: item.title, app: item.appName))
         }
         updateModel(pid: sh.pid, items: items, small: plan.small, layout: layout, cards: cards)
 
@@ -548,21 +595,32 @@ final class DockPreviewController {
             placed = frame
             send(.panelPlaced(frame))
         }
+        // §4.16: once per show or swap, “Safari, 3 windows”. A private window counts, but no title is ever said.
+        if !sh.announced, showing?.pid == sh.pid, voiceOverPreviews {
+            showing?.announced = true
+            VoiceOverAnnouncer.announce(DockPreviewRules.announcement(app: model.appName, windows: plan.order.count,
+                                                                      small: plan.small))
+        }
         captureThumbnails()
     }
 
     /// Assigns only what changed, so a refresh that finds the same windows redraws nothing.
     private func updateModel(pid: Int32, items: [WindowItem], small: DockSmallCard?, layout: DockPanelLayout?,
                              cards: [DockPreviewCard]) {
+        let app = NSRunningApplication(processIdentifier: pid)
         if modelPID != pid {
             modelPID = pid
-            let app = NSRunningApplication(processIdentifier: pid)
             model.icon = items.first?.icon ?? app?.icon
             model.appName = items.first?.appName ?? TextSanitizer.clean(app?.localizedName ?? "", maxScalars: 64)
         }
+        let hidden = app?.isHidden ?? false, finder = app?.bundleIdentifier == Self.finderBundleID
+        if model.appHidden != hidden { model.appHidden = hidden }
+        if model.isFinder != finder { model.isFinder = finder }
+        if model.keysWork != keysWork { model.keysWork = keysWork }
         if model.small != small { model.small = small }
         if model.layout != layout { model.layout = layout }
         if model.cards != cards { model.cards = cards }
+        if let id = hoveredCardID, !cards.contains(where: { $0.id == id }) { hoveredCardID = nil }
         let keep = Set(cards.indices.filter { !(showing?.cards[$0].isPrivate ?? true) }.map { cards[$0].id })
         if model.thumbnails.keys.contains(where: { !keep.contains($0) }) {
             model.thumbnails = model.thumbnails.filter { keep.contains($0.key) }
@@ -594,6 +652,10 @@ final class DockPreviewController {
         lastVisible = []
         placed = nil
         inPanel = false
+        hoveredCardID = nil
+        timers.cancel(focusTimer)
+        focusTimer = nil
+        voiceOverFocused = false
         WindowCapture.shared.stop(client: .dockPreviews)
         counts.dismissals[reason, default: 0] += 1
         if let panel {
@@ -607,10 +669,16 @@ final class DockPreviewController {
     private func ensurePanel() -> DockPreviewPanel {
         if let panel { return panel }
         let actions = DockPreviewActions(
-            card: { [weak self] index, button in self?.cardClicked(index, button) },
+            card: { [weak self] id, button in self?.cardClicked(id, button) },
             smallCard: { [weak self] in self?.smallCardClicked() },
             moreWindows: { [weak self] in self?.moreWindows() },
-            scrolled: { [weak self] offset in self?.scrolled(offset) })
+            scrolled: { [weak self] offset in self?.scrolled(offset) },
+            hoverButton: { [weak self] id, button in self?.hoverButtonClicked(id, button) },
+            header: { [weak self] button in self?.headerClicked(button) },
+            cardMenu: { [weak self] id in self?.cardMenu(id) },
+            headerMenu: { [weak self] in self?.headerMenu() },
+            hovered: { [weak self] id, inside in self?.cardHovered(id, inside) },
+            voiceOverFocus: { [weak self] focused in self?.voiceOverFocusChanged(focused) })
         let panel = DockPreviewPanel(rootView: AnyView(DockPreviewView(model: model, actions: actions)),
                                      onPointer: { [weak self] in self?.pointer(at: NSEvent.mouseLocation) })
         self.panel = panel
@@ -700,28 +768,239 @@ final class DockPreviewController {
         captureThumbnails()
     }
 
-    // MARK: Clicks (§4.4; A4b adds the buttons and menus)
+    // MARK: Actions (§4.4). A5's keys call these too.
 
-    private func cardClicked(_ index: Int, _ button: DockMouseButton) {
-        guard let sh = showing, sh.cards.indices.contains(index) else { return }
-        let item = sh.cards[index]
-        guard let action = policy.resolveClick(button, on: .card(hasAXElement: item.axElement != nil),
-                                               appIsFinder: item.bundleID == "com.apple.finder", now: Self.now)
-        else { return }
-        switch action {
-        case .raise: WindowManager.shared.focus(item)
-        case .close: WindowManager.shared.close(item)
-        default: return
+    /// Bring Forward: raises the card's window (`WindowManager.focus`), and the panel hides (`raised`).
+    func raiseWindow(_ id: CGWindowID) {
+        guard let item = resolve(id) else { return }
+        WindowManager.shared.focus(item)
+        acted(.raise)
+    }
+
+    /// Close Window: presses the window's close button, so an app with unsaved work asks first. Needs the window's
+    /// AX element (D2-25).
+    func closeWindow(_ id: CGWindowID) {
+        guard let item = resolve(id), item.axElement != nil else { return }
+        WindowManager.shared.close(item)
+        acted(.close)
+        followUp()
+    }
+
+    /// Minimize Window. Needs the AX element; a minimized window is left as it is.
+    func minimizeWindow(_ id: CGWindowID) {
+        guard let item = resolve(id), item.axElement != nil, !item.isMinimized else { return }
+        WindowManager.shared.toggleMinimized(item)
+        acted(.minimize)
+        followUp()
+    }
+
+    /// Restore Window: un-minimizes it in place, without raising it. Needs the AX element.
+    func restoreWindow(_ id: CGWindowID) {
+        guard let item = resolve(id), item.axElement != nil, item.isMinimized else { return }
+        WindowManager.shared.toggleMinimized(item)
+        acted(.restore)
+        followUp()
+    }
+
+    /// Enter or Exit Full Screen, as the switcher does it: the window comes forward first, then it's toggled 250 ms
+    /// later. Needs the AX element.
+    func toggleFullScreen(_ id: CGWindowID) {
+        guard let item = resolve(id), item.axElement != nil else { return }
+        WindowManager.shared.focus(item)
+        acted(.fullScreen)
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(250))
+            WindowManager.shared.toggleFullscreen(item)
         }
-        acted(action)
+    }
+
+    /// Minimize All (header): every listed window that's still there and isn't minimized.
+    func minimizeAll() {
+        let items = liveCards()
+        guard !items.isEmpty else { return }
+        WindowManager.shared.minimize(items)
+        acted(.minimizeAll)
+        followUp()
+    }
+
+    /// Close All (the header's menu, Y-10): every listed window that's still there and has an AX element.
+    func closeAll() {
+        let items = liveCards()
+        guard !items.isEmpty else { return }
+        WindowManager.shared.close(items)
+        acted(.closeAll)
+        followUp()
+    }
+
+    /// Hide Safari. The panel hides (`hidApp`).
+    func hideApp() {
+        guard let app = shownApp, !app.isHidden else { return }
+        app.hide()
+        acted(.hideApp)
+    }
+
+    /// Show Safari, while it's hidden (G2-1). The panel stays and its cards follow.
+    func showApp() {
+        guard let app = shownApp, app.isHidden else { return }
+        app.unhide()
+        acted(.showApp)
+        followUp()
+    }
+
+    /// Quit Safari: `terminate()`, never `forceTerminate()`, so unsaved work asks first (M41). Finder has no Quit.
+    /// Snaptic's own header quits the normal way (`LaunchStability.markCleanQuit`), so the next launch isn't counted
+    /// as a crash (X-29).
+    func quitApp() {
+        guard let app = shownApp, app.bundleIdentifier != Self.finderBundleID else { return }
+        acted(.quitApp)
+        if app.processIdentifier == ProcessInfo.processInfo.processIdentifier {
+            // After this event, so the policy's hide and the menu (if any) finish first.
+            DispatchQueue.main.async { NSApp.terminate(nil) }
+        } else {
+            app.terminate()
+        }
+    }
+
+    /// The small card's click: like clicking the app in the Dock. It's unhidden, and opens a window if it has none
+    /// (`WindowManager.reopen`, G-18).
+    func activateApp() {
+        guard let app = shownApp else { return }
+        if app.isHidden { app.unhide() }
+        WindowManager.shared.reopen(app)
+        acted(.activateApp)
+    }
+
+    /// One action on the shown app; `windowID` names the card for the window actions, and is ignored by the others.
+    func perform(_ action: DockAction, on windowID: CGWindowID?) {
+        switch action {
+        case .raise: if let windowID { raiseWindow(windowID) }
+        case .close: if let windowID { closeWindow(windowID) }
+        case .minimize: if let windowID { minimizeWindow(windowID) }
+        case .restore: if let windowID { restoreWindow(windowID) }
+        case .fullScreen: if let windowID { toggleFullScreen(windowID) }
+        case .minimizeAll: minimizeAll()
+        case .closeAll: closeAll()
+        case .hideApp: hideApp()
+        case .showApp: showApp()
+        case .quitApp: quitApp()
+        case .activateApp: activateApp()
+        }
+    }
+
+    /// A5: a key `DockKeyRules` resolved. The policy hears it (Esc hides the panel), then its action runs on
+    /// `windowID`, the card under the pointer, if it names one.
+    func perform(_ key: DockKeyAction, on windowID: CGWindowID?) {
+        send(.keyHandled(key))
+        guard let action = DockPreviewRules.action(for: key) else { return }
+        perform(action, on: windowID)
+    }
+
+    /// The shown app's pid, while a panel is up or on its way.
+    var shownPID: Int32? { showing?.pid }
+
+    /// The shown app is Finder (no Quit) or hidden (Show instead of Hide), as the last build saw it.
+    var shownAppIsFinder: Bool { model.isFinder }
+    var shownAppIsHidden: Bool { model.appHidden }
+
+    /// What A5's key table needs of a card (`DockKeyTarget.card`); nil if it isn't listed.
+    func cardState(_ id: CGWindowID) -> (hasAXElement: Bool, minimized: Bool)? {
+        guard let item = showing?.cards.first(where: { $0.id == id }) else { return nil }
+        return (item.axElement != nil, item.isMinimized)
+    }
+
+    // MARK: Clicks and menus (§4.4)
+
+    private func cardClicked(_ id: CGWindowID, _ button: DockMouseButton) {
+        guard let item = showing?.cards.first(where: { $0.id == id }),
+              let action = policy.resolveClick(button, on: .card(hasAXElement: item.axElement != nil),
+                                               appIsFinder: model.isFinder, now: Self.now)
+        else { return }
+        perform(action, on: id)
     }
 
     private func smallCardClicked() {
-        guard let sh = showing, policy.resolveClick(.left, on: .smallCard, now: Self.now) == .activateApp else {
+        guard showing != nil, policy.resolveClick(.left, on: .smallCard, now: Self.now) == .activateApp else { return }
+        activateApp()
+    }
+
+    /// The header's buttons ignore clicks for 300 ms after a show or a swap (K3's resolver).
+    private func headerClicked(_ button: DockHeaderButton) {
+        guard showing?.built == true,
+              let action = policy.resolveClick(.left, on: .header(button), appIsFinder: model.isFinder, now: Self.now)
+        else { return }
+        perform(action, on: nil)
+    }
+
+    private func hoverButtonClicked(_ id: CGWindowID, _ button: DockHoverButton) {
+        guard policy.shownPID != nil, let item = showing?.cards.first(where: { $0.id == id }) else { return }
+        perform(DockPreviewRules.action(for: button, minimized: item.isMinimized), on: id)
+    }
+
+    /// The card's right-click menu (G-16); Bring Forward only without an AX element (D2-25).
+    private func cardMenu(_ id: CGWindowID) -> NSMenu? {
+        guard policy.shownPID != nil, let item = showing?.cards.first(where: { $0.id == id }) else { return nil }
+        return menu(DockPreviewRules.cardMenu(hasAXElement: item.axElement != nil, minimized: item.isMinimized,
+                                              fullScreen: item.isFullscreen, appHidden: model.appHidden,
+                                              appIsFinder: model.isFinder), card: id)
+    }
+
+    /// The header's right-click menu: its buttons plus Close All (Y-10).
+    private func headerMenu() -> NSMenu? {
+        guard policy.shownPID != nil, showing?.built == true else { return nil }
+        return menu(DockPreviewRules.headerMenu(appHidden: model.appHidden, appIsFinder: model.isFinder), card: nil)
+    }
+
+    /// While a menu is open the policy holds the panel and its timers (`ownMenuOpened`); they restart from zero
+    /// when it closes. Keys show only while keys work (G2-1).
+    private func menu(_ entries: [DockPanelMenuItem], card id: CGWindowID?) -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        let app = model.appName, keys = keysWork
+        for entry in entries {
+            guard let action = DockPreviewRules.action(for: entry) else {
+                menu.addItem(MenuKit.separator())
+                continue
+            }
+            menu.addItem(MenuKit.action(DockPreviewRules.menuTitle(entry, app: app),
+                                        key: DockPreviewRules.menuKey(entry, keysWork: keys)) { [weak self] in
+                self?.perform(action, on: id)
+            })
+        }
+        let delegate = menuDelegate ?? DockMenuDelegate { [weak self] open in
+            self?.send(open ? .ownMenuOpened : .ownMenuClosed)
+        }
+        menuDelegate = delegate
+        menu.delegate = delegate
+        return menu
+    }
+
+    private func cardHovered(_ id: CGWindowID, _ inside: Bool) {
+        if inside {
+            hoveredCardID = id
+        } else if hoveredCardID == id {
+            hoveredCardID = nil
+        }
+    }
+
+    /// §4.16: into the panel counts at once; out of it only after `focusLeaveDelay`, so moving between two cards
+    /// never reads as leaving.
+    private func voiceOverFocusChanged(_ focused: Bool) {
+        timers.cancel(focusTimer)
+        focusTimer = nil
+        if focused {
+            guard !voiceOverFocused, showing != nil else { return }
+            voiceOverFocused = true
+            send(.voiceOverFocusInPanel(true))
             return
         }
-        Self.activate(sh.pid)
-        acted(.activateApp)
+        guard voiceOverFocused else { return }
+        focusTimer = timers.after(Self.focusLeaveDelay) { [weak self] in
+            guard let self else { return }
+            self.focusTimer = nil
+            guard self.voiceOverFocused else { return }
+            self.voiceOverFocused = false
+            self.send(.voiceOverFocusInPanel(false))
+        }
     }
 
     /// “More windows…”: the same app read again with the whole budget (§4.8, X3-12).
@@ -740,17 +1019,69 @@ final class DockPreviewController {
         send(.actionDone(action))
     }
 
-    /// Like clicking the app in the Dock: unhidden, and a window opened if it has none (G-18).
-    private static func activate(_ pid: Int32) {
-        guard let app = NSRunningApplication(processIdentifier: pid) else { return }
-        if app.isHidden { app.unhide() }
-        if let url = app.bundleURL {
-            let configuration = NSWorkspace.OpenConfiguration()
-            configuration.activates = true
-            NSWorkspace.shared.openApplication(at: url, configuration: configuration, completionHandler: nil)
-        } else {
-            app.activate()
+    /// §4.8: the card's window, checked again just before an action, so a closed or reused id never gets one. A
+    /// window that's gone, or now belongs to another app, refreshes the panel instead.
+    private func resolve(_ id: CGWindowID) -> WindowItem? {
+        guard policy.shownPID != nil, let sh = showing, sh.built,
+              let item = sh.cards.first(where: { $0.id == id }) else { return nil }
+        guard item.hasRealWindowID else { return item }
+        if Self.owners(of: [id])[id] == item.pid { return item }
+        send(.windowsChanged(pid: sh.pid))
+        return nil
+    }
+
+    /// The listed windows that are still there and still the app's (§4.8), for Minimize All and Close All.
+    private func liveCards() -> [WindowItem] {
+        guard policy.shownPID != nil, let sh = showing, sh.built else { return [] }
+        let owners = Self.owners(of: sh.cards.filter(\.hasRealWindowID).map(\.id))
+        return sh.cards.filter { !$0.hasRealWindowID || owners[$0.id] == $0.pid }
+    }
+
+    /// The owning pid of each window that still exists, in one window-server call (no AX).
+    private static func owners(of ids: [CGWindowID]) -> [CGWindowID: pid_t] {
+        // A CFArray of raw CGWindowIDs (no callbacks), as `CGWindowListCreateDescriptionFromArray` takes them.
+        var pointers: [UnsafeRawPointer?] = ids.compactMap { UnsafeRawPointer(bitPattern: UInt($0)) }
+        guard !pointers.isEmpty else { return [:] }
+        let array = pointers.withUnsafeMutableBufferPointer { buffer in
+            CFArrayCreate(kCFAllocatorDefault, buffer.baseAddress, buffer.count, nil)
         }
+        guard let array, let list = CGWindowListCreateDescriptionFromArray(array) as? [[String: Any]] else {
+            return [:]
+        }
+        var owners: [CGWindowID: pid_t] = [:]
+        for entry in list {
+            guard let number = entry[kCGWindowNumber as String] as? NSNumber,
+                  let owner = entry[kCGWindowOwnerPID as String] as? NSNumber else { continue }
+            owners[number.uint32Value] = owner.int32Value
+        }
+        return owners
+    }
+
+    /// AX changes land a moment after the action; the policy's refresh reads at once, and this reads once more.
+    private func followUp() {
+        guard let pid = showing?.pid else { return }
+        let gen = generation
+        timers.after(Self.followUpDelay) { [weak self] in
+            guard let self, gen == self.generation else { return }
+            WindowManager.shared.markWindowsDirty(pid)
+            self.read()
+        }
+    }
+
+    private var shownApp: NSRunningApplication? {
+        guard policy.shownPID != nil, let pid = showing?.pid else { return nil }
+        return NSRunningApplication(processIdentifier: pid)
+    }
+
+    /// The setting, the kill switch or A5's tap changed: the header's tooltips and the menus follow.
+    private func syncKeysWork() {
+        let works = keysWork
+        if model.keysWork != works { model.keysWork = works }
+    }
+
+    /// §4.1 rule 5's exception: VoiceOver runs and “Show previews while VoiceOver is on” is on (G2-5).
+    private var voiceOverPreviews: Bool {
+        config.showWithVoiceOver && NSWorkspace.shared.isVoiceOverEnabled
     }
 
     // MARK: Helpers
@@ -825,6 +1156,19 @@ struct DockPreviewCounts {
         #endif
         return lines
     }
+}
+
+/// The panel's right-click menus tell the policy when they open and close (§4.2: the panel and its timers wait).
+@MainActor
+private final class DockMenuDelegate: NSObject, NSMenuDelegate {
+    private let changed: @MainActor (_ open: Bool) -> Void
+
+    init(_ changed: @escaping @MainActor (_ open: Bool) -> Void) {
+        self.changed = changed
+    }
+
+    func menuWillOpen(_ menu: NSMenu) { changed(true) }
+    func menuDidClose(_ menu: NSMenu) { changed(false) }
 }
 
 /// The controller's timers: one-shot and repeating, on the main run loop in `.common` modes (H8). Each live one

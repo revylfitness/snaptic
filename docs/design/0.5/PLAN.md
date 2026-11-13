@@ -2264,3 +2264,20 @@ changed, and why.
 | A4a | Captures are requested only for targets not already requested | `WindowCapture.refresh` cancels the batch in flight |
 | A4a | "Shows / last hover-to-show" and "Dismissals by reason" are release diagnostics lines; latency runs from the policy's show to the panel appearing | §4.22's lines; counts and enums only |
 | A4a | The controller's clock is `systemUptime` | Monotonic, like the rest of the Dock code |
+| A4b | The panel menu enum is `DockPanelMenuItem` | K3 already uses `DockMenuItem` |
+| A4b | No tooltip or menu shows a key until A5 reports the keys tap available (`keysAvailable`) | §4.5 ties key hints to keys actually working |
+| A4b | A card's VoiceOver label carries one state at most: minimized, then hidden, then full screen, then other Space | Same order as the badges |
+| A4b | A minimized card's yellow hover button reads "Restore" ("Restore (⌘M)"); Show takes "(⌘H)" like Hide | It restores rather than minimizes; it's the same key |
+| A4b | The header menu reads Minimize All, Close All, a separator, Hide/Show, Quit | Mirrors the card menu's layout |
+| A4b | Minimize All and Close All act only on listed windows that still exist; Close All skips cards without an AX element | §4.8 and D2-25 |
+| A4b | Before each action the window's owner pid is checked with `CGWindowListCreateDescriptionFromArray` | §4.8's re-check without blocking on AX |
+| A4b | After a window action the app is read again at 0.3 s; app hide and unhide refresh the shown panel | The AX change lands after the policy's immediate refresh; keeps Hide/Show right (G2-1) |
+| A4b | `WindowManager.reopen` is internal, and `close(_:)`/`minimize(_:)` run their AX calls in one detached task each | Reuse instead of A4a's copy; AX stays off main |
+| A4b | Full Screen raises the window, waits 250 ms, then toggles | The switcher's pattern |
+| A4b | Snaptic quitting itself runs `NSApp.terminate` on the next main-loop pass, which reaches `markCleanQuit` in `applicationWillTerminate` | The panel's hide and any open menu finish first (X-29) |
+| A4b | The header sits at the top of the panel for every Dock edge, not on the edge away from the Dock | K2's layout puts it there; for a side Dock a top header reads better than a vertical strip |
+| A4b | The "· 2 instances" header text isn't built yet | It depends on S0-2's two-copies result, which is carried to the owner session; add it before R if S0-2 shows the Dock merges copies |
+| A4b | VoiceOver: the announcement goes through `VoiceOverAnnouncer` once per show or swap; focus is bound per element and on the scroll area, and leaving counts after 0.15 s; hover buttons are hidden in favour of named actions | Existing precedent; SwiftUI passes through nil between elements; one element per card |
+| A4b | New VoiceOver labels "Windows can’t be read right now, ‹app›" and "Window on another Space, ‹app›" | §4.16 doesn't cover these cards |
+| A4b | Increase Contrast and Reduce Transparency are read from the SwiftUI environment; `allowsToolTipsWhenApplicationIsInactive` is on | Existing precedent (Toast); tooltips must show while another app is active |
+| A4b | Card callbacks take window ids, not indices; `perform(key:)` sends `.keyHandled` for every key | Ids survive a refresh; the policy acts only on Esc |

@@ -75,6 +75,7 @@ import SnapticKit
         observer.start()
         Self.liveCount(.observer, up: true)
         controller = DockPreviewController(observer: observer, config: config.value,
+                                           keysKilled: killSwitches.contains(.keys),
                                            onFreshness: { [weak self] pid in self?.freshnessChanged(pid) },
                                            onCapture: { [weak self] count in self?.captures += count })
         config.$value

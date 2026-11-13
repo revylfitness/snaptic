@@ -42,6 +42,8 @@ final class DockPreviewPanel {
         panel.animationBehavior = .none
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
         panel.acceptsMouseMovedEvents = true
+        // §4.4: the cards', header's and hover buttons' tooltips show while another app is active (always, here).
+        panel.allowsToolTipsWhenApplicationIsInactive = true
         // Window titles and thumbnails stay out of screen shares and recordings.
         panel.sharingType = .none
         panel.alphaValue = 0

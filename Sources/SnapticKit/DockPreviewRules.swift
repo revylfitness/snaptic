@@ -230,9 +230,13 @@ package enum DockPreviewRules {
 
     /// The selection the policy sees. An app on “Apps hidden from Dock previews” (G2-4) and an item under a pressed
     /// button (a drag over the Dock) lose their pid, so they never show a panel but still move the selection.
-    package static func mapped(_ s: DockSelection?, hiddenFromDock: Bool, buttonDown: Bool) -> DockSelection? {
+    /// `voiceOver` is §4.1 rule 5's exception (VoiceOver runs and “Show previews while VoiceOver is on” is on): the
+    /// selection alone drives the panel then (`byPointer == false`, G2-5).
+    package static func mapped(_ s: DockSelection?, hiddenFromDock: Bool, buttonDown: Bool,
+                               voiceOver: Bool = false) -> DockSelection? {
         guard var s else { return nil }
         if hiddenFromDock || buttonDown { s.pid = nil }
+        if voiceOver { s.byPointer = false }
         return s
     }
 
@@ -247,4 +251,234 @@ package enum DockPreviewRules {
 
     /// While shown, the panel re-reads its app's windows every this many ticks (S0-26: 1 s at 0.1 s a tick).
     package static let refreshTicks = 10
+
+    // MARK: Words (A4b: §4.4, §4.16)
+
+    /// “1 window” or “3 windows” (§4.3's header; `SentenceText.unit`, G-24).
+    package static func windowCount(_ n: Int) -> String {
+        SentenceText.unit(n, L("window"), L("windows"))
+    }
+
+    /// A card's VoiceOver label, which is also its tooltip (§4.16): “\(title), \(app)” plus one state. A private card
+    /// or a card of a protected app reads “Private window, \(app)”: the title is never a fallback (G2-15). An untitled
+    /// card reads as its text does (the app name, or “Window on another Space, \(app)”).
+    /// - `title` is the window's title as read; the caller has already blanked it for a private card.
+    package static func cardLabel(_ w: CatalogWindow, privacy: CatalogPrivacy, title: String, app: String) -> String {
+        var saysOtherSpace = false
+        let text: String
+        if privacy.isPrivate {
+            text = L("Private window, \(app)")
+        } else {
+            switch WindowCatalogRules.dockCardText(w, privacy: privacy) {
+            case .title:
+                text = L("\(title), \(app)")
+            case .windowOnAnotherSpace:
+                saysOtherSpace = true
+                let title = L("Window on another Space")
+                text = L("\(title), \(app)")
+            case .appName, .privateWindow:
+                text = app
+            }
+        }
+        return text + stateSuffix(w, saysOtherSpace: saysOtherSpace)
+    }
+
+    /// One state at most, in the badges' order with Hidden after Minimized: minimized, hidden, full screen, on another
+    /// Space (§4.3, §4.16; §R4 A4b).
+    private static func stateSuffix(_ w: CatalogWindow, saysOtherSpace: Bool) -> String {
+        if w.windowless { return "" }
+        if w.minimized { return L(", minimized") }
+        if w.hidden { return L(", hidden") }
+        if w.fullscreen { return L(", full screen") }
+        if w.onOtherSpace, !saysOtherSpace { return L(", on another Space") }
+        return ""
+    }
+
+    /// The small cards' VoiceOver labels (§4.16).
+    package static func smallCardLabel(_ small: DockSmallCard, app: String) -> String {
+        switch small {
+        case .noOpenWindows: return L("No open windows, \(app)")
+        case .noWindowsShown: return L("No windows shown, \(app)")
+        case .cantRead: return L("Windows can’t be read right now, \(app)")
+        }
+    }
+
+    /// What VoiceOver announces as a panel shows or swaps (§4.16): “Safari, 3 windows”, or the small card's label.
+    /// `windows` counts every card, private ones included; no title is ever part of it (§4.10).
+    package static func announcement(app: String, windows n: Int, small: DockSmallCard?) -> String {
+        if let small { return smallCardLabel(small, app: app) }
+        let windows = windowCount(n)
+        return L("\(app), \(windows)")
+    }
+
+    /// The panel's accessibility group label (§4.16): “Safari windows”.
+    package static func panelLabel(app: String) -> String {
+        L("\(app) windows")
+    }
+
+    /// A header button's accessibility label (§4.4): the bare words.
+    package static func headerLabel(_ b: DockHeaderButton, app: String) -> String {
+        switch b {
+        case .minimizeAll: return L("Minimize All")
+        case .hideApp: return L("Hide \(app)")
+        case .showApp: return L("Show \(app)")
+        case .quitApp: return L("Quit \(app)")
+        }
+    }
+
+    /// A header button's tooltip (§4.4): the label, plus the key while keys work (§4.5). Show takes ⌘H like Hide
+    /// (§R4 A4b).
+    package static func headerHelp(_ b: DockHeaderButton, app: String, keysWork: Bool) -> String {
+        let label = headerLabel(b, app: app)
+        guard keysWork else { return label }
+        switch b {
+        case .minimizeAll: return label
+        case .hideApp, .showApp: return label + " " + L("(⌘H)")
+        case .quitApp: return label + " " + L("(⌘Q)")
+        }
+    }
+
+    /// The header's Hide button: Show while the app is hidden (§4.4, G2-1).
+    package static func hideButton(appHidden: Bool) -> DockHeaderButton {
+        appHidden ? .showApp : .hideApp
+    }
+
+    /// A hover button's accessibility label (§4.4): the bare word. A minimized card's yellow button restores it
+    /// (§R4 A4b).
+    package static func hoverLabel(_ b: DockHoverButton, minimized: Bool, fullScreen: Bool) -> String {
+        switch b {
+        case .close: return L("Close")
+        case .minimize: return minimized ? L("Restore") : L("Minimize")
+        case .fullScreen: return fullScreen ? L("Exit Full Screen") : L("Enter Full Screen")
+        }
+    }
+
+    /// A hover button's tooltip (§4.4): the same words, with the key while keys work.
+    package static func hoverHelp(_ b: DockHoverButton, minimized: Bool, fullScreen: Bool, keysWork: Bool) -> String {
+        guard keysWork else { return hoverLabel(b, minimized: minimized, fullScreen: fullScreen) }
+        switch b {
+        case .close: return L("Close (⌘W)")
+        case .minimize: return minimized ? L("Restore (⌘M)") : L("Minimize (⌘M)")
+        case .fullScreen: return hoverLabel(b, minimized: minimized, fullScreen: fullScreen)
+        }
+    }
+
+    /// What a hover button does.
+    package static func action(for b: DockHoverButton, minimized: Bool) -> DockAction {
+        switch b {
+        case .close: return .close
+        case .minimize: return minimized ? .restore : .minimize
+        case .fullScreen: return .fullScreen
+        }
+    }
+
+    /// The card's right-click menu (§4.4, G-16). A card without an AX element offers only Bring Forward (D2-25).
+    package static func cardMenu(hasAXElement: Bool, minimized: Bool, fullScreen: Bool, appHidden: Bool,
+                                 appIsFinder: Bool) -> [DockPanelMenuItem] {
+        guard hasAXElement else { return [.bringForward] }
+        var items: [DockPanelMenuItem] = [.closeWindow, minimized ? .restoreWindow : .minimizeWindow,
+                                     fullScreen ? .exitFullScreen : .enterFullScreen, .separator,
+                                     appHidden ? .showApp : .hideApp]
+        if !appIsFinder { items.append(.quitApp) }
+        return items
+    }
+
+    /// The header's right-click menu (§4.4, Y-10): the header's actions plus Close All. Finder has no Quit.
+    package static func headerMenu(appHidden: Bool, appIsFinder: Bool) -> [DockPanelMenuItem] {
+        var items: [DockPanelMenuItem] = [.minimizeAll, .closeAll, .separator, appHidden ? .showApp : .hideApp]
+        if !appIsFinder { items.append(.quitApp) }
+        return items
+    }
+
+    /// A menu item's title (§4.4: Title Case, app-name items as templates).
+    package static func menuTitle(_ item: DockPanelMenuItem, app: String) -> String {
+        switch item {
+        case .bringForward: return L("Bring Forward")
+        case .closeWindow: return L("Close Window")
+        case .minimizeWindow: return L("Minimize Window")
+        case .restoreWindow: return L("Restore Window")
+        case .enterFullScreen: return L("Enter Full Screen")
+        case .exitFullScreen: return L("Exit Full Screen")
+        case .hideApp: return headerLabel(.hideApp, app: app)
+        case .showApp: return headerLabel(.showApp, app: app)
+        case .quitApp: return headerLabel(.quitApp, app: app)
+        case .minimizeAll: return L("Minimize All")
+        case .closeAll: return L("Close All")
+        case .separator: return ""
+        }
+    }
+
+    /// A menu item's key equivalent, shown only while keys work (G2-1): ⌘W, ⌘M, ⌘H and ⌘Q.
+    package static func menuKey(_ item: DockPanelMenuItem, keysWork: Bool) -> String {
+        guard keysWork else { return "" }
+        switch item {
+        case .closeWindow: return "w"
+        case .minimizeWindow, .restoreWindow: return "m"
+        case .hideApp, .showApp: return "h"
+        case .quitApp: return "q"
+        case .bringForward, .enterFullScreen, .exitFullScreen, .minimizeAll, .closeAll, .separator: return ""
+        }
+    }
+
+    /// What a menu item does; nil for the separator.
+    package static func action(for item: DockPanelMenuItem) -> DockAction? {
+        switch item {
+        case .bringForward: return .raise
+        case .closeWindow: return .close
+        case .minimizeWindow: return .minimize
+        case .restoreWindow: return .restore
+        case .enterFullScreen, .exitFullScreen: return .fullScreen
+        case .hideApp: return .hideApp
+        case .showApp: return .showApp
+        case .quitApp: return .quitApp
+        case .minimizeAll: return .minimizeAll
+        case .closeAll: return .closeAll
+        case .separator: return nil
+        }
+    }
+
+    /// What a handled key does (§4.5): nil for Esc, which only hides.
+    package static func action(for key: DockKeyAction) -> DockAction? {
+        switch key {
+        case .close: return .close
+        case .minimize: return .minimize
+        case .restore: return .restore
+        case .hideApp: return .hideApp
+        case .showApp: return .showApp
+        case .quitApp: return .quitApp
+        case .escape: return nil
+        }
+    }
+
+    /// Whether `action` needs the window's AX element (§4.4, D2-25): everything that acts on one window but Bring
+    /// Forward.
+    package static func needsAXElement(_ action: DockAction) -> Bool {
+        switch action {
+        case .close, .minimize, .restore, .fullScreen: return true
+        case .raise, .activateApp, .minimizeAll, .closeAll, .hideApp, .showApp, .quitApp: return false
+        }
+    }
+}
+
+/// A card's hover buttons, top-left (§4.4).
+package enum DockHoverButton: String, CaseIterable, Sendable {
+    case close
+    case minimize
+    case fullScreen
+}
+
+/// The card's and the header's right-click menu items (§4.4).
+package enum DockPanelMenuItem: String, CaseIterable, Sendable {
+    case bringForward
+    case closeWindow
+    case minimizeWindow
+    case restoreWindow
+    case enterFullScreen
+    case exitFullScreen
+    case separator
+    case hideApp
+    case showApp
+    case quitApp
+    case minimizeAll
+    case closeAll
 }

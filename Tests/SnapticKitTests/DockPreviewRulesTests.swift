@@ -271,6 +271,15 @@ final class DockPreviewRulesTests: XCTestCase {
         XCTAssertNil(DockPreviewRules.mapped(nil, hiddenFromDock: false, buttonDown: false))
     }
 
+    func testVoiceOverSelectionsAreNotByPointer() {
+        let s = bottomSelection(2)
+        XCTAssertEqual(DockPreviewRules.mapped(s, hiddenFromDock: false, buttonDown: false)?.byPointer, true)
+        let mapped = DockPreviewRules.mapped(s, hiddenFromDock: false, buttonDown: false, voiceOver: true)
+        XCTAssertEqual(mapped?.byPointer, false)
+        XCTAssertEqual(mapped?.pid, 42)
+        XCTAssertNil(DockPreviewRules.mapped(s, hiddenFromDock: true, buttonDown: false, voiceOver: true)?.pid)
+    }
+
     func testMouseDownOnTheItemOrItsBandLatchesTheItem() {
         let s = bottomSelection(2)
         let band = DockPreviewRules.hitBand(s, bottomSnapshot)
@@ -302,5 +311,127 @@ final class DockPreviewRulesTests: XCTestCase {
         XCTAssertEqual(t.moved(to: a, now: 1), a)
         t.reset()
         XCTAssertEqual(t.moved(to: b, now: 1.001), b)
+    }
+
+    // MARK: Words (A4b)
+
+    func testCardLabelsAreTitleAndAppPlusOneState() {
+        let plain = window(1)
+        XCTAssertEqual(DockPreviewRules.cardLabel(plain, privacy: .none, title: "Notes", app: "Safari"),
+                       "Notes, Safari")
+        XCTAssertEqual(DockPreviewRules.cardLabel(window(1, minimized: true), privacy: .none, title: "Notes",
+                                                  app: "Safari"), "Notes, Safari, minimized")
+        XCTAssertEqual(DockPreviewRules.cardLabel(window(1, hidden: true), privacy: .none, title: "Notes",
+                                                  app: "Safari"), "Notes, Safari, hidden")
+        XCTAssertEqual(DockPreviewRules.cardLabel(window(1, minimized: true, hidden: true), privacy: .none,
+                                                  title: "Notes", app: "Safari"), "Notes, Safari, minimized")
+        let full = CatalogWindow(id: 1, pid: 42, fullscreen: true)
+        XCTAssertEqual(DockPreviewRules.cardLabel(full, privacy: .none, title: "Notes", app: "Safari"),
+                       "Notes, Safari, full screen")
+        let away = CatalogWindow(id: 1, pid: 42, onScreen: false)
+        XCTAssertTrue(away.onOtherSpace)
+        XCTAssertEqual(DockPreviewRules.cardLabel(away, privacy: .none, title: "Notes", app: "Safari"),
+                       "Notes, Safari, on another Space")
+    }
+
+    func testPrivateAndUntitledCardsNeverFallBackToTheTitle() {
+        for privacy in [CatalogPrivacy.protectedApp, .privateMarker, .untitledBrowser] {
+            XCTAssertEqual(DockPreviewRules.cardLabel(window(1), privacy: privacy, title: "Secret", app: "1Password"),
+                           "Private window, 1Password")
+        }
+        XCTAssertEqual(DockPreviewRules.cardLabel(window(1, minimized: true), privacy: .privateMarker, title: "",
+                                                  app: "Safari"), "Private window, Safari, minimized")
+        let untitled = CatalogWindow(id: 1, pid: 42, hasTitle: false)
+        XCTAssertEqual(DockPreviewRules.cardLabel(untitled, privacy: .none, title: "", app: "Notes"), "Notes")
+        // An untitled other-Space card without an AX element says where it is once.
+        let away = CatalogWindow(id: 1, pid: 42, hasTitle: false, onScreen: false, hasAXElement: false)
+        XCTAssertEqual(DockPreviewRules.cardLabel(away, privacy: .none, title: "", app: "Notes"),
+                       "Window on another Space, Notes")
+    }
+
+    func testSmallCardLabelsAndTheAnnouncement() {
+        XCTAssertEqual(DockPreviewRules.smallCardLabel(.noOpenWindows, app: "Safari"), "No open windows, Safari")
+        XCTAssertEqual(DockPreviewRules.smallCardLabel(.noWindowsShown, app: "Safari"), "No windows shown, Safari")
+        XCTAssertEqual(DockPreviewRules.smallCardLabel(.cantRead, app: "Safari"),
+                       "Windows can’t be read right now, Safari")
+        XCTAssertEqual(DockPreviewRules.announcement(app: "Safari", windows: 3, small: nil), "Safari, 3 windows")
+        XCTAssertEqual(DockPreviewRules.announcement(app: "Safari", windows: 1, small: nil), "Safari, 1 window")
+        XCTAssertEqual(DockPreviewRules.announcement(app: "Safari", windows: 0, small: .noOpenWindows),
+                       "No open windows, Safari")
+        XCTAssertEqual(DockPreviewRules.panelLabel(app: "Safari"), "Safari windows")
+        XCTAssertEqual(DockPreviewRules.windowCount(2), "2 windows")
+    }
+
+    func testHeaderWordsCarryTheKeyOnlyWhileKeysWork() {
+        XCTAssertEqual(DockPreviewRules.headerHelp(.minimizeAll, app: "Safari", keysWork: true), "Minimize All")
+        XCTAssertEqual(DockPreviewRules.headerHelp(.hideApp, app: "Safari", keysWork: false), "Hide Safari")
+        XCTAssertEqual(DockPreviewRules.headerHelp(.hideApp, app: "Safari", keysWork: true), "Hide Safari (⌘H)")
+        XCTAssertEqual(DockPreviewRules.headerHelp(.showApp, app: "Safari", keysWork: true), "Show Safari (⌘H)")
+        XCTAssertEqual(DockPreviewRules.headerHelp(.quitApp, app: "Safari", keysWork: true), "Quit Safari (⌘Q)")
+        XCTAssertEqual(DockPreviewRules.headerLabel(.quitApp, app: "Safari"), "Quit Safari")
+        XCTAssertEqual(DockPreviewRules.hideButton(appHidden: true), .showApp)
+        XCTAssertEqual(DockPreviewRules.hideButton(appHidden: false), .hideApp)
+    }
+
+    func testHoverWords() {
+        XCTAssertEqual(DockPreviewRules.hoverHelp(.close, minimized: false, fullScreen: false, keysWork: false), "Close")
+        XCTAssertEqual(DockPreviewRules.hoverHelp(.close, minimized: false, fullScreen: false, keysWork: true),
+                       "Close (⌘W)")
+        XCTAssertEqual(DockPreviewRules.hoverHelp(.minimize, minimized: false, fullScreen: false, keysWork: true),
+                       "Minimize (⌘M)")
+        XCTAssertEqual(DockPreviewRules.hoverHelp(.minimize, minimized: true, fullScreen: false, keysWork: false),
+                       "Restore")
+        XCTAssertEqual(DockPreviewRules.hoverHelp(.fullScreen, minimized: false, fullScreen: false, keysWork: true),
+                       "Enter Full Screen")
+        XCTAssertEqual(DockPreviewRules.hoverLabel(.fullScreen, minimized: false, fullScreen: true),
+                       "Exit Full Screen")
+        XCTAssertEqual(DockPreviewRules.hoverLabel(.close, minimized: false, fullScreen: false), "Close")
+        XCTAssertEqual(DockPreviewRules.action(for: .minimize, minimized: true), .restore)
+        XCTAssertEqual(DockPreviewRules.action(for: .minimize, minimized: false), .minimize)
+        XCTAssertEqual(DockPreviewRules.action(for: .close, minimized: false), .close)
+        XCTAssertEqual(DockPreviewRules.action(for: .fullScreen, minimized: false), .fullScreen)
+    }
+
+    func testCardMenuFollowsTheWindowAndTheApp() {
+        XCTAssertEqual(DockPreviewRules.cardMenu(hasAXElement: false, minimized: false, fullScreen: false,
+                                                 appHidden: false, appIsFinder: false), [.bringForward])
+        XCTAssertEqual(DockPreviewRules.cardMenu(hasAXElement: true, minimized: false, fullScreen: false,
+                                                 appHidden: false, appIsFinder: false),
+                       [.closeWindow, .minimizeWindow, .enterFullScreen, .separator, .hideApp, .quitApp])
+        XCTAssertEqual(DockPreviewRules.cardMenu(hasAXElement: true, minimized: true, fullScreen: true,
+                                                 appHidden: true, appIsFinder: true),
+                       [.closeWindow, .restoreWindow, .exitFullScreen, .separator, .showApp])
+        XCTAssertEqual(DockPreviewRules.headerMenu(appHidden: false, appIsFinder: false),
+                       [.minimizeAll, .closeAll, .separator, .hideApp, .quitApp])
+        XCTAssertEqual(DockPreviewRules.headerMenu(appHidden: true, appIsFinder: true),
+                       [.minimizeAll, .closeAll, .separator, .showApp])
+    }
+
+    func testMenuTitlesKeysAndActions() {
+        XCTAssertEqual(DockPreviewRules.menuTitle(.closeWindow, app: "Safari"), "Close Window")
+        XCTAssertEqual(DockPreviewRules.menuTitle(.restoreWindow, app: "Safari"), "Restore Window")
+        XCTAssertEqual(DockPreviewRules.menuTitle(.showApp, app: "Safari"), "Show Safari")
+        XCTAssertEqual(DockPreviewRules.menuTitle(.quitApp, app: "Safari"), "Quit Safari")
+        XCTAssertEqual(DockPreviewRules.menuTitle(.bringForward, app: "Safari"), "Bring Forward")
+        XCTAssertEqual(DockPreviewRules.menuTitle(.closeAll, app: "Safari"), "Close All")
+        for item in DockPanelMenuItem.allCases {
+            XCTAssertEqual(DockPreviewRules.menuKey(item, keysWork: false), "")
+            XCTAssertEqual(DockPreviewRules.action(for: item) == nil, item == .separator)
+        }
+        XCTAssertEqual(DockPreviewRules.menuKey(.closeWindow, keysWork: true), "w")
+        XCTAssertEqual(DockPreviewRules.menuKey(.restoreWindow, keysWork: true), "m")
+        XCTAssertEqual(DockPreviewRules.menuKey(.showApp, keysWork: true), "h")
+        XCTAssertEqual(DockPreviewRules.menuKey(.quitApp, keysWork: true), "q")
+        XCTAssertEqual(DockPreviewRules.menuKey(.closeAll, keysWork: true), "")
+        XCTAssertEqual(DockPreviewRules.action(for: .exitFullScreen), .fullScreen)
+        XCTAssertEqual(DockPreviewRules.action(for: .bringForward), .raise)
+    }
+
+    func testKeysMapToActionsAndOnlyWindowActionsNeedAnElement() {
+        XCTAssertNil(DockPreviewRules.action(for: DockKeyAction.escape))
+        XCTAssertEqual(DockPreviewRules.action(for: DockKeyAction.close), .close)
+        XCTAssertEqual(DockPreviewRules.action(for: DockKeyAction.showApp), .showApp)
+        XCTAssertEqual(DockAction.allCases.filter(DockPreviewRules.needsAXElement),
+                       [.close, .minimize, .restore, .fullScreen])
     }
 }

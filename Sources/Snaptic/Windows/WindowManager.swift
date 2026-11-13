@@ -822,8 +822,9 @@ final class WindowManager {
         if item.hasRealWindowID { touch(item.id) }
     }
 
-    /// Like clicking the app in the Dock: it opens a window if it has none.
-    private func reopen(_ app: NSRunningApplication) {
+    /// Like clicking the app in the Dock: it opens a window if it has none. Dock Previews' small card and app-wide
+    /// actions call it too (§4.4).
+    func reopen(_ app: NSRunningApplication) {
         if let url = app.bundleURL {
             let configuration = NSWorkspace.OpenConfiguration()
             configuration.activates = true
@@ -852,6 +853,29 @@ final class WindowManager {
             guard let button = AX.element(ref.element, kAXCloseButtonAttribute) else { return }
             AXUIElementSetMessagingTimeout(button, WindowServices.axTimeout)
             AX.perform(button, kAXPressAction)
+        }
+    }
+
+    /// Dock Previews' Close All (§4.4): presses each listed window's close button, in order, in one background task.
+    /// A window without an AX element is left alone.
+    func close(_ items: [WindowItem]) {
+        let refs = items.compactMap { $0.axElement.map(AXRef.init) }
+        guard !refs.isEmpty else { return }
+        Task.detached(priority: .userInitiated) {
+            for ref in refs {
+                guard let button = AX.element(ref.element, kAXCloseButtonAttribute) else { continue }
+                AXUIElementSetMessagingTimeout(button, WindowServices.axTimeout)
+                AX.perform(button, kAXPressAction)
+            }
+        }
+    }
+
+    /// Dock Previews' Minimize All (§4.4): minimizes each listed window that isn't already, in one background task.
+    func minimize(_ items: [WindowItem]) {
+        let refs = items.filter { !$0.isMinimized }.compactMap { $0.axElement.map(AXRef.init) }
+        guard !refs.isEmpty else { return }
+        Task.detached(priority: .userInitiated) {
+            for ref in refs { AX.setBool(ref.element, kAXMinimizedAttribute, true) }
         }
     }
 
