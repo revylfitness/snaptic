@@ -649,6 +649,8 @@ Sources/SnapticKit/KnownDockTools.swift	lead	L	-	-
 Tests/SnapticKitTests/ConfigDockTests.swift	lead	L	-	-
 Tests/SnapticKitTests/KnownDockToolsTests.swift	lead	L	-	-
 Sources/SnapticKit/WindowCatalogRules.swift	lead	L	-	-
+Sources/SnapticKit/ThumbnailIndex.swift	lead	L	-	-
 Sources/SnapticKit/WindowLeaseLedger.swift	lead	L	-	-
+Tests/SnapticKitTests/ThumbnailIndexTests.swift	lead	L	-	-
 Tests/SnapticKitTests/WindowCatalogRulesTests.swift	lead	L	-	-
 Tests/SnapticKitTests/WindowLeaseLedgerTests.swift	lead	L	-	-

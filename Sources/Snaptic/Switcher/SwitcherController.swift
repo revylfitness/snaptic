@@ -251,8 +251,10 @@ final class SwitcherController {
         var items = list.items.map { markPrivacy($0) }
 
         if config.isOn(.thumbnails) {
-            // Drop cached images of windows that closed or may no longer be captured.
-            ThumbnailStore.shared.prune(keeping: Set(items.filter { capturePermitted($0) }.map { $0.id }))
+            // Drop cached images of windows that closed or may no longer be captured. A minimized, hidden or
+            // other-Space window keeps its last-seen image (0.5 §2.3, D2-14).
+            ThumbnailStore.shared.prune(keeping: Set(items.filter { mayKeepThumbnail($0) }.map { $0.id }),
+                                        client: .windowSwitcher)
         }
         let scope: CatalogScope
         switch shortcut.scope {
@@ -415,7 +417,7 @@ final class SwitcherController {
         watchdog = nil
         previewTask = nil
         removeDismissMonitors()
-        ThumbnailStore.shared.invalidate()
+        ThumbnailStore.shared.invalidate(client: .windowSwitcher)
         window.hide()
         preview?.hide()
         model.reset()
@@ -523,6 +525,15 @@ final class SwitcherController {
         WindowCatalogRules.capturePath(item.catalog, gate: .switcherList) == .screenCaptureKit
     }
 
+    /// A real window that isn't private, wherever it is: its cached image may stay as its last-seen thumbnail.
+    private func mayKeepThumbnail(_ item: WindowItem) -> Bool {
+        WindowCatalogRules.captureRefusal(item.catalog, gate: .switcherList) == nil
+    }
+
+    /// The switcher's pixel buckets (0.5 §4.9): the list's thumbnails and the full-size preview.
+    private static let listPixels: CGFloat = 640
+    private static let previewPixels: CGFloat = 2400
+
     private var blockedBundleIDs: [String] { WindowServices.shared.captureBlockedBundleIDs }
 
     private func updatePreview() {
@@ -550,7 +561,9 @@ final class SwitcherController {
         previewTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(90))
             guard !Task.isCancelled,
-                  let image = await ThumbnailStore.shared.captureForPreview(target, blockedBundleIDs: blocked, maxPixels: 2400),
+                  let image = await ThumbnailStore.shared.captureForPreview(target, blockedBundleIDs: blocked,
+                                                                            maxPixels: Self.previewPixels,
+                                                                            client: .windowSwitcher),
                   !Task.isCancelled,
                   let self, self.visible,
                   let current = self.model.selected, current.id == target.id else { return }
@@ -562,13 +575,15 @@ final class SwitcherController {
     private func loadThumbnails() {
         guard config.isOn(.thumbnails) else { return }
         let eligible = model.allItems.filter { capturePermitted($0) }
-        model.thumbnails = ThumbnailStore.shared.cached(eligible.map { $0.id })
+        model.thumbnails = ThumbnailStore.shared.cached(eligible.map { $0.id }, maxPixels: Self.listPixels,
+                                                        client: .windowSwitcher)
         guard let shortcut = active, config.effectiveStyle(shortcut) == .thumbnails else { return }
         ThumbnailStore.shared.refresh(
             eligible.map { CaptureTarget(id: $0.id, pid: $0.pid) },
             blockedBundleIDs: blockedBundleIDs,
-            maxPixels: 640,
-            priority: model.selected?.id
+            maxPixels: Self.listPixels,
+            priority: model.selected?.id,
+            client: .windowSwitcher
         ) { [weak self] id, image in
             guard let self, self.active != nil else { return }
             self.model.thumbnails[id] = image

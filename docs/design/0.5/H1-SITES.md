@@ -215,7 +215,8 @@ New: `ConfigDockTests` (25) and `KnownDockToolsTests` (5).
 
 ## Shared window services (D2-14)
 
-`WindowServices` arrived at A1a (§2.3) in `Windows/WindowServices.swift`; `ThumbnailIndex` arrives at A1b / A2a.
+`WindowServices` arrived at A1a (§2.3) in `Windows/WindowServices.swift`; Kit `ThumbnailIndex` arrived at A1b in
+`SnapticKit/ThumbnailIndex.swift` (A2a adds the byte budget).
 Today every client below is the Window Switcher. Dock Previews has no call sites until A6a, and no test calls
 either.
 
@@ -251,18 +252,26 @@ switcher's per-call uses stay on `WindowManager.shared`: `Switcher/SwitcherContr
 (`effectiveFrontPID`), `:232, 669` (`loadWindows`), `:383, 635` (`focus`), `:617, 626, 637, 647, 651` (`close`,
 `toggleMinimized`, `toggleFullscreen`, `quitApp`, `toggleHidden`).
 
-**`ThumbnailStore`** (client: Window Switcher; A1b passes a client at each site)
+**`WindowServices` freshness (A1b)**: `acquire(_:needs:onPurge:onWindowsChanged:)` (`WindowServices.swift:51`)
+takes the handler for `windowsChanged(pid)`; no caller passes one yet (the Dock's arrives at A4a / A6a).
+`.startFreshness` / `.stopFreshness` run at `:110–117`: host `.focusTracker` adds the notifications to
+`FocusTracker`'s observer (`FocusTracker.startFreshness`, `:271`); host `.own` runs `OwnFreshnessSession`
+(`:604`), its own `ObserverThread`. The 2 s linger is one one-shot at `ledger.nextDeadline` (`:156`).
+`freshnessObservers` (`:44`) counts the own-thread observers. The switcher's lease has no `.freshness(pid)`.
 
-| Call site | Call |
-|---|---|
-| `Windows/ThumbnailStore.swift:18–19` | definition and `shared` |
-| `Windows/WindowServices.swift:97` | `purge()` on `.purge(client)` / `.purgeAll` (the switcher's `stop()`, thumbnails turned off) |
-| `Windows/WindowServices.swift:142` | `purge()` on `screensDidSleep`, `sessionDidResignActive`, `com.apple.screenIsLocked` |
-| `Switcher/SwitcherController.swift:255` | `prune(keeping:)` |
-| `Switcher/SwitcherController.swift:418` | `invalidate()` |
-| `Switcher/SwitcherController.swift:553` | `captureForPreview(_:blockedBundleIDs:maxPixels: 2400)` |
-| `Switcher/SwitcherController.swift:565` | `cached(_:)` |
-| `Switcher/SwitcherController.swift:567` | `refresh(_:blockedBundleIDs:maxPixels: 640, priority:)` |
+**`ThumbnailStore`** (A1b: every call names its client; line numbers are A1b's). The store keeps only images
+under `ThumbnailIndex` keys `(windowID, pixel bucket)`.
+
+| Call site | Client | Call |
+|---|---|---|
+| `Windows/ThumbnailStore.swift:22–23` | — | definition and `shared` |
+| `Windows/WindowServices.swift:94` | each lease's | `apply(_:ledger:)` on every lease edge: runs `.purge(client)` / `.purgeAll` (the switcher's `stop()`) and purges a client that dropped `.thumbnails` |
+| `Windows/WindowServices.swift:210` | all | `purgeAll()` on `screensDidSleep`, `sessionDidResignActive`, `com.apple.screenIsLocked` |
+| `Switcher/SwitcherController.swift:256` | Window Switcher | `prune(keeping:client:)`; keeps windows with no capture refusal, so minimized, hidden and other-Space windows keep last-seen (D2-14) |
+| `Switcher/SwitcherController.swift:420` | Window Switcher | `invalidate(client:)` |
+| `Switcher/SwitcherController.swift:564` | Window Switcher | `captureForPreview(_:blockedBundleIDs:maxPixels: 2400, client:)` |
+| `Switcher/SwitcherController.swift:578` | Window Switcher | `cached(_:maxPixels: 640, client:)` |
+| `Switcher/SwitcherController.swift:581` | Window Switcher | `refresh(_:blockedBundleIDs:maxPixels: 640, priority:, client:)` |
 
 **Privacy fields** `WindowServices` reads for both modules (§2.3, D2-1): `WindowServices.swift:67–70`
 (`protectPrivateWindows`, `protectedApps`, `captureBlockedBundleIDs`, from `AppSettings.shared.config`), read by

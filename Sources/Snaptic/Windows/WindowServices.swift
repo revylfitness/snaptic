@@ -8,9 +8,10 @@ struct WindowLease: Equatable {
 }
 
 /// The window services the Window Switcher and Dock Previews share (PLAN 0.5 §2.2, §2.3, H2): the leases, the
-/// system-wide AX messaging timeout, `FocusTracker` and `WindowManager`'s recency order, the §2.5 purge observers and
-/// the live counters. Kit `WindowLeaseLedger` holds the union and the edges; this runs its commands. With no lease
-/// nothing runs: no observer, thread or timer.
+/// system-wide AX messaging timeout, `FocusTracker` and `WindowManager`'s recency order, the freshness notifications,
+/// the §2.5 purge observers and the live counters. Kit `WindowLeaseLedger` holds the union and the edges; this runs
+/// its commands, and Kit `ThumbnailIndex` follows them for the store. With no lease nothing runs: no observer, thread
+/// or timer.
 @MainActor final class WindowServices {
     static let shared = WindowServices()
 
@@ -23,6 +24,12 @@ struct WindowLease: Equatable {
     private var purgeHandlers: [ModuleID: @MainActor () -> Void] = [:]
     private var purgeTokens: [NSObjectProtocol] = []
     private var distributedPurgeTokens: [NSObjectProtocol] = []
+    /// What each client does when an app it holds `.freshness(pid)` for changes its windows.
+    private var windowsChangedHandlers: [ModuleID: @MainActor (pid_t) -> Void] = [:]
+    /// Freshness observers for apps `FocusTracker` doesn't host; nil while there are none.
+    private var ownFreshness: OwnFreshnessSession?
+    /// One one-shot at the ledger's next freshness deadline; nil while nothing lingers.
+    private var lingerItem: DispatchWorkItem?
 
     private init() {}
 
@@ -32,13 +39,20 @@ struct WindowLease: Equatable {
     /// `FocusTracker`'s AX observers (§2.3, M32); 0 while no lease holds `.recency`.
     var focusObservers: Int { focusTracker.liveObservers }
 
+    /// Freshness `AXObserver`s on their own thread (§2.3, §4.22, M32); 0 while no lease holds `.freshness(pid)` (and
+    /// its 2 s linger is over) or `FocusTracker` hosts them.
+    var freshnessObservers: Int { ownFreshness?.liveObservers ?? 0 }
+
     // MARK: Leases
 
     /// Takes `client`'s lease; one it holds already is updated. `onPurge` runs on each §2.5 purge trigger, before
-    /// the store is purged.
+    /// the store is purged. `onWindowsChanged` runs when an app the lease holds `.freshness(pid)` for opens, closes,
+    /// minimizes, restores or retitles a window, at most once per 0.3 s.
     func acquire(_ client: ModuleID, needs: WindowNeeds,
-                 onPurge: (@MainActor () -> Void)? = nil) -> WindowLease {
+                 onPurge: (@MainActor () -> Void)? = nil,
+                 onWindowsChanged: (@MainActor (pid_t) -> Void)? = nil) -> WindowLease {
         purgeHandlers[client] = onPurge
+        windowsChangedHandlers[client] = onWindowsChanged
         run(ledger.acquire(client, needs: needs, now: Self.now))
         return WindowLease(client: client)
     }
@@ -50,6 +64,7 @@ struct WindowLease: Equatable {
 
     func release(_ lease: WindowLease) {
         purgeHandlers[lease.client] = nil
+        windowsChangedHandlers[lease.client] = nil
         run(ledger.release(lease.client, now: Self.now))
     }
 
@@ -74,7 +89,9 @@ struct WindowLease: Equatable {
     private static var now: Double { ProcessInfo.processInfo.systemUptime }
 
     private func run(_ commands: [WindowLeaseCommand]) {
-        var purged = false
+        // The store first: a purge bumps the client's generation (or the epoch), so a capture in flight is dropped,
+        // and a client that lost `.thumbnails` gets nothing from then on (X2-11, X2-12).
+        ThumbnailStore.shared.apply(commands, ledger: ledger)
         for command in commands {
             switch command {
             case .startServices:
@@ -85,20 +102,71 @@ struct WindowLease: Equatable {
             case .startRecency:
                 WindowManager.shared.start()
                 focusTracker.onFocus = { pid, id in WindowManager.shared.focusChanged(pid: pid, windowID: id) }
+                focusTracker.onWindowsChanged = { [weak self] pid in self?.windowsChanged(pid) }
                 focusTracker.start()
             case .stopRecency:
                 focusTracker.stop()
                 WindowManager.shared.stop()
-            case .startFreshness, .stopFreshness:
-                break   // A1b: no client asks for `.freshness(pid)` yet
+            case .startFreshness(let pid, .focusTracker):
+                focusTracker.startFreshness(pid)
+            case .stopFreshness(let pid, .focusTracker):
+                focusTracker.stopFreshness(pid)
+            case .startFreshness(let pid, .own):
+                startOwnFreshness(pid)
+            case .stopFreshness(let pid, .own):
+                stopOwnFreshness(pid)
             case .purge, .purgeAll:
-                // One store and one client until A1b, so a client purge is the whole store. Purging bumps the
-                // generation, so a capture in flight is dropped.
-                if !purged { ThumbnailStore.shared.purge() }
-                purged = true
+                break   // the store ran them above
             }
         }
         syncPurgeObservers()
+        armLinger()
+    }
+
+    // MARK: Freshness (§2.3, X-9, D2-5)
+
+    private func startOwnFreshness(_ pid: pid_t) {
+        if ownFreshness == nil {
+            let session = OwnFreshnessSession(onWindowsChanged: { [weak self] pid in self?.windowsChanged(pid) })
+            session.start()
+            ownFreshness = session
+        }
+        ownFreshness?.add(pid)
+    }
+
+    /// The thread stops with its last observer.
+    private func stopOwnFreshness(_ pid: pid_t) {
+        guard let session = ownFreshness else { return }
+        session.remove(pid)
+        if session.isEmpty {
+            session.stop()
+            ownFreshness = nil
+        }
+    }
+
+    /// Tells each client whose lease still holds `.freshness(pid)`; nobody hears an app whose need is lingering.
+    private func windowsChanged(_ pid: pid_t) {
+        for client in ModuleID.allCases where ledger.needs(of: client).contains(.freshness(pid)) {
+            windowsChangedHandlers[client]?(pid)
+        }
+    }
+
+    /// Stops lingering freshness notifications 2 s after their last need dropped: one one-shot at the ledger's next
+    /// deadline, re-armed after each edge and none while nothing lingers.
+    private func armLinger() {
+        lingerItem?.cancel()
+        lingerItem = nil
+        guard let deadline = ledger.nextDeadline else { return }
+        let item = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated { self?.lingerEnded() }
+        }
+        lingerItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, deadline - Self.now), execute: item)
+    }
+
+    private func lingerEnded() {
+        lingerItem = nil
+        run(ledger.tick(now: Self.now))
     }
 
     // MARK: Purge observers (§2.5)
@@ -139,30 +207,41 @@ struct WindowLease: Equatable {
 
     private func purgeTriggered() {
         for client in ModuleID.allCases where ledger.holds(client) { purgeHandlers[client]?() }
-        ThumbnailStore.shared.purge()
+        ThumbnailStore.shared.purgeAll()
     }
 }
 
 // MARK: - Window-level focus tracking
 
-private let focusChangedCallback: AXObserverCallback = { _, element, _, refcon in
-    guard let refcon, let id = PrivateWindowAPI.windowID(of: element) else { return }
-    var pid: pid_t = 0
-    guard AXUIElementGetPid(element, &pid) == .success else { return }
+private let focusChangedCallback: AXObserverCallback = { _, element, notification, refcon in
+    guard let refcon else { return }
     // Runs on the observer thread. The box is retained until the session has removed
     // every observer, and its target is weak (a weak load is atomic).
-    Unmanaged<CallbackTarget<FocusSession>>.fromOpaque(refcon).takeUnretainedValue().target?
-        .deliver(pid: pid, windowID: id)
+    let session = Unmanaged<CallbackTarget<FocusSession>>.fromOpaque(refcon).takeUnretainedValue().target
+    guard (notification as String) == kAXFocusedWindowChangedNotification else {
+        // One of the freshness notifications this observer hosts (§2.3, D2-5).
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(element, &pid) == .success else { return }
+        session?.freshnessChanged(pid)
+        return
+    }
+    guard let id = PrivateWindowAPI.windowID(of: element) else { return }
+    var pid: pid_t = 0
+    guard AXUIElementGetPid(element, &pid) == .success else { return }
+    session?.deliver(pid: pid, windowID: id)
 }
 
 /// Watches every app for "focused window changed", so the switcher's order
 /// reflects the windows you actually used, not just which app was in front.
 /// Restartable: each start() builds a new session (thread, observers, refcon box);
 /// stop() removes every observer and ends the thread. `WindowServices` runs it while a
-/// lease holds `.recency` (§2.3).
+/// lease holds `.recency` (§2.3), and it hosts the freshness notifications meanwhile (D2-5).
 @MainActor final class FocusTracker {
     /// Delivered on the main thread. Set before `start()`.
     var onFocus: (@MainActor (pid_t, CGWindowID) -> Void)?
+    /// A hosted app's windows changed; delivered on the main thread, at most once per 0.3 s per app. Set before
+    /// `start()`.
+    var onWindowsChanged: (@MainActor (pid_t) -> Void)?
 
     private var session: FocusSession?
 
@@ -173,7 +252,7 @@ private let focusChangedCallback: AXObserverCallback = { _, element, _, refcon i
 
     func start() {
         guard session == nil else { return }
-        let session = FocusSession(onFocus: onFocus)
+        let session = FocusSession(onFocus: onFocus, onWindowsChanged: onWindowsChanged)
         session.start()
         self.session = session
     }
@@ -187,12 +266,27 @@ private let focusChangedCallback: AXObserverCallback = { _, element, _, refcon i
     func observeAll() {
         session?.observeAll()
     }
+
+    /// Adds the five freshness notifications for `pid` to its observer (§2.3).
+    func startFreshness(_ pid: pid_t) {
+        session?.startFreshness(pid)
+    }
+
+    func stopFreshness(_ pid: pid_t) {
+        session?.stopFreshness(pid)
+    }
 }
 
 private final class FocusSession: @unchecked Sendable {
     private let onFocus: (@MainActor (pid_t, CGWindowID) -> Void)?
+    private let onWindowsChanged: (@MainActor (pid_t) -> Void)?
     private let thread = ObserverThread()
     private var observers: [pid_t: (observer: AXObserver, app: AXUIElement)] = [:]   // only touched on `thread`
+    // Freshness (§2.3, D2-5), only touched on `thread`: the apps asked for, their registrations, and the apps
+    // observed only because freshness asked (not regular apps), whose observer goes with the freshness.
+    private var freshnessPIDs: Set<pid_t> = []
+    private var freshness: [pid_t: FreshnessRegistration] = [:]
+    private var freshnessOnly: Set<pid_t> = []
     private var notificationTokens: [NSObjectProtocol] = []                         // main only
     private var box: Unmanaged<CallbackTarget<FocusSession>>?                        // set on main, released on `thread`
     private let ownPID = ProcessInfo.processInfo.processIdentifier
@@ -202,8 +296,9 @@ private final class FocusSession: @unchecked Sendable {
     private var pending: (pid: pid_t, windowID: CGWindowID)?
     private var observerCount = 0   // `observers.count`, under `stateLock`
 
-    init(onFocus: (@MainActor (pid_t, CGWindowID) -> Void)?) {
+    init(onFocus: (@MainActor (pid_t, CGWindowID) -> Void)?, onWindowsChanged: (@MainActor (pid_t) -> Void)?) {
         self.onFocus = onFocus
+        self.onWindowsChanged = onWindowsChanged
     }
 
     private var isStopped: Bool {
@@ -297,6 +392,25 @@ private final class FocusSession: @unchecked Sendable {
         }
     }
 
+    @MainActor func startFreshness(_ pid: pid_t) {
+        onThread {
+            self.freshnessPIDs.insert(pid)
+            if self.observers[pid] != nil {
+                self.addFreshness(pid)
+            } else {
+                self.observe(pid, attempt: 0, forFreshness: true)
+            }
+        }
+    }
+
+    @MainActor func stopFreshness(_ pid: pid_t) {
+        onThread {
+            self.freshnessPIDs.remove(pid)
+            self.freshness.removeValue(forKey: pid)?.remove()
+            if self.freshnessOnly.contains(pid) { self.stopObserving(pid) }
+        }
+    }
+
     private func onThread(_ block: @escaping () -> Void) {
         guard !isStopped else { return }
         thread.perform { [weak self] in
@@ -336,9 +450,13 @@ private final class FocusSession: @unchecked Sendable {
         return latest
     }
 
-    // Runs on `thread`.
-    private func observe(_ pid: pid_t, attempt: Int) {
-        guard observers[pid] == nil, pid != ownPID, let box else { return }
+    // Runs on `thread`. `forFreshness`: asked for by `.freshness(pid)` rather than as a regular app.
+    private func observe(_ pid: pid_t, attempt: Int, forFreshness: Bool = false) {
+        if observers[pid] != nil {
+            if !forFreshness { freshnessOnly.remove(pid) }
+            return
+        }
+        guard pid != ownPID, let box, !forFreshness || freshnessPIDs.contains(pid) else { return }
         var created: AXObserver?
         guard AXObserverCreate(pid, focusChangedCallback, &created) == .success, let observer = created else { return }
         let app = AXUIElementCreateApplication(pid)
@@ -349,17 +467,46 @@ private final class FocusSession: @unchecked Sendable {
             let delays: [Double] = [0.3, 1.0, 3.0]
             guard attempt < delays.count else { return }
             DispatchQueue.global().asyncAfter(deadline: .now() + delays[attempt]) { [weak self] in
-                self?.onThread { self?.observe(pid, attempt: attempt + 1) }
+                self?.onThread { self?.observe(pid, attempt: attempt + 1, forFreshness: forFreshness) }
             }
             return
         }
         CFRunLoopAddSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(observer), .defaultMode)
         observers[pid] = (observer, app)
+        if forFreshness { freshnessOnly.insert(pid) }
+        if freshnessPIDs.contains(pid) { addFreshness(pid) }
         countObservers()
     }
 
     // Runs on `thread`.
+    private func addFreshness(_ pid: pid_t) {
+        guard freshness[pid] == nil, let entry = observers[pid], let box else { return }
+        let registration = FreshnessRegistration(observer: entry.observer, app: entry.app, refcon: box.toOpaque())
+        registration.add()
+        freshness[pid] = registration
+    }
+
+    /// Runs on `thread` (the AX callback). The first notification since the last report reads the windows again
+    /// and reports 0.3 s later; the rest fold into it.
+    fileprivate func freshnessChanged(_ pid: pid_t) {
+        guard let registration = freshness[pid], registration.markChanged() else { return }
+        DispatchQueue.global().asyncAfter(deadline: .now() + FreshnessRegistration.settleDelay) { [weak self] in
+            self?.onThread { self?.settleFreshness(pid) }
+        }
+    }
+
+    // Runs on `thread`.
+    private func settleFreshness(_ pid: pid_t) {
+        guard let registration = freshness[pid] else { return }
+        registration.settle()
+        let handler = onWindowsChanged
+        Task { @MainActor in handler?(pid) }
+    }
+
+    // Runs on `thread`.
     private func stopObserving(_ pid: pid_t) {
+        freshness.removeValue(forKey: pid)?.remove()
+        freshnessOnly.remove(pid)
         guard let entry = observers.removeValue(forKey: pid) else { return }
         AXObserverRemoveNotification(entry.observer, entry.app, kAXFocusedWindowChangedNotification as CFString)
         CFRunLoopRemoveSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(entry.observer), .defaultMode)
@@ -373,5 +520,202 @@ private final class FocusSession: @unchecked Sendable {
         guard let window = AX.element(app, kAXFocusedWindowAttribute),
               let id = PrivateWindowAPI.windowID(of: window) else { return }
         deliver(pid: pid, windowID: id)
+    }
+}
+
+// MARK: - Freshness (§2.3, X-9, D2-5)
+
+/// The five freshness notifications for one app, on an observer its host owns: window created, miniaturized,
+/// deminiaturized and title changed on the app element, and destroyed on each window the last read returned
+/// (D2-18). Only touched on the host's observer thread.
+private final class FreshnessRegistration {
+    /// Notifications are folded together for this long; then the windows are read again and the change is reported
+    /// once (`windowsChanged(pid)`, §2.4).
+    static let settleDelay: Double = 0.3
+    private static let appNotifications = [kAXWindowCreatedNotification, kAXWindowMiniaturizedNotification,
+                                           kAXWindowDeminiaturizedNotification, kAXTitleChangedNotification]
+
+    private let observer: AXObserver
+    private let app: AXUIElement
+    private let refcon: UnsafeMutableRawPointer
+    private var windows: Set<AXUIElement> = []
+    private var changePending = false
+
+    init(observer: AXObserver, app: AXUIElement, refcon: UnsafeMutableRawPointer) {
+        self.observer = observer
+        self.app = app
+        self.refcon = refcon
+    }
+
+    func add() {
+        for name in Self.appNotifications {
+            AXObserverAddNotification(observer, app, name as CFString, refcon)
+        }
+        readWindows()
+    }
+
+    func remove() {
+        for name in Self.appNotifications {
+            AXObserverRemoveNotification(observer, app, name as CFString)
+        }
+        for window in windows {
+            AXObserverRemoveNotification(observer, window, kAXUIElementDestroyedNotification as CFString)
+        }
+        windows = []
+    }
+
+    /// True for the first notification since the last `settle()`.
+    func markChanged() -> Bool {
+        guard !changePending else { return false }
+        changePending = true
+        return true
+    }
+
+    func settle() {
+        changePending = false
+        readWindows()
+    }
+
+    /// Destroyed is registered on exactly the windows this read returns, so the registrations never outgrow the
+    /// app's window list (D2-18).
+    private func readWindows() {
+        let read = Set(AX.elements(app, kAXWindowsAttribute))
+        for window in windows.subtracting(read) {
+            AXObserverRemoveNotification(observer, window, kAXUIElementDestroyedNotification as CFString)
+        }
+        for window in read.subtracting(windows) {
+            AXObserverAddNotification(observer, window, kAXUIElementDestroyedNotification as CFString, refcon)
+        }
+        windows = read
+    }
+}
+
+private let freshnessCallback: AXObserverCallback = { _, element, _, refcon in
+    guard let refcon else { return }
+    var pid: pid_t = 0
+    guard AXUIElementGetPid(element, &pid) == .success else { return }
+    // Runs on the session's thread; the box outlives every observer, and its target is weak.
+    Unmanaged<CallbackTarget<OwnFreshnessSession>>.fromOpaque(refcon).takeUnretainedValue().target?.changed(pid)
+}
+
+/// The freshness notifications for apps `FocusTracker` doesn't host (no lease holds `.recency`): one `AXObserver` per
+/// app on one `ObserverThread`, which stops with its last observer (§2.3, D2-5). Nothing runs while no lease holds
+/// `.freshness(pid)`.
+private final class OwnFreshnessSession: @unchecked Sendable {
+    private let onWindowsChanged: @MainActor (pid_t) -> Void
+    private let thread = ObserverThread()
+    private var observers: [pid_t: (observer: AXObserver, registration: FreshnessRegistration)] = [:]   // `thread`
+    private var box: Unmanaged<CallbackTarget<OwnFreshnessSession>>?   // set on main, released on `thread`
+    private var pids: Set<pid_t> = []                                    // main only
+    private let ownPID = ProcessInfo.processInfo.processIdentifier
+
+    private let stateLock = NSLock()
+    private var stopped = false
+    private var observerCount = 0   // `observers.count`, under `stateLock`
+
+    init(onWindowsChanged: @escaping @MainActor (pid_t) -> Void) {
+        self.onWindowsChanged = onWindowsChanged
+    }
+
+    var liveObservers: Int {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return observerCount
+    }
+
+    @MainActor var isEmpty: Bool { pids.isEmpty }
+
+    @MainActor func start() {
+        box = Unmanaged.passRetained(CallbackTarget(self))
+        thread.name = "Snaptic window freshness"
+        thread.qualityOfService = .userInitiated
+        thread.start()
+        thread.waitUntilReady()
+    }
+
+    @MainActor func add(_ pid: pid_t) {
+        pids.insert(pid)
+        onThread { self.register(pid) }
+    }
+
+    @MainActor func remove(_ pid: pid_t) {
+        pids.remove(pid)
+        onThread { self.unregister(pid) }
+    }
+
+    /// Removes every observer, releases the refcon box and ends the thread.
+    @MainActor func stop() {
+        stateLock.lock()
+        let already = stopped
+        stopped = true
+        stateLock.unlock()
+        guard !already else { return }
+        pids = []
+        let box = self.box
+        thread.cancel()
+        thread.perform {
+            for pid in Array(self.observers.keys) { self.unregister(pid) }
+            box?.release()
+            CFRunLoopStop(CFRunLoopGetCurrent())
+        }
+    }
+
+    private var isStopped: Bool {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return stopped
+    }
+
+    private func onThread(_ block: @escaping () -> Void) {
+        guard !isStopped else { return }
+        thread.perform { [weak self] in
+            guard let self, !self.isStopped else { return }
+            block()
+        }
+    }
+
+    // Runs on `thread`.
+    private func countObservers() {
+        let count = observers.count
+        stateLock.lock()
+        observerCount = count
+        stateLock.unlock()
+    }
+
+    // Runs on `thread`.
+    private func register(_ pid: pid_t) {
+        guard observers[pid] == nil, pid != ownPID, let box else { return }
+        var created: AXObserver?
+        guard AXObserverCreate(pid, freshnessCallback, &created) == .success, let observer = created else { return }
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, WindowServices.axTimeout)
+        let registration = FreshnessRegistration(observer: observer, app: app, refcon: box.toOpaque())
+        registration.add()
+        CFRunLoopAddSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(observer), .defaultMode)
+        observers[pid] = (observer, registration)
+        countObservers()
+    }
+
+    // Runs on `thread`.
+    private func unregister(_ pid: pid_t) {
+        guard let entry = observers.removeValue(forKey: pid) else { return }
+        entry.registration.remove()
+        CFRunLoopRemoveSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(entry.observer), .defaultMode)
+        countObservers()
+    }
+
+    /// Runs on `thread` (the AX callback). The first notification since the last report reads the windows again
+    /// and reports 0.3 s later; the rest fold into it.
+    fileprivate func changed(_ pid: pid_t) {
+        guard let registration = observers[pid]?.registration, registration.markChanged() else { return }
+        DispatchQueue.global().asyncAfter(deadline: .now() + FreshnessRegistration.settleDelay) { [weak self] in
+            self?.onThread { self?.settle(pid) }
+        }
+    }
+
+    // Runs on `thread`.
+    private func settle(_ pid: pid_t) {
+        guard let registration = observers[pid]?.registration else { return }
+        registration.settle()
+        let handler = onWindowsChanged
+        Task { @MainActor in handler(pid) }
     }
 }
