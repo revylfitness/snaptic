@@ -44,6 +44,9 @@ package enum MenuBarPageControls: ControlTable {
         // 0.4 A7: Hidden Icons' row, Arrow and Snaptic Menu / Arrow Only (§4.17; its arrow is always in the bar).
         ControlSpec("menubar.page.iconsPresence", .setting, when: [.module(.hiddenIcons)], keys: ["modules.*.presence"],
                     search: search("Hidden Icons in the Snaptic menu", ["arrow", "hidden icons list", "arrow only"])),
+        // 0.5 K5: Dock Previews' row, Show in Snaptic Menu / Off only (§4.19; it never owns an icon). A7 wires it.
+        ControlSpec("menubar.page.dockPresence", .setting, when: [.module(.dockPreviews)], keys: ["modules.*.presence"],
+                    search: search("Dock Previews in the Snaptic menu", ["dock", "tab", "hide"])),
         // r1 P1-2: the writable-bundle note's Learn More…, as under the Awake page's switch.
         ControlSpec("menubar.page.awakeLidBundleLearnMore", .statusAction,
                     when: [.module(.awake), .hardware(.battery), .parentOn(ControlID("menubar.page.awakeLidClosed")),

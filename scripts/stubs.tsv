@@ -667,3 +667,9 @@ Tests/SnapticKitTests/DockPreviewPolicyTests.swift	lead	L	-	-
 Tests/SnapticKitTests/DockClickRulesTests.swift	lead	L	-	-
 Tests/SnapticKitTests/DockKeyRulesTests.swift	lead	L	-	-
 Tests/SnapticKitTests/DockPageRulesTests.swift	lead	L	-	-
+Sources/SnapticKit/DockCommandGrammar.swift	lead	L	-	-
+Sources/SnapticKit/Controls/DockPageControls.swift	lead	L	-	-
+Sources/SnapticKit/Controls/DockAdvancedSheetControls.swift	lead	L	-	-
+Sources/SnapticKit/Controls/DockMenuRowsControls.swift	lead	L	-	-
+Tests/SnapticKitTests/DockCommandGrammarTests.swift	lead	L	-	-
+Tests/SnapticKitTests/DockControlsTests.swift	lead	L	-	-

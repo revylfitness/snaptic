@@ -1599,7 +1599,11 @@ def without_string_text(code):
 # 0.4 K5: Hidden Icons' tables land before their views (A1, A6, A7). While no app file declares
 # `typealias Controls = <table>` for one of these, "declared but no view or builder uses it" is skipped for it; every
 # other L15 check applies. Once a view declares the alias, the entry must go (reported below). R checks it is empty.
-L15_PENDING = set()
+# 0.5 K5: Dock Previews' three tables, until A7's views (PLAN 0.5 §3 L15). A7 empties it again.
+L15_PENDING = {"DockPageControls", "DockAdvancedSheetControls", "DockMenuRowsControls"}
+# 0.5 K5: single ids added to a table a view already uses, skipped the same way until that view uses them. The Menu
+# Bar page has no Dock Previews row until A7 (`MenuBarPage.swift`). Reported once used; A7 empties it.
+L15_PENDING_IDS = {"menubar.page.dockPresence"}
 
 
 def l15():
@@ -1654,10 +1658,19 @@ def l15():
             problems.append(f"scripts/lint03.py: L15 {table} has a view now; remove it from L15_PENDING")
         elif table not in tables:
             problems.append(f"scripts/lint03.py: L15 L15_PENDING names {table}, which is no table")
+    all_used = set().union(*used.values()) if used else set()
+    all_ids = {i for ids in tables.values() for i in ids}
+    for i in sorted(L15_PENDING_IDS):
+        if i in all_used:
+            problems.append(f"scripts/lint03.py: L15 {i} has a view now; remove it from L15_PENDING_IDS")
+        elif i not in all_ids:
+            problems.append(f"scripts/lint03.py: L15 L15_PENDING_IDS names {i}, which is in no table")
     for table, ids in tables.items():
         if table in L15_PENDING and table not in aliased:
             continue
         for i in ids:
+            if i in L15_PENDING_IDS:
+                continue
             if i not in used.get(table, set()):
                 problems.append(f"{controls_dir}/{table}.swift: L15 {i} is declared but no view or builder uses it")
     return problems

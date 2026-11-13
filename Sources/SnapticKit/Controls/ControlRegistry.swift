@@ -36,6 +36,11 @@ package enum ControlState: String, Hashable, Sendable {
     // Always Show or Always Hide; `iconsArrowMissing`: the arrow was dragged off (Show Arrow).
     case iconsCollapsed, iconsExpanded, iconsNeedsPermission, iconsNotEffective, iconsUnavailable, iconsPaused,
          iconsFirstRun, iconsCrashGuard, iconsArrowMissing, iconsChoicesExist, iconsRestricted
+    // 0.5 K5 (Dock Previews, PLAN 0.5 §4.17, §4.19): rows 4 to 9 of the state table, and the added rows.
+    // `dockCommandPause`: row 8, or a command pause held under Starting, row 4 or row 5 (G3-1); `dockWorking`: row 9;
+    // `dockBreakerTripped`: the click-action or keys breaker; `dockCrashGuard`: a WindowFeature stopped (§4.12).
+    case dockNeedsPermission, dockUnreadable, dockOtherTool, dockVoiceOver, dockCommandPause, dockWorking,
+         dockBreakerTripped, dockCrashGuard
 }
 
 /// Availability as data (the §4.2 States rules); every condition must hold for the control to exist.
@@ -192,6 +197,9 @@ package enum ControlRegistry {
             IconsSectionsPageControls.self,
             IconsMenuRowsControls.self,
             IconsItemsControls.self,
+            DockPageControls.self,
+            DockAdvancedSheetControls.self,
+            DockMenuRowsControls.self,
         ]
     }
 }

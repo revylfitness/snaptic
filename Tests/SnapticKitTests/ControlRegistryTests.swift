@@ -211,7 +211,8 @@ final class ControlRegistryTests: XCTestCase {
         let configs: [(String, Any)] = [("DisplaysConfig", ConfigFixtures.fullDisplays()),
                                         ("ModulesConfig", ConfigFixtures.fullModules()),
                                         ("AwakeConfig", ConfigFixtures.fullAwake()),
-                                        ("IconsConfig", ConfigFixtures.fullIcons())]
+                                        ("IconsConfig", ConfigFixtures.fullIcons()),
+                                        ("DockConfig", ConfigFixtures.fullDock())]
         for (name, value) in configs {
             let paths = ConfigFixtures.keyPaths(value)
             XCTAssertFalse(paths.isEmpty, name)

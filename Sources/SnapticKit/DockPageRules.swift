@@ -200,24 +200,6 @@ package enum DockMenuItem: Equatable, Sendable {
     }
 }
 
-/// `dock status`'s `state` (§4.21).
-package enum DockCLIState: String, CaseIterable, Sendable {
-    case on
-    case starting
-    case paused
-    case needsPermission
-    case unavailable
-}
-
-/// `dock status`'s `reason` (§4.21).
-package enum DockCLIReason: String, CaseIterable, Sendable {
-    case safeMode
-    case otherTool
-    case voiceOver
-    case command
-    case dockUnreadable
-}
-
 /// `dock status`'s first three fields.
 package struct DockCLIStatus: Equatable, Sendable {
     package var state: DockCLIState
@@ -378,18 +360,10 @@ package enum DockPageRules {
 
     /// `dock status`'s state, reason and until. Nil in rows 1 and 2 (the verb isn't registered: exit 2).
     package static func cli(_ f: DockPageFacts) -> DockCLIStatus? {
+        let current = row(f)
+        guard let state = current.state else { return nil }
         let until = f.commandPause.flatMap { AwakeCommandGrammar.isoUTC($0.untilUnix) }
-        switch row(f) {
-        case .killSwitch, .off: return nil
-        case .starting: return DockCLIStatus(state: .starting, until: until)
-        case .safeMode: return DockCLIStatus(state: .paused, reason: .safeMode, until: until)
-        case .needsPermission: return DockCLIStatus(state: .needsPermission, until: until)
-        case .dockUnreadable: return DockCLIStatus(state: .unavailable, reason: .dockUnreadable, until: until)
-        case .otherTool: return DockCLIStatus(state: .paused, reason: .otherTool, until: until)
-        case .voiceOver: return DockCLIStatus(state: .paused, reason: .voiceOver, until: until)
-        case .pausedByCommand: return DockCLIStatus(state: .paused, reason: .command, until: until)
-        case .working: return DockCLIStatus(state: .on, until: until)
-        }
+        return DockCLIStatus(state: state, reason: current.reason, until: until)
     }
 
     /// The menu-bar attention mark: row 4, row 5 after 2 minutes, or a tripped breaker (§4.17).

@@ -2218,3 +2218,10 @@ changed, and why.
 | K3 | The pointer monitor stays on during the 8 pt lockout and while latched, so it sees the move that ends them. Engagement counts only real movement | Without the monitor the lockout could never end on a still pointer |
 | K3 | A stale selection is judged by when it arrived, plus the pointer-agrees rule. So A4a must send one `pointerMoved` when it starts watching | §4.1 rule 4 needs a pointer time to compare with |
 | K3 | A held swap runs 0.12 s after the pointer last headed into the panel | X2-23 gives the rule but not the timer start |
+| K5 | The verb × state table is keyed by K3's `DockPageRow`, which also carries each row's §4.21 number, `state`, `reason` and whether the verbs are registered. `DockCLIState` and `DockCLIReason` are defined once, in `DockCommandGrammar`, and `DockPageRules.cli` reads them from the row. The table keeps §4.21's order; `DockPageRow` keeps §4.17's precedence order | K3 and K5 each defined the rows and the CLI enums in parallel |
+| K5 | `status --json` puts the live counters under `"live"` | A top-level `keys` counter would clash with the `keys` feature field |
+| K5 | The usage string lives in Kit. The Accessibility pane name comes in through a `paneName` closure | Kit can't read the app's pane names. Awake and Hidden Icons keep their usage strings in the app |
+| K5 | `dock pause` has the off-only policy, like `awake pause`, and help shows "(off only)" | §4.21 names no policy. Pausing only turns things off |
+| K5 | Kill-switch lock rows are one row per feature, adding `dock.page.clickActionsLock` | One lock per kill switch reads as a list |
+| K5 | The Advanced sheet repeats the two shared privacy rows under Dock ids, so their search titles match the switcher's. Neither Restore Defaults button touches the privacy keys | The privacy settings are shared (§4.10) and owned by the switcher's store |
+| K5 | `menubar.page.dockPresence` sits in a controls table whose view has no Dock row until A7. Lint lists it in `L15_PENDING_IDS`, which A7 empties | Keeps the K5 tables complete without drawing UI early |

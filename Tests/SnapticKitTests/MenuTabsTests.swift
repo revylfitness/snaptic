@@ -258,6 +258,33 @@ final class MenuTabsTests: XCTestCase {
                        .shortFit)
     }
 
+    /// 0.5 K5: Dock Previews makes a fifth tab, after Hidden Icons; ⌘5 reaches it.
+    func testFiveTabsWithDockPreviews() {
+        let five: [ModuleID] = [.windowSwitcher, .displays, .awake, .hiddenIcons, .dockPreviews]
+        var c = ModulesConfig()
+        c.modules[.hiddenIcons] = ModulePreferences(enabled: true, presence: .inSnapticMenu)
+        c.modules[.dockPreviews] = ModulePreferences(enabled: true, presence: .inSnapticMenu)
+        let p = c.statusItemPlan(running: Set(five), awakeActive: false, displaysActive: false,
+                                 awakeShortcutBound: false, sharedShownAtRest: true)
+        XCTAssertEqual(MenuTabs.tabs(plan: p), five)
+        XCTAssertEqual(five.compactMap { MenuTabs.keyIndex(for: $0, tabs: five) }, [1, 2, 3, 4, 5])
+        XCTAssertEqual(MenuTabs.tab(atKeyIndex: 5, tabs: five), .dockPreviews)
+        XCTAssertNil(MenuTabs.tab(atKeyIndex: 6, tabs: five))
+        XCTAssertEqual(MenuTabs.keyIndex(characters: "5", keyCode: 23, commandOnly: true, tabCount: 5), 5)
+        XCTAssertNil(MenuTabs.keyIndex(characters: "6", keyCode: 22, commandOnly: true, tabCount: 5))
+        XCTAssertEqual(MenuTabs.barHelp(tabCount: 5), "Press Command-1 to Command-5 to switch tabs.")
+        XCTAssertEqual(five.map(\.shortTitle), ["Switcher", "Displays", "Awake", "Icons", "Dock"])
+        XCTAssertEqual(MenuTabs.segmentToolTip(title: "Dock Previews", keyIndex: 5, active: false), "Dock Previews (⌘5)")
+        // Without Hidden Icons, Dock Previews is the fourth tab.
+        c.modules[.hiddenIcons] = ModulePreferences(enabled: false, presence: .inSnapticMenu)
+        let four = c.statusItemPlan(running: Set(five), awakeActive: false, displaysActive: false,
+                                    awakeShortcutBound: false, sharedShownAtRest: true)
+        XCTAssertEqual(MenuTabs.tabs(plan: four), [.windowSwitcher, .displays, .awake, .dockPreviews])
+        XCTAssertEqual(MenuTabs.selected(stored: "dockPreviews", tabs: MenuTabs.tabs(plan: four)), .dockPreviews)
+        XCTAssertEqual(MenuTabs.selected(stored: "dockPreviews", tabs: [.windowSwitcher, .displays, .awake]),
+                       .windowSwitcher)
+    }
+
     func testRememberedHiddenIconsTabFallsBackWithoutBeingRewritten() {
         let three: [ModuleID] = [.windowSwitcher, .displays, .awake]
         XCTAssertEqual(MenuTabs.selected(stored: "hiddenIcons", tabs: three), .windowSwitcher)
