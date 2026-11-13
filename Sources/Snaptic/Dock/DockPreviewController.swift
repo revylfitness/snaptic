@@ -164,6 +164,16 @@ final class DockPreviewController {
         send(open ? .dockMenuOpened : .dockMenuClosed)
     }
 
+    /// A6b: the module's pause (§4.15, §4.16, §4.21). Any pause hides at once; nothing shows until it's nil again.
+    func pauseChanged(_ reason: DockPauseReason?) {
+        send(.pauseChanged(reason))
+    }
+
+    /// A6b: the Window Switcher's session opened or closed (`WindowServices.switcherSessionActive`; X2-15).
+    func switcher(open: Bool) {
+        send(open ? .switcherOpened : .switcherClosed)
+    }
+
     /// A §2.5 purge: the store is about to drop every thumbnail. The cards fall back to the icon.
     func purged() {
         dropThumbnails()

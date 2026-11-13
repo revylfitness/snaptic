@@ -27,7 +27,10 @@ final class SwitcherController {
     /// Created on first use, so a switcher with previews off never builds the panel.
     private var preview: PreviewOverlay?
 
-    private var active: Shortcut?
+    private var active: Shortcut? {
+        // 0.5 X-14, X2-15: Dock Previews holds back while a session is open.
+        didSet { WindowServices.shared.setSwitcherSessionActive(active != nil) }
+    }
     /// Sticky = stay open after the modifier is released (search mode, "release to switch"
     /// turned off, or opened from the menu, 0.3 C8). Return switches, Esc cancels.
     private var sticky = false

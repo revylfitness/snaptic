@@ -77,6 +77,25 @@ struct WindowLease: Equatable {
         focusTracker.observeAll()
     }
 
+    // MARK: Switcher session (§2.4, X-14, X2-15)
+
+    /// The Window Switcher has a session open (`SwitcherController.active` isn't nil). While it's true Dock Previews
+    /// shows and swaps nothing, and its keys tap is never enabled.
+    private(set) var switcherSessionActive = false
+    private var switcherSessionHandlers: [ModuleID: @MainActor (Bool) -> Void] = [:]
+
+    /// The switcher calls this as its session opens and closes; each change reaches every handler once.
+    func setSwitcherSessionActive(_ active: Bool) {
+        guard active != switcherSessionActive else { return }
+        switcherSessionActive = active
+        for handler in switcherSessionHandlers.values { handler(active) }
+    }
+
+    /// `client` hears each change of `switcherSessionActive`; nil stops it. Registering runs nothing.
+    func observeSwitcherSession(_ client: ModuleID, _ handler: (@MainActor (Bool) -> Void)?) {
+        switcherSessionHandlers[client] = handler
+    }
+
     // MARK: Shared privacy settings (§4.10, D2-1)
 
     // The switcher `Config` keeps them in `SnapticConfig.v1`. `ModuleHost` loads `AppSettings.shared` whether or not

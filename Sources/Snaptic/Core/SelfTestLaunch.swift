@@ -181,6 +181,13 @@ enum SelfTestLaunch {
             problems.append("Dock Previews in Safe Mode holds a lease (\(leases), \(probe.liveLeases) live)")
         }
         if captures != "0" { problems.append("Dock Previews in Safe Mode reports \(captures) captures") }
+        // A6b, M33: the pause reason and the capture symbol read safeMode.
+        if value("Pause reason") != "safeMode" {
+            problems.append("Dock Previews in Safe Mode reports pause reason \(value("Pause reason"))")
+        }
+        if !value("hwCapture").hasPrefix("safeMode") {
+            problems.append("Dock Previews in Safe Mode reports hwCapture \(value("hwCapture"))")
+        }
         if !DockPreviewsModule.live.isBalanced { problems.append("Dock Previews in Safe Mode created something") }
         let line = "selftest-launch: dock safe mode state=\(state) observer=\(observer) leases=\(leases) "
             + "captures=\(captures)"

@@ -11,7 +11,11 @@ import SnapticKit
 ///   (§2.3), plus `.freshness(pid)` for the app whose preview is shown (M32). The idle lease registers
 ///   notification-centre observers only.
 /// - In Safe Mode `start()` sets `.degraded("Paused in Safe Mode")` and returns: no observer, tap, panel, capture or
-///   lease (§4.13). The three `dock` verbs are A9's.
+///   lease (§4.13). The three `dock` verbs are A9's; a DEBUG build registers `dock status` until then (A6b).
+/// - A6b: another Dock preview tool, VoiceOver and `dock pause` pause it (`DockPauseSources`, Kit `DockPauseRules`).
+///   The state stays `.running`. A pause takes the engine (lease, observer, controller) down, except VoiceOver's
+///   while Dock click actions work (§4.11, §4.16). Each pause change is one EventLog line, enums only (§4.22).
+/// - A6b: while a Window Switcher session is open (`WindowServices.switcherSessionActive`) nothing shows or swaps.
 /// - `Dock.disable.<DockFeature>` kill switches are read once per start (H6).
 /// - The live counters are Kit `DockLive` (§4.22); A3, A4a and A5 count up and down through `liveCount(_:up:)`.
 @MainActor final class DockPreviewsModule: SnapticModule {
@@ -41,6 +45,10 @@ import SnapticKit
     private var controller: DockPreviewController?
     /// The app the lease holds `.freshness(pid)` for: the shown preview's (§2.3, M32).
     private var freshPID: Int32?
+    /// A6b: what can pause the module while it runs (§4.15, §4.16, §4.21); nil in Safe Mode and while off.
+    private var pauseSources: DockPauseSources?
+    /// A6b: the pause the module holds (Kit `DockPauseRules.effective`); `.safeMode` in Safe Mode.
+    private(set) var pause: DockPauseReason?
 
     /// §4.14: Accessibility, plus Screen Recording while Window thumbnails is on.
     var requiredPermissions: Set<Permission> { config.value.requiredPermissions }
@@ -58,9 +66,57 @@ import SnapticKit
         if context.safeMode.isActive {
             // §4.13: paused in Safe Mode. Nothing is created.
             state = .degraded(L("Paused in Safe Mode"))
+            pause = .safeMode
+            #if DEBUG
+            registerDebugStatus(context)
+            #endif
             return
         }
         killSwitches = Self.readKillSwitches(defaults)
+        let sources = DockPauseSources()
+        sources.onChange = { [weak self] in self?.syncPause() }
+        pauseSources = sources
+        sources.start()
+        WindowServices.shared.observeSwitcherSession(id) { [weak self] open in self?.controller?.switcher(open: open) }
+        config.$value
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] value in self?.configChanged(value) }
+            .store(in: &sinks)
+        state = .running
+        EventLog.shared.record(.dock, "dock.started")
+        // The engine starts here unless a pause holds already.
+        syncPause()
+        #if DEBUG
+        registerDebugStatus(context)
+        #endif
+        context.requestMenuRebuild()
+    }
+
+    func stop() {
+        guard let context else { return }
+        let wasRunning = state == .running
+        sinks.removeAll()
+        WindowServices.shared.observeSwitcherSession(id, nil)
+        stopEngine()
+        pauseSources?.stop()
+        pauseSources = nil
+        pause = nil
+        killSwitches = []
+        captures = 0
+        self.context = nil
+        state = .stopped
+        if wasRunning {
+            EventLog.shared.record(.dock, "dock.stopped")
+            context.requestMenuRebuild()
+        }
+    }
+
+    // MARK: Engine (A6b)
+
+    /// The lease, the observer and the controller (§2.3, §2.4). A3, A4a and A5 set up here.
+    private func startEngine() {
+        guard state == .running, controller == nil else { return }
         leaseNeeds = Self.windowNeeds(config.value)
         lease = WindowServices.shared.acquire(id, needs: leaseNeeds, onPurge: { [weak self] in
             self?.controller?.purged()
@@ -74,24 +130,18 @@ import SnapticKit
         self.observer = observer
         observer.start()
         Self.liveCount(.observer, up: true)
-        controller = DockPreviewController(observer: observer, config: config.value,
-                                           keysKilled: killSwitches.contains(.keys),
-                                           onFreshness: { [weak self] pid in self?.freshnessChanged(pid) },
-                                           onCapture: { [weak self] count in self?.captures += count })
-        config.$value
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] value in self?.configChanged(value) }
-            .store(in: &sinks)
-        state = .running
-        EventLog.shared.record(.dock, "dock.started")
-        context.requestMenuRebuild()
+        let controller = DockPreviewController(observer: observer, config: config.value,
+                                               keysKilled: killSwitches.contains(.keys),
+                                               onFreshness: { [weak self] pid in self?.freshnessChanged(pid) },
+                                               onCapture: { [weak self] count in self?.captures += count })
+        self.controller = controller
+        // Before any selection arrives: the VoiceOver pause the engine runs under, and an open switcher session.
+        if let pause { controller.pauseChanged(pause) }
+        if WindowServices.shared.switcherSessionActive { controller.switcher(open: true) }
     }
 
-    func stop() {
-        guard let context else { return }
-        let wasRunning = state == .running
-        sinks.removeAll()
+    /// Everything `startEngine()` made, at once and with no fade. A3, A4a and A5 tear down here.
+    private func stopEngine() {
         controller?.stop()
         controller = nil
         freshPID = nil
@@ -104,15 +154,94 @@ import SnapticKit
         if let lease { WindowServices.shared.release(lease) }
         lease = nil
         leaseNeeds = []
-        killSwitches = []
-        captures = 0
-        self.context = nil
-        state = .stopped
-        if wasRunning {
-            EventLog.shared.record(.dock, "dock.stopped")
-            context.requestMenuRebuild()
+    }
+
+    // MARK: Pauses (A6b; §4.15, §4.16, §4.21)
+
+    /// A pause source or a setting changed: the pause is worked out again, logged when it changes, and the engine
+    /// follows it (ground rule 1, M49).
+    private func syncPause() {
+        guard state == .running, pauseSources != nil else { return }
+        let old = pause
+        let new = DockPauseRules.effective(pageFacts())
+        pause = new
+        if let line = DockPauseRules.eventLine(from: old, to: new) { EventLog.shared.record(.dock, line) }
+        if DockPauseRules.engineRuns(pause: new, clicksWork: clicksWork) {
+            if controller == nil {
+                startEngine()
+            } else if new != old {
+                controller?.pauseChanged(new)
+            }
+        } else {
+            stopEngine()
+        }
+        if new != old { context?.requestMenuRebuild() }
+    }
+
+    /// A click action or Restore All is on and `Dock.disable.clickActions` isn't set (§4.11). A5 adds its breaker.
+    private var clicksWork: Bool {
+        let value = config.value
+        return (value.clickActions != .doNothing || value.restoreAllMinimized) && !killSwitches.contains(.clickActions)
+    }
+
+    /// A9's `dock pause` and the menu's Pause for 1 Hour: holds a command pause, never shortening one (G2-12).
+    /// Returns its end in Unix seconds; nil while the module doesn't run or is in Safe Mode. A9 checks the row first.
+    @discardableResult
+    func pauseByCommand(seconds: Int) -> Double? {
+        pauseSources?.pause(seconds: seconds)
+    }
+
+    /// A9's `dock resume` and the page's and menu's Resume: clears a held command pause. False when none was held.
+    @discardableResult
+    func resumeCommandPause() -> Bool {
+        pauseSources?.resume() ?? false
+    }
+
+    /// §4.17's facts as the module sees them now: for the pause, `dock status`, and A7's page and menu. Breakers and
+    /// crash-guard stops are A5's and A7's to add.
+    func pageFacts() -> DockPageFacts {
+        let value = config.value
+        let read = DockPauseRules.read(observer?.stats)
+        return DockPageFacts(safeMode: pausedInSafeMode, accessibility: PermissionFlow.isGranted(.accessibility),
+                             read: read.read, loginLadderEnded: read.ladderEnded, unreadableSince: read.unreadableSince,
+                             now: ProcessInfo.processInfo.systemUptime,
+                             runningBundleIDs: pauseSources?.runningToolIDs ?? [],
+                             runAlongsideOtherTools: value.runAlongsideOtherTools,
+                             voiceOverOn: pauseSources?.voiceOverOn ?? false, showWithVoiceOver: value.showWithVoiceOver,
+                             clickActionOn: value.clickActions != .doNothing, restoreAllOn: value.restoreAllMinimized,
+                             commandPause: pauseSources?.commandPause, paneName: PermissionFlow.paneName(.accessibility),
+                             thumbnailsOn: value.thumbnails, screenRecording: PermissionFlow.isGranted(.screenRecording))
+    }
+
+    /// `dock status`'s facts (§4.21); nil while the module is off.
+    func statusFacts() -> DockStatusFacts? {
+        guard context != nil else { return nil }
+        let live = Self.live
+        let counts = DockStatusLiveCounts(observer: live[.observer], clickTap: live[.clickTap], keys: live[.keys],
+                                          panel: live[.panel], timers: live[.timers],
+                                          leases: WindowServices.shared.liveLeases)
+        return DockPauseRules.status(pageFacts(), keysOn: config.value.keys, killed: killSwitches,
+                                     cacheEntries: ThumbnailStore.shared.liveEntries,
+                                     cacheBytes: ThumbnailStore.shared.liveBytes,
+                                     observerAttached: live[.observer] > 0 && observer?.stats.attached == true,
+                                     live: counts)
+    }
+
+    #if DEBUG
+    /// A6b's `dock status` until A9 registers the real verbs (§4.21); it ends with the module's lifetime.
+    private func registerDebugStatus(_ context: ModuleContext) {
+        let summary = DockCommandGrammar.verbs.first { $0.verb == "status" }?.summary ?? ""
+        context.commands.register("dock status", policy: .read, offOnly: false, cliAllowed: true, summary: summary,
+                                  lifetime: context.lifetime) { [weak self] request, _ in
+            guard case .status(let json)? = DockCommandGrammar.parse(verb: "status", args: request.arguments),
+                  let facts = self?.statusFacts() else {
+                return .failure(ControlExit.usage, DockCommandGrammar.usage)
+            }
+            return .ok(json || request.json ? DockCommandGrammar.statusJSON(facts)
+                                            : DockCommandGrammar.statusLine(facts))
         }
     }
+    #endif
 
     func menuSection() -> [NSMenuItem] { [] }
 
@@ -128,7 +257,7 @@ import SnapticKit
     func diagnosticsLines() -> [String] {
         var lines: [String] = []
         lines.append("State: " + Self.stateName(state))
-        lines.append("Pause reason: " + (pausedInSafeMode ? "safeMode" : "none"))
+        lines.append(DockPauseRules.pauseLine(pause))
         lines += (observer?.stats ?? DockObserverStats()).diagnosticsLines(observerLive: Self.live[.observer] > 0)
         lines += controller?.diagnosticsLines ?? DockPreviewCounts().lines
         lines.append("Leases: \(lease == nil ? 0 : 1)")
@@ -140,7 +269,20 @@ import SnapticKit
         lines.append("Kill switches: " + (switches.isEmpty ? "none" : switches.joined(separator: ", ")))
         lines.append("Live: " + DockLiveCounter.allCases.map { "\($0.rawValue) \(Self.live[$0])" }
             .joined(separator: ", "))
+        lines += Self.symbolLines(safeMode: pausedInSafeMode)
         return lines
+    }
+
+    /// §4.12, §4.22: each window symbol's state, from the lookups, the guards and the probe cache only (no private
+    /// call, no probe). `hwCapture: safeMode` in Safe Mode (M33).
+    private static func symbolLines(safeMode: Bool) -> [String] {
+        let defaults = UserDefaults.standard
+        var probed: [WindowSymbolID: String] = [:]
+        for id in WindowSymbolID.allCases {
+            probed[id] = defaults.string(forKey: CrashGuard.probedKey(id.rawValue))
+        }
+        return DockPauseRules.symbolLines(PrivateWindowAPI.launchReports(), probedBuilds: probed,
+                                          currentBuild: InflightMarkers.build, safeMode: safeMode)
     }
 
     #if DEBUG
@@ -182,7 +324,10 @@ import SnapticKit
     private var pausedInSafeMode: Bool { context?.safeMode.isActive == true }
 
     private func configChanged(_ value: DockConfig) {
-        guard state == .running, let lease else { return }
+        guard state == .running else { return }
+        // Run alongside other tools, Show with VoiceOver and the click settings can start or end a pause.
+        syncPause()
+        guard let lease else { return }
         let needs = Self.windowNeeds(value, freshness: freshPID)
         if needs != leaseNeeds {
             leaseNeeds = needs

@@ -2281,3 +2281,17 @@ changed, and why.
 | A4b | New VoiceOver labels "Windows can’t be read right now, ‹app›" and "Window on another Space, ‹app›" | §4.16 doesn't cover these cards |
 | A4b | Increase Contrast and Reduce Transparency are read from the SwiftUI environment; `allowsToolTipsWhenApplicationIsInactive` is on | Existing precedent (Toast); tooltips must show while another app is active |
 | A4b | Card callbacks take window ids, not indices; `perform(key:)` sends `.keyHandled` for every key | Ids survive a refresh; the policy acts only on Esc |
+| A6b | The pause decision, EventLog lines, diagnostics lines and `dock status` values live in a new Kit file, `DockPauseRules`; the sources (known tool launch/quit, VoiceOver, the command pause's end timer) in `Dock/DockPauseSources.swift` | Kit holds the logic that needs tests (P2-3) |
+| A6b | The effective pause is `DockPauseRules.effective`, which doesn't wait for a Dock read | A Dock that becomes readable while another tool runs never flashes a preview |
+| A6b | A pause takes down the lease, observer and controller, except the VoiceOver pause while click actions or Restore All are on | Ground rule 1; click actions still need the observer's selection |
+| A6b | While the engine is down for a pause, the Dock read counts as attached for the page rules | The pause's own row shows instead of Starting or "Dock unreadable" |
+| A6b | The module's state stays `.running` while paused | Hidden Icons precedent; the pause shows in its row, menu, diagnostics and status |
+| A6b | EventLog lines are `dock.started`, `dock.stopped`, `dock.paused reason=<enum>` and `dock.resumed`; Safe Mode logs no pause line | Enums only (§4.22); Safe Mode isn't a change |
+| A6b | The switcher hook is `WindowServices.setSwitcherSessionActive(_:)`, set from `SwitcherController.active`, with an `observeSwitcherSession` registry | The plan named the events but no mechanism (X2-15) |
+| A6b | Symbol states in diagnostics read the `Windows.probedBuild.<symbol>` defaults through `CrashGuard.probedKey`, so a probe with no answer also reads `notProbed`; the lines are in the Dock section only | No accessor existed; A6b stayed out of A2b's files |
+| A6b | `clickActions=`/`keys=` precedence in status is disabled > off > stopped > paused > on; `clickActions` counts as on when the pop-up isn't Do Nothing or Restore All is on | The plan gives no precedence |
+| A6b | A held command pause is in memory only and is dropped when the module stops; its end timer counts in `timers` | §4.21 |
+| A6b | `status --json` reports `leases` as `WindowServices.liveLeases` (all clients) | Matches the selftest's `dock live` line |
+| A6b | Known tools are matched by exact bundle id only | Clean room; `KnownDockTools` is the only input |
+| A6b | In Safe Mode the kill switches aren't read, so `clickActions` reads `paused`, not `disabled` | Nothing is read in Safe Mode (§4.13) |
+| A6b | DEBUG builds register `dock status [--json]` until A9 registers the real verbs; the selftest's Safe Mode probe also checks `Pause reason` and `hwCapture` read `safeMode` | The done-when needs `dock status` before A9 |
