@@ -4,13 +4,15 @@ import XCTest
 final class SettingsShellRulesTests: XCTestCase {
     private let roots = Set(SettingsRootID.all)
 
-    func testEightRootsInSidebarOrder() {
-        // 0.4 H1: Hidden Icons after Awake, before Permissions.
+    func testNineRootsInSidebarOrder() {
+        // 0.4 H1: Hidden Icons after Awake, before Permissions. 0.5 H1: Dock Previews after Hidden Icons.
         XCTAssertEqual(SettingsRootID.all,
-                       ["general", "menuBar", "windowSwitcher", "displays", "awake", "hiddenIcons", "permissions",
-                        "about"])
-        XCTAssertEqual(roots.count, 8)
+                       ["general", "menuBar", "windowSwitcher", "displays", "awake", "hiddenIcons", "dockPreviews",
+                        "permissions", "about"])
+        XCTAssertEqual(roots.count, 9)
         XCTAssertEqual(SettingsRootID.groups.count, 3)
+        XCTAssertEqual(SettingsRootID.groups.map(\.count), [2, 5, 2])
+        XCTAssertEqual(SettingsRootID.groups[1], ModuleID.allCases.map(\.rawValue))
         for id in ModuleID.allCases { XCTAssertTrue(roots.contains(id.rawValue)) }
     }
 
@@ -23,6 +25,11 @@ final class SettingsShellRulesTests: XCTestCase {
         XCTAssertEqual(SettingsLocation.resolve("icons.sections", roots: roots),
                        SettingsLocation(root: "hiddenIcons", route: SettingsRoute("icons.sections")))
         XCTAssertNil(SettingsLocation.resolve("icons", roots: roots))
+        // 0.5 H1: "dock.<sub-page>" through the alias; bare "dock" doesn't resolve.
+        XCTAssertEqual(SettingsLocation.resolve("dockPreviews", roots: roots), SettingsLocation(root: "dockPreviews"))
+        XCTAssertEqual(SettingsLocation.resolve("dock.advanced", roots: roots),
+                       SettingsLocation(root: "dockPreviews", route: SettingsRoute("dock.advanced")))
+        XCTAssertNil(SettingsLocation.resolve("dock", roots: roots))
         XCTAssertEqual(SettingsLocation.resolve("about", roots: roots), SettingsLocation(root: "about"))
     }
 
@@ -176,7 +183,7 @@ final class SettingsHelpAnchorsTests: XCTestCase {
 
     /// Headings the README doesn't have yet: the docs step (lead, step 5) adds them, then removes them here. Once a
     /// heading exists this test fails until it is removed from the list, so the list only shrinks.
-    private static let awaitingREADME: Set<String> = []
+    private static let awaitingREADME: Set<String> = ["Dock Previews"]   // 0.5 D1
 
     /// Review round 2 ux N4: every (?) anchor is a real heading of README.md (no "#anchor" that lands on the top).
     func testEveryAnchorIsAReadmeHeading() throws {

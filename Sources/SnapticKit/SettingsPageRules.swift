@@ -11,6 +11,7 @@ package enum GeneralCardRules {
         case .displays: return .displays
         case .awake, .awakeMigrated: return .awake
         case .hiddenIcons: return .hiddenIcons
+        case .dockPreviews: return .dockPreviews
         }
     }
 
@@ -26,6 +27,7 @@ package enum GeneralCardRules {
             case .awake: return !enabled.contains(.awake) && !cards.contains(.awakeMigrated)
             case .awakeMigrated: return true
             case .hiddenIcons: return !enabled.contains(.hiddenIcons)
+            case .dockPreviews: return !enabled.contains(.dockPreviews)
             }
         }
     }

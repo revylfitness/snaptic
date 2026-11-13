@@ -54,6 +54,8 @@ import SnapticKit
     let displays: DisplaysModule
     let awake: AwakeModule
     let icons: IconsModule
+    /// 0.5 H1: the inert K1 shell until A6a.
+    let dock: DockPreviewsModule
 
     /// 0.3.1 B3.4: sleep left off by an earlier lid-closed session (host level: whatever Awake's state, also in Safe
     /// Mode). StatusMenu and IndicatorController draw its rows; T-lid-app fills it in.
@@ -153,6 +155,7 @@ import SnapticKit
         displays = DisplaysModule(config: displaysConfig)
         awake = AwakeModule(config: awakeConfig, state: awakeState, history: awakeHistory)
         icons = IconsModule(config: iconsConfig, apps: iconsApps)
+        dock = DockPreviewsModule()
         m1Toast = Self.pendingM1Toast(m1, ledger: ledger, awake: awakeConfig)
         // H9 (P-24): Snaptic doesn't activate over the Window Switcher panel.
         let signals = self.signals
@@ -423,6 +426,7 @@ import SnapticKit
         case .displays: return displays
         case .awake: return awake
         case .hiddenIcons: return icons
+        case .dockPreviews: return dock
         }
     }
 
@@ -561,12 +565,13 @@ import SnapticKit
             return .ok(rows.map { $0.0 + "\t" + $0.1 }.joined(separator: "\n"))
         }
         commands.register("module disable", policy: .low, offOnly: true, cliAllowed: true,
-                          summary: L("Turn a module off: module disable <windowSwitcher|displays|awake|hiddenIcons>"),
+                          summary: L("Turn a module off: module disable <windowSwitcher|displays|awake|hiddenIcons|dockPreviews>"),
                           lifetime: lifetime) { [weak self] request, _ in
             guard let self else { return .failure(ControlExit.unavailable, "") }
             guard let name = request.arguments.first?.lowercased(),
                   let id = ModuleID.allCases.first(where: { $0.rawValue.lowercased() == name
-                      || (name == "switcher" && $0 == .windowSwitcher) || (name == "icons" && $0 == .hiddenIcons) })
+                      || (name == "switcher" && $0 == .windowSwitcher) || (name == "icons" && $0 == .hiddenIcons)
+                      || (name == "dock" && $0 == .dockPreviews) })
             else { return .failure(ControlExit.notFound, L("No such module.")) }
             self.setEnabled(false, id)
             return .ok()

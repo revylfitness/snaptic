@@ -262,7 +262,52 @@ final class KitBackupTests: XCTestCase {
         XCTAssertFalse(KitBackup.isSafetyRelated(section: "displays", path: "menu.compact"))
         XCTAssertFalse(KitBackup.isSafetyRelated(section: "displays", path: "pip.luts"))
         XCTAssertFalse(KitBackup.isSafetyRelated(section: "displays", path: "perDisplay"))
-        XCTAssertFalse(KitBackup.isSafetyRelated(section: "switcher", path: "(all)"))
+        // 0.5 §4.10: the switcher section now holds a safety path ("Protect private windows"), so a whole switcher
+        // section replaced is listed with the safety changes.
+        XCTAssertTrue(KitBackup.isSafetyRelated(section: "switcher", path: "(all)"))
+        XCTAssertFalse(KitBackup.isSafetyRelated(section: "switcher", path: "thumbnailSize"))
+    }
+
+    // MARK: Shared privacy settings (0.5 §4.10, D2-1)
+
+    func testImportNeverShrinksTheProtectedApps() throws {
+        let current = json(["privateBundleIDs": ["com.bank", "com.mail"], "protectPrivateWindows": true,
+                            "thumbnailSize": 170])
+        func apps(_ imported: [String: Any]) throws -> [String]? {
+            let merged = object(try XCTUnwrap(KitBackup.merge(current: current, imported: json(imported),
+                                                              section: KitBackup.switcherSection)))
+            return merged["privateBundleIDs"] as? [String]
+        }
+        XCTAssertEqual(try apps(["privateBundleIDs": [String]()]), ["com.bank", "com.mail"])
+        XCTAssertEqual(try apps(["privateBundleIDs": ["com.notes", "com.bank"]]), ["com.bank", "com.mail", "com.notes"])
+        XCTAssertEqual(try apps(["thumbnailSize": 200]), ["com.bank", "com.mail"])
+        XCTAssertEqual(try apps(["privateBundleIDs": "garbage"]), ["com.bank", "com.mail"])
+        XCTAssertTrue(KitBackup.unionPaths.contains(["switcher", "privateBundleIDs"]))
+    }
+
+    func testProtectPrivateWindowsIsASafetyPath() {
+        XCTAssertTrue(KitBackup.safetyPaths.contains(["switcher", "protectPrivateWindows"]))
+        XCTAssertTrue(KitBackup.isSafetyRelated(section: "switcher", path: "protectPrivateWindows"))
+        let old = json(["protectPrivateWindows": true, "thumbnailSize": 170])
+        let new = json(["protectPrivateWindows": false, "thumbnailSize": 200])
+        let preview = KitBackup.previewChanges(section: "switcher", from: old, to: new)
+        XCTAssertEqual(preview.safety, ["protectPrivateWindows"])
+        XCTAssertEqual(preview.other, ["thumbnailSize"])
+    }
+
+    /// A 0.4 backup (a switcher section, no `dock` section) imports with its protected apps and protect setting intact.
+    func testA04BackupKeepsTheProtectedApps() throws {
+        let switcher: [String: Any] = ["privateBundleIDs": ["com.example.vault"], "protectPrivateWindows": false]
+        let doc = try XCTUnwrap(KitBackup.makeDocument(sections: ["switcher": json(switcher)], created: "t",
+                                                       appVersion: "0.4.0"))
+        let parsed = try KitBackup.parseDocument(doc).get()
+        XCTAssertNil(parsed["dock"])
+        let section = try XCTUnwrap(parsed["switcher"])
+        let current = json(["privateBundleIDs": ["com.example.local"], "protectPrivateWindows": true])
+        let merged = object(try XCTUnwrap(KitBackup.merge(current: current, imported: section,
+                                                          section: KitBackup.switcherSection)))
+        XCTAssertEqual(merged["privateBundleIDs"] as? [String], ["com.example.local", "com.example.vault"])
+        XCTAssertEqual(merged["protectPrivateWindows"] as? Bool, false)
     }
 
     // MARK: Awake (0.3 §2.14, §3.2, §3.6)

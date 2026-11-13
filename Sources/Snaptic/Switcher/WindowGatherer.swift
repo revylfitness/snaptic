@@ -67,7 +67,7 @@ import SnapticKit
             }.value
             guard let self else { return }
             self.running = false
-            EventLog.shared.record(.switcher, "Gathered \(moved) windows")
+            EventLog.shared.record(.switcher, "Gathered windows")
             self.toasts.show(moved == 1 ? L("Moved 1 window.") : L("Moved ") + String(moved) + L(" windows."))
         }
     }

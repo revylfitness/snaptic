@@ -33,6 +33,7 @@ enum MenuPlacement {
             return L("The arrow is always in the menu bar. Arrow and Snaptic Menu also lists hidden icons in the Snaptic menu, so you can open one without showing them all.")
         case (.ownIconWhenActive, .displays): return L("Shows the icon while an external display is connected.")
         case (.ownIconWhenActive, .awake): return L("Shows the icon while your Mac is being kept awake.")
+        case (.hidden, .dockPreviews): return L("Previews show when you point at the Dock. Change them in Settings.")
         case (.hidden, _): return L("Use the keyboard shortcut or Settings to reach it.")
         default: return nil
         }

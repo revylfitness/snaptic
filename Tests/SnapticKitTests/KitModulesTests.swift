@@ -18,6 +18,21 @@ final class KitModulesTests: XCTestCase {
         XCTAssertEqual(SentenceText.inSentence(""), "")
     }
 
+    /// 0.5 D2-29: "Dock" and "Dock Previews" keep their capital in a sentence.
+    func testSentenceTextKeepsTheDockNames() {
+        XCTAssertTrue(SentenceText.properNames.contains("Dock Previews"))
+        XCTAssertTrue(SentenceText.properNames.contains("Dock"))
+        XCTAssertEqual(SentenceText.inSentence("Dock Previews settings"), "Dock Previews settings")
+        XCTAssertEqual(SentenceText.inSentence("Dock click actions"), "Dock click actions")
+    }
+
+    /// 0.5 P3-7: a count with its noun, shared by Awake's countdown and the Dock's window counts.
+    func testSentenceTextUnit() {
+        XCTAssertEqual(SentenceText.unit(1, "window", "windows"), "1 window")
+        XCTAssertEqual(SentenceText.unit(3, "window", "windows"), "3 windows")
+        XCTAssertEqual(SentenceText.unit(0, "window", "windows"), "0 windows")
+    }
+
     func testSentenceTextListUsesTheSerialComma() {
         XCTAssertEqual(SentenceText.list([]), "")
         XCTAssertEqual(SentenceText.list(["sharper text"]), "sharper text")
@@ -37,9 +52,10 @@ final class KitModulesTests: XCTestCase {
     }
 
     func testModuleStartOrder() {
-        XCTAssertEqual(ModuleID.allCases, [.windowSwitcher, .displays, .awake, .hiddenIcons])
+        XCTAssertEqual(ModuleID.allCases, [.windowSwitcher, .displays, .awake, .hiddenIcons, .dockPreviews])
         XCTAssertEqual(ModuleID.awake.rawValue, "awake")
         XCTAssertEqual(ModuleID.hiddenIcons.rawValue, "hiddenIcons")
+        XCTAssertEqual(ModuleID.dockPreviews.rawValue, "dockPreviews")
     }
 
     func testMenuPresenceAllowedPerModule() {
@@ -48,6 +64,9 @@ final class KitModulesTests: XCTestCase {
         XCTAssertFalse(MenuPresence.allowed(for: .windowSwitcher).contains(.ownIconWhenActive))
         // 0.4: the arrow is Hidden Icons' own icon, so it has no separate one (H2).
         XCTAssertEqual(MenuPresence.allowed(for: .hiddenIcons), [.inSnapticMenu, .hidden])
+        // 0.5 H1: Dock Previews is a tab or nothing; it never has a menu bar icon.
+        XCTAssertEqual(MenuPresence.allowed(for: .dockPreviews), [.inSnapticMenu, .hidden])
+        XCTAssertEqual(MenuPresence.fallback(for: .dockPreviews), .inSnapticMenu)
         XCTAssertEqual(MenuPresence.allCases.map(\.rawValue), ["ownIcon", "ownIconWhenActive", "inSnapticMenu", "hidden"])
     }
 

@@ -4,7 +4,8 @@ import Foundation
 // live in one place and change only through the lead (PLAN §13, R5.1).
 
 /// Hidden kill switches (N14): `<prefix>.disable.<id>` set to true in Snaptic's persistent domain turns that id off
-/// (`Modules`, `Displays`, `Awake` and `Icons` prefixes). Any other value (missing, false, a string) leaves it alone.
+/// (`Modules`, `Displays`, `Awake`, `Icons`, `Dock` and `Windows` prefixes; 0.5 H6). Any other value (missing, false,
+/// a string) leaves it alone.
 package enum KillSwitches {
     package static func key(prefix: String, id: String) -> String { prefix + ".disable." + id }
 
@@ -16,8 +17,11 @@ package enum KillSwitches {
     }
 }
 
-/// Start order = declaration order (0.3: windowSwitcher, displays, awake; PLAN 0.3 §2.2; 0.4 H1 adds hiddenIcons last).
-package enum ModuleID: String, Codable, CaseIterable, Sendable { case windowSwitcher, displays, awake, hiddenIcons }
+/// Start order = declaration order (0.3: windowSwitcher, displays, awake; PLAN 0.3 §2.2; 0.4 H1 adds hiddenIcons last;
+/// 0.5 H1 adds dockPreviews last).
+package enum ModuleID: String, Codable, CaseIterable, Sendable {
+    case windowSwitcher, displays, awake, hiddenIcons, dockPreviews
+}
 
 package enum Permission: String, Codable, CaseIterable, Sendable { case accessibility, screenRecording }
 
@@ -32,7 +36,7 @@ package enum SentenceText {
     package static let properNames = ["Picture in Picture", "Night Shift", "High Dynamic Range", "Display Information",
                                       "Displays panel", "Window Switcher",
                                       "True Tone", "Touch ID", "Apple", "Snaptic", "Mac", "Keep Awake", "Drive Alive",
-                                      "Safe Mode", "Sidecar", "AirPlay", "Hidden Icons"]
+                                      "Safe Mode", "Sidecar", "AirPlay", "Hidden Icons", "Dock Previews", "Dock"]
 
     /// "Virtual displays" → "virtual displays"; "Picture in Picture filters", "HDR virtual modes" and
     /// "macOS" unchanged.
@@ -57,6 +61,9 @@ package enum SentenceText {
         default: return L("\(items.dropLast().joined(separator: ", ")), and \(items[items.count - 1])")
         }
     }
+
+    /// "1 hour", "2 minutes", "3 windows" (moved from `AwakeCountdown`; 0.5 P3-7).
+    package static func unit(_ n: Int, _ one: String, _ many: String) -> String { "\(n) " + (n == 1 ? one : many) }
 }
 
 package struct HotkeyCombo: Codable, Hashable, Sendable {
@@ -98,19 +105,20 @@ package enum MenuPresence: String, Codable, CaseIterable, Sendable {
 
     /// The choices offered for a module: `ownIconWhenActive` only for Displays and Awake (sanitized → ownIcon elsewhere).
     /// Hidden Icons owns its arrow, so it only chooses whether the Snaptic menu carries its section (0.4 H2; sanitized
-    /// → inSnapticMenu).
+    /// → inSnapticMenu). Dock Previews has no menu bar icon: a Snaptic-menu tab or nothing (0.5 H1).
     package static func allowed(for id: ModuleID) -> [MenuPresence] {
         switch id {
         case .displays, .awake: return allCases
         case .windowSwitcher: return [.ownIcon, .inSnapticMenu, .hidden]
-        case .hiddenIcons: return [.inSnapticMenu, .hidden]
+        case .hiddenIcons, .dockPreviews: return [.inSnapticMenu, .hidden]
         }
     }
 
     /// What `sanitized()` and `setPresence` use for a presence the module doesn't allow: an own icon, except for
-    /// Hidden Icons, which has none (its arrow always shows), so the Snaptic-menu section (0.4 H2).
+    /// Hidden Icons, which has none (its arrow always shows), and Dock Previews, which has none at all, so the
+    /// Snaptic-menu section (0.4 H2; 0.5 H1).
     package static func fallback(for id: ModuleID) -> MenuPresence {
-        id == .hiddenIcons ? .inSnapticMenu : .ownIcon
+        id == .hiddenIcons || id == .dockPreviews ? .inSnapticMenu : .ownIcon
     }
 
     /// What 0.2 reads (written for downgrades; migration M2). Displays' "when active" is the 0.2 ownIcon + hide flag.
@@ -134,7 +142,7 @@ package enum MenuPresence: String, Codable, CaseIterable, Sendable {
 
 /// One-time General cards (0.3 §2.2): a closed enum, so "awake.migrated" survives migration M3's filter.
 package enum NewModuleCard: String, Codable, CaseIterable, Sendable {
-    case displays, awake, awakeMigrated = "awake.migrated", hiddenIcons
+    case displays, awake, awakeMigrated = "awake.migrated", hiddenIcons, dockPreviews
 }
 
 /// Awake criterion kinds (0.3 §2.2); here so the Awake feature graph can reference them.
@@ -247,6 +255,9 @@ package struct EventCategory: RawRepresentable, Hashable, Sendable {
     package static let awake = Self(rawValue: "awake")
     /// Hidden Icons (0.4 H12): counts only, never a bundle id or app name, so it is exported.
     package static let icons = Self(rawValue: "icons")
+    /// Dock Previews (0.5 H10): states, pause reasons and counts only, never a bundle id, app name or window title, so
+    /// it is exported.
+    package static let dock = Self(rawValue: "dock")
 
     /// Whether entries of this category may go into the exported diagnostics report (0.3 §3.6: never Awake).
     package var isExportedInDiagnostics: Bool { self != Self.awake }

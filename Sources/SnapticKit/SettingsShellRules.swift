@@ -3,7 +3,7 @@ import Foundation
 // Pure rules of the Settings shell (H; PLAN 0.3 §4.2, R5-8): sidebar root ids, where an `openSettings(page:)`
 // string leads, the remembered location, and the focus guard for session starts.
 
-/// The seven sidebar roots. Module roots use the module id (`SnapticModule.settingsRoot().id`).
+/// The nine sidebar roots (0.5 H4). Module roots use the module id (`SnapticModule.settingsRoot().id`).
 package enum SettingsRootID {
     package static let general = "general"
     package static let menuBar = "menuBar"
@@ -11,16 +11,20 @@ package enum SettingsRootID {
     package static let displays = ModuleID.displays.rawValue
     package static let awake = ModuleID.awake.rawValue
     package static let hiddenIcons = ModuleID.hiddenIcons.rawValue
+    package static let dockPreviews = ModuleID.dockPreviews.rawValue
     package static let permissions = "permissions"
     package static let about = "about"
 
     /// Sidebar order; groups are separated by spacing.
-    package static let groups: [[String]] = [[general, menuBar], [windowSwitcher, displays, awake, hiddenIcons], [permissions, about]]
+    package static let groups: [[String]] = [
+        [general, menuBar], [windowSwitcher, displays, awake, hiddenIcons, dockPreviews], [permissions, about],
+    ]
     package static var all: [String] { groups.flatMap { $0 } }
 
     /// First words of page ids that name a root ("switcher.features" is Window Switcher).
     package static let aliases: [String: String] = [
         "switcher": windowSwitcher, "menubar": menuBar, "menu": menuBar, "about": about, "icons": hiddenIcons,
+        "dock": dockPreviews,
     ]
 
     /// 0.2 page ids whose 0.3 home is a root of its own.
@@ -148,6 +152,7 @@ package enum SettingsHelpAnchors {
         "awake.drives": "Drive Alive",
         SettingsRootID.awake: "Awake",
         SettingsRootID.hiddenIcons: "Hidden Icons",
+        SettingsRootID.dockPreviews: "Dock Previews",
         SettingsRootID.permissions: "Permissions",
         SettingsRootID.about: "Snaptic",
     ]

@@ -93,7 +93,7 @@ struct CustomItemRow: Equatable {
     func applyStatusItem(_ row: CustomItemRow)
 }
 
-/// A top-level utility (Window Switcher, Displays, Awake, Hidden Icons). PLAN §3.3.
+/// A top-level utility (Window Switcher, Displays, Awake, Hidden Icons, Dock Previews). PLAN §3.3.
 @MainActor protocol SnapticModule: AnyObject {
     var id: ModuleID { get }
     var title: String { get }

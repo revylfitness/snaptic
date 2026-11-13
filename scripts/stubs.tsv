@@ -639,3 +639,9 @@ Sources/Snaptic/Icons/UI/IconsSectionsPage.swift	lead	L	-	-
 Sources/Snaptic/Icons/UI/IconsAdvancedSheet.swift	lead	L	-	-
 Sources/Snaptic/Icons/UI/IconsArrangeSheet.swift	lead	L	-	-
 Sources/Snaptic/Icons/IconsCLI.swift	lead	L	-	-
+Sources/Snaptic/Dock/DockPreviewsModule.swift	lead	L	-	-
+Sources/SnapticKit/DockModel.swift	lead	L	-	-
+Sources/SnapticKit/Config/ConfigDock.swift	lead	L	-	-
+Sources/SnapticKit/KnownDockTools.swift	lead	L	-	-
+Tests/SnapticKitTests/ConfigDockTests.swift	lead	L	-	-
+Tests/SnapticKitTests/KnownDockToolsTests.swift	lead	L	-	-

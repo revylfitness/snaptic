@@ -372,7 +372,7 @@ package enum TriggerEngine {
                 return not ? L("the microphone is not in use") : L("the microphone is in use")
             }
         case .idle(let m):
-            let span = AwakeCountdown.unit(m, L("minute"), L("minutes"))
+            let span = SentenceText.unit(m, L("minute"), L("minutes"))
             return not ? L("you were active in the last \(span)") : L("you’ve been idle for \(span)")
         case .volumeMounted(_, let name):
             let n = quoted(name, L("a drive"))

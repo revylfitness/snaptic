@@ -20,6 +20,9 @@ package enum MigrationID: String, CaseIterable, Sendable {
     /// 0.4 H10: the "New: Hidden Icons" decision for upgraders was made (recorded on every install's first 0.4
     /// launch).
     case iconsCard = "iconsCard.v1"
+    /// 0.5 §4.20: the "New: Dock Previews" decision for upgraders was made (recorded on every install's first 0.5
+    /// launch; `ModuleHost.runMigrations` calls it from A8).
+    case dockCard = "dockCard.v1"
 }
 
 extension MigrationLedger {

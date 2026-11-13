@@ -58,7 +58,8 @@ private struct MenuBarPageContent: View {
                                symbol: "menubar.rectangle", tint: .graphite)
             Section {
                 // 0.4 A7: Hidden Icons' row has its own pop-up titles (H2, `MenuPlacement.title(_:for:)`).
-                ForEach(ModuleID.allCases, id: \.self) { id in
+                // 0.5 H1: Dock Previews has no row until A7 (`MenuBarPageControls.dockPresence`).
+                ForEach(ModuleID.allCases.filter { $0 != .dockPreviews }, id: \.self) { id in
                     moduleRows(id)
                 }
             } footer: {
@@ -223,6 +224,7 @@ private struct MenuBarPageContent: View {
         case .displays: return ControlID("menubar.page.displaysPresence")
         case .awake: return ControlID("menubar.page.awakePresence")
         case .hiddenIcons: return ControlID("menubar.page.iconsPresence")
+        case .dockPreviews: return nil
         }
     }
 
@@ -230,7 +232,7 @@ private struct MenuBarPageContent: View {
         switch id {
         case .windowSwitcher: return ControlID("menubar.page.switcherIcon")
         case .displays: return ControlID("menubar.page.displaysIcon")
-        case .awake, .hiddenIcons: return nil
+        case .awake, .hiddenIcons, .dockPreviews: return nil
         }
     }
 
@@ -302,11 +304,11 @@ private struct MenuBarPageContent: View {
         }
     }
 
-    /// Brings the Snaptic item back: every hidden module except Awake moves into it (Awake too when it is the
-    /// only one on).
+    /// Brings the Snaptic item back: every hidden module except Awake and Dock Previews moves into it (Awake too when
+    /// it is the only one on; 0.5 H1: Dock Previews never, as its previews show from the Dock).
     private func showSnapticMenu() {
         var config = modules.value
-        let hidden = config.enabledModules.filter { config.presence($0) == .hidden }
+        let hidden = config.enabledModules.filter { config.presence($0) == .hidden && $0 != .dockPreviews }
         let movable = hidden.filter { $0 != .awake }
         for id in movable.isEmpty ? hidden : movable { config.setPresence(.inSnapticMenu, for: id) }
         modules.value = config
@@ -320,7 +322,7 @@ private struct MenuBarPageContent: View {
         switch id {
         case .windowSwitcher: extra = ["rectangle.stack", "macwindow.on.rectangle"]
         case .displays: extra = ["display", "sun.max"]
-        case .awake, .hiddenIcons: extra = []
+        case .awake, .hiddenIcons, .dockPreviews: extra = []
         }
         return unique([symbol] + extra + (current.isEmpty ? [] : [current]))
     }
