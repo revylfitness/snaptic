@@ -227,15 +227,22 @@ package enum DockKeyDecision: Equatable, Sendable {
 
 /// The key decision (§4.5). Holds only the held key (X3-4); everything else comes in the snapshot.
 package struct DockKeyRules: Equatable, Sendable {
-    /// A swallowed key stays held for at most this long after its key-down or its last repeat.
+    /// A swallowed key stays held for at least this long after its key-down or its last repeat.
     package static let holdCap = 1.0
+    /// The cap also outlasts the first autorepeat by this much (§R4 A5).
+    package static let repeatMargin = 0.2
     /// Table keys do nothing this long after a card closes or minimizes.
     package static let reflow = 0.3
 
     package private(set) var heldKeyCode: Int?
     package private(set) var holdEndsAt: Double?
+    /// `holdCap`, or the user's "Delay until repeat" plus `repeatMargin` when that's longer: with Long (about 1.8 s)
+    /// a 1 s cap would end before the first repeat, and a held ⌘Q would reach the app that came forward.
+    package let cap: Double
 
-    package init() {}
+    package init(repeatDelay: Double = 0) {
+        cap = max(Self.holdCap, repeatDelay + Self.repeatMargin)
+    }
 
     /// A swallowed key is still down.
     package func holding(at now: Double) -> Bool {
@@ -265,7 +272,7 @@ package struct DockKeyRules: Equatable, Sendable {
                     release()
                     return .swallow(nil)
                 case .autorepeat:
-                    holdEndsAt = now + Self.holdCap
+                    holdEndsAt = now + cap
                     return .swallow(nil)
                 case .down:
                     // The key-up was lost: a new press, decided as one.
@@ -290,7 +297,8 @@ package struct DockKeyRules: Equatable, Sendable {
     }
 
     /// What a table key does on the snapshot's target; nil when it has none (the header, a gap, a card that offers
-    /// only Bring Forward, or ⌘Q on Finder).
+    /// only Bring Forward, or ⌘Q on Finder). ⌘H acts on the app anywhere in the panel; ⌘Q needs a card under the
+    /// pointer, so over the header or a gap it does nothing (M23).
     package static func action(_ char: DockKeyChar, _ s: DockKeySnapshot) -> DockKeyAction? {
         switch char {
         case .w:
@@ -302,7 +310,8 @@ package struct DockKeyRules: Equatable, Sendable {
         case .h:
             return s.appHidden ? .showApp : .hideApp
         case .q:
-            return s.appIsFinder ? nil : .quitApp
+            guard case .card = s.target, !s.appIsFinder else { return nil }
+            return .quitApp
         case .escape:
             return .escape
         case .other:
@@ -312,7 +321,7 @@ package struct DockKeyRules: Equatable, Sendable {
 
     private mutating func hold(_ keyCode: Int, at now: Double) {
         heldKeyCode = keyCode
-        holdEndsAt = now + Self.holdCap
+        holdEndsAt = now + cap
     }
 
     private mutating func release() {

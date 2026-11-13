@@ -2306,3 +2306,18 @@ changed, and why.
 | A2b | About › Diagnostics gains a "Windows" section after Dock Previews, always shown | The private path is shared by both window modules |
 | A2b | ScreenCaptureKit captures use the backing scale of the display the window's centre is on, not the main display's (merge fix) | M13: mixed Retina and non-Retina displays |
 | A2b | Gap: the raise calls aren't skipped in Safe Mode | `bringToFront` is outside A2b's files; checked at R |
+| A5 | The key hold lasts the longer of 1 s and "Delay until repeat" plus 0.2 s (`DockKeyRules(repeatDelay:)`, read from `NSEvent.keyRepeatDelay` when the tap is made) | With Long (about 1.8 s), a fixed 1 s cap ended before ⌘Q's first repeat, which then reached the app that came forward |
+| A5 | ⌘Q needs a card under the pointer; over the header or a gap it does nothing (K3's rule and test changed) | M23 says ⌘Q over the header or a gap does nothing |
+| A5 | `WindowServices.switcherSessionActive` is set at once, and its handlers run on the next main turn; the module's handler calls `controller.switcher(open:)`, which also re-syncs the keys tap (merge: A5's and A6b's copies made one, A5's timing kept) | The switcher sets it from inside its own tap callback; one registration per client |
+| A5 | The keys callback reads the pointer from `event.location`; letters come from `charactersIgnoringModifiers` only when ⌘ is the sole modifier, with ANSI key codes as the fallback | No read outside the event in the callback; follows the keyboard layout as the switcher does |
+| A5 | The breakers are counted in the callbacks and trust is re-checked on the next main turn; both breakers are static and last until relaunch, and the click breaker counts in `clicksWork` and the page facts | The callbacks do no I/O; §4.17 |
+| A5 | The click tap is listen-only and appended last, and its callback only records the time and place | A Dock click is never lost or delayed |
+| A5 | The on-screen window count is read at mouse-down only when the clicked app is active; Restore all's counts come from an async read started at mouse-down that a quicker mouse-up waits for | No window read in the callback, and none the rule can't use |
+| A5 | Minimize acts only on current-Space, non-full-screen windows with an AX element | The only ones it can minimize |
+| A5 | The activation history starts with the frontmost app at time 0 | Otherwise the first click after start has no active app |
+| A5 | Hidden, Finder and secure input are read at show and at engage; the key target is captured at key-down and the action runs on that card | No I/O at key time; the action hits the card the rules saw |
+| A5 | Keys act through A4b's `perform(_:on:)`, the same path as the menus (merge: A5's own close, minimize, hide and quit copies dropped); every close or minimize, from a key or a click, starts the 0.3 s reflow | One action path; the cards move either way |
+| A5 | `keysAvailable` is true while the tap is made, keys can run and secure input isn't on, so tooltips and menus show keys only then | A4b's hook; the tap is made at the first show |
+| A5 | The click tap takes the module's pause and the VoiceOver pause doesn't stop it; it starts and stops with `startEngine`/`stopEngine` (merge) | §4.16; A6b's engine split |
+| A5 | `DockLive.keys` counts from the first show with keys on until the module stops | The tap is kept, disabled, between shows |
+| A5 | Diagnostics add "Keys breaker", "Click tap", "Click actions" and "Click skips", counts and enums only; Kit `DockPanelHit` gives the key target | §4.22; the key target needs pure tests |

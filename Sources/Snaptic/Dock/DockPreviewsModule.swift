@@ -49,6 +49,10 @@ import SnapticKit
     private var pauseSources: DockPauseSources?
     /// A6b: the pause the module holds (Kit `DockPauseRules.effective`); `.safeMode` in Safe Mode.
     private(set) var pause: DockPauseReason?
+    /// A5: the listen-only Dock click tap (§4.11), while click actions or Restore all are on, and the observer's
+    /// latest selection, raw, for a tap made mid-run.
+    private var clickTap: DockClickTap?
+    private var dockSelection: DockSelection?
 
     /// §4.14: Accessibility, plus Screen Recording while Window thumbnails is on.
     var requiredPermissions: Set<Permission> { config.value.requiredPermissions }
@@ -138,10 +142,13 @@ import SnapticKit
         // Before any selection arrives: the VoiceOver pause the engine runs under, and an open switcher session.
         if let pause { controller.pauseChanged(pause) }
         if WindowServices.shared.switcherSessionActive { controller.switcher(open: true) }
+        syncClickTap(config.value)   // A5
     }
 
     /// Everything `startEngine()` made, at once and with no fade. A3, A4a and A5 tear down here.
     private func stopEngine() {
+        stopClickTap()   // A5
+        dockSelection = nil   // A5
         controller?.stop()
         controller = nil
         freshPID = nil
@@ -172,16 +179,20 @@ import SnapticKit
             } else if new != old {
                 controller?.pauseChanged(new)
             }
+            clickTap?.pause = new   // A5: the VoiceOver pause doesn't stop click actions
+
         } else {
             stopEngine()
         }
         if new != old { context?.requestMenuRebuild() }
     }
 
-    /// A click action or Restore All is on and `Dock.disable.clickActions` isn't set (§4.11). A5 adds its breaker.
+    /// A click action or Restore All is on, `Dock.disable.clickActions` isn't set (§4.11) and the click breaker
+    /// hasn't tripped (§4.17).
     private var clicksWork: Bool {
         let value = config.value
         return (value.clickActions != .doNothing || value.restoreAllMinimized) && !killSwitches.contains(.clickActions)
+            && !Self.clickBreakerTripped
     }
 
     /// A9's `dock pause` and the menu's Pause for 1 Hour: holds a command pause, never shortening one (G2-12).
@@ -197,8 +208,8 @@ import SnapticKit
         pauseSources?.resume() ?? false
     }
 
-    /// §4.17's facts as the module sees them now: for the pause, `dock status`, and A7's page and menu. Breakers and
-    /// crash-guard stops are A5's and A7's to add.
+    /// §4.17's facts as the module sees them now: for the pause, `dock status`, and A7's page and menu. Crash-guard
+    /// stops are A7's to add.
     func pageFacts() -> DockPageFacts {
         let value = config.value
         let read = DockPauseRules.read(observer?.stats)
@@ -210,7 +221,9 @@ import SnapticKit
                              voiceOverOn: pauseSources?.voiceOverOn ?? false, showWithVoiceOver: value.showWithVoiceOver,
                              clickActionOn: value.clickActions != .doNothing, restoreAllOn: value.restoreAllMinimized,
                              commandPause: pauseSources?.commandPause, paneName: PermissionFlow.paneName(.accessibility),
-                             thumbnailsOn: value.thumbnails, screenRecording: PermissionFlow.isGranted(.screenRecording))
+                             thumbnailsOn: value.thumbnails, screenRecording: PermissionFlow.isGranted(.screenRecording),
+                             clickBreakerTripped: Self.clickBreakerTripped,
+                             keysBreakerTripped: Self.keysBreakerTripped)
     }
 
     /// `dock status`'s facts (§4.21); nil while the module is off.
@@ -260,6 +273,7 @@ import SnapticKit
         lines.append(DockPauseRules.pauseLine(pause))
         lines += (observer?.stats ?? DockObserverStats()).diagnosticsLines(observerLive: Self.live[.observer] > 0)
         lines += controller?.diagnosticsLines ?? DockPreviewCounts().lines
+        lines += clickAndKeyLines   // A5
         lines.append("Leases: \(lease == nil ? 0 : 1)")
         lines.append("Captures: \(captures)")
         lines.append("Cache entries: \(ThumbnailStore.shared.liveEntries)")
@@ -306,6 +320,8 @@ import SnapticKit
     /// The Dock's selection, coalesced to the latest (§2.4): the preview policy takes it from here.
     private func selectionChanged(_ selection: DockSelection?) {
         guard observer != nil else { return }
+        dockSelection = selection   // A5
+        clickTap?.selection = selection   // A5
         controller?.selectionChanged(selection)
     }
 
@@ -335,6 +351,56 @@ import SnapticKit
             WindowServices.shared.update(lease, needs: needs)
         }
         controller?.configChanged(value)
+        syncClickTap(value)   // A5
+    }
+
+    // MARK: A5 keys and clicks
+
+    /// §4.17: true once three disables by macOS in 60 s turned keys off, until relaunch.
+    static var keysBreakerTripped: Bool { DockKeys.breaker.tripped }
+    /// §4.17: true once three disables by macOS in 60 s turned click actions off, until relaunch.
+    static var clickBreakerTripped: Bool { DockClickTap.breaker.tripped }
+
+    /// The click tap runs while the settings ask for it, with no `Dock.disable.clickActions` at start and no tripped
+    /// breaker; a settings change creates or removes it.
+    private func syncClickTap(_ value: DockConfig) {
+        let wanted = observer != nil && DockClickTap.wanted(value) && !killSwitches.contains(.clickActions)
+            && !DockClickTap.breaker.tripped
+        guard wanted else {
+            stopClickTap()
+            return
+        }
+        if let clickTap {
+            clickTap.config = value
+            clickTap.pause = pause
+            return
+        }
+        let defaults = defaults
+        let geometry = observer?.geometry
+        clickTap = DockClickTap(config: value,
+                                geometry: { geometry?.snapshot ?? DockGeometrySnapshot() },
+                                killSwitch: { Self.readKillSwitches(defaults).contains(.clickActions) },
+                                onStopped: { [weak self] _ in
+                                    // A tripped breaker can end the VoiceOver pause's reason to run (§4.17).
+                                    self?.clickTap = nil
+                                    self?.syncPause()
+                                })
+        clickTap?.selection = dockSelection
+        clickTap?.pause = pause
+    }
+
+    private func stopClickTap() {
+        clickTap?.stop()
+        clickTap = nil
+    }
+
+    /// §4.22: booleans, counts and enums only.
+    private var clickAndKeyLines: [String] {
+        var lines = ["Keys breaker: " + (Self.keysBreakerTripped ? "tripped" : "ok"),
+                     "Click tap: " + (clickTap?.isRunning == true ? "on" : "off")
+                        + ", breaker " + (Self.clickBreakerTripped ? "tripped" : "ok")]
+        lines += clickTap?.diagnosticsLines ?? []
+        return lines
     }
 
     /// The Dock's lease (§2.3): `.thumbnails` and `.otherSpaces` as its settings say, never `.recency`, and

@@ -33,8 +33,34 @@ struct WindowLease: Equatable {
     private var lingerItem: DispatchWorkItem?
     /// The window focus last moved to, while a lease holds `.recency`.
     private var lastFocused: CGWindowID?
+    /// What each client does when the switcher's session starts or ends (§2.4 `switcherOpened`, `switcherClosed`).
+    private var switcherSessionHandlers: [ModuleID: @MainActor (Bool) -> Void] = [:]
 
     private init() {}
+
+    // MARK: The switcher's session (§2.4, X-14, X2-15)
+
+    /// True while `SwitcherController.active` is non-nil: from the switcher's shortcut going down until it commits or
+    /// cancels. Dock Previews shows and swaps nothing, and its keys tap stays off, meanwhile.
+    private(set) var switcherSessionActive = false
+
+    /// The switcher sets this, sometimes from inside its own tap callback, so the flag changes at once and the
+    /// clients hear about it on the next main turn.
+    func setSwitcherSessionActive(_ on: Bool) {
+        guard on != switcherSessionActive else { return }
+        switcherSessionActive = on
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                for client in ModuleID.allCases { self.switcherSessionHandlers[client]?(on) }
+            }
+        }
+    }
+
+    /// `handler` hears each start (true) and end (false) of the switcher's session; nil unregisters.
+    func observeSwitcherSession(_ client: ModuleID, _ handler: (@MainActor (Bool) -> Void)?) {
+        switcherSessionHandlers[client] = handler
+    }
 
     /// Live leases (§2.3, §4.22); 0 while every client is stopped.
     var liveLeases: Int { ledger.leases.count }
@@ -75,25 +101,6 @@ struct WindowLease: Equatable {
     /// `.recency`.
     func refreshRecency() {
         focusTracker.observeAll()
-    }
-
-    // MARK: Switcher session (§2.4, X-14, X2-15)
-
-    /// The Window Switcher has a session open (`SwitcherController.active` isn't nil). While it's true Dock Previews
-    /// shows and swaps nothing, and its keys tap is never enabled.
-    private(set) var switcherSessionActive = false
-    private var switcherSessionHandlers: [ModuleID: @MainActor (Bool) -> Void] = [:]
-
-    /// The switcher calls this as its session opens and closes; each change reaches every handler once.
-    func setSwitcherSessionActive(_ active: Bool) {
-        guard active != switcherSessionActive else { return }
-        switcherSessionActive = active
-        for handler in switcherSessionHandlers.values { handler(active) }
-    }
-
-    /// `client` hears each change of `switcherSessionActive`; nil stops it. Registering runs nothing.
-    func observeSwitcherSession(_ client: ModuleID, _ handler: (@MainActor (Bool) -> Void)?) {
-        switcherSessionHandlers[client] = handler
     }
 
     // MARK: Shared privacy settings (§4.10, D2-1)

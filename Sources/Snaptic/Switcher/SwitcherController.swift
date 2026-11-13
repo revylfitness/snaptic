@@ -28,8 +28,10 @@ final class SwitcherController {
     private var preview: PreviewOverlay?
 
     private var active: Shortcut? {
-        // 0.5 X-14, X2-15: Dock Previews holds back while a session is open.
-        didSet { WindowServices.shared.setSwitcherSessionActive(active != nil) }
+        // §2.4 (X-14, X2-15): Dock Previews holds back, and its keys tap stays off, while a session is active.
+        didSet {
+            if (active == nil) != (oldValue == nil) { WindowServices.shared.setSwitcherSessionActive(active != nil) }
+        }
     }
     /// Sticky = stay open after the modifier is released (search mode, "release to switch"
     /// turned off, or opened from the menu, 0.3 C8). Return switches, Esc cancels.

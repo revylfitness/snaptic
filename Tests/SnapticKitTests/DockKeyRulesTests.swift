@@ -189,6 +189,19 @@ final class DockKeyRulesTests: XCTestCase {
         XCTAssertNil(rules.heldKeyCode)
     }
 
+    /// With "Delay until repeat" on Long (about 1.8 s), the hold outlasts the first repeat, so a held ⌘Q never
+    /// reaches the app that came forward (§R4 A5).
+    func testALongRepeatDelayKeepsTheHoldUntilTheFirstRepeat() {
+        var rules = DockKeyRules(repeatDelay: 1.8)
+        XCTAssertEqual(rules.cap, 2.0, accuracy: 1e-9)
+        XCTAssertEqual(rules.decide(down(.q), snapshot(engaged()), at: 1.0), .swallow(.quitApp))
+        let hidden = DockKeySnapshot(engaged: false, target: .none)
+        XCTAssertTrue(rules.holding(at: 2.7))
+        XCTAssertEqual(rules.decide(repeat_(.q), hidden, at: 2.8), .swallow(nil))
+        XCTAssertEqual(rules.decide(up(.q), hidden, at: 3.0), .swallow(nil))
+        XCTAssertEqual(DockKeyRules(repeatDelay: 0.25).cap, DockKeyRules.holdCap)
+    }
+
     /// Holding ⌘Q over the last card quits one app, and nothing reaches the next app.
     func testHoldingCommandQQuitsOneApp() {
         var rules = DockKeyRules()
@@ -255,12 +268,22 @@ final class DockKeyRulesTests: XCTestCase {
             XCTAssertEqual(r.decide(down(.w), snapshot(e, target: target), at: 1), .swallow(nil), "\(target)")
         }
         XCTAssertEqual(DockKeyRules.action(.m, snapshot(e, target: .card(hasAXElement: true, minimized: true))), .restore)
-        // ⌘H and ⌘Q act on the app, so they work over the header or a gap.
+        // ⌘H acts on the app, so it works over the header or a gap.
         XCTAssertEqual(DockKeyRules.action(.h, snapshot(e, target: .header)), .hideApp)
         var hidden = snapshot(e, target: .gap)
         hidden.appHidden = true
         XCTAssertEqual(DockKeyRules.action(.h, hidden), .showApp)
-        XCTAssertEqual(DockKeyRules.action(.q, snapshot(e, target: .gap)), .quitApp)
+        // M23: ⌘Q quits the previewed app only with a card under the pointer (any card, even one that offers only
+        // Bring Forward); over the header, a gap or nothing it's swallowed and does nothing.
+        for target in [DockKeyTarget.header, .gap, .none] {
+            XCTAssertEqual(DockKeyRules.action(.q, snapshot(e, target: target)), nil, "\(target)")
+            var r = DockKeyRules()
+            XCTAssertEqual(r.decide(down(.q), snapshot(e, target: target), at: 1), .swallow(nil), "\(target)")
+        }
+        XCTAssertEqual(DockKeyRules.action(.q, snapshot(e, target: .card(hasAXElement: false, minimized: false))),
+                       .quitApp)
+        XCTAssertEqual(DockKeyRules.action(.q, snapshot(e, target: .card(hasAXElement: true, minimized: true))),
+                       .quitApp)
     }
 
     // MARK: When the tap runs

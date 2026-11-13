@@ -172,6 +172,7 @@ final class DockPreviewController {
     /// A6b: the Window Switcher's session opened or closed (`WindowServices.switcherSessionActive`; X2-15).
     func switcher(open: Bool) {
         send(open ? .switcherOpened : .switcherClosed)
+        keys?.sync()   // A5: the keys tap is never enabled while the switcher is open
     }
 
     /// A §2.5 purge: the store is about to drop every thumbnail. The cards fall back to the icon.
@@ -187,6 +188,7 @@ final class DockPreviewController {
         if !value.thumbnails { dropThumbnails() }
         syncKeysWork()
         if old != value, showing?.built == true { build() }
+        keysConfigChanged()   // A5
     }
 
     /// The module stopped: everything goes at once, with no fade.
@@ -194,6 +196,7 @@ final class DockPreviewController {
         guard !stopped else { return }
         send(.moduleStopped)
         stopped = true
+        stopKeys()   // A5
         stopWatching()
         timers.cancelAll()
         tickTimer = nil
@@ -244,8 +247,8 @@ final class DockPreviewController {
             guard showing?.pid == pid else { return }
             WindowManager.shared.markWindowsDirty(pid)
             read()
-        case .engageKeys:
-            break   // A5's DockKeys.
+        case let .engageKeys(on):
+            keysEngaged(on)   // A5
         case let .schedule(after, token):
             timers.after(after) { [weak self] in self?.send(.fired(token: token)) }
         }
@@ -480,6 +483,7 @@ final class DockPreviewController {
         read()
         observer.settle { [weak self] settled in self?.settled(settled, generation: gen) }
         settleTimer = timers.after(Self.settleFallback) { [weak self] in self?.settled(nil, generation: gen) }
+        keysShown(pid)   // A5
     }
 
     /// The settled item frame is the anchor (§4.7); without one, the selection's frame stands.
@@ -1026,6 +1030,7 @@ final class DockPreviewController {
     private func acted(_ action: DockAction) {
         lastAction = action
         lastActionAt = Self.now
+        keysActed(action)   // A5
         send(.actionDone(action))
     }
 
@@ -1092,6 +1097,127 @@ final class DockPreviewController {
     /// §4.1 rule 5's exception: VoiceOver runs and “Show previews while VoiceOver is on” is on (G2-5).
     private var voiceOverPreviews: Bool {
         config.showWithVoiceOver && NSWorkspace.shared.isVoiceOverEnabled
+    }
+
+    // MARK: A5 keys and clicks
+
+    /// The keys tap (§4.5, X-14): created at the first show with keys able to run, kept until the module stops.
+    private var keys: DockKeys?
+    /// The policy's `engageKeys`.
+    private var keysOn = false
+    /// Read when the panel shows and when it engages (§4.5, §4.12).
+    private var keySecureInput = DockSecureInput.unknown
+    private var keyAppHidden = false
+    private var keyAppIsFinder = false
+    /// When the last close or minimize started the cards moving (§4.5 reflow), from a key or a click.
+    private var keyReflowAt: Double?
+
+    /// The setting is on, there's no `Dock.disable.keys` and no tripped breaker (§4.5). A4b's `keysWork` adds
+    /// `keysAvailable`: the tap is made and secure input is off.
+    private var keysCanRun: Bool { config.keys && !keysKilled && !DockKeys.breaker.tripped }
+
+    /// A4b's tooltips and menus show keys only while the tap can take them.
+    private func syncKeysAvailable() {
+        let available = keys?.isRunning == true && keysCanRun && keySecureInput != .on
+        if keysAvailable != available { keysAvailable = available }
+    }
+
+    private func stopKeys() {
+        keys?.stop()
+        keys = nil
+        keysOn = false
+        syncKeysAvailable()
+    }
+
+    private func keysConfigChanged() {
+        guard !stopped else { return }
+        if keysCanRun {
+            keys?.sync()
+        } else {
+            keys?.stop()
+            keys = nil
+        }
+        syncKeysAvailable()
+    }
+
+    private func keysEngaged(_ on: Bool) {
+        keysOn = on
+        if on { keySecureInput = Self.secureInput() }
+        keys?.sync()
+        syncKeysAvailable()
+    }
+
+    /// A show or a swap: the app's facts and secure input are read now; the tap is made at the first show.
+    private func keysShown(_ pid: Int32) {
+        let app = NSRunningApplication(processIdentifier: pid)
+        keyAppHidden = app?.isHidden ?? false
+        keyAppIsFinder = app?.bundleIdentifier == Self.finderBundleID
+        keySecureInput = Self.secureInput()
+        keyReflowAt = nil
+        defer { syncKeysAvailable() }
+        guard keys == nil else {
+            keys?.sync()
+            return
+        }
+        guard keysCanRun else { return }
+        keys = DockKeys(context: { [weak self] pointer in
+                            self?.keyContext(pointer)
+                                ?? DockKeyContext(snapshot: DockKeySnapshot(engaged: false, keysWork: false))
+                        },
+                        onAction: { [weak self] action, context in self?.performKey(action, context) },
+                        onNotInTable: { [weak self] in self?.send(.keyNotHandled) },
+                        onStopped: { [weak self] _ in
+                            self?.keys = nil
+                            self?.syncKeysAvailable()
+                        })
+    }
+
+    /// Every action, from a key, a click or a menu: closes and minimizes start the cards moving, and Hide or Show
+    /// changes what ⌘H does next.
+    private func keysActed(_ action: DockAction) {
+        switch action {
+        case .close, .minimize, .restore, .minimizeAll, .closeAll: keyReflowAt = Self.now
+        case .hideApp: keyAppHidden = true
+        case .showApp: keyAppHidden = false
+        default: break
+        }
+    }
+
+    /// What the keys tap reads at each event (§2.1): state the controller already holds, and the event's pointer
+    /// (CG global coordinates) against the placed panel's layout. No AX, no I/O.
+    private func keyContext(_ pointer: CGPoint?) -> DockKeyContext {
+        var target = DockKeyTarget.none
+        var item: WindowItem?
+        if let pointer, let sh = showing, sh.built, let placed, panel?.isShown == true, let layout = model.layout {
+            let p = DockPoint(x: Double(pointer.x), y: Double(Screens.primaryHeight) - Double(pointer.y))
+            if placed.contains(p) {
+                let hit = layout.hit(DockPoint(x: p.x - placed.x, y: p.y - placed.y), scrollOffset: scrollOffset)
+                target = DockPanelHit.keyTarget(hit) { i in
+                    sh.cards.indices.contains(i) ? (sh.cards[i].axElement != nil, sh.cards[i].isMinimized) : nil
+                }
+                if case let .window(i) = hit, sh.cards.indices.contains(i) { item = sh.cards[i] }
+            }
+        }
+        let snapshot = DockKeySnapshot(engaged: keysOn, keysWork: keysCanRun, secureInput: keySecureInput,
+                                       switcherActive: WindowServices.shared.switcherSessionActive, target: target,
+                                       appIsFinder: keyAppIsFinder, appHidden: keyAppHidden,
+                                       reflowStartedAt: keyReflowAt)
+        return DockKeyContext(snapshot: snapshot, pid: showing?.pid, item: item)
+    }
+
+    /// A table key's action, on the next main turn after the tap swallowed it (§4.5): A4b's `perform(_:on:)`, the
+    /// same path as the matching menu item, on the card the rules saw at key-down.
+    private func performKey(_ action: DockKeyAction, _ context: DockKeyContext) {
+        guard let sh = showing, sh.pid == context.pid else { return }
+        perform(action, on: context.item?.id)
+    }
+
+    private static func secureInput() -> DockSecureInput {
+        switch PrivateWindowAPI.secureInputState {
+        case .off: .off
+        case .on: .on
+        case .unknown: .unknown
+        }
     }
 
     // MARK: Helpers

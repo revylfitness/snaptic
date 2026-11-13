@@ -10,7 +10,7 @@ package enum DockLiveCounter: String, CaseIterable, Sendable {
     case observer
     /// The listen-only mouse tap for Dock click actions (A5).
     case clickTap
-    /// The keys tap while a panel is shown (A5).
+    /// The keys tap, from the first show with keys on until the module stops (A5).
     case keys
     /// The preview panel (A4a).
     case panel

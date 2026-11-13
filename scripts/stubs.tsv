@@ -694,3 +694,7 @@ Tests/SnapticKitTests/WindowSymbolContractTests.swift	lead	L	-	-
 Tests/SnapticKitTests/CrashGuardTests.swift	lead	L	-	-
 Sources/SnapticKit/CaptureContentCheck.swift	lead	L	-	-
 Tests/SnapticKitTests/CaptureContentCheckTests.swift	lead	L	-	-
+Sources/Snaptic/Dock/DockKeys.swift	lead	L	-	-
+Sources/Snaptic/Dock/DockClickTap.swift	lead	L	-	-
+Sources/SnapticKit/DockPanelHit.swift	lead	L	-	-
+Tests/SnapticKitTests/DockPanelHitTests.swift	lead	L	-	-
