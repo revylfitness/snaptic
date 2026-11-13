@@ -155,7 +155,7 @@ These open-source projects document how undocumented macOS behavior works. Snapt
 
 | Project | License | What Snaptic follows | Where |
 |---|---|---|---|
-| [yabai](https://github.com/koekeishiya/yabai) | MIT | Focusing one specific window from a background app (`_SLPSSetFrontProcessWithOptions` plus a synthetic event record) | `Sources/Snaptic/Switcher/PrivateAPIs.swift` |
+| [yabai](https://github.com/koekeishiya/yabai) | MIT | Focusing one specific window from a background app (`_SLPSSetFrontProcessWithOptions` plus a synthetic event record) | `Sources/Snaptic/Windows/PrivateWindowAPI.swift` |
 | [MonitorControl](https://github.com/MonitorControl/MonitorControl) | MIT | DDC/CI approach on macOS, including the field-proven checksum seed for read requests | `Sources/SnapticKit/DDCPacket.swift` |
 | [m1ddc](https://github.com/waydabber/m1ddc) | MIT | DDC on Apple silicon: matching a display to its `DCPAVServiceProxy` in the IORegistry and talking through `IOAVService` | `Sources/SnapticShims/SNDDC.m`, `Sources/SnapticKit/DDCPacket.swift` |
 | [displayplacer](https://github.com/jakehilborn/displayplacer) | MIT | Display arrangement, and the record layout of the private CGS display-mode list | `Sources/SnapticKit/DisplayModeDescriptor.swift` |

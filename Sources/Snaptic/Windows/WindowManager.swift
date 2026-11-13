@@ -359,7 +359,7 @@ final class WindowManager {
     /// verdict turns on it (`WindowCatalogRules.needsSpaceCheck`), as the switcher always has.
     private static func include(_ window: inout CatalogWindow) -> CatalogVerdict {
         if WindowCatalogRules.needsSpaceCheck(window, appListed: true, options: .switcher) {
-            window.spaceKnown = PrivateAPIs.isOnAnySpace(window.id)
+            window.spaceKnown = PrivateWindowAPI.isOnAnySpace(window.id)
         }
         return WindowCatalogRules.inclusion(window, appListed: true, options: .switcher)
     }
@@ -393,7 +393,7 @@ final class WindowManager {
                                                  minimum: CatalogInclusion.switcher.minAXSide) == nil,
                   !outOfTime() else { continue }
 
-            let windowID = WindowCatalogRules.trustedWindowID(claimed: PrivateAPIs.windowID(of: window),
+            let windowID = WindowCatalogRules.trustedWindowID(claimed: PrivateWindowAPI.windowID(of: window),
                                                               pid: app.pid, owners: owners)
             let fullTitle = outOfTime() ? "" : (AX.string(window, kAXTitleAttribute) ?? "")
 
@@ -416,7 +416,7 @@ final class WindowManager {
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, axTimeout)
         guard let window = AX.element(app, kAXFocusedWindowAttribute) else { return nil }
-        return PrivateAPIs.windowID(of: window)
+        return PrivateWindowAPI.windowID(of: window)
     }
 
     private func serverSnapshot() -> ServerSnapshot {
@@ -522,7 +522,7 @@ final class WindowManager {
         }
 
         let windowID = item.hasRealWindowID ? item.id : 0
-        if !PrivateAPIs.bringToFront(pid: item.pid, windowID: windowID) { app.activate() }
+        if !PrivateWindowAPI.bringToFront(pid: item.pid, windowID: windowID) { app.activate() }
 
         if let element = item.axElement {
             // Accessibility calls go to the target app and can be slow; keep
@@ -552,7 +552,7 @@ final class WindowManager {
             let configuration = NSWorkspace.OpenConfiguration()
             configuration.activates = true
             NSWorkspace.shared.openApplication(at: url, configuration: configuration, completionHandler: nil)
-        } else if !PrivateAPIs.bringToFront(pid: app.processIdentifier, windowID: 0) {
+        } else if !PrivateWindowAPI.bringToFront(pid: app.processIdentifier, windowID: 0) {
             app.activate()
         }
     }
@@ -561,7 +561,7 @@ final class WindowManager {
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, axTimeout)
         for window in AX.elements(app, kAXWindowsAttribute).prefix(maxWindowsPerApp)
-        where PrivateAPIs.windowID(of: window) == windowID {
+        where PrivateWindowAPI.windowID(of: window) == windowID {
             AXUIElementSetMessagingTimeout(window, axTimeout)
             AX.setBool(window, kAXMainAttribute, true)
             AX.perform(window, kAXRaiseAction)
@@ -610,46 +610,13 @@ final class WindowManager {
 // MARK: - Window-level focus tracking
 
 private let focusChangedCallback: AXObserverCallback = { _, element, _, refcon in
-    guard let refcon, let id = PrivateAPIs.windowID(of: element) else { return }
+    guard let refcon, let id = PrivateWindowAPI.windowID(of: element) else { return }
     var pid: pid_t = 0
     guard AXUIElementGetPid(element, &pid) == .success else { return }
     // Runs on the observer thread. The box is retained until the session has removed
     // every observer, and its target is weak (a weak load is atomic).
     Unmanaged<CallbackTarget<FocusSession>>.fromOpaque(refcon).takeUnretainedValue().target?
         .deliver(pid: pid, windowID: id)
-}
-
-/// A dedicated thread whose run loop hosts the AX observers, so a slow or
-/// hostile app can never stall the main thread (and with it the keyboard).
-/// One thread per focus-tracking session; never restarted.
-private final class ObserverThread: Thread {
-    private let ready = DispatchSemaphore(value: 0)
-    private let lock = NSLock()
-    private var loop: CFRunLoop?
-
-    override func main() {
-        lock.lock(); loop = CFRunLoopGetCurrent(); lock.unlock()
-        RunLoop.current.add(NSMachPort(), forMode: .default)   // keeps the run loop alive
-        ready.signal()
-        while !isCancelled {
-            _ = RunLoop.current.run(mode: .default, before: .distantFuture)
-        }
-        lock.lock(); loop = nil; lock.unlock()
-    }
-
-    func waitUntilReady() {
-        ready.wait()
-    }
-
-    /// Runs `block` on this thread (dropped once the thread has exited).
-    func perform(_ block: @escaping () -> Void) {
-        lock.lock()
-        let runLoop = loop
-        lock.unlock()
-        guard let runLoop else { return }
-        CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue, block)
-        CFRunLoopWakeUp(runLoop)
-    }
 }
 
 /// Watches every app for "focused window changed", so the switcher's order
@@ -847,7 +814,7 @@ private final class FocusSession: @unchecked Sendable {
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, WindowManager.axTimeout)
         guard let window = AX.element(app, kAXFocusedWindowAttribute),
-              let id = PrivateAPIs.windowID(of: window) else { return }
+              let id = PrivateWindowAPI.windowID(of: window) else { return }
         deliver(pid: pid, windowID: id)
     }
 }

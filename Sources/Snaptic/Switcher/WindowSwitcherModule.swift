@@ -226,7 +226,7 @@ import SnapticKit
         let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.context != nil else { return }
-                let secure = PrivateAPIs.isSecureInputEnabled
+                let secure = PrivateWindowAPI.isSecureInputEnabled
                 let blind = secure || !(self.tap?.isEnabled ?? false) || !Permissions.accessibility
                 SystemHotkeys.setSuspended(blind)
                 if blind { self.controller.cancel() }

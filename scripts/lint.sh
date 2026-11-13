@@ -139,11 +139,16 @@ for dirpath, _, files in os.walk("Sources/Snaptic"):
 sys.exit(bad)
 PY
 
-# 11. Private symbol lookups only in PrivateDisplayAPI, the switcher's PrivateAPIs and
+# 11. Private symbol lookups only in PrivateDisplayAPI, Windows/PrivateWindowAPI and
 #     the shims (so kill switches and availability can't be bypassed).
 if grep -rnE '\bdlsym\(|\bdlopen\(|NSClassFromString|NSSelectorFromString' Sources/Snaptic --include='*.swift' \
-    | grep -vE '^Sources/Snaptic/(Displays/Platform/PrivateDisplayAPI|Switcher/PrivateAPIs)\.swift:'; then
-    fail "private symbol lookup outside PrivateDisplayAPI.swift (see above)"
+    | grep -vE '^Sources/Snaptic/(Displays/Platform/PrivateDisplayAPI|Windows/PrivateWindowAPI)\.swift:'; then
+    fail "private symbol lookup outside PrivateDisplayAPI.swift and PrivateWindowAPI.swift (see above)"
+fi
+#     0.5 B1a (H3): dlsym and dlopen in the shims only in today's files plus SNWindowServer.m (frozen list).
+if grep -rnE '\bdlsym[[:space:]]*\(|\bdlopen[[:space:]]*\(' Sources/SnapticShims --include='*.m' \
+    | grep -vE '^Sources/SnapticShims/(SNDDC|SNMenuBarVisibility|SNNightShift|SNOSD|SNSpawn|SNWindowServer)\.m:'; then
+    fail "dlsym/dlopen in a shim outside the frozen list (see above)"
 fi
 
 # 12. Processes are spawned only by HelperSpawner (Swift) and SNSpawn (shim); no in-process script runners either

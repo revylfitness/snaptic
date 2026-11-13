@@ -218,11 +218,15 @@ New: `ConfigDockTests` (25) and `KnownDockToolsTests` (5).
 `WindowServices` arrives at A1a (§2.3) and `ThumbnailIndex` at A2a. Today every client below is the Window
 Switcher. Dock Previews has no call sites until A1a / A2a, and no test calls either.
 
+B1a moved `ThumbnailStore.swift` and `WindowManager.swift` from `Switcher/` to `Windows/` and extracted
+`ObserverThread` into `Windows/ObserverThread.swift`. The paths below are the new ones; line numbers stay at the
+base.
+
 **`ThumbnailStore`**
 
 | Call site | Call |
 |---|---|
-| `Switcher/ThumbnailStore.swift:18–19` | definition and `shared` |
+| `Windows/ThumbnailStore.swift:18–19` | definition and `shared` |
 | `Switcher/WindowSwitcherModule.swift:6` | doc comment |
 | `Switcher/WindowSwitcherModule.swift:92` | `purge()` in `stop()` |
 | `Switcher/WindowSwitcherModule.swift:253` | `purge()` when thumbnails turn off |
@@ -242,8 +246,8 @@ Switcher. Dock Previews has no call sites until A1a / A2a, and no test calls eit
 | `Switcher/WindowSwitcherModule.swift:65, 91` | `WindowManager.shared.start()`, `.stop()` |
 | `Switcher/WindowSwitcherModule.swift:199` | `refreshFocusTracking()` |
 | `Switcher/WindowSwitcherModule.swift:300–319` | `observePrivacyEvents`, which become the §2.5 purge observers |
-| `Switcher/WindowManager.swift:181, 635` | `FocusTracker` |
-| `Switcher/WindowManager.swift:601` | `ObserverThread` |
+| `Windows/WindowManager.swift:181, 635` | `FocusTracker` |
+| `Windows/ObserverThread.swift` (was `Switcher/WindowManager.swift:601`) | `ObserverThread` |
 | `Switcher/WindowGatherer.swift:86, 89` | `WindowManager.axTimeout` (Gather Windows) |
 | `Switcher/SwitcherController.swift:218` | `effectiveFrontPID` |
 | `Switcher/SwitcherController.swift:232, 683` | `loadWindows` |

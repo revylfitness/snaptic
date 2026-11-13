@@ -32,6 +32,10 @@ PLAN 0.5 (K1, H8) widens L20 to Dock/, Windows/ and Switcher/; L13 adds Dock/UI/
 and Windows/ (Windows/ObserverThread.swift exempt: it only moves, P2-10); L17 adds Dock/, Windows/ and the Dock
 Previews and window-services Kit files; Dock/UI/ joins the Settings views.
 
+PLAN 0.5 (B1a, H8 and ground rule 4) widens L2: `CGEventPost…`, `postToPid`/`postToPSN` and `IOHIDPostEvent` are
+banned outside Awake's ActivitySimulator, in the Obj-C shims too, and `SLPSPostEventRecordTo` (the raise path's
+activation record) appears only in Windows/PrivateWindowAPI.swift.
+
 PLAN 0.4 (A4, H9) adds L21: `setActivationPolicy(` and activating Snaptic itself (`NSApp.activate(`,
 `NSApplication.shared.activate(`, `NSRunningApplication.current.activate(`) only in
 Core/ActivationPolicyController.swift and Core/SnapticEntry.swift (the launch default and the refusal alert).
@@ -263,6 +267,7 @@ def self_check():
     problems += self_check_031()
     problems += self_check_04()
     problems += self_check_05()
+    problems += self_check_05_b1a()
     return problems
 
 
@@ -353,6 +358,35 @@ def self_check_05():
             problems.append(f"self-check: l14_scope {'missed' if inside else 'wrongly included'} {path}")
     if not under("Sources/Snaptic/Dock/UI/DockPage.swift", *SETTINGS_VIEWS):
         problems.append("self-check: SETTINGS_VIEWS misses Dock/UI/")
+    return problems
+
+
+def self_check_05_b1a():
+    """Pins the 0.5 B1a L2 row on cases it must report or let pass."""
+    q = '"'
+    windows = "Sources/Snaptic/Windows/WindowServices.swift"
+    shim = "Sources/SnapticShims/SNWindowServer.m"
+    cases = [
+        (windows, "event.postToPid(pid)", True),
+        (windows, "event.post(tap: .cghidEventTap)", True),
+        ("Sources/Snaptic/Dock/DockKeys.swift", "CGEventPostToPid(pid, e)", True),
+        (shim, "CGEventPost(kCGHIDEventTap, e);", True),
+        (shim, "CGEventPostToPSN(&psn, e);", True),
+        (shim, "IOHIDPostEvent(c, t, l, &d, 0, 0, 0);", True),
+        (shim, f"void *f = dlsym(h, {q}SLPSPostEventRecordTo{q});", True),
+        ("Sources/Snaptic/Switcher/X.swift", f"let f = lookup({q}SLPSPostEventRecordTo{q})", True),
+        (L2_RAISE_HOME, f"let f = lookup({q}SLPSPostEventRecordTo{q}, in: skyLight, as: F.self)", False),
+        (L2_RAISE_HOME, "event.postToPid(pid)", True),
+        (L2_SIMULATOR, "out.post(tap: .cghidEventTap)", False),
+        (L2_SIMULATOR, "event.postToPid(pid)", False),
+        (windows, "postToPidList(); let cgEventPoster = 1", False),
+    ]
+    problems = []
+    for path, source, flagged in cases:
+        if bool(l2_count(path, strip_comments(source))) != flagged:
+            problems.append(f"self-check: l2_count {'missed' if flagged else 'wrongly reported'} {source!r} in {path}")
+    if "Sources/SnapticShims/SNDDC.m" not in SHIMS:
+        problems.append("self-check: L2 doesn't scan the shims")
     return problems
 
 
@@ -534,6 +568,9 @@ def load(path):
 SOURCES = sorted(list(swift_files("Sources/Snaptic")) + list(swift_files("Sources/SnapticKit")))
 APP = [p for p in SOURCES if p.startswith("Sources/Snaptic/")]
 TEXT = {p: load(p) for p in SOURCES}
+# The Obj-C shims, for L2 only (0.5 B1a: the C names of the event-post calls are reachable only from there).
+SHIMS = sorted(os.path.join(d, f) for d, _, fs in os.walk("Sources/SnapticShims") for f in fs
+               if f.endswith((".m", ".h")))
 
 
 def count(pattern, text):
@@ -573,6 +610,28 @@ SETTINGS_VIEWS = ("Displays/UI/", "Awake/UI/", "Icons/UI/", "Dock/UI/", "Setting
                   "Core/MenuBarPage.swift", "Core/CustomizeMenuSheet.swift")
 
 
+L2_SIMULATOR = "Sources/Snaptic/Awake/Sources/ActivitySimulator.swift"
+L2_RAISE_HOME = "Sources/Snaptic/Windows/PrivateWindowAPI.swift"
+
+
+def l2_count(p, t):
+    """L2: user activity and posted events only in Awake's ActivitySimulator (0.3; no keyboard or scroll events in
+    Awake/ at all). 0.5 B1a (H8, ground rule 4): CGEventPost…, postToPid/postToPSN and IOHIDPostEvent are banned
+    outside ActivitySimulator too, shims included, and the raise path's SLPSPostEventRecordTo appears only in
+    Windows/PrivateWindowAPI.swift."""
+    n = 0
+    if p != L2_SIMULATOR:
+        n += count(r"IOPMAssertionDeclareUserActivity|\.post\(tap:|CGEvent\(mouseEventSource", t)
+        n += count(r"\bCGEventPost\w*|\bpostTo(?:Pid|PSN)\b|\bIOHIDPostEvent\b", t)
+    else:
+        n += count(r"mouseType:\s*\.(?!mouseMoved\b)\w+", t)
+    if under(p, "Awake/"):
+        n += count(r"keyboardEventSource|CGEvent\(keyboardEvent|CGEvent\(scrollWheelEvent", t)
+    if p != L2_RAISE_HOME:
+        n += count(r"\bSLPSPostEventRecordTo\b", t)
+    return n
+
+
 def ratcheted_counts():
     found = {}
 
@@ -590,13 +649,8 @@ def ratcheted_counts():
         if p not in (assertion, simulator):
             add("L1", p, count(r"IOPMAssertionRelease\b", t))
         add("L1", p, count(r"IOPMAssertionSetProperty", t))
-        # L2 activity and events only in ActivitySimulator.
-        if p != simulator:
-            add("L2", p, count(r"IOPMAssertionDeclareUserActivity|\.post\(tap:|CGEvent\(mouseEventSource", t))
-        else:
-            add("L2", p, count(r"mouseType:\s*\.(?!mouseMoved\b)\w+", t))
-        if under(p, "Awake/"):
-            add("L2", p, count(r"keyboardEventSource|CGEvent\(keyboardEvent|CGEvent\(scrollWheelEvent", t))
+        # L2 activity and events only in ActivitySimulator; the raise record only in PrivateWindowAPI.
+        add("L2", p, l2_count(p, t))
         # L4 banned everywhere.
         add("L4", p, count(r'UNUserNotificationCenter|import\s+CoreWLAN|import\s+IOBluetooth|CLLocationManager|"pmset"|"sudo"', t))
         # L9 only AwakeLogEvent cases reach the .awake category (through EventLog's overload).
@@ -646,6 +700,8 @@ def ratcheted_counts():
             add("L14", p, count(r"scheduledTimer\(|RunLoop\.main\.perform(?!\(inModes:)|receive\(on:\s*RunLoop\.main|"
                                 r"scheduler:\s*RunLoop\.main|forMode:\s*(?:\.default|RunLoop\.Mode\.default)\b|"
                                 r"\bin:\s*(?:\.default|RunLoop\.Mode\.default)\b|\.defaultRunLoopMode\b", t))
+    for p in SHIMS:
+        add("L2", p, l2_count(p, load(p)))
     return found
 
 
@@ -1412,7 +1468,7 @@ RULE2_TOP = re.compile(r"^(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|package|interna
                        r"(?:class|struct|enum|extension|actor)\s+([\w.]+)", re.M)
 # Types whose observers deliberately touch no main-actor state (path, top-level type): reason.
 RULE2_EXEMPT = {
-    ("Sources/Snaptic/Switcher/WindowManager.swift", "FocusSession"):
+    ("Sources/Snaptic/Windows/WindowManager.swift", "FocusSession"):
         "@unchecked Sendable; its workspace observers only hop to the session's own AX thread",
 }
 

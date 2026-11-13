@@ -34,7 +34,7 @@ enum KeyCode {
     /// on those, code 50 is the extra key next to left Shift instead.
     static func matches(_ pressed: Int, shortcutKey: Int) -> Bool {
         guard shortcutKey == backtick else { return pressed == shortcutKey }
-        return pressed == (PrivateAPIs.isISOKeyboard ? isoSection : backtick)
+        return pressed == (PrivateWindowAPI.isISOKeyboard ? isoSection : backtick)
     }
 }
 
@@ -132,7 +132,7 @@ enum Keys {
     static func shortLabel(for code: Int) -> String {
         switch code {
         case KeyCode.tab: return "⇥"
-        case KeyCode.backtick: return PrivateAPIs.isISOKeyboard ? "§" : "`"
+        case KeyCode.backtick: return PrivateWindowAPI.isISOKeyboard ? "§" : "`"
         case KeyCode.space: return L("Space")
         default: return label(for: code)
         }
