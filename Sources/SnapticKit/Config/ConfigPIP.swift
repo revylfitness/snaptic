@@ -562,8 +562,13 @@ package enum PIPPrivacy {
     /// browser window whose title can't be read.
     package static func isPrivateWindow(title: String?, bundleID: String?) -> Bool {
         if let title, TextSanitizer.hasPrivateMarker(title) { return true }
-        let isBrowser = browserPrefixes.contains { (bundleID ?? "").hasPrefix($0) }
-        return isBrowser && (title ?? "").isEmpty
+        return isBrowser(bundleID) && (title ?? "").isEmpty
+    }
+
+    /// A browser, matched by plain prefix so betas and nightlies count. Shared with `WindowCatalogRules.privacy`.
+    package static func isBrowser(_ bundleID: String?) -> Bool {
+        guard let bundleID else { return false }
+        return browserPrefixes.contains { bundleID.hasPrefix($0) }
     }
 }
 

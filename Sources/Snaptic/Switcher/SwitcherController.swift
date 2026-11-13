@@ -254,37 +254,32 @@ final class SwitcherController {
             // Drop cached images of windows that closed or may no longer be captured.
             ThumbnailStore.shared.prune(keeping: Set(items.filter { capturePermitted($0) }.map { $0.id }))
         }
-        if !config.isOn(.otherSpaces) {
-            items = items.filter { !$0.isOnOtherSpace }
-        }
-
+        let scope: CatalogScope
         switch shortcut.scope {
-        case .allWindows:
-            break
-        case .activeApp:
-            items = items.filter { $0.pid == list.frontPID }
+        case .allWindows: scope = .allWindows
+        case .activeApp: scope = .app(list.frontPID)
         case .currentScreen:
-            if let frame = screen?.frame {
-                items = items.filter {
-                    if $0.isWindowless { return true }
-                    let rect = Screens.cocoaRect(fromGlobal: $0.frame)
-                    return frame.contains(CGPoint(x: rect.midX, y: rect.midY))
-                }
-            }
+            scope = .screen(screen.map {
+                DockRect(x: $0.frame.minX, y: $0.frame.minY, w: $0.frame.width, h: $0.frame.height)
+            })
         }
+        let spaces: CatalogSpaces
         switch shortcut.spaces {
-        case .all:
-            break
-        case .current:
-            items = items.filter { !$0.isOnOtherSpace }
-        case .others:
-            items = items.filter { $0.isOnOtherSpace || $0.isWindowless }
+        case .all: spaces = .all
+        case .current: spaces = .current
+        case .others: spaces = .others
         }
-        if !shortcut.includeMinimized {
-            items = items.filter { !$0.isMinimized && !$0.isHidden }
-        }
+        // "No windows" entries are already left out by `loadWindows` when the shortcut or the setting says so.
+        let filter = CatalogFilter(otherSpaces: config.isOn(.otherSpaces), spaces: spaces,
+                                   minimizedAndHidden: shortcut.includeMinimized, windowless: true, scope: scope)
+        items = WindowCatalogRules.filter(items.map(\.catalog), filter).map { items[$0] }
         if shortcut.oneWindowPerApp {
-            items = groupedByApp(items)
+            // One entry per app: its most recent window, with a window count.
+            items = WindowCatalogRules.groupedByApp(items.map(\.catalog)).map { entry in
+                var item = items[entry.index]
+                item.groupedCount = entry.count
+                return item
+            }
         }
 
         model.load(items)
@@ -322,32 +317,23 @@ final class SwitcherController {
     /// and browser windows whose title can't be read are never captured, and
     /// their titles are never shown, searched or read aloud.
     private func markPrivacy(_ item: WindowItem) -> WindowItem {
-        guard config.protectPrivateWindows, !item.isWindowless else { return item }
         var item = item
-        if Config.bundleID(item.bundleID, matchesAny: config.privateBundleIDs) {
+        switch WindowCatalogRules.privacy(bundleID: item.bundleID, hasTitle: !item.title.isEmpty,
+                                          hasPrivateMarker: item.hasPrivateMarker, windowless: item.isWindowless,
+                                          protect: config.protectPrivateWindows,
+                                          protectedApps: config.privateBundleIDs) {
+        case .none:
+            break
+        case .protectedApp:
             item.isPrivate = true
             item.title = ""            // shows the app name instead
-        } else if item.hasPrivateMarker {
+        case .privateMarker:
             item.isPrivate = true
             item.title = L("Private window")
-        } else if item.title.isEmpty, Config.isBrowser(item.bundleID) {
+        case .untitledBrowser:
             item.isPrivate = true
         }
         return item
-    }
-
-    /// One entry per app: its most recent window, with a window count.
-    private func groupedByApp(_ items: [WindowItem]) -> [WindowItem] {
-        var counts: [pid_t: Int] = [:]
-        for item in items where !item.isWindowless { counts[item.pid, default: 0] += 1 }
-        var seen = Set<pid_t>()
-        var result: [WindowItem] = []
-        for var item in items where !seen.contains(item.pid) {
-            seen.insert(item.pid)
-            item.groupedCount = counts[item.pid] ?? 1
-            result.append(item)
-        }
-        return result
     }
 
     private func present() {
@@ -531,8 +517,10 @@ final class SwitcherController {
         )
     }
 
+    /// A real, visible window on this Space that isn't private: the shared capture rule's SCK path. `ThumbnailStore`
+    /// still checks consent, the owner and the protected list on each capture.
     private func capturePermitted(_ item: WindowItem) -> Bool {
-        item.isCapturable
+        WindowCatalogRules.capturePath(item.catalog, gate: .switcherList) == .screenCaptureKit
     }
 
     private var blockedBundleIDs: [String] {

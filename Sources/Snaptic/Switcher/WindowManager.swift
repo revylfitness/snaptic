@@ -3,45 +3,56 @@ import AppKit
 import ApplicationServices
 
 struct WindowItem: Identifiable {
-    static let firstSyntheticID: CGWindowID = 0xF000_0000
+    static let firstSyntheticID: CGWindowID = CatalogWindow.firstSyntheticID
 
-    let id: CGWindowID
-    let pid: pid_t
+    /// What the shared rules read: inclusion, filters, the badge and the capture gate (`WindowCatalogRules`).
+    var catalog: CatalogWindow
     let axElement: AXUIElement?
     let appName: String
     let bundleID: String?
     var title: String
     let icon: NSImage
     var frame: CGRect          // global coordinates, origin top-left of the main screen
-    var isMinimized: Bool
-    var isHidden: Bool
-    var isOnOtherSpace: Bool
-    var isFullscreen: Bool
-    var isWindowless: Bool = false
     /// The (full, untruncated) title marks a private-browsing window.
     var hasPrivateMarker: Bool = false
-    /// Never captured, and the title is hidden (password managers, private browsing).
-    var isPrivate: Bool = false
     /// With "one window per app": how many windows the app has.
     var groupedCount: Int = 1
 
-    var hasRealWindowID: Bool { id < Self.firstSyntheticID }
+    var id: CGWindowID { catalog.id }
+    var pid: pid_t { catalog.pid }
+    var isMinimized: Bool {
+        get { catalog.minimized }
+        set { catalog.minimized = newValue }
+    }
+    var isHidden: Bool {
+        get { catalog.hidden }
+        set { catalog.hidden = newValue }
+    }
+    var isOnOtherSpace: Bool { catalog.onOtherSpace }
+    var isFullscreen: Bool { catalog.fullscreen }
+    var isWindowless: Bool { catalog.windowless }
+    /// Never captured, and the title is hidden (password managers, private browsing).
+    var isPrivate: Bool {
+        get { catalog.isPrivate }
+        set { catalog.isPrivate = newValue }
+    }
+
+    var hasRealWindowID: Bool { catalog.hasRealID }
     var displayTitle: String { title.isEmpty ? appName : title }
     var searchText: String { "\(appName) \(title)" }
     var aspectRatio: CGFloat { frame.height > 1 ? frame.width / frame.height : 1.6 }
-    /// A real, visible window on this Space that may be captured.
-    var isCapturable: Bool {
-        hasRealWindowID && !isMinimized && !isHidden && !isOnOtherSpace && !isWindowless && !isPrivate
-    }
 
     var badge: String? {
-        if isWindowless { return L("No windows") }
-        if groupedCount > 1 { return L("\(groupedCount) windows") }
-        if isMinimized { return L("Minimized") }
-        if isHidden { return L("Hidden") }
-        if isOnOtherSpace { return L("Other Space") }
-        if isFullscreen { return L("Full Screen") }
-        return nil
+        switch WindowCatalogRules.switcherBadge(catalog, groupedCount: groupedCount) {
+        case nil: return nil
+        case .noWindows?: return L("No windows")
+        case .windows(let count)?: return L("\(count) windows")
+        case .minimized?: return L("Minimized")
+        case .hidden?: return L("Hidden")
+        case .otherSpace?: return L("Other Space")
+        case .fullScreen?: return L("Full Screen")
+        case .display(let name)?: return name
+        }
     }
 }
 
@@ -106,6 +117,7 @@ struct RawWindow: @unchecked Sendable {
     let pid: pid_t
     let element: AXUIElement
     let windowID: CGWindowID?
+    let kind: CatalogWindowKind
     let title: String
     let hasPrivateMarker: Bool
     let frame: CGRect
@@ -159,6 +171,14 @@ private struct ServerSnapshot {
     var zOrder: [CGWindowID: Int] = [:]          // layer-0 on-screen windows, front to back
     var onScreen = Set<CGWindowID>()             // on-screen windows of any layer
     var owner: [CGWindowID: pid_t] = [:]         // every window's owning process
+    var layer: [CGWindowID: Int] = [:]           // every window's layer
+}
+
+fileprivate extension DockRect {
+    /// A Cocoa-space rect (`Screens.cocoaRect(fromGlobal:)`).
+    init(cocoa rect: CGRect) {
+        self.init(x: Double(rect.minX), y: Double(rect.minY), w: Double(rect.width), h: Double(rect.height))
+    }
 }
 
 /// Finds windows, keeps a most-recently-used order, and focuses / closes / minimizes them.
@@ -245,9 +265,9 @@ final class WindowManager {
     func loadWindows(includeOtherSpaces: Bool, includeWindowless: Bool, excluded: [String]) async -> WindowList {
         let ownPID = ProcessInfo.processInfo.processIdentifier
         let apps = NSWorkspace.shared.runningApplications.filter {
-            $0.activationPolicy == .regular
-                && $0.processIdentifier != ownPID
-                && !Config.bundleID($0.bundleIdentifier, matchesAny: excluded)
+            WindowCatalogRules.listsApp(regular: $0.activationPolicy == .regular,
+                                        isOwnProcess: $0.processIdentifier == ownPID,
+                                        bundleID: $0.bundleIdentifier, excluded: excluded)
         }
         let snapshots = apps.map { AppSnapshot(pid: $0.processIdentifier) }
         let recent = recentFocus
@@ -276,26 +296,29 @@ final class WindowManager {
             let id = raw.windowID ?? makeSyntheticID()
             guard !seen.contains(id) else { continue }
             seen.insert(id)
-            pidsWithWindows.insert(raw.pid)
-            let onScreen = raw.windowID.map { server.onScreen.contains($0) } ?? true
-            // Native tabs that aren't the front tab are separate, off-screen
-            // windows that belong to no Space; they aren't real windows to switch to.
-            if !onScreen, !raw.isMinimized, !app.isHidden, PrivateAPIs.isOnAnySpace(id) == false {
-                continue
-            }
-            items.append(WindowItem(
+            var window = CatalogWindow(
                 id: id,
                 pid: raw.pid,
+                hasTitle: !raw.title.isEmpty,
+                minimized: raw.isMinimized,
+                hidden: app.isHidden,
+                onScreen: raw.windowID.map { server.onScreen.contains($0) } ?? true,
+                fullscreen: raw.isFullscreen,
+                layer: raw.windowID.flatMap { server.layer[$0] } ?? 0,
+                bounds: DockRect(cocoa: Screens.cocoaRect(fromGlobal: raw.frame)),
+                kind: raw.kind
+            )
+            let verdict = Self.include(&window)
+            if verdict.appHasWindow { pidsWithWindows.insert(raw.pid) }
+            guard verdict.included else { continue }
+            items.append(WindowItem(
+                catalog: window,
                 axElement: raw.element,
                 appName: Self.appName(app),
                 bundleID: app.bundleIdentifier,
                 title: raw.title,
                 icon: app.icon ?? NSImage(),
                 frame: raw.frame,
-                isMinimized: raw.isMinimized,
-                isHidden: app.isHidden,
-                isOnOtherSpace: !raw.isMinimized && !app.isHidden && !onScreen,
-                isFullscreen: raw.isFullscreen,
                 hasPrivateMarker: raw.hasPrivateMarker
             ))
         }
@@ -309,43 +332,36 @@ final class WindowManager {
         if includeWindowless {
             for app in apps where !pidsWithWindows.contains(app.processIdentifier) {
                 items.append(WindowItem(
-                    id: makeSyntheticID(),
-                    pid: app.processIdentifier,
+                    catalog: .windowless(id: makeSyntheticID(), pid: app.processIdentifier, hidden: app.isHidden),
                     axElement: nil,
                     appName: Self.appName(app),
                     bundleID: app.bundleIdentifier,
                     title: "",
                     icon: app.icon ?? NSImage(),
-                    frame: .zero,
-                    isMinimized: false,
-                    isHidden: app.isHidden,
-                    isOnOtherSpace: false,
-                    isFullscreen: false,
-                    isWindowless: true
+                    frame: .zero
                 ))
             }
         }
 
-        // The window you're in comes first, then most recently used; windows
-        // never focused while Snaptic was running follow in stacking order; apps
-        // without windows go last.
-        var mruIndex: [CGWindowID: Int] = [:]
-        for (index, id) in mru.enumerated() where mruIndex[id] == nil { mruIndex[id] = index }
-        let focusedID = result.focusedID
-        let zOrder = server.zOrder
-        func rank(_ item: WindowItem) -> (Int, Int) {
-            if item.isWindowless { return (4, 0) }
-            if let focusedID, item.id == focusedID { return (0, 0) }
-            if let r = mruIndex[item.id] { return (1, r) }
-            if let z = zOrder[item.id] { return (2, z) }
-            return (3, 0)
+        // The window you're in comes first, then most recently used; windows never focused while Snaptic was
+        // running follow in stacking order; apps without windows go last.
+        let order = WindowCatalogRules.switcherOrder(
+            items.map(\.catalog),
+            names: items.map { (app: $0.appName, title: $0.title) },
+            focusedID: result.focusedID,
+            mru: mru,
+            zOrder: server.zOrder
+        )
+        return WindowList(items: order.map { items[$0] }, focusedID: result.focusedID, frontPID: frontPID)
+    }
+
+    /// The shared inclusion rule. The Spaces check is a window-server call, so it runs only for a window whose
+    /// verdict turns on it (`WindowCatalogRules.needsSpaceCheck`), as the switcher always has.
+    private static func include(_ window: inout CatalogWindow) -> CatalogVerdict {
+        if WindowCatalogRules.needsSpaceCheck(window, appListed: true, options: .switcher) {
+            window.spaceKnown = PrivateAPIs.isOnAnySpace(window.id)
         }
-        items.sort { a, b in
-            let ra = rank(a), rb = rank(b)
-            if ra != rb { return ra < rb }
-            return (a.appName, a.title) < (b.appName, b.title)
-        }
-        return WindowList(items: items, focusedID: focusedID, frontPID: frontPID)
+        return WindowCatalogRules.inclusion(window, appListed: true, options: .switcher)
     }
 
     nonisolated private static func enumerate(_ apps: [AppSnapshot], owners: [CGWindowID: pid_t]) -> [RawWindow] {
@@ -368,22 +384,24 @@ final class WindowManager {
         for window in AX.elements(appElement, kAXWindowsAttribute).prefix(maxWindowsPerApp) {
             if outOfTime() { break }
             AXUIElementSetMessagingTimeout(window, axTimeout)
-            let subrole = AX.string(window, kAXSubroleAttribute) ?? ""
-            guard subrole == kAXStandardWindowSubrole || subrole == kAXDialogSubrole, !outOfTime() else { continue }
+            // The subrole and size parts of the shared inclusion rule, checked before the title is read.
+            let kind = CatalogWindowKind(subrole: AX.string(window, kAXSubroleAttribute))
+            guard WindowCatalogRules.kindLeftOut(kind, hasTitle: nil, options: .switcher) == nil,
+                  !outOfTime() else { continue }
             let size = AX.size(window) ?? .zero
-            guard size.width >= 40, size.height >= 40, !outOfTime() else { continue }
+            guard WindowCatalogRules.sizeLeftOut(width: Double(size.width), height: Double(size.height),
+                                                 minimum: CatalogInclusion.switcher.minAXSide) == nil,
+                  !outOfTime() else { continue }
 
-            // The window ID comes from the app itself, so only trust it if the
-            // window server agrees this app owns that window. Otherwise an app
-            // could claim another app's window and get it captured.
-            var windowID = PrivateAPIs.windowID(of: window)
-            if let id = windowID, owners[id] != app.pid { windowID = nil }
+            let windowID = WindowCatalogRules.trustedWindowID(claimed: PrivateAPIs.windowID(of: window),
+                                                              pid: app.pid, owners: owners)
             let fullTitle = outOfTime() ? "" : (AX.string(window, kAXTitleAttribute) ?? "")
 
             result.append(RawWindow(
                 pid: app.pid,
                 element: window,
                 windowID: windowID,
+                kind: kind,
                 title: TextSanitizer.clean(fullTitle, maxScalars: maxTitleLength),
                 hasPrivateMarker: TextSanitizer.hasPrivateMarker(fullTitle),
                 frame: CGRect(origin: AX.position(window) ?? .zero, size: size),
@@ -419,6 +437,7 @@ final class WindowManager {
             guard let id = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
                   let pid = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value else { continue }
             snapshot.owner[id] = pid
+            if let layer = (info[kCGWindowLayer as String] as? NSNumber)?.intValue { snapshot.layer[id] = layer }
         }
         return snapshot
     }
@@ -438,36 +457,41 @@ final class WindowManager {
         var items: [WindowItem] = []
         var pids = Set<pid_t>()
         for info in list {
-            guard (info[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
+            guard let layer = (info[kCGWindowLayer as String] as? NSNumber)?.intValue,
                   let id = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
                   !alreadySeen.contains(id),
                   let pid = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
                   let app = byPID[pid],
-                  (info[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue != true,
                   let boundsInfo = info[kCGWindowBounds as String] as? NSDictionary,
-                  let bounds = CGRect(dictionaryRepresentation: boundsInfo as CFDictionary),
-                  bounds.width >= 100, bounds.height >= 100,
-                  ((info[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1) > 0,
-                  // Inactive native tabs and hidden helper windows belong to no Space.
-                  PrivateAPIs.isOnAnySpace(id) != false
+                  let bounds = CGRect(dictionaryRepresentation: boundsInfo as CFDictionary)
             else { continue }
-
-            pids.insert(pid)
-            guard let rawTitle = info[kCGWindowName as String] as? String, !rawTitle.isEmpty else { continue }
-
-            items.append(WindowItem(
+            let rawTitle = info[kCGWindowName as String] as? String ?? ""
+            // Layer, on-screen, size, alpha and the Spaces check (inactive native tabs and hidden helper windows
+            // belong to no Space) are the shared inclusion rule's.
+            var window = CatalogWindow(
                 id: id,
                 pid: pid,
+                hasTitle: !rawTitle.isEmpty,
+                hidden: app.isHidden,
+                onScreen: (info[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue == true,
+                layer: layer,
+                bounds: DockRect(cocoa: Screens.cocoaRect(fromGlobal: bounds)),
+                hasAXElement: false,
+                kind: .unknown,
+                alpha: (info[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1
+            )
+            let verdict = Self.include(&window)
+            if verdict.appHasWindow { pids.insert(pid) }
+            guard verdict.included else { continue }
+
+            items.append(WindowItem(
+                catalog: window,
                 axElement: nil,
                 appName: Self.appName(app),
                 bundleID: app.bundleIdentifier,
                 title: TextSanitizer.clean(rawTitle, maxScalars: Self.maxTitleLength),
                 icon: app.icon ?? NSImage(),
                 frame: bounds,
-                isMinimized: false,
-                isHidden: app.isHidden,
-                isOnOtherSpace: true,
-                isFullscreen: false,
                 hasPrivateMarker: TextSanitizer.hasPrivateMarker(rawTitle)
             ))
         }

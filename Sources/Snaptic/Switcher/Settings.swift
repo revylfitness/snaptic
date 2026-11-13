@@ -194,22 +194,9 @@ struct Config: Codable, Equatable {
         "com.p5sys.jump.mac.viewer",
     ]
 
-    /// Browsers (matched by plain prefix, so betas and nightlies count) whose
-    /// windows are treated as private when the title can't be read.
-    static let browserPrefixes = [
-        "com.apple.Safari", "com.google.Chrome", "org.mozilla.", "com.microsoft.edgemac",
-        "com.brave.Browser", "company.thebrowser.", "com.operasoftware.", "com.vivaldi.",
-        "org.torproject.", "com.duckduckgo.", "com.kagi.", "app.zen-browser.",
-    ]
-
-    static func isBrowser(_ bundleID: String?) -> Bool {
-        guard let bundleID else { return false }
-        return browserPrefixes.contains { bundleID.hasPrefix($0) }
-    }
-
+    /// The id itself, or anything under it. One rule for every list (`PIPPrivacy.matches`).
     static func bundleID(_ bundleID: String?, matchesAny entries: [String]) -> Bool {
-        guard let bundleID else { return false }
-        return entries.contains { bundleID == $0 || bundleID.hasPrefix($0 + ".") }
+        PIPPrivacy.matches(bundleID, prefixes: entries)
     }
 
     /// A plausible reverse-DNS bundle identifier (at least two parts), so an
