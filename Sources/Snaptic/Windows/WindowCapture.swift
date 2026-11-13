@@ -11,16 +11,19 @@ struct CaptureTarget: Equatable {
     var pid: pid_t { window.pid }
 }
 
-/// Takes window thumbnails for both clients (PLAN 0.5 §4.9, X-4, X-20, Y-7): the per-capture rule, the pacing and the
-/// ScreenCaptureKit path. `ThumbnailStore` keeps what it takes.
+/// Takes window thumbnails for both clients (PLAN 0.5 §4.9, X-4, X-20, Y-7): the per-capture rule, the pacing, the
+/// ScreenCaptureKit path and the private path. `ThumbnailStore` keeps what it takes.
 ///
-/// - Consent: `CGPreflightScreenCaptureAccess()` once per batch. It is never requested from here, and finding it
-///   revoked purges the store (§2.5).
+/// - Consent: `CGPreflightScreenCaptureAccess()` once per batch for ScreenCaptureKit and before each private capture.
+///   It is never requested from here, and finding it revoked purges the store (§2.5).
 /// - The rule: Kit `WindowCatalogRules.captureRefusal` with the window server's owner pid and bundle id, checked on
 ///   each capture: private windows, protected apps, a wrong owner (S0-18), and for the Dock its hidden apps.
 /// - Pacing: captures start only after the panel has been visible for 150 ms; each window at most once per 30 s
 ///   unless it's dirty; at most 8 captures a second in total and 4 at once; `SCShareableContent` is shared for 2 s.
-/// - The private path for minimized and other-Space windows is A2b's.
+/// - The private path (A2b; §4.9, §4.12, §4.23): minimized and other-Space windows through
+///   `PrivateWindowAPI.capture` (`CGSHWCaptureWindowList`, behind the window-symbol contract), one capture at a time
+///   for both clients, at 1x, scaled down at once to the client's size. Each capture passes Kit `CaptureContentCheck`
+///   before it's shown or kept; a suspect leaves the card on its last-seen thumbnail or the icon. None in Safe Mode.
 @MainActor
 final class WindowCapture {
     static let shared = WindowCapture()
@@ -40,6 +43,15 @@ final class WindowCapture {
     private var recentStarts: [Double] = []
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private var batches: [ModuleID: Task<Void, Never>] = [:]
+    /// The private path's one lane, shared by both clients (§4.9).
+    private var privateBusy = false
+    private var privateWaiters: [CheckedContinuation<Void, Never>] = []
+    /// The content check (§4.9; X2-8): one counter for the path, both clients together.
+    private var contentCheck = CaptureContentCheck()
+
+    /// The private captures' calls and their scale-down run here, off main.
+    private nonisolated static let privateQueue = DispatchQueue(label: "snaptic.windows.privateCapture",
+                                                                qos: .userInitiated)
 
     private init() {}
 
@@ -79,29 +91,69 @@ final class WindowCapture {
 
         batches[client] = Task { @MainActor [weak self] in
             await Self.waitUntilVisible(since: visibleSince)
-            guard let self, !Task.isCancelled, store.isCurrent(stamp), self.screenRecordingAllowed(),
-                  let windows = await self.shareableWindows(), !Task.isCancelled, store.isCurrent(stamp) else { return }
-            let scale = NSScreen.main?.backingScaleFactor ?? 2
-            for target in batch {
-                guard store.needsCapture(target.id, maxPixels: maxPixels, client: client),
-                      let window = windows[target.id],
-                      self.permits(target, window, rules: rules, thumbnailsLease: store.holdsThumbnails(client))
-                else { continue }
-                guard await self.takeSlot() else { return }
-                guard !Task.isCancelled, store.isCurrent(stamp) else {
-                    self.releaseSlot()
-                    return
+            guard let self, !Task.isCancelled, store.isCurrent(stamp), self.screenRecordingAllowed() else { return }
+            // Minimized and other-Space windows take the private path while it's open; the rest take ScreenCaptureKit
+            // (on-screen windows only). Both run at once, the private one a capture at a time.
+            let privateOpen = Self.privatePathOpen
+            let privateTargets = privateOpen ? batch.filter { Self.takesPrivatePath($0, client: client) } : []
+            let privateIDs = Set(privateTargets.map(\.id))
+            let sckTargets = batch.filter { !privateIDs.contains($0.id) }
+            async let privateDone: Void = self.capturePrivately(privateTargets, client: client, maxPixels: maxPixels,
+                                                                stamp: stamp, rules: rules, onImage: onImage)
+            await self.captureWithSCK(sckTargets, client: client, maxPixels: maxPixels, stamp: stamp, rules: rules,
+                                      onImage: onImage)
+            await privateDone
+        }
+    }
+
+    /// The ScreenCaptureKit half of a batch: on-screen windows, up to 4 at once.
+    private func captureWithSCK(_ batch: [CaptureTarget], client: ModuleID, maxPixels: CGFloat, stamp: ThumbnailStamp,
+                                rules: Rules, onImage: @escaping @MainActor (CGWindowID, NSImage) -> Void) async {
+        let store = ThumbnailStore.shared
+        guard !batch.isEmpty, let windows = await shareableWindows(), !Task.isCancelled, store.isCurrent(stamp) else {
+            return
+        }
+        for target in batch {
+            guard store.needsCapture(target.id, maxPixels: maxPixels, client: client),
+                  let window = windows[target.id],
+                  permits(target, window, rules: rules, thumbnailsLease: store.holdsThumbnails(client))
+            else { continue }
+            guard await takeSlot() else { return }
+            guard !Task.isCancelled, store.isCurrent(stamp) else {
+                releaseSlot()
+                return
+            }
+            // Each capture runs on its own; a stale one finishes and is dropped by the stamp check (X2-12).
+            Task { @MainActor [weak self] in
+                defer { self?.releaseSlot() }
+                guard let shot = await Self.capture(window, maxPixels: maxPixels, scale: Self.scale(of: window.frame))
+                else { return }
+                switch store.store(shot.image, for: target.id, maxPixels: maxPixels, bytes: shot.bytes,
+                                   source: .sck, stamp: stamp) {
+                case .stored, .skipped: onImage(target.id, shot.image)
+                case .refused: break
                 }
-                // Each capture runs on its own; a stale one finishes and is dropped by the stamp check (X2-12).
-                Task { @MainActor [weak self] in
-                    defer { self?.releaseSlot() }
-                    guard let shot = await Self.capture(window, maxPixels: maxPixels, scale: scale) else { return }
-                    switch store.store(shot.image, for: target.id, maxPixels: maxPixels, bytes: shot.bytes,
-                                       source: .sck, stamp: stamp) {
-                    case .stored, .skipped: onImage(target.id, shot.image)
-                    case .refused: break
-                    }
-                }
+            }
+        }
+    }
+
+    /// The private half of a batch: minimized and other-Space windows, one at a time.
+    private func capturePrivately(_ batch: [CaptureTarget], client: ModuleID, maxPixels: CGFloat,
+                                  stamp: ThumbnailStamp, rules: Rules,
+                                  onImage: @escaping @MainActor (CGWindowID, NSImage) -> Void) async {
+        guard !batch.isEmpty else { return }
+        let store = ThumbnailStore.shared
+        forgetGonePlainWindows()
+        for target in batch {
+            guard !Task.isCancelled, store.isCurrent(stamp), Self.privatePathOpen else { return }
+            guard store.needsCapture(target.id, maxPixels: maxPixels, client: client),
+                  let shot = await privateShot(target, rules: rules, maxPixels: maxPixels, stamp: stamp,
+                                               thumbnailsLease: { store.holdsThumbnails(client) })
+            else { continue }
+            switch store.store(shot.image, for: target.id, maxPixels: maxPixels, bytes: shot.bytes,
+                               source: .privateCapture, stamp: stamp) {
+            case .stored, .skipped: onImage(target.id, shot.image)
+            case .refused: break
             }
         }
     }
@@ -121,7 +173,8 @@ final class WindowCapture {
     /// A one-off capture for `client`'s full-size preview, at the switcher's 2400-pixel bucket. Kept like any capture
     /// while `client` holds `.thumbnails` and it's 16 MB or less; shown either way. It doesn't need `.thumbnails`
     /// (§R4 A1b), and a fresh, clean cached one is returned without a capture. Nil once `client` is invalidated or
-    /// purged.
+    /// purged. A minimized or other-Space window takes the private path while it's open (A2b); that capture, like
+    /// every private one, needs `.thumbnails` (§4.9).
     func captureForPreview(_ target: CaptureTarget, client: ModuleID, maxPixels: CGFloat, visibleSince: Double,
                            protectedBundleIDs: [String]) async -> NSImage? {
         let store = ThumbnailStore.shared
@@ -132,15 +185,24 @@ final class WindowCapture {
             return cached
         }
         await Self.waitUntilVisible(since: visibleSince)
+        let rules = Rules(client: client, protectedBundleIDs: protectedBundleIDs, hiddenBundleIDs: [])
+        if Self.privatePathOpen, Self.takesPrivatePath(target, client: client) {
+            guard !Task.isCancelled, store.isCurrent(stamp),
+                  let shot = await privateShot(target, rules: rules, maxPixels: maxPixels, stamp: stamp,
+                                               thumbnailsLease: { store.holdsThumbnails(client) }),
+                  store.isCurrent(stamp) else { return nil }
+            _ = store.store(shot.image, for: target.id, maxPixels: maxPixels, bytes: shot.bytes,
+                            source: .privateCapture, stamp: stamp)
+            return shot.image
+        }
         guard !Task.isCancelled, store.isCurrent(stamp),
               let windows = await shareableWindows(), store.isCurrent(stamp), let window = windows[target.id] else {
             return nil
         }
-        let rules = Rules(client: client, protectedBundleIDs: protectedBundleIDs, hiddenBundleIDs: [])
         guard permits(target, window, rules: rules, thumbnailsLease: true), await takeSlot() else { return nil }
         defer { releaseSlot() }
         guard store.isCurrent(stamp),
-              let shot = await Self.capture(window, maxPixels: maxPixels, scale: NSScreen.main?.backingScaleFactor ?? 2),
+              let shot = await Self.capture(window, maxPixels: maxPixels, scale: Self.scale(of: window.frame)),
               store.isCurrent(stamp) else { return nil }
         // Refused here means only that `client` keeps no thumbnails: the preview still shows.
         _ = store.store(shot.image, for: target.id, maxPixels: maxPixels, bytes: shot.bytes, source: .sck, stamp: stamp)
@@ -153,6 +215,166 @@ final class WindowCapture {
         for task in batches.values { task.cancel() }
         batches = [:]
         dropShareable()
+    }
+
+    // MARK: The private path (A2b; §4.9, §4.12, §4.13)
+
+    /// Whether minimized and other-Space windows may take the private path now: not Safe Mode, and `hwCapture` not
+    /// refused, stopped or poisoned. It starts no probe; the first capture that passes every gate does (§4.12 step 4).
+    static var privatePathOpen: Bool { PrivateWindowAPI.capturePathOpen }
+
+    /// Whether the catalog sends `target` to the private path, before the window server's own check.
+    private static func takesPrivatePath(_ target: CaptureTarget, client: ModuleID) -> Bool {
+        let gate = CaptureGate(client: client, screenRecording: true, thumbnailsLease: true, ownerMatches: true,
+                               protectedApp: false, hiddenFromDock: false, privatePath: true, hasLastSeen: false)
+        return WindowCatalogRules.capturePath(target.window, gate: gate) == .privateCapture
+    }
+
+    /// The shared capture rule for the private path, with the window server's own owner (S0-18) and that owner's
+    /// bundle id; nil refuses. Otherwise the window server's size in points, for the result's pixel limit.
+    private func privatePermits(_ target: CaptureTarget, rules: Rules, thumbnailsLease: Bool) -> CGSize? {
+        guard let list = CGWindowListCopyWindowInfo([.optionIncludingWindow], target.id) as? [[String: Any]],
+              let info = list.first(where: { ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value == target.id })
+        else { return nil }
+        let owner = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value
+        let bundleID = owner.flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
+        let gate = CaptureGate(client: rules.client, screenRecording: true, thumbnailsLease: thumbnailsLease,
+                               ownerMatches: owner == target.pid,
+                               protectedApp: Config.bundleID(bundleID, matchesAny: rules.protectedBundleIDs),
+                               hiddenFromDock: Config.bundleID(bundleID, matchesAny: rules.hiddenBundleIDs),
+                               privatePath: true, hasLastSeen: false)
+        guard WindowCatalogRules.capturePath(target.window, gate: gate) == .privateCapture else { return nil }
+        if let bounds = (info[kCGWindowBounds as String] as? NSDictionary)
+            .flatMap({ CGRect(dictionaryRepresentation: $0 as CFDictionary) }), bounds.width > 0, bounds.height > 0 {
+            return bounds.size
+        }
+        return CGSize(width: target.window.bounds.width, height: target.window.bounds.height)
+    }
+
+    /// One private capture, or nil for the card's fallback (last-seen or the icon). The gates are checked before the
+    /// probe and again just before the call. The probe, the call and the scale-down run in the one private lane (so
+    /// no two `CGSHWCaptureWindowList` calls overlap), the call and the scale-down off main, holding one of the 4
+    /// places and counting toward the 8 a second. A suspect capture is dropped (§4.9).
+    private func privateShot(_ target: CaptureTarget, rules: Rules, maxPixels: CGFloat, stamp: ThumbnailStamp,
+                             thumbnailsLease: () -> Bool) async -> (image: NSImage, bytes: Int)? {
+        let store = ThumbnailStore.shared
+        guard Self.privatePathOpen, privatePermits(target, rules: rules, thumbnailsLease: thumbnailsLease()) != nil,
+              await takePrivateLane() else { return nil }
+        defer { releasePrivateLane() }
+        // §4.12 step 4: the probe runs just before the first private capture that passes every gate.
+        guard await Self.captureProbed(), !Task.isCancelled, store.isCurrent(stamp), await takeSlot() else {
+            return nil
+        }
+        defer { releaseSlot() }
+        // Every gate again, just before the call: consent, the lease, the owner, the lists (§4.9).
+        guard !Task.isCancelled, store.isCurrent(stamp), screenRecordingAllowed(),
+              let size = privatePermits(target, rules: rules, thumbnailsLease: thumbnailsLease()) else { return nil }
+        let maxScale = NSScreen.screens.map(\.backingScaleFactor).max() ?? 2
+        let limit = WindowResults.pixelLimit(windowWidth: Double(size.width), windowHeight: Double(size.height),
+                                             maxScale: Double(maxScale))
+        let windowID = target.id
+        let longest = Double(maxPixels)
+        let taken: PrivateTaken? = await withCheckedContinuation { continuation in
+            Self.privateQueue.async {
+                continuation.resume(returning: Self.takePrivate(windowID, pixelLimit: limit, maxPixels: longest))
+            }
+        }
+        guard let taken, store.isCurrent(stamp) else { return nil }
+        switch contentCheck.record(window: windowID, suspect: CaptureContentCheck.isSuspect(taken.sample)) {
+        case .accept:
+            break
+        case .suspect:
+            EventLog.shared.count(Self.suspectKey)
+            return nil
+        case .suspectRecheck:
+            EventLog.shared.count(Self.suspectKey)
+            startRecheck()
+            return nil
+        }
+        // 1x pixels are points, so the card sizes from what was captured (a part off screen comes back cut; PC-2).
+        let image = NSImage(cgImage: taken.image, size: NSSize(width: taken.pointWidth, height: taken.pointHeight))
+        return (image, taken.image.bytesPerRow * taken.image.height)
+    }
+
+    private static let suspectKey = "windows.captureSuspect"
+
+    /// Waits for `PrivateWindowAPI.ensureCaptureProbed`: true once `hwCapture`'s probe has passed on this build.
+    private static func captureProbed() async -> Bool {
+        await withCheckedContinuation { continuation in
+            PrivateWindowAPI.ensureCaptureProbed { continuation.resume(returning: $0) }
+        }
+    }
+
+    /// What the private queue hands back: the scaled image, the captured size and the content check's sample.
+    private struct PrivateTaken: @unchecked Sendable {
+        let image: CGImage
+        let pointWidth: Int
+        let pointHeight: Int
+        let sample: [UInt8]?
+    }
+
+    /// On the private queue: the call under the contract, the scale-down to `maxPixels` on the longer side, and the
+    /// 16 × 16 luma sample.
+    private nonisolated static func takePrivate(_ windowID: CGWindowID, pixelLimit: Double?,
+                                                maxPixels: Double) -> PrivateTaken? {
+        guard let full = PrivateWindowAPI.capture(windowID, pixelLimit: pixelLimit),
+              let scaled = scaledDown(full, maxPixels: maxPixels) else { return nil }
+        return PrivateTaken(image: scaled, pointWidth: full.width, pointHeight: full.height,
+                            sample: PrivateWindowAPI.lumaSample(scaled))
+    }
+
+    /// `image` drawn at `PrivateCaptureScaling.scaledSize`, or itself when it's small enough already.
+    private nonisolated static func scaledDown(_ image: CGImage, maxPixels: Double) -> CGImage? {
+        guard let size = PrivateCaptureScaling.scaledSize(width: image.width, height: image.height,
+                                                          maxPixels: maxPixels) else { return nil }
+        if size.width == image.width && size.height == image.height { return image }
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: size.width, height: size.height, bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+                                          | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: size.width, height: size.height))
+        return context.makeImage()
+    }
+
+    /// Three suspects in a row from two windows: the probe-window capture runs again, in the private lane (§4.9).
+    private func startRecheck() {
+        Task { @MainActor [weak self] in
+            guard let self, await self.takePrivateLane() else { return }
+            let result = await withCheckedContinuation { continuation in
+                PrivateWindowAPI.recheckCapture { continuation.resume(returning: $0) }
+            }
+            self.releasePrivateLane()
+            self.contentCheck.recheckFinished(result)
+            EventLog.shared.record(.privateAPI, "windows.captureRecheck " + String(describing: result))
+        }
+    }
+
+    /// Plain windows that no longer exist lose the mark, so a reused id proves itself again.
+    private func forgetGonePlainWindows() {
+        guard !contentCheck.plain.isEmpty else { return }
+        let list = (CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]]) ?? []
+        let ids = Set(list.compactMap { ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value })
+        contentCheck.keepPlain(ids)
+    }
+
+    /// Waits for the private lane. False if the task was cancelled.
+    private func takePrivateLane() async -> Bool {
+        while privateBusy {
+            guard !Task.isCancelled else { return false }
+            await withCheckedContinuation { privateWaiters.append($0) }
+        }
+        guard !Task.isCancelled else { return false }
+        privateBusy = true
+        return true
+    }
+
+    private func releasePrivateLane() {
+        privateBusy = false
+        let woken = privateWaiters
+        privateWaiters = []
+        for waiter in woken { waiter.resume() }
     }
 
     // MARK: The rule (§4.9, §4.10)
@@ -228,6 +450,15 @@ final class WindowCapture {
     private func dropShareable() {
         shareable = [:]
         shareableAt = nil
+    }
+
+    /// The backing scale of the display a window's centre is on (M13: mixed Retina and non-Retina displays), else
+    /// the main display's. `frame` is the window server's, top-left origin.
+    private static func scale(of frame: CGRect) -> CGFloat {
+        let cocoa = Screens.cocoaRect(fromGlobal: frame)
+        let centre = NSPoint(x: cocoa.midX, y: cocoa.midY)
+        let screen = NSScreen.screens.first { NSMouseInRect(centre, $0.frame, false) } ?? NSScreen.main
+        return screen?.backingScaleFactor ?? 2
     }
 
     /// The image, sized from what was captured (§R4 PC-2), and its bytes as the budget counts them.

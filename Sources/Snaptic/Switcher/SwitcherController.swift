@@ -533,9 +533,19 @@ final class SwitcherController {
     }
 
     /// A real, visible window on this Space that isn't private: the shared capture rule's SCK path. `WindowCapture`
-    /// checks consent once per batch, and the owner and the protected list again on each capture.
+    /// checks consent once per batch, and the owner and the protected list again on each capture. The full-size
+    /// preview takes only these: it's drawn where the window is.
     private func capturePermitted(_ item: WindowItem) -> Bool {
         WindowCatalogRules.capturePath(item.catalog, gate: .switcherList) == .screenCaptureKit
+    }
+
+    /// The list's captures (A2b): the SCK path, and minimized and other-Space windows while the private path is open.
+    /// `WindowCapture` checks the private path's gates again on each capture.
+    private func listCapturePermitted(_ item: WindowItem, gate: CaptureGate) -> Bool {
+        switch WindowCatalogRules.capturePath(item.catalog, gate: gate) {
+        case .screenCaptureKit, .privateCapture: return true
+        case .lastSeen, .icon: return false
+        }
     }
 
     /// A real window that isn't private, wherever it is: its cached image may stay as its last-seen thumbnail.
@@ -599,8 +609,12 @@ final class SwitcherController {
         model.thumbnails = ThumbnailStore.shared.cached(kept.map { $0.id }, maxPixels: Self.listPixels,
                                                         client: .windowSwitcher)
         guard let shortcut = active, config.effectiveStyle(shortcut) == .thumbnails else { return }
+        // Minimized and other-Space windows are captured too while the private path is open (§4.9); a suspect or
+        // refused one keeps the last-seen thumbnail above, or the icon.
+        var gate = CaptureGate.switcherList
+        gate.privatePath = WindowCapture.privatePathOpen
         WindowCapture.shared.refresh(
-            model.allItems.filter { capturePermitted($0) }.map { CaptureTarget(window: $0.catalog) },
+            model.allItems.filter { listCapturePermitted($0, gate: gate) }.map { CaptureTarget(window: $0.catalog) },
             client: .windowSwitcher,
             maxPixels: Self.listPixels,
             priority: model.selected?.id,

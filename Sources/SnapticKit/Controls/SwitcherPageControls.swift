@@ -11,6 +11,11 @@ package enum SwitcherPageControls: ControlTable {
         ControlSpec("switcher.page.accessibility", .statusAction, when: [.state(.accessibilityMissing)]),
         ControlSpec("switcher.page.screenRecording", .statusAction,
                     when: [.state(.screenRecordingMissing), .switcherFeature(.thumbnails)]),
+        // 0.5 A2b (§4.17): Try Again on a crash-guard row, one per stopped feature, and on the give-back row, which
+        // shows whatever the switcher's state.
+        ControlSpec("switcher.page.crashGuardTryAgain", .statusAction,
+                    when: [.state(.switcherCrashGuard), .perItem("windowFeature")]),
+        ControlSpec("switcher.page.giveBackTryAgain", .statusAction, when: [.state(.switcherGiveBack)]),
         ControlSpec("switcher.page.shortcut", .setting, replaces: ["l.sw.shortcut.modifier", "l.sw.shortcut.keyCode"],
                     keys: ["shortcuts.*.modifier", "shortcuts.*.keyCode"],
                     search: SearchSpec("Shortcut", keywords: ["keyboard shortcut", "hotkey", "option tab", "keys"], root: root)),

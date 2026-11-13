@@ -41,6 +41,9 @@ package enum ControlState: String, Hashable, Sendable {
     // `dockBreakerTripped`: the click-action or keys breaker; `dockCrashGuard`: a WindowFeature stopped (§4.12).
     case dockNeedsPermission, dockUnreadable, dockOtherTool, dockVoiceOver, dockCommandPause, dockWorking,
          dockBreakerTripped, dockCrashGuard
+    // 0.5 A2b (PLAN 0.5 §4.17): the Window Switcher page's stopped rows. `switcherCrashGuard`: a WindowFeature the
+    // crash guard stopped; `switcherGiveBack`: `Windows.pendingGiveBack` holds a list ("⌘⇥ not given back").
+    case switcherCrashGuard, switcherGiveBack
 }
 
 /// Availability as data (the §4.2 States rules); every condition must hold for the control to exist.

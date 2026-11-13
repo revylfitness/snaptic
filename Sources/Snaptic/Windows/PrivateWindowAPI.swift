@@ -147,6 +147,10 @@ enum PrivateWindowAPI {
         /// Probes between their start and `finishProbe`.
         var running: Set<WindowSymbolID> = []
         var captureWaiters: [@Sendable (Bool) -> Void] = []
+        /// Fixed at launch (§4.13): no private capture, the probe included.
+        var safeMode = false
+        /// `CGSHWCaptureWindowList` calls this run, the probe and its rechecks included (§4.13, M33).
+        var privateCaptures = 0
     }
 
     private static let guards = OSAllocatedUnfairLock(uncheckedState: initialGuards())
@@ -284,14 +288,18 @@ enum PrivateWindowAPI {
             successes = succeeded ? InflightMarkers.ledger.noteSuccess(id.rawValue) : 0
         }
         let now = uptime
-        let (poisoned, markVerified) = guards.withLockUnchecked { g -> (Bool, Bool) in
+        let (poisoned, lasting, markVerified) = guards.withLockUnchecked { g -> (Bool, Bool, Bool) in
             let poisoned = g.health[id]?.record(result, now: now) ?? false
             let markVerified = CrashGuard.shouldMarkVerified(id, successes: successes, major: InflightMarkers.major,
                                                              alreadyVerified: g.verified.contains(id))
             if markVerified { g.verified.insert(id) }
-            return (poisoned, markVerified)
+            return (poisoned, g.health[id]?.lasting ?? false, markVerified)
         }
-        if poisoned { EventLog.shared.record(.privateAPI, "windows.poisoned " + id.rawValue) }
+        if poisoned {
+            EventLog.shared.record(.privateAPI, "windows.poisoned " + id.rawValue)
+            // A second poisoning adds a row to the Window Switcher page (§4.17).
+            if lasting { postStopsChanged() }
+        }
         if markVerified && !InflightMarkers.build.isEmpty {
             UserDefaults.standard.set(InflightMarkers.build, forKey: CrashGuard.verifiedKey(id.rawValue))
         }
@@ -321,7 +329,7 @@ enum PrivateWindowAPI {
                 return runMarked(id) { probeSpaces(connection: connection, windowNumber: number) }
             }
         case .hwCapture:
-            withCaptureWindow()
+            withCaptureWindow { finishProbe(.hwCapture, $0) }
         case .mainConnection:
             finishProbe(id, runMarked(id) { probeConnection() })
         case .layoutType:
@@ -366,6 +374,7 @@ enum PrivateWindowAPI {
             }
         case .poisoned(let lasting)?:
             EventLog.shared.record(.privateAPI, "windows.poisoned " + id.rawValue + (lasting ? " until quit" : ""))
+            if lasting { postStopsChanged() }
         default:
             break
         }
@@ -387,8 +396,9 @@ enum PrivateWindowAPI {
         }
     }
 
-    /// PC-1: a second 64 × 64 window inside the main screen, never ordered in, drawn with the pattern.
-    private static func withCaptureWindow() {
+    /// PC-1: a second 64 × 64 window inside the main screen, never ordered in, drawn with the pattern. `done` gets
+    /// the result on the probe queue: the probe's, or a content-check recheck's (A2b).
+    private static func withCaptureWindow(_ done: @escaping @Sendable (WindowResultClass) -> Void) {
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
                 let made = ProbeWindows.makeCaptureWindow()
@@ -401,7 +411,7 @@ enum PrivateWindowAPI {
                         }
                     }
                     DispatchQueue.main.async { MainActor.assumeIsolated { ProbeWindows.closeCaptureWindow() } }
-                    finishProbe(.hwCapture, result)
+                    done(result)
                 }
             }
         }
@@ -443,10 +453,8 @@ enum PrivateWindowAPI {
     }
 
     private static func probeCapture(connection: Int32, windowNumber: UInt32, scale: Double) -> WindowResultClass {
-        var windowID = windowNumber
-        let object = SNWindowServer.capture(connection: connection, windowIDs: &windowID, count: 1,
-                                            options: captureOptions)
-        let (shape, first) = imageArrayShape(object.map { $0 as AnyObject })
+        guard let object = hwCapture(connection: connection, windowID: windowNumber) else { return .noAnswer }
+        let (shape, first) = imageArrayShape(object.value)
         let side = Double(CapturePattern.side)
         let probe = WindowCaptureProbeResult(shape: shape, sample: first.flatMap(patternSample))
         return WindowResults.captureProbe(probe, pixelLimit: WindowResults.pixelLimit(windowWidth: side,
@@ -496,13 +504,22 @@ enum PrivateWindowAPI {
 
     /// The 16 × 16 greyscale downsample the pattern check compares.
     private static func patternSample(_ image: CGImage) -> [UInt8]? {
-        let side = CapturePattern.sampleSide
+        graySample(image, side: CapturePattern.sampleSide, quality: .none)
+    }
+
+    /// The content check's 16 × 16 luma (§4.9; X-5), averaged rather than point-sampled, so a sparse page of text
+    /// isn't read as one colour. A transparent capture draws as black: flat, so suspect.
+    static func lumaSample(_ image: CGImage) -> [UInt8]? {
+        graySample(image, side: CaptureContentCheck.sampleSide, quality: .medium)
+    }
+
+    private static func graySample(_ image: CGImage, side: Int, quality: CGInterpolationQuality) -> [UInt8]? {
         var pixels = [UInt8](repeating: 0, count: side * side)
         let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
             guard let context = CGContext(data: buffer.baseAddress, width: side, height: side, bitsPerComponent: 8,
                                           bytesPerRow: side, space: CGColorSpaceCreateDeviceGray(),
                                           bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return false }
-            context.interpolationQuality = .none
+            context.interpolationQuality = quality
             context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
             return true
         }
@@ -706,19 +723,54 @@ enum PrivateWindowAPI {
         return secureInputFn() != 0 ? .on : .off
     }
 
-    // MARK: Capture (behind A2b)
+    // MARK: Capture (A2b)
 
     /// 1x pixels (STEP0-NOTES: 0x200 gives 1x on the built-in display).
     static let captureOptions: UInt32 = 0x200
 
+    /// The stopped rows and diagnostics follow this: a lasting poisoning, and Try Again (§4.17).
+    static let stopsChanged = Notification.Name("PrivateWindowAPI.stopsChanged")
+
+    /// The result of one `CGSHWCaptureWindowList` call, NULL included.
+    private struct CaptureObject: @unchecked Sendable {
+        let value: CFTypeRef?
+    }
+
+    /// Every `CGSHWCaptureWindowList` call goes through here: nil in Safe Mode (§4.13; nothing is called, the probe
+    /// included), otherwise the call's result, counted.
+    private static func hwCapture(connection: Int32, windowID: UInt32) -> CaptureObject? {
+        let allowed = guards.withLockUnchecked { g -> Bool in
+            guard !g.safeMode else { return false }
+            g.privateCaptures += 1
+            return true
+        }
+        guard allowed else { return nil }
+        var id = windowID
+        let object = SNWindowServer.capture(connection: connection, windowIDs: &id, count: 1, options: captureOptions)
+        return CaptureObject(value: object.map { $0 as AnyObject })
+    }
+
+    /// Launch step 6 (§4.13): Safe Mode is fixed for the run.
+    static func setSafeMode(_ on: Bool) {
+        guards.withLockUnchecked { $0.safeMode = on }
+    }
+
+    /// Whether the private path may be tried now, without starting a probe: not Safe Mode, and `hwCapture` not
+    /// refused by the gate, the crash guard, a kill switch or a poisoning. A due probe still runs at the capture.
+    static var capturePathOpen: Bool {
+        readKillSwitches()
+        let now = uptime
+        return guards.withLockUnchecked { g in !g.safeMode && usable(.hwCapture, g, now: now) }
+    }
+
     /// Whether private capture may run, probing first if it's due. `done` runs once, on any thread: true when the
-    /// probe passed on this build, false for the fallback.
+    /// probe passed on this build, false for the fallback. Safe Mode never starts the probe (§4.13).
     static func ensureCaptureProbed(_ done: @escaping @Sendable (Bool) -> Void) {
         readKillSwitches()
         let now = uptime
         enum Next { case ready, wait, start, fallback }
         let next: Next = guards.withLockUnchecked { g in
-            guard state(.hwCapture, g, includePoison: false) == .available else { return .fallback }
+            guard !g.safeMode, state(.hwCapture, g, includePoison: false) == .available else { return .fallback }
             if g.health[.hwCapture]?.phase == .probing {
                 g.captureWaiters.append(done)
                 return .wait
@@ -742,17 +794,80 @@ enum PrivateWindowAPI {
     /// One private capture of one window under the full contract; nil is the fallback. Its connection ignores the
     /// `spaces` kill switch, which turns off the other-Space list only.
     static func capture(_ windowID: CGWindowID, pixelLimit: Double?) -> CGImage? {
-        guard let ticket = admit(.hwCapture) else { return nil }
-        guard let connection = connection(honorKillSwitch: false) else {
+        guard !guards.withLockUnchecked({ $0.safeMode }), let ticket = admit(.hwCapture) else { return nil }
+        guard let connection = connection(honorKillSwitch: false),
+              let object = hwCapture(connection: connection, windowID: windowID) else {
             cancel(ticket)
             return nil
         }
-        var id = windowID
-        let object = SNWindowServer.capture(connection: connection, windowIDs: &id, count: 1, options: captureOptions)
-        let (shape, first) = imageArrayShape(object.map { $0 as AnyObject })
+        let (shape, first) = imageArrayShape(object.value)
         let result = WindowResults.capture(shape, pixelLimit: pixelLimit)
         finish(ticket, result)
         return result == .answer ? first : nil
+    }
+
+    /// The content check's recheck (§4.9; X2-8, X3-9): the probe-window capture runs again. `done` runs once, on
+    /// any thread. A pattern pass is `.patternPass`; an impossible result poisons the symbol (§4.12 step 5) and is
+    /// `.failed`. No answer, or a recheck that can't run now (Safe Mode, the path closed, a probe or recheck under
+    /// way), is `.noAnswer` and leaves the probe's pass as it is.
+    static func recheckCapture(_ done: @escaping @Sendable (CaptureContentCheck.Recheck) -> Void) {
+        readKillSwitches()
+        let now = uptime
+        let start = guards.withLockUnchecked { g -> Bool in
+            guard !g.safeMode, usable(.hwCapture, g, now: now), g.health[.hwCapture]?.phase == .passed,
+                  !g.running.contains(.hwCapture) else { return false }
+            g.running.insert(.hwCapture)
+            return true
+        }
+        guard start else { return done(.noAnswer) }
+        withCaptureWindow { result in
+            let now = uptime
+            let outcome = guards.withLockUnchecked { g -> WindowSymbolHealth.ProbeOutcome? in
+                g.running.remove(.hwCapture)
+                // Only a failure changes the health: a pass confirms what's there, and no answer isn't a failure.
+                return result == .impossible ? g.health[.hwCapture]?.probeFinished(result, now: now) : nil
+            }
+            if case .poisoned(let lasting)? = outcome {
+                EventLog.shared.record(.privateAPI, "windows.poisoned " + WindowSymbolID.hwCapture.rawValue
+                                       + (lasting ? " until quit" : ""))
+                if lasting { postStopsChanged() }
+            }
+            switch result {
+            case .answer: done(.patternPass)
+            case .noAnswer: done(.noAnswer)
+            case .impossible: done(.failed)
+            }
+        }
+    }
+
+    private static func postStopsChanged() {
+        DispatchQueue.main.async { NotificationCenter.default.post(name: stopsChanged, object: nil) }
+    }
+
+    // MARK: Stopped features and diagnostics (§4.17, §4.13)
+
+    /// The features the crash guard stopped on this build, and those poisoned until quit (§4.17's rows).
+    static func stoppedFeatures() -> (crashGuard: Set<WindowFeature>, poisoned: Set<WindowFeature>) {
+        guards.withLockUnchecked { g in
+            var crashGuard = Set<WindowFeature>(), poisoned = Set<WindowFeature>()
+            for id in WindowSymbolID.allCases {
+                if g.disabled.contains(id) { crashGuard.insert(id.feature) }
+                if g.health[id]?.lasting == true { poisoned.insert(id.feature) }
+            }
+            return (crashGuard, poisoned)
+        }
+    }
+
+    /// The Diagnostics report's window lines: `hwCapture: <state>` and the private-capture count (M1, M33).
+    static func diagnosticsLines() -> [String] {
+        readKillSwitches()
+        let (value, count) = guards.withLockUnchecked { g -> (String, Int) in
+            let phase = g.health[.hwCapture]?.phase ?? .needsProbe
+            let value = PrivateCaptureDiagnostics.hwCapture(safeMode: g.safeMode, state: state(.hwCapture, g),
+                                                            phase: phase)
+            return (value, g.privateCaptures)
+        }
+        return PrivateCaptureDiagnostics.lines(hwCapture: value, privateCaptures: count)
     }
 
     // MARK: Diagnostics, selftest, Try Again
@@ -785,6 +900,7 @@ enum PrivateWindowAPI {
     static func tryAgain(_ feature: WindowFeature) {
         for key in CrashGuard.tryAgainKeys(feature) { UserDefaults.standard.removeObject(forKey: key) }
         reloadGuards()
+        postStopsChanged()
     }
 }
 

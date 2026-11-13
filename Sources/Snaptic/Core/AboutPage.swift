@@ -154,7 +154,8 @@ private struct UpdatesSection: View {
                                            granted: host.permissions.granted, commandLine: commandLine,
                                            awake: awakeEnabled ? host.awake.diagnosticsLines() : nil,
                                            icons: iconsEnabled ? host.icons.diagnosticsLines() : nil,
-                                           dock: dockEnabled ? host.dock.diagnosticsLines() : nil)
+                                           dock: dockEnabled ? host.dock.diagnosticsLines() : nil,
+                                           windows: PrivateWindowAPI.diagnosticsLines())
         let events = EventLog.shared.recent(100).map { entry in
             entry.date.formatted(date: .omitted, time: .standard) + " " + entry.category.rawValue + " " + entry.message
         }

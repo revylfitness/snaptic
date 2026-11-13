@@ -70,11 +70,14 @@ private struct SwitcherPageContent: View {
                 Section {
                     DefaultsLockRow(module: .windowSwitcher)
                 }
+                stopRows
                 FeatureHighlights(SwitcherPages.highlights)
             } else if !enabled {
+                stopRows
                 FeatureHighlights(SwitcherPages.highlights)
             } else {
                 statusRows
+                stopRows
                 shortcutSection
                 windowsSection
                 PageFooterButtons(advanced: { shell.openSheet = SwitcherSheet.advanced.rawValue },
@@ -87,6 +90,54 @@ private struct SwitcherPageContent: View {
             case .advanced: SwitcherAdvancedSheet(settings: settings)
             case .shortcuts: SwitcherShortcutsSheet(settings: settings, module: module)
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: PrivateWindowAPI.stopsChanged)) { _ in stopsTick += 1 }
+    }
+
+    // MARK: Stopped window features (PLAN 0.5 §4.17, §4.12 steps 5–6; A2b)
+
+    /// Bumped when a window feature stops or is tried again, so the rows read the guards again.
+    @State private var stopsTick = 0
+
+    /// The crash guard's rows with [Try Again], second poisonings' rows, and the "⌘⇥ not given back" row. They
+    /// show whatever the switcher's state: they're about this build of macOS, not the module.
+    @ViewBuilder private var stopRows: some View {
+        let _ = stopsTick
+        let stopped = PrivateWindowAPI.stoppedFeatures()
+        let rows = WindowStopRows.switcherPage(crashGuard: stopped.crashGuard, poisoned: stopped.poisoned)
+        let pending = (UserDefaults.standard.array(forKey: CrashGuard.pendingGiveBackKey) as? [Int]) ?? []
+        let giveBack = WindowStopRows.giveBack(pending: !pending.isEmpty, comesBackAtLogout: false)
+        if !rows.isEmpty || giveBack != nil {
+            Section {
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    StatusRow(row.text, style: .warning, actions: stopActions(row))
+                }
+                if let giveBack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        StatusRow(giveBack.text, style: .warning, actions: stopActions(giveBack))
+                        if let help = giveBack.help {
+                            Text(help).font(.callout).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func stopActions(_ row: WindowStopRow) -> [StatusAction] {
+        switch row.action {
+        case .tryAgain?:
+            guard let feature = row.feature else { return [] }
+            return [StatusAction(title: L("Try Again"), control: ControlID("switcher.page.crashGuardTryAgain")) {
+                PrivateWindowAPI.tryAgain(feature)
+            }]
+        case .tryAgainGiveBack?:
+            return [StatusAction(title: L("Try Again"), control: ControlID("switcher.page.giveBackTryAgain")) {
+                SystemHotkeys.tryAgainGiveBack()
+                stopsTick += 1
+            }]
+        case nil:
+            return []
         }
     }
 

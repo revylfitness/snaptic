@@ -98,7 +98,7 @@ package enum HostReport {
     package static func sections(version: String, system: String, safeMode: Bool, modules: [Module],
                                  granted: Set<Permission>, commandLine: String,
                                  awake: [String]? = nil, icons: [String]? = nil,
-                                 dock: [String]? = nil) -> [DiagnosticsSection] {
+                                 dock: [String]? = nil, windows: [String]? = nil) -> [DiagnosticsSection] {
         var result = [
             DiagnosticsSection(title: L("Snaptic"), rows: [
                 DiagnosticsRow(L("Version"), version),
@@ -116,6 +116,8 @@ package enum HostReport {
         if let icons { result.append(DiagnosticsSection(title: L("Hidden Icons"), rows: icons.compactMap(row))) }
         // 0.5 H10: Dock Previews, after Hidden Icons.
         if let dock { result.append(DiagnosticsSection(title: L("Dock Previews"), rows: dock.compactMap(row))) }
+        // 0.5 A2b: the private window capture both window modules share (§4.12 step 4, §4.13), last.
+        if let windows { result.append(DiagnosticsSection(title: L("Windows"), rows: windows.compactMap(row))) }
         return result
     }
 

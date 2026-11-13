@@ -66,6 +66,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let unstable = LaunchStability.evaluate()
         safeMode = SafeMode.detect(argument: launch.safeMode, unstableLaunches: unstable)
         if safeMode.isActive { EventLog.shared.record(.safety, "Started in Safe Mode") }
+        // PLAN 0.5 §4.13 (A2b): no private window capture this run, the probe included.
+        PrivateWindowAPI.setSafeMode(safeMode.isActive)
         // 7. Undo unfinished display changes from a previous run (runs in Safe Mode too).
         let recovery = RevertJournal.recoverAtLaunch(safeMode: safeMode)
         if let message = recovery.message { toasts.show(message) }

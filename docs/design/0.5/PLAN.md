@@ -2295,3 +2295,14 @@ changed, and why.
 | A6b | Known tools are matched by exact bundle id only | Clean room; `KnownDockTools` is the only input |
 | A6b | In Safe Mode the kill switches aren't read, so `clickActions` reads `paused`, not `disabled` | Nothing is read in Safe Mode (§4.13) |
 | A6b | DEBUG builds register `dock status [--json]` until A9 registers the real verbs; the selftest's Safe Mode probe also checks `Pause reason` and `hwCapture` read `safeMode` | The done-when needs `dock status` before A9 |
+| A2b | A suspect capture of a window already proven plain is accepted and doesn't count; a nil or empty sample counts as suspect; the brightness sample is taken from the scaled image with medium smoothing | Plain windows don't trigger rechecks; suspect is the safe default; cheaper and steadier than the full image |
+| A2b | A pattern recheck checks only that run's windows and only after the probe passed: a failure clears the plain list, a pass marks those windows plain and leaves health alone, no answer changes nothing | A recheck never overlaps the probe and never blames other windows |
+| A2b | Gone windows are pruned from the plain list at the start of a private batch; a reused window number proves itself again | The list can't grow without bound or vouch for a different window |
+| A2b | One `PrivateWindowAPI.hwCapture()` choke point for every `CGSHWCaptureWindowList` call, the probe included; Safe Mode is a flag set from `AppDelegate`, and the capture counter includes the probe and rechecks | §4.13: one place to refuse, one count to read |
+| A2b | Private captures run one at a time in a lane both clients share (probe and rechecks inside it), each also taking one of the 4 SCK slots and counting toward 8 per second; every gate is checked again after the lane and slot are taken | No two private calls overlap, and the pacing stays one budget |
+| A2b | Private captures are taken at 1x and scaled to the client's pixel limit, using the window server's bounds and the largest screen scale | Nothing is upscaled on Retina |
+| A2b | The switcher's full-size preview stays on ScreenCaptureKit; `captureForPreview` takes the private path only for minimized and other-Space windows and then needs `.thumbnails` | The preview is drawn where the window is; §4.9's lease rule holds for every private capture |
+| A2b | The switcher page's stopped rows (crash guard, give-back) show in the blocked, off and on states and refresh on `stopsChanged`; the give-back text says ⌘⇥ doesn't come back at logout | S0-5b isn't settled |
+| A2b | About › Diagnostics gains a "Windows" section after Dock Previews, always shown | The private path is shared by both window modules |
+| A2b | ScreenCaptureKit captures use the backing scale of the display the window's centre is on, not the main display's (merge fix) | M13: mixed Retina and non-Retina displays |
+| A2b | Gap: the raise calls aren't skipped in Safe Mode | `bringToFront` is outside A2b's files; checked at R |

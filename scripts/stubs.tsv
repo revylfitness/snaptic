@@ -692,3 +692,5 @@ Sources/SnapticKit/WindowSymbolContract.swift	lead	L	-	-
 Sources/SnapticKit/CrashGuard.swift	lead	L	-	-
 Tests/SnapticKitTests/WindowSymbolContractTests.swift	lead	L	-	-
 Tests/SnapticKitTests/CrashGuardTests.swift	lead	L	-	-
+Sources/SnapticKit/CaptureContentCheck.swift	lead	L	-	-
+Tests/SnapticKitTests/CaptureContentCheckTests.swift	lead	L	-	-
