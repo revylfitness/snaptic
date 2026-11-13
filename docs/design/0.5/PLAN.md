@@ -1,6 +1,6 @@
 # Snaptic 0.5 plan: Dock Previews
 
-> **Status: Final — reviewed in 3 rounds (r1: 103 findings, r2: 97, r3: 33); awaiting owner approval.**
+> **Status: Approved 2026-11-13 — reviewed in 3 rounds (r1: 103 findings, r2: 97, r3: 33); in implementation (§R4).**
 >
 > History:
 > - `PLAN-draft.md` is r1, kept unchanged.
@@ -2169,7 +2169,16 @@ Same legend as §R1. No r3 row is P or R. No finding reopens Q1–Q7. Changes ma
 | P3-10 | A | §R2 X2-7 row corrected to HIServices, matching §4.12's table |
 | P3-11 | A | §6.1 K4: retention is `ThumbnailIndexTests` only |
 
-## R4. Implementation changes (empty until work starts)
+## R4. Implementation changes
 
 Each change made during implementation, and each S0 "If it fails" answer taken, gets one row here: the item, what
 changed, and why.
+
+| Item | Change | Why |
+|---|---|---|
+| S0-4, PC-1 | §4.12 step 4: the capture probe uses a second 64 × 64 window that is never ordered in, framed inside the main screen's visible frame, `sharingType = .readOnly`, drawn with the same pattern, and checked against the pattern. The Spaces and AX probes keep the ordered-in, off-screen `.none` window. On 27.2 the probe passes with the pattern check, so §4.9's shape-only branch isn't reached there | On 27.2 a window wholly off screen captures NULL with every option, so the planned probe would never answer and private capture would never turn on. S0-5a (owner) confirms the new window never shows in Mission Control |
+| S0-4, PC-2 | §4.12 step 5: NULL for a window whose frame is on no display joins *no answer*. Cards size from the captured image, never from the window's aspect ratio | A partly off-screen window captures only its visible part (32 × 64 for a 64 × 64 window half off screen) |
+| S0-1 | §4.8 / K2: a Dock item maps to a running app only when `AXIsApplicationRunning` = 1, then by URL as planned. The Dock's hit area is the union of item frames, not the `AXList` frame | Two tiles that weren't running matched a running app's URL; item frames reach 5 pt below the list frame |
+| S0-15 | K1: `KnownDockTools` ships bundle ids only (DockDoor, DockDoor Pro, HyperDock, Dock Mate, DockView 2). Team ids are added at R from `codesign -dv` | No team id could be read without downloading and inspecting the apps |
+| S0-26 | The row's "If it fails" answer is taken for `kAXWindowMiniaturizedNotification` and `kAXWindowDeminiaturizedNotification` only: while the panel is up, the 1 s tick re-reads the hovered app. Created, title changed and destroyed pass. PC-3 (count from the end of the animation) stays open for the owner after the other-app leg | Those two arrive when the minimize animation ends, about 0.55 s after the call |
+| S0 | Every macOS 15 leg is an owner check before R, as §5 allows. The disruptive rows and legs are carried to an owner session (`STEP0-NOTES.md`, Carried forward and Owner session). Items gated by a carried row start, and the row must pass before that item's done-when is claimed | No macOS 15 VM exists on the build host, and the owner was using the Mac |
