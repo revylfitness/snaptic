@@ -423,6 +423,13 @@ final class DockControlsTests: XCTestCase {
         #"Dock"#,
         #" (⌘\(keyIndex))"#,
         #"No Snaptic icon is shown. Open Snaptic again to come back to Settings."#,
+        // §4.20: onboarding and the New card (A8). The onboarding row's summary is the page summary, listed above.
+        #"A window switcher, display controls, Keep Awake, hidden menu bar icons, and Dock previews. "#
+            + #"Turn on only what you want; everything else stays off."#,
+        #"New: Dock Previews"#,
+        #"See an app’s windows when you point at it in the Dock, and click one to bring it forward."#,
+        #"Turn On Dock Previews"#,
+        #"Not Now"#,
     ]
 
     /// Every listed string is a whole literal somewhere in the app or Kit sources, so a reworded string fails here

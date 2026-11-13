@@ -184,7 +184,8 @@ import SnapticKit
 
     /// The one-time migrations, in the R5-2 order: ledger → M3 (modules) → M4, M5, M10 (displays) → Awake
     /// inserted off for upgraders (§2.13, once: marker `awakeUpgrade.v1`) → 0.3.1 welcome → "New: Hidden Icons"
-    /// for upgraders (0.4 H10, once: marker `iconsCard.v1`) → M1 → forced saves: modules, displays, Awake, Hidden
+    /// for upgraders (0.4 H10, once: marker `iconsCard.v1`) → "New: Dock Previews" for upgraders (0.5 §4.20, once:
+    /// marker `dockCard.v1`) → M1 → forced saves: modules, displays, Awake, Hidden
     /// Icons, Dock Previews, then the ledger last (the commit point; a crash before it re-runs migrations that are
     /// idempotent over what that run wrote). Returns M1's result when it ran in this launch.
     private static func runMigrations(modules: ConfigStore<ModulesConfig>, modulesExisted: Bool, v031Upgrader: Bool,
@@ -201,6 +202,8 @@ import SnapticKit
         marks.recordV031Welcome(upgrader: v031Upgrader, canAsk: UpdaterController.gate == .ready)
         // 0.4 H10: "New: Hidden Icons" for upgraders with it off, once (marker `iconsCard.v1`).
         modules.value = modules.value.insertingIconsCard(upgrader: v031Upgrader, ledger: &marks)
+        // 0.5 §4.20 (A8): "New: Dock Previews" for upgraders with it off, once (marker `dockCard.v1`).
+        modules.value = modules.value.insertingDockCard(upgrader: v031Upgrader, ledger: &marks)
         // M1 (§4.6, R5-12): G's pure migration over the raw 0.2 JSON; the marker is recorded whatever it found.
         var m1: AwakeMigrationResult?
         if !marks.has(.fromDisplays) {

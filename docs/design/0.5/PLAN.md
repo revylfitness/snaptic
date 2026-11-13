@@ -2335,3 +2335,5 @@ changed, and why.
 | A7 | The keys lock row under the toggle is unanchored; the same key's Diagnostics row keeps the anchor | One anchor per key |
 | A7 | Menu Bar help for Dock shows only while it's on Don't Show | Matches `MenuPlacement.help(.hidden, .dockPreviews)` |
 | A7 | Gap: §4.10's "`--selftest-controls` checks both on values" is left to A9's `dockCases` | It belongs with the CLI self-test cases |
+| A8 | Most of A8 was already in place: `dockCard.v1`, `insertingDockCard` and its tests (A6a/K1), the card's title, text and button (A1a/B1a), and the onboarding summary (A7). A8 wires `insertingDockCard` into `runMigrations` after the icons card, adds `host.dock` to onboarding's `needed` loop, and changes the welcome text | Only the wiring and the one string were left |
+| A8 | `IconsControlsTests`' welcome entry now holds the 0.5 text | The 0.4 string no longer exists, so the Icons canonical test would fail (H7; P3-9) |
