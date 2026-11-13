@@ -186,8 +186,6 @@ fileprivate extension DockRect {
 final class WindowManager {
     static let shared = WindowManager()
 
-    /// Seconds Snaptic waits for any app to answer an Accessibility request.
-    nonisolated static let axTimeout: Float = 0.15
     /// Limits that keep one misbehaving app from slowing the switcher.
     nonisolated static let maxWindowsPerApp = 100
     nonisolated static let maxTitleLength = 512
@@ -198,48 +196,41 @@ final class WindowManager {
     private var mru: [CGWindowID] = []
     private var nextSyntheticID = WindowItem.firstSyntheticID
     fileprivate var lastFocused: (id: CGWindowID, pid: pid_t, at: Date)?
-    private let focusTracker = FocusTracker()
 
     // MARK: Most-recently-used tracking
 
     private(set) var isStarted = false
 
-    /// Idempotent. Seeds the most-recently-used order and starts focus tracking.
+    /// Idempotent. Seeds the most-recently-used order. `WindowServices` calls it on the first `.recency` lease, then
+    /// starts `FocusTracker`, which reports through `focusChanged(pid:windowID:)`.
     func start() {
         guard !isStarted else { return }
         isStarted = true
         // Seed with the current stacking order, front first.
         mru = serverSnapshot().zOrder.sorted { $0.value < $1.value }.map { $0.key }
-        focusTracker.onFocus = { pid, id in
-            let manager = WindowManager.shared
-            // Only the app you're actually using counts; background apps
-            // shuffling their own windows must not reorder the switcher.
-            guard pid == NSWorkspace.shared.frontmostApplication?.processIdentifier else { return }
-            if let recent = manager.recentFocus {
-                // Right after Snaptic switched, the app may still report its old
-                // window for a moment; don't let that jump ahead of the target.
-                if recent.pid == pid, recent.id != id { return }
-                if recent.pid != pid { manager.lastFocused = nil }   // user moved on
-            }
-            manager.touch(id)
-        }
-        focusTracker.start()
     }
 
-    /// Idempotent. Stops focus tracking (every AX observer is removed) and forgets the
-    /// window order.
+    /// Idempotent. Forgets the window order. `WindowServices` calls it on the last `.recency` release, after
+    /// `FocusTracker` has stopped (every AX observer is removed).
     func stop() {
         guard isStarted else { return }
         isStarted = false
-        focusTracker.stop()
         mru = []
         lastFocused = nil
     }
 
-    /// Re-registers focus tracking for every app (after Accessibility is granted).
-    func refreshFocusTracking() {
-        guard isStarted else { return }
-        focusTracker.observeAll()
+    /// `FocusTracker` saw an app's focused window change (on the main thread).
+    func focusChanged(pid: pid_t, windowID id: CGWindowID) {
+        // Only the app you're actually using counts; background apps
+        // shuffling their own windows must not reorder the switcher.
+        guard pid == NSWorkspace.shared.frontmostApplication?.processIdentifier else { return }
+        if let recent = recentFocus {
+            // Right after Snaptic switched, the app may still report its old
+            // window for a moment; don't let that jump ahead of the target.
+            if recent.pid == pid, recent.id != id { return }
+            if recent.pid != pid { lastFocused = nil }   // user moved on
+        }
+        touch(id)
     }
 
     func touch(_ id: CGWindowID) {
@@ -379,11 +370,11 @@ final class WindowManager {
         func outOfTime() -> Bool { DispatchTime.now().uptimeNanoseconds > appDeadline }
 
         let appElement = AXUIElementCreateApplication(app.pid)
-        AXUIElementSetMessagingTimeout(appElement, axTimeout)
+        AXUIElementSetMessagingTimeout(appElement, WindowServices.axTimeout)
         var result: [RawWindow] = []
         for window in AX.elements(appElement, kAXWindowsAttribute).prefix(maxWindowsPerApp) {
             if outOfTime() { break }
-            AXUIElementSetMessagingTimeout(window, axTimeout)
+            AXUIElementSetMessagingTimeout(window, WindowServices.axTimeout)
             // The subrole and size parts of the shared inclusion rule, checked before the title is read.
             let kind = CatalogWindowKind(subrole: AX.string(window, kAXSubroleAttribute))
             guard WindowCatalogRules.kindLeftOut(kind, hasTitle: nil, options: .switcher) == nil,
@@ -414,7 +405,7 @@ final class WindowManager {
 
     nonisolated private static func focusedWindowID(pid: pid_t) -> CGWindowID? {
         let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, axTimeout)
+        AXUIElementSetMessagingTimeout(app, WindowServices.axTimeout)
         guard let window = AX.element(app, kAXFocusedWindowAttribute) else { return nil }
         return PrivateWindowAPI.windowID(of: window)
     }
@@ -559,10 +550,10 @@ final class WindowManager {
 
     nonisolated private static func raise(windowID: CGWindowID, pid: pid_t) {
         let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, axTimeout)
+        AXUIElementSetMessagingTimeout(app, WindowServices.axTimeout)
         for window in AX.elements(app, kAXWindowsAttribute).prefix(maxWindowsPerApp)
         where PrivateWindowAPI.windowID(of: window) == windowID {
-            AXUIElementSetMessagingTimeout(window, axTimeout)
+            AXUIElementSetMessagingTimeout(window, WindowServices.axTimeout)
             AX.setBool(window, kAXMainAttribute, true)
             AX.perform(window, kAXRaiseAction)
             return
@@ -574,7 +565,7 @@ final class WindowManager {
         let ref = AXRef(element: element)
         Task.detached(priority: .userInitiated) {
             guard let button = AX.element(ref.element, kAXCloseButtonAttribute) else { return }
-            AXUIElementSetMessagingTimeout(button, WindowManager.axTimeout)
+            AXUIElementSetMessagingTimeout(button, WindowServices.axTimeout)
             AX.perform(button, kAXPressAction)
         }
     }
@@ -604,217 +595,5 @@ final class WindowManager {
     func toggleHidden(_ item: WindowItem) {
         guard let app = NSRunningApplication(processIdentifier: item.pid) else { return }
         if app.isHidden { app.unhide() } else { app.hide() }
-    }
-}
-
-// MARK: - Window-level focus tracking
-
-private let focusChangedCallback: AXObserverCallback = { _, element, _, refcon in
-    guard let refcon, let id = PrivateWindowAPI.windowID(of: element) else { return }
-    var pid: pid_t = 0
-    guard AXUIElementGetPid(element, &pid) == .success else { return }
-    // Runs on the observer thread. The box is retained until the session has removed
-    // every observer, and its target is weak (a weak load is atomic).
-    Unmanaged<CallbackTarget<FocusSession>>.fromOpaque(refcon).takeUnretainedValue().target?
-        .deliver(pid: pid, windowID: id)
-}
-
-/// Watches every app for "focused window changed", so the switcher's order
-/// reflects the windows you actually used, not just which app was in front.
-/// Restartable: each start() builds a new session (thread, observers, refcon box);
-/// stop() removes every observer and ends the thread.
-@MainActor final class FocusTracker {
-    /// Delivered on the main thread. Set before `start()`.
-    var onFocus: (@MainActor (pid_t, CGWindowID) -> Void)?
-
-    private var session: FocusSession?
-
-    var isRunning: Bool { session != nil }
-
-    func start() {
-        guard session == nil else { return }
-        let session = FocusSession(onFocus: onFocus)
-        session.start()
-        self.session = session
-    }
-
-    func stop() {
-        session?.stop()
-        session = nil
-    }
-
-    /// (Re)registers every running app. Harmless for apps already observed.
-    func observeAll() {
-        session?.observeAll()
-    }
-}
-
-private final class FocusSession: @unchecked Sendable {
-    private let onFocus: (@MainActor (pid_t, CGWindowID) -> Void)?
-    private let thread = ObserverThread()
-    private var observers: [pid_t: (observer: AXObserver, app: AXUIElement)] = [:]   // only touched on `thread`
-    private var notificationTokens: [NSObjectProtocol] = []                         // main only
-    private var box: Unmanaged<CallbackTarget<FocusSession>>?                        // set on main, released on `thread`
-    private let ownPID = ProcessInfo.processInfo.processIdentifier
-
-    private let stateLock = NSLock()
-    private var stopped = false
-    private var pending: (pid: pid_t, windowID: CGWindowID)?
-
-    init(onFocus: (@MainActor (pid_t, CGWindowID) -> Void)?) {
-        self.onFocus = onFocus
-    }
-
-    private var isStopped: Bool {
-        stateLock.lock(); defer { stateLock.unlock() }
-        return stopped
-    }
-
-    @MainActor func start() {
-        box = Unmanaged.passRetained(CallbackTarget(self))
-        thread.name = "Snaptic focus tracking"
-        thread.qualityOfService = .userInitiated
-        thread.start()
-        thread.waitUntilReady()
-
-        let center = NSWorkspace.shared.notificationCenter
-        notificationTokens.append(center.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
-        ) { [weak self] note in
-            guard let self, let pid = Self.pid(from: note) else { return }
-            self.onThread {
-                self.observe(pid, attempt: 0)
-                self.reportFocusedWindow(of: pid)
-            }
-        })
-        notificationTokens.append(center.addObserver(
-            forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main
-        ) { [weak self] note in
-            guard let self, let pid = Self.pid(from: note) else { return }
-            self.onThread { self.observe(pid, attempt: 0) }
-        })
-        notificationTokens.append(center.addObserver(
-            forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main
-        ) { [weak self] note in
-            guard let self, let pid = Self.pid(from: note) else { return }
-            self.onThread { self.stopObserving(pid) }
-        })
-
-        observeAll()
-    }
-
-    /// Removes every observer, releases the refcon box and ends the thread.
-    @MainActor func stop() {
-        stateLock.lock()
-        let already = stopped
-        stopped = true
-        pending = nil
-        stateLock.unlock()
-        guard !already else { return }
-
-        let center = NSWorkspace.shared.notificationCenter
-        for token in notificationTokens { center.removeObserver(token) }
-        notificationTokens = []
-
-        // The box stays set: blocks still queued check `stopped` before using it, and the
-        // block below (queued last) releases it.
-        let box = self.box
-        thread.cancel()
-        thread.perform {
-            for pid in Array(self.observers.keys) { self.stopObserving(pid) }
-            self.observers = [:]
-            box?.release()
-            CFRunLoopStop(CFRunLoopGetCurrent())
-        }
-    }
-
-    @MainActor func observeAll() {
-        let pids = NSWorkspace.shared.runningApplications
-            .filter { $0.activationPolicy == .regular }
-            .map { $0.processIdentifier }
-        onThread {
-            // Drop observers of processes that are gone (NSRunningApplication.isTerminated
-            // can lag by seconds on macOS 27, leaking observers under churn).
-            for pid in Array(self.observers.keys) where kill(pid, 0) != 0 && errno == ESRCH {
-                self.stopObserving(pid)
-            }
-            for pid in pids { self.observe(pid, attempt: 0) }
-        }
-    }
-
-    private func onThread(_ block: @escaping () -> Void) {
-        guard !isStopped else { return }
-        thread.perform { [weak self] in
-            guard let self, !self.isStopped else { return }
-            block()
-        }
-    }
-
-    private static func pid(from note: Notification) -> pid_t? {
-        (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier
-    }
-
-    /// Coalesced: a flood of focus notifications (e.g. from a hostile app)
-    /// costs the main thread at most one hop at a time, with the latest value.
-    fileprivate func deliver(pid: pid_t, windowID: CGWindowID) {
-        stateLock.lock()
-        guard !stopped else { stateLock.unlock(); return }
-        let alreadyScheduled = pending != nil
-        pending = (pid, windowID)
-        stateLock.unlock()
-        guard !alreadyScheduled else { return }
-
-        let handler = onFocus
-        Task { @MainActor in
-            let latest = self.takePending()
-            if let latest { handler?(latest.pid, latest.windowID) }
-        }
-    }
-
-    /// Synchronous on purpose: locks are never held across an `await`.
-    private func takePending() -> (pid: pid_t, windowID: CGWindowID)? {
-        stateLock.lock()
-        defer { stateLock.unlock() }
-        guard !stopped else { return nil }
-        let latest = pending
-        pending = nil
-        return latest
-    }
-
-    // Runs on `thread`.
-    private func observe(_ pid: pid_t, attempt: Int) {
-        guard observers[pid] == nil, pid != ownPID, let box else { return }
-        var created: AXObserver?
-        guard AXObserverCreate(pid, focusChangedCallback, &created) == .success, let observer = created else { return }
-        let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, WindowManager.axTimeout)
-        guard AXObserverAddNotification(observer, app, kAXFocusedWindowChangedNotification as CFString,
-                                        box.toOpaque()) == .success else {
-            // Apps that just launched often aren't ready yet; try again shortly.
-            let delays: [Double] = [0.3, 1.0, 3.0]
-            guard attempt < delays.count else { return }
-            DispatchQueue.global().asyncAfter(deadline: .now() + delays[attempt]) { [weak self] in
-                self?.onThread { self?.observe(pid, attempt: attempt + 1) }
-            }
-            return
-        }
-        CFRunLoopAddSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(observer), .defaultMode)
-        observers[pid] = (observer, app)
-    }
-
-    // Runs on `thread`.
-    private func stopObserving(_ pid: pid_t) {
-        guard let entry = observers.removeValue(forKey: pid) else { return }
-        AXObserverRemoveNotification(entry.observer, entry.app, kAXFocusedWindowChangedNotification as CFString)
-        CFRunLoopRemoveSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(entry.observer), .defaultMode)
-    }
-
-    // Runs on `thread`.
-    private func reportFocusedWindow(of pid: pid_t) {
-        let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, WindowManager.axTimeout)
-        guard let window = AX.element(app, kAXFocusedWindowAttribute),
-              let id = PrivateWindowAPI.windowID(of: window) else { return }
-        deliver(pid: pid, windowID: id)
     }
 }

@@ -3,9 +3,9 @@ import ApplicationServices
 import SnapticKit
 
 /// The Window Switcher as a module (PLAN §2.2, §3.3). Wraps SwitcherController, HotkeyTap,
-/// WindowManager, ThumbnailStore and AppSettings so start/stop are idempotent and stop
-/// reverts everything: the tap is invalidated, ⌘⇥ is given back, focus observers are
-/// removed, thumbnails are purged and every timer and observer goes away.
+/// its `WindowServices` lease (0.5 §2.3) and AppSettings so start/stop are idempotent and stop
+/// reverts everything: the tap is invalidated, ⌘⇥ is given back, the lease is released (focus
+/// observers removed, thumbnails purged) and every timer and observer goes away.
 @MainActor final class WindowSwitcherModule: SnapticModule {
     typealias Controls = WindowSwitcherModuleControls
     let id: ModuleID = .windowSwitcher
@@ -24,8 +24,7 @@ import SnapticKit
     /// Why the gather shortcut couldn't be registered (shown on the Shortcuts page).
     private(set) var gatherShortcutProblem: String?
     private var secureInputTimer: Timer?
-    private var privacyTokens: [NSObjectProtocol] = []
-    private var distributedTokens: [NSObjectProtocol] = []
+    private var lease: WindowLease?
     private var lastConfig = Config()
 
     init() {}
@@ -48,8 +47,6 @@ import SnapticKit
         lifetime = life
         lastConfig = settings.config
 
-        // A slow or frozen app must never stall Snaptic for long.
-        AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), WindowManager.axTimeout)
         gatherer = WindowGatherer(permissions: context.permissions, toasts: context.toasts)
 
         controller.onVisibilityChange = { [weak context] visible in context?.hostSignals.switcherVisible = visible }
@@ -62,8 +59,11 @@ import SnapticKit
         self.tap = tap
 
         settings.onChange = { [weak self] config in self?.configChanged(config) }
-        WindowManager.shared.start()
-        if lastConfig.isOn(.thumbnails) { observePrivacyEvents() }
+        // The AX messaging timeout, focus tracking and the purge observers (0.5 §2.3, H2). A purge trigger closes the
+        // switcher before the store is purged.
+        lease = WindowServices.shared.acquire(id, needs: Self.windowNeeds(lastConfig)) { [weak self] in
+            self?.controller.cancel()
+        }
 
         context.permissions.observe(lifetime: life) { [weak self] permission, granted in
             guard let self, self.context != nil else { return }
@@ -80,7 +80,6 @@ import SnapticKit
         guard let context else { return }
         secureInputTimer?.invalidate()
         secureInputTimer = nil
-        removePrivacyObservers()
         settings.onChange = nil
         tap?.stop()
         tap = nil
@@ -88,8 +87,8 @@ import SnapticKit
         controller.onVisibilityChange = nil
         context.hostSignals.switcherVisible = false
         SystemHotkeys.restore()
-        WindowManager.shared.stop()
-        ThumbnailStore.shared.purge()
+        if let lease { WindowServices.shared.release(lease) }   // stops focus tracking, purges the store
+        lease = nil
         gatherLifetime?.end()
         gatherLifetime = nil
         lifetime?.end()
@@ -196,7 +195,7 @@ import SnapticKit
         if tap.start() {
             state = .running
             applySystemHotkeys()
-            WindowManager.shared.refreshFocusTracking()
+            WindowServices.shared.refreshRecency()
         } else {
             // Without Accessibility only PermissionFlow runs (PLAN §2.2).
             state = .degraded(L("Needs ") + PermissionFlow.paneName(.accessibility) + L(" access"))
@@ -245,14 +244,9 @@ import SnapticKit
         let old = lastConfig
         lastConfig = config
         applySystemHotkeys()
-        if old.isOn(.thumbnails) != config.isOn(.thumbnails) {
-            if config.isOn(.thumbnails) {
-                observePrivacyEvents()
-            } else {
-                removePrivacyObservers()
-                ThumbnailStore.shared.purge()
-            }
-        }
+        // Turning thumbnails off drops `.thumbnails`, which purges at once (0.5 §2.3).
+        let needs = Self.windowNeeds(config)
+        if needs != Self.windowNeeds(old), let lease { WindowServices.shared.update(lease, needs: needs) }
         if config.needsScreenCapture && !old.needsScreenCapture, let lifetime,
            context.permissions.state(.screenRecording) != .granted {
             context.permissions.request(.screenRecording, reason: L("Thumbnails and previews of your windows."),
@@ -294,35 +288,13 @@ import SnapticKit
         }
     }
 
-    // MARK: Privacy
+    // MARK: Window services
 
-    /// Forget every captured thumbnail when the Mac locks, sleeps or switches user.
-    private func observePrivacyEvents() {
-        guard privacyTokens.isEmpty else { return }
-        let workspace = NSWorkspace.shared.notificationCenter
-        for name in [NSWorkspace.screensDidSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
-            privacyTokens.append(workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.controller.cancel()
-                    ThumbnailStore.shared.purge()
-                }
-            })
-        }
-        distributedTokens.append(DistributedNotificationCenter.default().addObserver(
-            forName: NSNotification.Name("com.apple.screenIsLocked"), object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.controller.cancel()
-                ThumbnailStore.shared.purge()
-            }
-        })
-    }
-
-    private func removePrivacyObservers() {
-        let workspace = NSWorkspace.shared.notificationCenter
-        for token in privacyTokens { workspace.removeObserver(token) }
-        privacyTokens = []
-        for token in distributedTokens { DistributedNotificationCenter.default().removeObserver(token) }
-        distributedTokens = []
+    /// The switcher's lease (0.5 §2.3): `.recency` always, `.thumbnails` and `.otherSpaces` as its settings say.
+    static func windowNeeds(_ config: Config) -> WindowNeeds {
+        var needs: WindowNeeds = [.recency]
+        if config.isOn(.thumbnails) { needs.insert(.thumbnails) }
+        if config.isOn(.otherSpaces) { needs.insert(.otherSpaces) }
+        return needs
     }
 }

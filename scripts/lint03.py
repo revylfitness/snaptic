@@ -1468,7 +1468,7 @@ RULE2_TOP = re.compile(r"^(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|package|interna
                        r"(?:class|struct|enum|extension|actor)\s+([\w.]+)", re.M)
 # Types whose observers deliberately touch no main-actor state (path, top-level type): reason.
 RULE2_EXEMPT = {
-    ("Sources/Snaptic/Windows/WindowManager.swift", "FocusSession"):
+    ("Sources/Snaptic/Windows/WindowServices.swift", "FocusSession"):
         "@unchecked Sendable; its workspace observers only hop to the session's own AX thread",
 }
 

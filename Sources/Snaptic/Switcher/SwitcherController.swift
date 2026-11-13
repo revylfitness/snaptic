@@ -320,8 +320,8 @@ final class SwitcherController {
         var item = item
         switch WindowCatalogRules.privacy(bundleID: item.bundleID, hasTitle: !item.title.isEmpty,
                                           hasPrivateMarker: item.hasPrivateMarker, windowless: item.isWindowless,
-                                          protect: config.protectPrivateWindows,
-                                          protectedApps: config.privateBundleIDs) {
+                                          protect: WindowServices.shared.protectPrivateWindows,
+                                          protectedApps: WindowServices.shared.protectedApps) {
         case .none:
             break
         case .protectedApp:
@@ -523,9 +523,7 @@ final class SwitcherController {
         WindowCatalogRules.capturePath(item.catalog, gate: .switcherList) == .screenCaptureKit
     }
 
-    private var blockedBundleIDs: [String] {
-        config.protectPrivateWindows ? config.privateBundleIDs : []
-    }
+    private var blockedBundleIDs: [String] { WindowServices.shared.captureBlockedBundleIDs }
 
     private func updatePreview() {
         previewTask?.cancel()

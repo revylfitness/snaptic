@@ -69,6 +69,10 @@ enum SelfTestLaunch {
         // 0.4 A1: building the modules creates no Hidden Icons item; only start() does.
         report.append("selftest-launch: icons items \(IconsItems.liveCount)")
         if IconsItems.liveCount != 0 { problems.append("IconsModule created \(IconsItems.liveCount) status items before start()") }
+        // 0.5 A1a: building the modules takes no WindowServices lease; only start() does (A6a folds this into `dock live`).
+        let leases = WindowServices.shared.liveLeases
+        report.append("selftest-launch: windows leases \(leases)")
+        if leases != 0 { problems.append("a module held \(leases) WindowServices leases before start()") }
 
         // 0.4 H8: the Native shim's encodings, without activating an assertion or touching Accessibility.
         let shim = PrivateMenuBarAPI.verify()

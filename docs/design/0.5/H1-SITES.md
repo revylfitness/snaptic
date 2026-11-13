@@ -215,49 +215,60 @@ New: `ConfigDockTests` (25) and `KnownDockToolsTests` (5).
 
 ## Shared window services (D2-14)
 
-`WindowServices` arrives at A1a (§2.3) and `ThumbnailIndex` at A2a. Today every client below is the Window
-Switcher. Dock Previews has no call sites until A1a / A2a, and no test calls either.
+`WindowServices` arrived at A1a (§2.3) in `Windows/WindowServices.swift`; `ThumbnailIndex` arrives at A1b / A2a.
+Today every client below is the Window Switcher. Dock Previews has no call sites until A6a, and no test calls
+either.
 
 B1a moved `ThumbnailStore.swift` and `WindowManager.swift` from `Switcher/` to `Windows/` and extracted
-`ObserverThread` into `Windows/ObserverThread.swift`. The paths below are the new ones; line numbers stay at the
-base.
+`ObserverThread` into `Windows/ObserverThread.swift`. The line numbers below are A1a's.
 
-**`ThumbnailStore`**
+**`WindowServices`** (client: Window Switcher)
+
+| Call site | Call |
+|---|---|
+| `Switcher/WindowSwitcherModule.swift:64` | `acquire(.windowSwitcher, needs: windowNeeds(config))` in `start()`; `onPurge` cancels the switcher |
+| `Switcher/WindowSwitcherModule.swift:90` | `release(lease)` in `stop()` (stops focus tracking, purges the store, removes the purge observers) |
+| `Switcher/WindowSwitcherModule.swift:198` | `refreshRecency()` once the tap starts (was `WindowManager.refreshFocusTracking()`) |
+| `Switcher/WindowSwitcherModule.swift:249` | `update(lease, needs:)` when Window thumbnails or other Spaces change; dropping `.thumbnails` purges |
+| `Switcher/WindowGatherer.swift:86, 89` | `WindowServices.axTimeout` (Gather Windows) |
+| `Core/SelfTestLaunch.swift:73` | `liveLeases` (`selftest-launch: windows leases 0`; A6a folds it into `dock live`) |
+
+**Moved into `WindowServices` at A1a**
+
+| Was | Now |
+|---|---|
+| `Switcher/WindowSwitcherModule.swift:52` AX messaging timeout | the first lease (`.startServices`) |
+| `Switcher/WindowSwitcherModule.swift:65, 91` `WindowManager.shared.start()`, `.stop()` | the first / last `.recency` (`WindowServices.swift:86, 91`) |
+| `Switcher/WindowSwitcherModule.swift:297–327` `observePrivacyEvents` / `removePrivacyObservers` | `WindowServices.swift:117–143`, the purge observers (same three notifications) |
+| `Windows/WindowManager.swift:190` `axTimeout` | `WindowServices.axTimeout` |
+| `Windows/WindowManager.swift:201, 240, 610–820` `focusTracker`, `refreshFocusTracking()`, `FocusTracker`, `FocusSession`, the AX callback | `WindowServices.swift:146–377` |
+| `Windows/WindowManager.swift:213–224` the `onFocus` closure | `WindowManager.focusChanged(pid:windowID:)` (`WindowManager.swift:223`) |
+
+`Windows/ObserverThread.swift` is unchanged; `FocusSession` runs on its own instance.
+
+**`WindowManager`**: `WindowServices` owns its recency order (started and stopped on the `.recency` edge). The
+switcher's per-call uses stay on `WindowManager.shared`: `Switcher/SwitcherController.swift:218`
+(`effectiveFrontPID`), `:232, 669` (`loadWindows`), `:383, 635` (`focus`), `:617, 626, 637, 647, 651` (`close`,
+`toggleMinimized`, `toggleFullscreen`, `quitApp`, `toggleHidden`).
+
+**`ThumbnailStore`** (client: Window Switcher; A1b passes a client at each site)
 
 | Call site | Call |
 |---|---|
 | `Windows/ThumbnailStore.swift:18–19` | definition and `shared` |
-| `Switcher/WindowSwitcherModule.swift:6` | doc comment |
-| `Switcher/WindowSwitcherModule.swift:92` | `purge()` in `stop()` |
-| `Switcher/WindowSwitcherModule.swift:253` | `purge()` when thumbnails turn off |
-| `Switcher/WindowSwitcherModule.swift:307` | `purge()` on `screensDidSleep` / `sessionDidResignActive` |
-| `Switcher/WindowSwitcherModule.swift:316` | `purge()` on `com.apple.screenIsLocked` |
+| `Windows/WindowServices.swift:97` | `purge()` on `.purge(client)` / `.purgeAll` (the switcher's `stop()`, thumbnails turned off) |
+| `Windows/WindowServices.swift:142` | `purge()` on `screensDidSleep`, `sessionDidResignActive`, `com.apple.screenIsLocked` |
 | `Switcher/SwitcherController.swift:255` | `prune(keeping:)` |
-| `Switcher/SwitcherController.swift:432` | `invalidate()` |
-| `Switcher/SwitcherController.swift:567` | `captureForPreview(_:blockedBundleIDs:maxPixels: 2400)` |
-| `Switcher/SwitcherController.swift:579` | `cached(_:)` |
-| `Switcher/SwitcherController.swift:581` | `refresh(_:blockedBundleIDs:maxPixels: 640, priority:)` |
+| `Switcher/SwitcherController.swift:418` | `invalidate()` |
+| `Switcher/SwitcherController.swift:553` | `captureForPreview(_:blockedBundleIDs:maxPixels: 2400)` |
+| `Switcher/SwitcherController.swift:565` | `cached(_:)` |
+| `Switcher/SwitcherController.swift:567` | `refresh(_:blockedBundleIDs:maxPixels: 640, priority:)` |
 
-**Sites that move into `WindowServices`** (A1a)
-
-| Call site | Call |
-|---|---|
-| `Switcher/WindowSwitcherModule.swift:52` | AX messaging timeout (`WindowManager.axTimeout`) |
-| `Switcher/WindowSwitcherModule.swift:65, 91` | `WindowManager.shared.start()`, `.stop()` |
-| `Switcher/WindowSwitcherModule.swift:199` | `refreshFocusTracking()` |
-| `Switcher/WindowSwitcherModule.swift:300–319` | `observePrivacyEvents`, which become the §2.5 purge observers |
-| `Windows/WindowManager.swift:181, 635` | `FocusTracker` |
-| `Windows/ObserverThread.swift` (was `Switcher/WindowManager.swift:601`) | `ObserverThread` |
-| `Switcher/WindowGatherer.swift:86, 89` | `WindowManager.axTimeout` (Gather Windows) |
-| `Switcher/SwitcherController.swift:218` | `effectiveFrontPID` |
-| `Switcher/SwitcherController.swift:232, 683` | `loadWindows` |
-| `Switcher/SwitcherController.swift:397, 649` | `focus` |
-| `Switcher/SwitcherController.swift:631, 640, 651, 661, 665` | `close`, `toggleMinimized`, `toggleFullscreen`, `quitApp`, `toggleHidden` |
-
-**Privacy fields** `WindowServices` reads for both modules (§2.3, D2-1): `Core/ModuleHost.swift:40`
-(`switcherSettings = AppSettings.shared`), `:412`, `:739`, `:749` (flush, reset); `Switcher/SwitcherController.swift:325,
-327, 539`;
-`Core/Backup.swift:46, 137, 187`; `Core/SelfTest.swift:75`.
+**Privacy fields** `WindowServices` reads for both modules (§2.3, D2-1): `WindowServices.swift:67–70`
+(`protectPrivateWindows`, `protectedApps`, `captureBlockedBundleIDs`, from `AppSettings.shared.config`), read by
+`Switcher/SwitcherController.swift:323–324, 526`. Unchanged at A1a: `Core/ModuleHost.swift:40`
+(`switcherSettings = AppSettings.shared`), `:415`, `:744`, `:754` (flush, reset); `Core/Backup.swift:46, 137, 187`;
+`Core/SelfTest.swift:75`; `Switcher/SettingsView.swift:108, 116, 119` (the sheet's bindings).
 
 ## Onboarding permissions (D2-30)
 
