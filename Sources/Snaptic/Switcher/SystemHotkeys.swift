@@ -1,89 +1,94 @@
 import Foundation
+import SnapticKit
+
+/// The app side of Kit `SystemHotkeyLedger` (PLAN 0.5 §4.12; X2-3, X3-2): the two defaults lists, the take under the
+/// full contract, and the give-back under its own marker. Used from `SystemHotkeys` on main only.
+private final class DefaultsHotkeyPort: SystemHotkeyPort {
+    private var giveBackMarked = false
+
+    func savedIDs() -> [Int]? { UserDefaults.standard.array(forKey: CrashGuard.savedListKey) as? [Int] }
+    func setSavedIDs(_ ids: [Int]) { UserDefaults.standard.set(ids, forKey: CrashGuard.savedListKey) }
+    func removeSavedIDs() { UserDefaults.standard.removeObject(forKey: CrashGuard.savedListKey) }
+    func pendingIDs() -> [Int]? { UserDefaults.standard.array(forKey: CrashGuard.pendingGiveBackKey) as? [Int] }
+    func setPendingIDs(_ ids: [Int]) { UserDefaults.standard.set(ids, forKey: CrashGuard.pendingGiveBackKey) }
+    func removePendingIDs() { UserDefaults.standard.removeObject(forKey: CrashGuard.pendingGiveBackKey) }
+    func isEnabled(_ id: Int32) -> Bool? { PrivateWindowAPI.isSymbolicHotKeyEnabled(id) }
+    func take(_ id: Int32) -> Bool { PrivateWindowAPI.takeSymbolicHotKey(id) }
+    func beginGiveBack() { giveBackMarked = PrivateWindowAPI.beginGiveBack() }
+    func giveBack(_ id: Int32) { PrivateWindowAPI.giveBackSymbolicHotKey(id) }
+
+    func endGiveBack() {
+        PrivateWindowAPI.endGiveBack(giveBackMarked)
+        giveBackMarked = false
+    }
+
+    func guardHolds(_ ids: Set<Int32>) { HotkeyGuard.shared.setDisabled(ids) }
+}
 
 /// Disables macOS's own ⌘⇥ / ⌘` while a Snaptic shortcut uses them and gives
 /// them back afterwards. Which ones Snaptic disabled is saved to disk first, so
 /// a crash or force-quit is repaired on the next launch, and shortcuts the
-/// user turned off themselves are never touched.
+/// user turned off themselves are never touched. The rules are Kit's `SystemHotkeyLedger`.
 @MainActor
 enum SystemHotkeys {
-    private static let commandTab: Int32 = 1
-    private static let commandShiftTab: Int32 = 2
-    private static let commandKeyAboveTab: Int32 = 6
-    private static let defaultsKey = "SnapticDisabledSystemHotkeys"
-    private static let managed: Set<Int32> = [1, 2, 6]
+    private static let ledger = SystemHotkeyLedger(port: DefaultsHotkeyPort())
+    /// The kill switch is read every fourth beat (2 s) while Snaptic holds an id.
+    private static var beats = 0
 
-    private static var disabledBySnaptic = Set<Int32>()
-    private static var suspended = false
+    /// Whether the take's kill switch, crash guard, poison or availability says no. Reads the kill switches.
+    private static var takeBlocked: Bool {
+        PrivateWindowAPI.readKillSwitches()
+        return !PrivateWindowAPI.canTakeSymbolicHotKeys()
+    }
 
-    /// Re-enables anything a previous run disabled but never restored.
-    static func recoverFromPreviousRun() {
-        let leftover = (UserDefaults.standard.array(forKey: defaultsKey) as? [Int]) ?? []
-        UserDefaults.standard.removeObject(forKey: defaultsKey)
-        // Only ever touch the three shortcuts Snaptic manages, whatever the file says.
-        for value in leftover {
-            guard let id = Int32(exactly: value), managed.contains(id) else { continue }
-            PrivateWindowAPI.setSymbolicHotKey(id, enabled: true)
+    /// Launch step 4, after step 3b: gives back what a previous run left off, or, when the give-back's crash guard
+    /// tripped on this build, moves that list to `Windows.pendingGiveBack`.
+    static func atLaunch() {
+        let result = ledger.atLaunch(giveBackDisabled: InflightMarkers.isDisabled(CrashGuard.giveBackMarker))
+        if case .movedToPending = result {
+            EventLog.shared.record(.safety, "windows.giveBack pending until Try Again or the next macOS build")
         }
     }
 
     static func apply(_ shortcuts: [Shortcut]) {
-        var wanted = Set<Int32>()
-        if shortcuts.contains(where: { $0.modifier == .command && $0.keyCode == KeyCode.tab }) {
-            wanted.formUnion([commandTab, commandShiftTab])
-        }
-        if shortcuts.contains(where: { $0.modifier == .command && $0.keyCode == KeyCode.backtick }) {
-            wanted.insert(commandKeyAboveTab)
-        }
-        // A shortcut the user already switched off in System Settings is left
-        // alone, so Snaptic never turns it back on later.
-        wanted = wanted.filter { disabledBySnaptic.contains($0) || PrivateWindowAPI.isSymbolicHotKeyEnabled($0) != false }
-
-        // Persist before touching the system so a crash mid-way is recoverable.
-        let everDisabled = disabledBySnaptic.union(wanted)
-        UserDefaults.standard.set(everDisabled.map { Int($0) }, forKey: defaultsKey)
-
-        for id in disabledBySnaptic.subtracting(wanted) {
-            PrivateWindowAPI.setSymbolicHotKey(id, enabled: true)
-        }
-        if !suspended {
-            for id in wanted {
-                PrivateWindowAPI.setSymbolicHotKey(id, enabled: false)
-            }
-        }
-        disabledBySnaptic = wanted
-        UserDefaults.standard.set(wanted.map { Int($0) }, forKey: defaultsKey)
-        HotkeyGuard.shared.setDisabled(suspended ? [] : wanted)
+        let wanted = SystemHotkeyLedger.wanted(
+            commandTab: shortcuts.contains { $0.modifier == .command && $0.keyCode == KeyCode.tab },
+            commandBacktick: shortcuts.contains { $0.modifier == .command && $0.keyCode == KeyCode.backtick })
+        ledger.apply(wanted, takeBlocked: takeBlocked)
     }
 
     /// Takes the shortcuts back after the hang guard released them.
     static func reassert() {
-        guard !suspended else { return }
-        for id in disabledBySnaptic {
-            PrivateWindowAPI.setSymbolicHotKey(id, enabled: false)
-        }
-        HotkeyGuard.shared.setDisabled(disabledBySnaptic)
+        ledger.reassert(takeBlocked: takeBlocked)
     }
 
     /// Hands the shortcuts back to macOS while Snaptic can't see key presses.
     static func setSuspended(_ value: Bool) {
-        guard value != suspended else { return }
-        suspended = value
-        for id in disabledBySnaptic {
-            PrivateWindowAPI.setSymbolicHotKey(id, enabled: value)
-        }
-        HotkeyGuard.shared.setDisabled(value ? [] : disabledBySnaptic)
+        guard value != ledger.suspended else { return }
+        ledger.setSuspended(value, takeBlocked: value ? false : takeBlocked)
     }
 
     /// Gives every shortcut back (quit, or the switcher module stopping). Idempotent.
     static func restore() {
-        suspended = false
-        guard !disabledBySnaptic.isEmpty else { return }
-        for id in disabledBySnaptic {
-            PrivateWindowAPI.setSymbolicHotKey(id, enabled: true)
+        ledger.restore()
+    }
+
+    /// Each host heartbeat: the take's kill switch turning on while Snaptic holds an id gives every id back (H6).
+    static func heartbeat() {
+        guard !ledger.owned.isEmpty else {
+            beats = 0
+            return
         }
-        disabledBySnaptic = []
-        HotkeyGuard.shared.setDisabled([])
-        UserDefaults.standard.removeObject(forKey: defaultsKey)
+        beats += 1
+        guard beats % 4 == 0 else { return }
+        if PrivateWindowAPI.readKillSwitches().contains(.symbolicHotKeys) { ledger.restore() }
+    }
+
+    /// The "⌘⇥ not given back" row's Try Again (G3-2): clears the give-back's disabled build and gives the pending
+    /// list back now.
+    static func tryAgainGiveBack() {
+        UserDefaults.standard.removeObject(forKey: CrashGuard.giveBackTryAgainKey)
+        _ = ledger.giveBackPendingNow()
     }
 }
 
@@ -132,17 +137,31 @@ final class HotkeyGuard: @unchecked Sendable {
         let trip = stale && !tripped && !ids.isEmpty
         if trip { tripped = true }
         lock.unlock()
-        if trip {
-            for id in ids { PrivateWindowAPI.setSymbolicHotKey(id, enabled: true) }
-        }
+        if trip { giveBack(ids) }
     }
 
-    /// Gives every shortcut back right away, from any thread.
+    /// Gives every shortcut back right away, from any thread, under the give-back marker.
     func releaseAll() {
         lock.lock()
         let ids = disabled
         disabled = []
         lock.unlock()
-        for id in ids { PrivateWindowAPI.setSymbolicHotKey(id, enabled: true) }
+        giveBack(ids)
+    }
+
+    /// The signal handler's give-back: pre-resolved pointers, no marker, no defaults (D2-11).
+    func releaseAllFromSignal() {
+        lock.lock()
+        let ids = disabled
+        disabled = []
+        lock.unlock()
+        for id in ids.sorted() { PrivateWindowAPI.giveBackFromSignal(id) }
+    }
+
+    private func giveBack(_ ids: Set<Int32>) {
+        guard !ids.isEmpty else { return }
+        let marked = PrivateWindowAPI.beginGiveBack()
+        for id in ids.sorted() { PrivateWindowAPI.giveBackSymbolicHotKey(id) }
+        PrivateWindowAPI.endGiveBack(marked)
     }
 }

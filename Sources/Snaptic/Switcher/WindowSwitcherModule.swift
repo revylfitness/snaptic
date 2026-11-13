@@ -199,7 +199,8 @@ import SnapticKit
         guard let tap, let context, let lifetime else { return }
         if tap.start() {
             state = .running
-            applySystemHotkeys()
+            WindowServices.primeLayout()
+            applySystemHotkeys()   // reads the kill switches (H6)
             WindowServices.shared.refreshRecency()
         } else {
             // Without Accessibility only PermissionFlow runs (PLAN §2.2).
@@ -224,16 +225,18 @@ import SnapticKit
     }
 
     /// While an app holds Secure Event Input (password fields, Terminal's Secure Keyboard
-    /// Entry) Snaptic can't see keys, so ⌘⇥ goes back to macOS.
+    /// Entry) Snaptic can't see keys, so ⌘⇥ goes back to macOS. When that can't be read,
+    /// ⌘⇥ goes back too, but the switcher stays open (Kit `SecureInputVerdict`, X2-2).
     private func watchSecureInput() {
         secureInputTimer?.invalidate()
         let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.context != nil else { return }
-                let secure = PrivateWindowAPI.isSecureInputEnabled
-                let blind = secure || !(self.tap?.isEnabled ?? false) || !Permissions.accessibility
-                SystemHotkeys.setSuspended(blind)
-                if blind { self.controller.cancel() }
+                let verdict = SecureInputVerdict.decide(PrivateWindowAPI.secureInputState,
+                                                        tapEnabled: self.tap?.isEnabled ?? false,
+                                                        trusted: Permissions.accessibility)
+                SystemHotkeys.setSuspended(verdict.suspendTake)
+                if verdict.cancel { self.controller.cancel() }
             }
         }
         timer.tolerance = 0.1

@@ -71,20 +71,21 @@ final class SwitcherController {
         switch type {
         case .keyDown:
             let code = Int(event.getIntegerValueField(.keyboardEventKeycode))
+            let iso = KeyCode.isISO(event)
             if let shortcut = active {
                 // The switch is decided and only waiting for the window list:
                 // let everything through except Esc and the shortcut key.
-                let isShortcutKey = KeyCode.matches(code, shortcutKey: shortcut.keyCode)
+                let isShortcutKey = KeyCode.matches(code, shortcutKey: shortcut.keyCode, iso: iso)
                     && event.flags.contains(shortcut.modifier.flag)
                 if pendingCommit, code != KeyCode.escape, !isShortcutKey {
                     swallowedKeys.remove(code)
                     return false
                 }
                 swallowedKeys.insert(code)
-                handleKeyWhileOpen(code: code, event: event, shortcut: shortcut)
+                handleKeyWhileOpen(code: code, event: event, shortcut: shortcut, iso: iso)
                 return true
             }
-            guard let shortcut = matchingShortcut(code: code, flags: event.flags),
+            guard let shortcut = matchingShortcut(code: code, flags: event.flags, iso: iso),
                   !frontmostAppKeepsShortcuts() else {
                 // Clears a stale entry left by a keyUp the tap never saw.
                 swallowedKeys.remove(code)
@@ -109,10 +110,12 @@ final class SwitcherController {
         }
     }
 
-    private func matchingShortcut(code: Int, flags: CGEventFlags) -> Shortcut? {
+    private func matchingShortcut(code: Int, flags: CGEventFlags, iso: Bool) -> Shortcut? {
         let primary: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl]
         let held = flags.intersection(primary)
-        return config.activeShortcuts.first { KeyCode.matches(code, shortcutKey: $0.keyCode) && held == $0.modifier.flag }
+        return config.activeShortcuts.first {
+            KeyCode.matches(code, shortcutKey: $0.keyCode, iso: iso) && held == $0.modifier.flag
+        }
     }
 
     /// Virtual machines and remote desktops get the keys instead of Snaptic
@@ -123,20 +126,20 @@ final class SwitcherController {
         return !config.passthroughOnlyWhenFullscreen || Screens.isFullscreen(pid: app.processIdentifier)
     }
 
-    private func handleKeyWhileOpen(code: Int, event: CGEvent, shortcut: Shortcut) {
+    private func handleKeyWhileOpen(code: Int, event: CGEvent, shortcut: Shortcut, iso: Bool) {
         lastInteraction = Date()
         let flags = event.flags
         let shift = flags.contains(.maskShift)
 
         // While searching, the shortcut's key only cycles with its modifier held,
         // so a shortcut like ⌥Space still lets you type a space.
-        if KeyCode.matches(code, shortcutKey: shortcut.keyCode),
+        if KeyCode.matches(code, shortcutKey: shortcut.keyCode, iso: iso),
            !model.searching || flags.contains(shortcut.modifier.flag) {
             move(shift ? -1 : 1)
             return
         }
         // Another Snaptic shortcut while open: switch to it.
-        if let other = matchingShortcut(code: code, flags: flags), other.id != shortcut.id {
+        if let other = matchingShortcut(code: code, flags: flags, iso: iso), other.id != shortcut.id {
             dismiss()
             open(other, reverse: shift)
             return

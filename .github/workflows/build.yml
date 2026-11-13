@@ -242,6 +242,7 @@ jobs:
           printf '%s\n' "$token" > "$dir/token"
           chmod 600 "$dir/token"
           SNAPTIC_SELFTEST_TOKEN="$token" SNAPTIC_SELFTEST_EXPECT_ICONS_SHIM=unavailable \
+            SNAPTIC_SELFTEST_EXPECT_WINDOWS_API=available \
             .build/debug/Snaptic --selftest-launch "$dir/token" 2>&1 | tee -a selftest.log
 
       # 0.3 R5-5: connection holds, the held pool, pings and the edge rules, against a bare control server.
@@ -297,6 +298,7 @@ jobs:
           printf '%s\n' "$token" > "$dir/token"
           chmod 600 "$dir/token"
           SNAPTIC_SELFTEST_TOKEN="$token" SNAPTIC_SELFTEST_EXPECT_SPARKLE=absent SNAPTIC_SELFTEST_EXPECT_ICONS_SHIM=unavailable \
+            SNAPTIC_SELFTEST_EXPECT_WINDOWS_API=available \
             build/Snaptic.app/Contents/MacOS/Snaptic --selftest-launch "$dir/token" 2>&1 | tee -a selftest.log
 
       # The app's startup checks and launch, optimized and under AddressSanitizer: a read of freed memory is caught on
@@ -505,6 +507,7 @@ jobs:
           BIN="$RUNNER_TEMP/selftest/Snaptic.app/Contents/MacOS/Snaptic"
           SNAPTIC_SELFTEST_TOKEN="$token" "$BIN" --selftest-controls "$dir/token" 2>&1 | tee -a selftest.log
           SNAPTIC_SELFTEST_TOKEN="$token" SNAPTIC_SELFTEST_EXPECT_SPARKLE=loaded \
+            SNAPTIC_SELFTEST_EXPECT_WINDOWS_API=available \
             "$BIN" --selftest-launch "$dir/token" 2>&1 | tee -a selftest.log
 
       # A throwaway Ed25519 key stands in for the appcast secret. It is the current key, and the pinned key (the one
@@ -1172,6 +1175,7 @@ jobs:
           BIN="$RUNNER_TEMP/app/Snaptic.app/Contents/MacOS/Snaptic"
           SNAPTIC_SELFTEST_TOKEN="$token" "$BIN" --selftest-controls "$dir/token" 2>&1 | tee -a selftest.log
           SNAPTIC_SELFTEST_TOKEN="$token" SNAPTIC_SELFTEST_EXPECT_SPARKLE=loaded \
+            SNAPTIC_SELFTEST_EXPECT_WINDOWS_API=available \
             "$BIN" --selftest-launch "$dir/token" 2>&1 | tee -a selftest.log
 
       - name: Report errors as annotations

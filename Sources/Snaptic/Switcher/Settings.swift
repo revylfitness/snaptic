@@ -32,9 +32,14 @@ enum KeyCode {
 
     /// "Key above Tab" has a different key code on ISO (European) keyboards;
     /// on those, code 50 is the extra key next to left Shift instead.
-    static func matches(_ pressed: Int, shortcutKey: Int) -> Bool {
+    static func matches(_ pressed: Int, shortcutKey: Int, iso: Bool) -> Bool {
         guard shortcutKey == backtick else { return pressed == shortcutKey }
-        return pressed == (PrivateWindowAPI.isISOKeyboard ? isoSection : backtick)
+        return pressed == (iso ? isoSection : backtick)
+    }
+
+    /// Whether the keyboard that sent `event` is ISO (`KBGetLayoutType`, cached off the key path).
+    static func isISO(_ event: CGEvent) -> Bool {
+        WindowServices.layout(for: event.getIntegerValueField(.keyboardEventKeyboardType)) == WindowResults.layoutISO
     }
 }
 
@@ -132,7 +137,7 @@ enum Keys {
     static func shortLabel(for code: Int) -> String {
         switch code {
         case KeyCode.tab: return "⇥"
-        case KeyCode.backtick: return PrivateWindowAPI.isISOKeyboard ? "§" : "`"
+        case KeyCode.backtick: return WindowServices.lastLayout == WindowResults.layoutISO ? "§" : "`"
         case KeyCode.space: return L("Space")
         default: return label(for: code)
         }

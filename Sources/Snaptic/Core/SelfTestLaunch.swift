@@ -98,6 +98,23 @@ enum SelfTestLaunch {
         }
         #endif
 
+        // 0.5 B1b (PLAN §4.12): one line per window symbol from the lookups, the gate, the image check, the crash
+        // guard and the kill switches, then secure input. No private call and no Accessibility request runs here.
+        problems += PrivateWindowAPI.tableProblems()
+        let windowReports = PrivateWindowAPI.launchReports()
+        let secureInput = PrivateWindowAPI.secureInputState
+        report += WindowSymbolContract.launchLines(windowReports, secureInput: secureInput)
+        problems += WindowSymbolContract.selfTestProblems(
+            windowReports, secureInput: secureInput,
+            expect: ProcessInfo.processInfo.environment[WindowSymbolContract.expectVariable])
+        #if DEBUG
+        // The poison path. Every window symbol stays poisoned for the rest of this process; nothing after this uses one.
+        let poisonedReports = PrivateWindowAPI.forcePoisonForSelfTest()
+        let poisonProblems = WindowSymbolContract.poisonProblems(poisonedReports)
+        problems += poisonProblems
+        report.append(WindowSymbolContract.poisonLine(poisonProblems))
+        #endif
+
         // The gate `UpdaterController.make()` uses (r1 C6, C8). When it is closed, `startUpdater()` runs for real (no
         // Sparkle, no network) and must leave no updater and no welcome card.
         let loaded = UpdaterController.isSparkleLoaded

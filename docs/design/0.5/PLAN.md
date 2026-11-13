@@ -2235,3 +2235,12 @@ changed, and why.
 | A3 | A window-list read that times out is retried once within the per-app budget | One slow first call is common right after an app launches |
 | A3 | The 2 s cache keeps the full read and applies `allowUntitled` per call | Two callers with different settings share one read |
 | A3 | DEBUG builds time `windows(for:)` on each selection that would show a panel (Window reads: n, p95, last count) | S0-23 and the AX stall check need a number before A4a's panel exists |
+| B1b | The `Windows.*` kill-switch domain is read the way `ConfigStore` names it, copied into `PrivateWindowAPI` | `ConfigStore` has no shared accessor, and adding one would touch every store |
+| B1b | `KBGetLayoutType` runs on the probe queue and is cached per keyboard type. The first key press on a new keyboard type uses the last layout seen (ANSI until one is known) | The probe must never run inside the event tap |
+| B1b | On a new OS build, the first use of a symbol takes the 0.4 path until the background probe finishes; the six presence-only symbols don't wait | No probe on the key or open path |
+| B1b | When several states apply, poisoned outranks disabled, and disabled outranks unavailable | The plan gave no order; the most severe state is the one to report |
+| B1b | 0.4 behaviour kept: `isOnAnySpace` returns false on NULL; the raise fallback is `app.activate()`; the window-ID title-and-frame fallback isn't wired | No switcher regressions in the item that adds the contract |
+| B1b | The give-back runs even if its marker write fails, and the signal handler's give-back is a bare call | Giving ⌘⇥ back matters more than the marker; signal handlers must stay simple |
+| B1b | Secure input `unknown` pauses the ⌘⇥ takeover and doesn't cancel an open switcher (X2-2) | As planned; recorded because it's the visible behaviour |
+| B1b | The DEBUG poison path traps with `abort()`. An unreadable OS build number turns the crash markers off | Markers keyed to an unknown build can't be matched later |
+| B1b | Merged after A3: `windows(for:)` reads the kill switches once per read, as `loadWindows` does | The Dock read path uses the same private symbols as the switcher (H6) |

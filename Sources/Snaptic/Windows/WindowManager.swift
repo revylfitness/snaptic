@@ -361,6 +361,7 @@ final class WindowManager {
     // MARK: Listing
 
     func loadWindows(includeOtherSpaces: Bool, includeWindowless: Bool, excluded: [String]) async -> WindowList {
+        PrivateWindowAPI.readKillSwitches()   // once per enumeration (H6)
         let ownPID = ProcessInfo.processInfo.processIdentifier
         let apps = NSWorkspace.shared.runningApplications.filter {
             WindowCatalogRules.listsApp(regular: $0.activationPolicy == .regular,
@@ -672,6 +673,7 @@ final class WindowManager {
             return cached.listing(allowUntitled: allowUntitled, fromCache: true)
         }
         guard let app = NSRunningApplication(processIdentifier: pid), !app.isTerminated else { return DockWindowRead() }
+        PrivateWindowAPI.readKillSwitches()   // once per read, as `loadWindows` does (H6)
         let budget = budget.isFinite ? min(max(budget, 0), Self.totalBudget) : Self.perAppBudget
         let skip = dockCache.isSkipped(pid, now: now)
         let hidden = app.isHidden

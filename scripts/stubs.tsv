@@ -131,6 +131,7 @@ Sources/Snaptic/Switcher/SwitcherModel.swift	A	L	-	-
 Sources/Snaptic/Switcher/SwitcherView.swift	A	L	-	-
 Sources/Snaptic/Switcher/SwitcherWindow.swift	A	L	-	-
 Sources/Snaptic/Switcher/SystemHotkeys.swift	A	L	-	-
+Sources/Snaptic/Windows/InflightMarkers.swift	lead	L	-	-
 Sources/Snaptic/Windows/ObserverThread.swift	A	L	-	-
 Sources/Snaptic/Windows/PrivateWindowAPI.swift	A	L	-	-
 Sources/Snaptic/Windows/ThumbnailStore.swift	A	L	-	-
@@ -616,6 +617,8 @@ Tests/SnapticKitTests/IconsControlsTests.swift	lead	L	-	-
 Tests/SnapticKitTests/IconsCommandGrammarTests.swift	lead	L	-	-
 Sources/SnapticShims/include/SNMenuBarVisibility.h	lead	L	-	-
 Sources/SnapticShims/SNMenuBarVisibility.m	lead	L	-	-
+Sources/SnapticShims/include/SNWindowServer.h	lead	L	-	-
+Sources/SnapticShims/SNWindowServer.m	lead	L	-	-
 Sources/Snaptic/Icons/PrivateMenuBarAPI.swift	lead	L	-	-
 Sources/SnapticKit/IconsShimContract.swift	lead	L	-	-
 Tests/SnapticKitTests/IconsShimContractTests.swift	lead	L	-	-
@@ -677,3 +680,7 @@ Sources/SnapticKit/DockReaderRules.swift	lead	L	-	-
 Tests/SnapticKitTests/DockReaderRulesTests.swift	lead	L	-	-
 Sources/Snaptic/Dock/DockReader.swift	lead	L	-	-
 Sources/Snaptic/Dock/DockObserver.swift	lead	L	-	-
+Sources/SnapticKit/WindowSymbolContract.swift	lead	L	-	-
+Sources/SnapticKit/CrashGuard.swift	lead	L	-	-
+Tests/SnapticKitTests/WindowSymbolContractTests.swift	lead	L	-	-
+Tests/SnapticKitTests/CrashGuardTests.swift	lead	L	-	-

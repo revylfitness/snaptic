@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import os
 import SnapticKit
 
 /// One client's hold on the shared window services (PLAN 0.5 §2.3).
@@ -231,6 +232,70 @@ struct WindowLease: Equatable {
         let hadThumbnails = ThumbnailStore.shared.liveEntries > 0
         ThumbnailStore.shared.purgeAll()
         if hadThumbnails { EventLog.shared.record(.permissions, "screenRecording off: thumbnails purged") }
+    }
+
+    // MARK: Keyboard layout (PLAN 0.5 §4.12: KBGetLayoutType off the key path)
+
+    private struct LayoutCache {
+        var byType: [Int64: UInt32] = [:]
+        var pending: Set<Int64> = []
+        var retryAt: [Int64: Double] = [:]
+        /// The last answer; ANSI (not ISO, 0.4's fallback) until one comes back.
+        var last: UInt32 = WindowResults.layoutANSI
+        var primed = false
+    }
+
+    nonisolated private static let layoutCache = OSAllocatedUnfairLock(uncheckedState: LayoutCache())
+
+    /// The physical layout of one keyboard type (a key event's `.keyboardEventKeyboardType`). A miss starts a lookup
+    /// on the probe queue and answers with the last layout seen; no answer is retried after a minute.
+    nonisolated static func layout(for keyboardType: Int64) -> UInt32 {
+        let now = ProcessInfo.processInfo.systemUptime
+        let (hit, start, last) = layoutCache.withLockUnchecked { c -> (UInt32?, Bool, UInt32) in
+            if let hit = c.byType[keyboardType] {
+                c.last = hit
+                return (hit, false, hit)
+            }
+            guard !c.pending.contains(keyboardType), now >= c.retryAt[keyboardType] ?? 0 else {
+                return (nil, false, c.last)
+            }
+            c.pending.insert(keyboardType)
+            return (nil, true, c.last)
+        }
+        if let hit { return hit }
+        if start {
+            PrivateWindowAPI.lookUpLayout(keyboardType: keyboardType) { value in
+                let done = ProcessInfo.processInfo.systemUptime
+                layoutCache.withLockUnchecked { c in
+                    c.pending.remove(keyboardType)
+                    if let value {
+                        c.byType[keyboardType] = value
+                        c.last = value
+                    } else {
+                        c.retryAt[keyboardType] = done + 60
+                    }
+                }
+            }
+        }
+        return last
+    }
+
+    /// Looks up the current keyboard's layout once (`LMGetKbdType`), so the first key press already has it.
+    nonisolated static func primeLayout() {
+        let prime = layoutCache.withLockUnchecked { c -> Bool in
+            defer { c.primed = true }
+            return !c.primed
+        }
+        guard prime else { return }
+        PrivateWindowAPI.lookUpKeyboardType { keyboardType in
+            if let keyboardType { _ = layout(for: keyboardType) }
+        }
+    }
+
+    /// The last layout seen, for labels with no key event behind them.
+    nonisolated static var lastLayout: UInt32 {
+        primeLayout()
+        return layoutCache.withLockUnchecked { $0.last }
     }
 }
 
