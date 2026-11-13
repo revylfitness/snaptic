@@ -2244,3 +2244,23 @@ changed, and why.
 | B1b | Secure input `unknown` pauses the ⌘⇥ takeover and doesn't cancel an open switcher (X2-2) | As planned; recorded because it's the visible behaviour |
 | B1b | The DEBUG poison path traps with `abort()`. An unreadable OS build number turns the crash markers off | Markers keyed to an unknown build can't be matched later |
 | B1b | Merged after A3: `windows(for:)` reads the kill switches once per read, as `loadWindows` does | The Dock read path uses the same private symbols as the switcher (H6) |
+| A4a | Placement, which cards show, event mapping and the move throttle live in a new Kit file, `DockPreviewRules`, with tests | Kit holds the logic that needs unit tests (P2-3) |
+| A4a | The 1 s tick forces a real re-read, skipping the 2 s cache, unless the app's last read timed out | S0-26 says the tick re-reads; a stalled app isn't asked every second |
+| A4a | When the plan is empty or there's no room to place the panel, the policy counts it as shown but no panel appears; the next tick can place it | Avoids a show/hide loop |
+| A4a | The anchor is the settled item frame, falling back to the selection's frame after 0.25 s | Never places against a frame that is still magnifying (M11) |
+| A4a | The panel's level is `.statusBar`: above the Dock, below the Dock's menu | M36 |
+| A4a | Dock-menu open and close come from the Dock observer's AX notifications, best effort | The Dock exposes no other signal |
+| A4a | Workspace observers and mouse monitors exist only while the pointer is watched; the panel is created per show and released after the fade | Ground rule: nothing is held while idle or hidden |
+| A4a | Dock auto-hide is read with `CFPreferences`, read-only, each time watching starts | Picks up changes without writing settings |
+| A4a | `DockWindowRead` gains `zOrder` | The card sort needs the stacking order |
+| A4a | The small (windowless) card is 240 × 64 pt | The plan gives no size |
+| A4a | A read that timed out and found nothing shows "Windows can’t be read right now" | M10 |
+| A4a | Policy events go through one queue, so a command that sends an event can't re-enter the policy | Keeps the K3 machine's single-step semantics |
+| A4a | A selection that arrives while a mouse button is down drops its app | No previews during drags and clicks |
+| A4a | `.freshness(pid)` is held only while a preview is shown | M32: one observer at rest, two while shown |
+| A4a | Pointer-in-panel is reconciled from the tracking area, the local monitor and the tick | One enter or exit per crossing |
+| A4a | A small AppKit view catches middle-clicks on cards | SwiftUI taps don't report the middle button |
+| A4a | Card badges use §4.3's words ("Full screen", "On another Space"), which differ from the switcher's | They are the plan's words |
+| A4a | Captures are requested only for targets not already requested | `WindowCapture.refresh` cancels the batch in flight |
+| A4a | "Shows / last hover-to-show" and "Dismissals by reason" are release diagnostics lines; latency runs from the policy's show to the panel appearing | §4.22's lines; counts and enums only |
+| A4a | The controller's clock is `systemUptime` | Monotonic, like the rest of the Dock code |

@@ -176,6 +176,9 @@ struct DockWindowRead {
     var timedOut = false
     /// Served from the 2 s cache.
     var fromCache = false
+    /// The app's on-screen layer-0 windows, front to back, as the read found them (the recency merge's stacking
+    /// order, §4.8; A4a).
+    var zOrder: [CGWindowID: Int] = [:]
 
     /// The windows a caller lists (`allowUntitled`, §2.6). The read itself keeps untitled ones for every caller.
     fileprivate func listing(allowUntitled: Bool, fromCache: Bool) -> DockWindowRead {
@@ -210,6 +213,7 @@ private struct DockAppScan: @unchecked Sendable {
     var listOnly: [ListOnlyWindow] = []
     var ranOut = false
     var timedOut = false
+    var zOrder: [CGWindowID: Int] = [:]
 }
 
 /// Dock Previews' window reads (§4.8): one `ObserverThread`, so an app that stalls never holds main or a pool thread.
@@ -702,7 +706,8 @@ final class WindowManager {
                                     hasPrivateMarker: raw.hasPrivateMarker))
         }
         items += scan.listOnly.map { Self.item($0, app: app) }
-        let read = DockWindowRead(items: items, unreadRemain: scan.ranOut && !scan.timedOut, timedOut: scan.timedOut)
+        var read = DockWindowRead(items: items, unreadRemain: scan.ranOut && !scan.timedOut, timedOut: scan.timedOut)
+        read.zOrder = scan.zOrder
         if !dirtied { dockCache.store(read, for: pid, now: done) }
         return read.listing(allowUntitled: allowUntitled, fromCache: false)
     }
@@ -739,6 +744,7 @@ final class WindowManager {
             scan.timedOut = true
         } else {
             let server = serverSnapshot()
+            scan.zOrder = server.zOrder.filter { server.owner[$0.key] == pid }
             let read = read(pid, owners: server.owner, deadline: .max, budget: budget, options: .dock,
                             retryList: true)
             for raw in read.windows {

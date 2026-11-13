@@ -41,6 +41,9 @@ final class DockReader {
     private(set) var list: AXUIElement?
     /// The union of the item frames (§R4 S0-1), in AppKit global coordinates.
     private(set) var listFrame: DockRect?
+    /// Each item's frame at the last list-frame read, in AppKit global coordinates (A4a: the hit band's neighbours
+    /// and the at-rest thickness, §4.1, §4.7).
+    private(set) var itemFrames: [DockRect] = []
     private var frameReadAt: Double?
     private var bundleIDs: [String: String] = [:]   // "" when the bundle has none
 
@@ -49,6 +52,9 @@ final class DockReader {
         app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, WindowServices.axTimeout)
     }
+
+    /// The Dock's application element (A4a: the Dock menu's open and close notifications, §2.4).
+    var appElement: AXUIElement { app }
 
     private static func timed(_ element: AXUIElement) -> AXUIElement {
         AXUIElementSetMessagingTimeout(element, WindowServices.axTimeout)
@@ -116,6 +122,9 @@ final class DockReader {
         guard let union = DockGeometry.dockFrame(items: frames) else { return .failed }
         let frame = DockGeometry.cocoaRect(fromAX: union, primaryHeight: primaryHeight)
         listFrame = frame
+        itemFrames = frames.filter { !$0.isDegenerate }.map {
+            DockGeometry.cocoaRect(fromAX: $0, primaryHeight: primaryHeight)
+        }
         return .value(frame)
     }
 

@@ -285,6 +285,15 @@ final class DockControlsTests: XCTestCase {
         #"Apps hidden from Dock previews"#,
         #"Protect private windows"#,
         #"Never show thumbnails for"#,
+        // §4.3: A4a's cards.
+        #"No open windows"#,
+        #"No windows shown"#,
+        #"Its windows are minimized, hidden, or on other Spaces."#,
+        #"Windows can’t be read right now"#,
+        #"Window on another Space"#,
+        #"More windows…"#,
+        #"Full screen"#,
+        #"On another Space"#,
     ]
 
     /// Every listed string is a whole literal somewhere in the app or Kit sources, so a reworded string fails here

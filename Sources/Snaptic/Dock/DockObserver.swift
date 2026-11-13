@@ -12,9 +12,16 @@ import SnapticShims
 ///   and a display change rebuild the observer even with the same pid; the 30 s health check catches a silent death.
 /// - Exists only while the module runs and isn't paused (ground rule 1). Nothing it reads is logged; diagnostics get
 ///   counts and enums only (§4.22).
+/// - A4a: the same observer carries the Dock menu's open and close (§2.4) and keeps `geometry`'s item frames current;
+///   `settle` reads the selected item until its frame holds still (§4.7).
 @MainActor final class DockObserver {
     /// The Dock's selection, on main, coalesced to the latest.
     var onSelection: (@MainActor (DockSelection?) -> Void)?
+    /// The Dock's own menu opened (true) or closed (false), on main (§2.4, X-12; best effort: AXMenuOpened and
+    /// AXMenuClosed on the Dock's application element).
+    var onDockMenu: (@MainActor (Bool) -> Void)?
+    /// The item frames the observer last read, and the screens main last set (A4a, §R4 K3).
+    let geometry = DockGeometryStore()
 
     private var session: DockObserverSession?
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
@@ -31,7 +38,9 @@ import SnapticShims
         guard session == nil else { return }
         let session = DockObserverSession(
             loginUptime: Self.loginUptime(),
+            geometry: geometry,
             deliver: { [weak self] selection in self?.onSelection?(selection) },
+            menu: { [weak self] open in self?.onDockMenu?(open) },
             needsPID: { [weak self] in self?.refreshPID() })
         self.session = session
         dockPID = Self.findDockPID()
@@ -58,6 +67,14 @@ import SnapticShims
         self.session = nil
         dockPID = nil
         appsChangePending = false
+    }
+
+    /// §4.7: the selected item read again, up to `DockObserverSession.settleReads` times a display frame apart, until
+    /// two reads agree; `done` gets the last read on main, or nil when there's no item or the Dock didn't answer.
+    /// Never blocks main: the reads run on the observer's thread. Not called back once the observer stops.
+    func settle(_ done: @escaping @MainActor (DockSelection?) -> Void) {
+        guard let session else { return }
+        session.settle(done)
     }
 
     /// Try Again (§4.17 state 5): attach at once, with the same Dock or not.
@@ -136,10 +153,36 @@ import SnapticShims
 
 private let dockCallback: AXObserverCallback = { _, _, notification, refcon in
     guard let refcon else { return }
-    let destroyed = (notification as String) == kAXUIElementDestroyedNotification
+    let name = notification as String
     // Runs on the session's thread; the box outlives the observer, and its target is weak.
-    Unmanaged<CallbackTarget<DockObserverSession>>.fromOpaque(refcon).takeUnretainedValue().target?
-        .notified(destroyed: destroyed)
+    let target = Unmanaged<CallbackTarget<DockObserverSession>>.fromOpaque(refcon).takeUnretainedValue().target
+    if name == kAXMenuOpenedNotification || name == kAXMenuClosedNotification {
+        target?.menuChanged(open: name == kAXMenuOpenedNotification)
+    } else {
+        target?.notified(destroyed: name == kAXUIElementDestroyedNotification)
+    }
+}
+
+/// The Dock's item frames (from the observer's thread) and the screens (from main), for the preview policy's
+/// geometry closures, which read it on main (A4a, §R4 K3). Frames only; nothing here names an app.
+final class DockGeometryStore: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = DockGeometrySnapshot()
+
+    var snapshot: DockGeometrySnapshot {
+        lock.lock(); defer { lock.unlock() }
+        return value
+    }
+
+    func setItems(_ items: [DockRect]) {
+        lock.lock(); defer { lock.unlock() }
+        value.items = items
+    }
+
+    func setScreens(_ screens: [DockScreen]) {
+        lock.lock(); defer { lock.unlock() }
+        value.screens = screens
+    }
 }
 
 /// The thread side of `DockObserver`: the `AXObserver`, the reads, the ladder, the back-off and the health check.
@@ -147,7 +190,9 @@ private let dockCallback: AXObserverCallback = { _, _, notification, refcon in
 private final class DockObserverSession: @unchecked Sendable {
     private let thread = ObserverThread()
     private let deliverHandler: @MainActor (DockSelection?) -> Void
+    private let menuHandler: @MainActor (Bool) -> Void
     private let needsPID: @MainActor () -> Void
+    private let geometry: DockGeometryStore
     private let loginUptime: Double?
     private var box: Unmanaged<CallbackTarget<DockObserverSession>>?   // set on main, released on `thread`
 
@@ -166,6 +211,8 @@ private final class DockObserverSession: @unchecked Sendable {
     private var readScheduled = false
     private var retriedAfterTimeout = false
     private var backoff = DockReadBackoff()
+    /// The Dock's menu is open, as its notifications last said.
+    private var menuOpen = false
 
     private let stateLock = NSLock()
     private var stopped = false
@@ -173,12 +220,19 @@ private final class DockObserverSession: @unchecked Sendable {
     private var pending: DockSelection?
     private var deliveryScheduled = false
 
-    init(loginUptime: Double?, deliver: @escaping @MainActor (DockSelection?) -> Void,
-         needsPID: @escaping @MainActor () -> Void) {
+    init(loginUptime: Double?, geometry: DockGeometryStore, deliver: @escaping @MainActor (DockSelection?) -> Void,
+         menu: @escaping @MainActor (Bool) -> Void, needsPID: @escaping @MainActor () -> Void) {
         self.loginUptime = loginUptime
+        self.geometry = geometry
         deliverHandler = deliver
+        menuHandler = menu
         self.needsPID = needsPID
     }
+
+    /// §4.7's settle: at most this many reads…
+    static let settleReads = 6
+    /// …about one display frame apart.
+    static let settleInterval = 1.0 / 60
 
     var stats: DockObserverStats {
         stateLock.lock(); defer { stateLock.unlock() }
@@ -254,6 +308,10 @@ private final class DockObserverSession: @unchecked Sendable {
             box?.release()
             CFRunLoopStop(CFRunLoopGetCurrent())
         }
+    }
+
+    @MainActor func settle(_ done: @escaping @MainActor (DockSelection?) -> Void) {
+        onThread { [weak self] in self?.settleStep(previous: nil, read: 0, done) }
     }
 
     @MainActor private func flush() {
@@ -352,12 +410,17 @@ private final class DockObserverSession: @unchecked Sendable {
         }
         // Best effort: a destroyed list re-attaches at once instead of at the next check.
         AXObserverAddNotification(observer, list, kAXUIElementDestroyedNotification as CFString, refcon)
+        // Best effort (A4a): the Dock's own menu, so a panel never covers it (S0-25, M36). The mouse-down latch
+        // covers a right-click when these don't arrive.
+        AXObserverAddNotification(observer, reader.appElement, kAXMenuOpenedNotification as CFString, refcon)
+        AXObserverAddNotification(observer, reader.appElement, kAXMenuClosedNotification as CFString, refcon)
         CFRunLoopAddSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(observer), .defaultMode)
         self.reader = reader
         self.observer = observer
         lastNotified = nil
         updateStats { $0.didAttach(pid: pid) }
         reader.readListFrame(primaryHeight: primaryHeight, now: Self.now)
+        syncGeometry()
         readSelection()
         return true
     }
@@ -369,6 +432,10 @@ private final class DockObserverSession: @unchecked Sendable {
                 AXObserverRemoveNotification(observer, list, kAXSelectedChildrenChangedNotification as CFString)
                 AXObserverRemoveNotification(observer, list, kAXUIElementDestroyedNotification as CFString)
             }
+            if let app = reader?.appElement {
+                AXObserverRemoveNotification(observer, app, kAXMenuOpenedNotification as CFString)
+                AXObserverRemoveNotification(observer, app, kAXMenuClosedNotification as CFString)
+            }
             let source = AXObserverGetRunLoopSource(observer)
             CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .defaultMode)
             CFRunLoopSourceInvalidate(source)
@@ -377,7 +444,60 @@ private final class DockObserverSession: @unchecked Sendable {
         }
         lastNotified = nil
         readScheduled = false
+        // A menu that was open when the observer went can't report its close; the policy hears it here.
+        if menuOpen {
+            menuOpen = false
+            if deliverNil { deliverMenu(false) }
+        }
         if deliverNil, lastDelivered != nil { publish(nil) }
+    }
+
+    /// The Dock menu's AX notifications (A4a).
+    fileprivate func menuChanged(open: Bool) {
+        guard observer != nil, open != menuOpen else { return }
+        menuOpen = open
+        deliverMenu(open)
+    }
+
+    private func deliverMenu(_ open: Bool) {
+        let handler = menuHandler
+        Task { @MainActor [weak self] in
+            guard let self, !self.isStopped else { return }
+            handler(open)
+        }
+    }
+
+    /// The item frames the reader last read, for the policy's geometry (A4a).
+    private func syncGeometry() {
+        geometry.setItems(reader?.itemFrames ?? [])
+    }
+
+    /// One settle read (§4.7). The last selected child is read again; two equal frames in a row, or the last read
+    /// allowed, settle it. No item, a timeout or a gone list settles on nil.
+    private func settleStep(previous: DockRect?, read: Int, _ done: @escaping @MainActor (DockSelection?) -> Void) {
+        guard observer != nil, let reader, let child = lastNotified else {
+            deliverSettled(nil, done)
+            return
+        }
+        guard case .value(let selection) = reader.selection(of: child, apps: apps, primaryHeight: primaryHeight,
+                                                            now: Self.now) else {
+            deliverSettled(nil, done)
+            return
+        }
+        syncGeometry()
+        if DockGeometry.isSettled(previous: previous, current: selection.itemFrame) || read + 1 >= Self.settleReads {
+            deliverSettled(selection, done)
+            return
+        }
+        let frame = selection.itemFrame
+        after(Self.settleInterval) { [weak self] in self?.settleStep(previous: frame, read: read + 1, done) }
+    }
+
+    private func deliverSettled(_ selection: DockSelection?, _ done: @escaping @MainActor (DockSelection?) -> Void) {
+        Task { @MainActor [weak self] in
+            guard let self, !self.isStopped else { return }
+            done(selection)
+        }
     }
 
     /// The AX callback. One read is queued at a time, and it reads the selection as it is then, so a burst of
@@ -426,6 +546,7 @@ private final class DockObserverSession: @unchecked Sendable {
             case .value(let selection):
                 lastNotified = child
                 retriedAfterTimeout = false
+                syncGeometry()
                 publish(selection)
             case .timedOut:
                 readTimedOut(retry: true)
@@ -482,6 +603,7 @@ private final class DockObserverSession: @unchecked Sendable {
             attachNow()
         } else {
             reader.readListFrame(primaryHeight: primaryHeight, now: Self.now)
+            syncGeometry()
         }
     }
 

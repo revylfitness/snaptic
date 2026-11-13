@@ -3,11 +3,13 @@ import Combine
 import SwiftUI
 import SnapticKit
 
-/// The Dock Previews module (lead; PLAN 0.5 §2, H1, H10, §4.13, §4.22). A6a: the real module, still drawing nothing.
+/// The Dock Previews module (lead; PLAN 0.5 §2, H1, H10, §4.13, §4.22). A4a: the observer's selections go to
+/// `DockPreviewController`, which shows the panel.
 /// - Off costs nothing (ground rule 1): no lease, observer, timer or thread until `start()`, and `stop()` takes back
 ///   all of it.
 /// - On, it holds a `WindowServices` lease with `.thumbnails` and `.otherSpaces` as its settings say, never `.recency`
-///   (§2.3). The idle lease registers notification-centre observers only.
+///   (§2.3), plus `.freshness(pid)` for the app whose preview is shown (M32). The idle lease registers
+///   notification-centre observers only.
 /// - In Safe Mode `start()` sets `.degraded("Paused in Safe Mode")` and returns: no observer, tap, panel, capture or
 ///   lease (§4.13). The three `dock` verbs are A9's.
 /// - `Dock.disable.<DockFeature>` kill switches are read once per start (H6).
@@ -35,13 +37,10 @@ import SnapticKit
     private var captures = 0
     /// A3: the Dock observer, while the module runs and isn't paused.
     private var observer: DockObserver?
-    #if DEBUG
-    /// A3's owner checks before the panel exists (S0-23, the AX stall): `windows(for:)` timed on each selection that
-    /// would show a panel, one read at a time.
-    private var readTimings = DockReadTimings()
-    private var lastWindowCount = 0
-    private var windowReadInFlight = false
-    #endif
+    /// A4a: the preview policy and panel, alongside the observer.
+    private var controller: DockPreviewController?
+    /// The app the lease holds `.freshness(pid)` for: the shown preview's (§2.3, M32).
+    private var freshPID: Int32?
 
     /// §4.14: Accessibility, plus Screen Recording while Window thumbnails is on.
     var requiredPermissions: Set<Permission> { config.value.requiredPermissions }
@@ -63,14 +62,21 @@ import SnapticKit
         }
         killSwitches = Self.readKillSwitches(defaults)
         leaseNeeds = Self.windowNeeds(config.value)
-        lease = WindowServices.shared.acquire(id, needs: leaseNeeds, onWindowsChanged: { pid in
+        lease = WindowServices.shared.acquire(id, needs: leaseNeeds, onPurge: { [weak self] in
+            self?.controller?.purged()
+        }, onWindowsChanged: { [weak self] pid in
             WindowManager.shared.markWindowsDirty(pid)
+            self?.controller?.windowsChanged(pid)
         })
         let observer = DockObserver()
         observer.onSelection = { [weak self] selection in self?.selectionChanged(selection) }
+        observer.onDockMenu = { [weak self] open in self?.controller?.dockMenu(open) }
         self.observer = observer
         observer.start()
         Self.liveCount(.observer, up: true)
+        controller = DockPreviewController(observer: observer, config: config.value,
+                                           onFreshness: { [weak self] pid in self?.freshnessChanged(pid) },
+                                           onCapture: { [weak self] count in self?.captures += count })
         config.$value
             .dropFirst()
             .receive(on: DispatchQueue.main)
@@ -85,17 +91,15 @@ import SnapticKit
         guard let context else { return }
         let wasRunning = state == .running
         sinks.removeAll()
+        controller?.stop()
+        controller = nil
+        freshPID = nil
         if let observer {
             observer.stop()
             self.observer = nil
             Self.liveCount(.observer, up: false)
             WindowManager.shared.endWindowReads()
         }
-        #if DEBUG
-        readTimings = DockReadTimings()
-        lastWindowCount = 0
-        windowReadInFlight = false
-        #endif
         if let lease { WindowServices.shared.release(lease) }
         lease = nil
         leaseNeeds = []
@@ -125,10 +129,7 @@ import SnapticKit
         lines.append("State: " + Self.stateName(state))
         lines.append("Pause reason: " + (pausedInSafeMode ? "safeMode" : "none"))
         lines += (observer?.stats ?? DockObserverStats()).diagnosticsLines(observerLive: Self.live[.observer] > 0)
-        #if DEBUG
-        let p95 = readTimings.p95.map { String(format: "%.1f ms", $0) } ?? "none"
-        lines.append("Window reads: \(readTimings.total), p95 \(p95), last \(lastWindowCount) windows")
-        #endif
+        lines += controller?.diagnosticsLines ?? DockPreviewCounts().lines
         lines.append("Leases: \(lease == nil ? 0 : 1)")
         lines.append("Captures: \(captures)")
         lines.append("Cache entries: \(ThumbnailStore.shared.liveEntries)")
@@ -159,33 +160,21 @@ import SnapticKit
 
     // MARK: Dock
 
-    /// The Dock's selection, coalesced to the latest (§2.4). A4a's preview policy takes it from here; until then
-    /// only the observer's counters see it.
+    /// The Dock's selection, coalesced to the latest (§2.4): the preview policy takes it from here.
     private func selectionChanged(_ selection: DockSelection?) {
         guard observer != nil else { return }
-        #if DEBUG
-        if let selection, selection.showsPanel, let pid = selection.pid { timeWindowRead(pid) }
-        #endif
+        controller?.selectionChanged(selection)
     }
 
-    #if DEBUG
-    private func timeWindowRead(_ pid: pid_t) {
-        guard !windowReadInFlight else { return }
-        windowReadInFlight = true
-        let current = observer
-        Task { @MainActor [weak self] in
-            let started = ProcessInfo.processInfo.systemUptime
-            let read = await WindowManager.shared.windows(for: pid)
-            let elapsed = (ProcessInfo.processInfo.systemUptime - started) * 1000
-            // A stop (and maybe a new start) since the read began: it isn't this run's.
-            guard let self, self.observer != nil, self.observer === current else { return }
-            self.windowReadInFlight = false
-            guard !read.fromCache else { return }
-            self.readTimings.add(elapsed)
-            self.lastWindowCount = read.items.count
-        }
+    /// The controller's shown app changed: the lease follows it (§2.3, M32).
+    private func freshnessChanged(_ pid: Int32?) {
+        freshPID = pid
+        guard state == .running, let lease else { return }
+        let needs = Self.windowNeeds(config.value, freshness: pid)
+        guard needs != leaseNeeds else { return }
+        leaseNeeds = needs
+        WindowServices.shared.update(lease, needs: needs)
     }
-    #endif
 
     // MARK: Settings
 
@@ -193,19 +182,22 @@ import SnapticKit
 
     private func configChanged(_ value: DockConfig) {
         guard state == .running, let lease else { return }
-        let needs = Self.windowNeeds(value)
-        guard needs != leaseNeeds else { return }
-        leaseNeeds = needs
-        // Dropping `.thumbnails` purges this client's entries at once (§2.3).
-        WindowServices.shared.update(lease, needs: needs)
+        let needs = Self.windowNeeds(value, freshness: freshPID)
+        if needs != leaseNeeds {
+            leaseNeeds = needs
+            // Dropping `.thumbnails` purges this client's entries at once (§2.3).
+            WindowServices.shared.update(lease, needs: needs)
+        }
+        controller?.configChanged(value)
     }
 
-    /// The Dock's lease (§2.3): `.thumbnails` and `.otherSpaces` as its settings say, never `.recency`. A4a adds
-    /// `.freshness(pid)` while a preview is pending or shown.
-    static func windowNeeds(_ config: DockConfig) -> WindowNeeds {
+    /// The Dock's lease (§2.3): `.thumbnails` and `.otherSpaces` as its settings say, never `.recency`, and
+    /// `.freshness(pid)` while a preview is shown.
+    static func windowNeeds(_ config: DockConfig, freshness pid: Int32? = nil) -> WindowNeeds {
         var needs: WindowNeeds = []
         if config.thumbnails { needs.insert(.thumbnails) }
         if config.otherSpaces { needs.insert(.otherSpaces) }
+        if let pid { needs.insert(.freshness(pid)) }
         return needs
     }
 

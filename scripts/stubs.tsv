@@ -680,6 +680,11 @@ Sources/SnapticKit/DockReaderRules.swift	lead	L	-	-
 Tests/SnapticKitTests/DockReaderRulesTests.swift	lead	L	-	-
 Sources/Snaptic/Dock/DockReader.swift	lead	L	-	-
 Sources/Snaptic/Dock/DockObserver.swift	lead	L	-	-
+Sources/SnapticKit/DockPreviewRules.swift	lead	L	-	-
+Tests/SnapticKitTests/DockPreviewRulesTests.swift	lead	L	-	-
+Sources/Snaptic/Dock/DockPreviewController.swift	lead	L	-	-
+Sources/Snaptic/Dock/DockPreviewPanel.swift	lead	L	-	-
+Sources/Snaptic/Dock/DockPreviewView.swift	lead	L	-	-
 Sources/SnapticKit/WindowSymbolContract.swift	lead	L	-	-
 Sources/SnapticKit/CrashGuard.swift	lead	L	-	-
 Tests/SnapticKitTests/WindowSymbolContractTests.swift	lead	L	-	-
