@@ -54,7 +54,7 @@ package struct DockPageFacts: Equatable, Sendable {
     package var accessibility: Bool
     package var read: DockReadState
     package var loginLadderEnded: Bool
-    /// When the Dock was first found unreadable, for row 5's 2-minute attention wait.
+    /// When row 5 first showed (the login ladder's end), for its 2-minute attention wait (X2-16).
     package var unreadableSince: Double?
     package var now: Double
     /// Bundle ids of running apps; only `KnownDockTools` ids count.
@@ -152,11 +152,14 @@ package struct DockPageNote: Equatable, Sendable {
     package var text: String
     package var warning: Bool
     package var action: DockPageAction?
+    /// The stopped feature's display name, on a crash-guard or poisoned row: [Try Again] tries that feature.
+    package var feature: String?
 
-    package init(_ text: String, warning: Bool = true, action: DockPageAction? = nil) {
+    package init(_ text: String, warning: Bool = true, action: DockPageAction? = nil, feature: String? = nil) {
         self.text = text
         self.warning = warning
         self.action = action
+        self.feature = feature
     }
 }
 
@@ -192,11 +195,16 @@ package enum DockMenuItem: Equatable, Sendable {
     package var title: String {
         switch self {
         case let .status(text): text
-        case let .openPane(pane): L("Open \(pane) Settings…")
+        case let .openPane(pane): Self.openPaneTitle { _ in pane }
         case .pauseForOneHour: L("Pause Dock Previews for 1 Hour")
         case .resume: L("Resume Dock Previews")
         case .settings: L("Dock Previews Settings…")
         }
+    }
+
+    /// §4.19's wording, in the source form the canonical-strings test matches.
+    private static func openPaneTitle(_ paneName: (Permission) -> String) -> String {
+        L("Open \(paneName(.accessibility)) Settings…")
     }
 }
 
@@ -279,7 +287,8 @@ package enum DockPageRules {
         case .safeMode:
             return DockPageStatus(row: r, text: L("Paused in Safe Mode"))
         case .needsPermission:
-            return DockPageStatus(row: r, text: L("Dock Previews needs \(f.paneName) to read the Dock."),
+            let paneName: (Permission) -> String = { _ in f.paneName }
+            return DockPageStatus(row: r, text: L("Dock Previews needs \(paneName(.accessibility)) to read the Dock."),
                                   warning: true, action: .openPrivacy)
         case .dockUnreadable:
             return DockPageStatus(row: r, text: L("Dock Previews can’t read the Dock. It tries again when the Dock restarts."),
@@ -314,10 +323,11 @@ package enum DockPageRules {
         }
         for feature in f.crashGuardStops {
             notes.append(DockPageNote(L("\(feature) stopped after a problem in macOS. Snaptic tries again after a macOS update."),
-                                      action: .tryAgain))
+                                      action: .tryAgain, feature: feature))
         }
         for feature in f.poisoned {
-            notes.append(DockPageNote(L("\(feature) stopped because macOS answered in a way Snaptic didn’t expect. Quit and reopen Snaptic to try again.")))
+            notes.append(DockPageNote(L("\(feature) stopped because macOS answered in a way Snaptic didn’t expect. Quit and reopen Snaptic to try again."),
+                                      feature: feature))
         }
         if heldPauseUnder(f) {
             notes.append(DockPageNote(pausedUntil(f), warning: false, action: .resume))
@@ -364,6 +374,13 @@ package enum DockPageRules {
         guard let state = current.state else { return nil }
         let until = f.commandPause.flatMap { AwakeCommandGrammar.isoUTC($0.untilUnix) }
         return DockCLIStatus(state: state, reason: current.reason, until: until)
+    }
+
+    /// When row 5's attention mark comes, while it's still to come: the app rebuilds the menu then (X2-16).
+    package static func attentionDue(_ f: DockPageFacts) -> Double? {
+        guard row(f) == .dockUnreadable, let since = f.unreadableSince else { return nil }
+        let due = since + unreadableAttentionDelay
+        return due > f.now ? due : nil
     }
 
     /// The menu-bar attention mark: row 4, row 5 after 2 minutes, or a tripped breaker (§4.17).

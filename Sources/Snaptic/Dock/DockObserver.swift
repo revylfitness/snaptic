@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import os
 import SnapticKit
 import SnapticShims
 
@@ -20,6 +21,8 @@ import SnapticShims
     /// The Dock's own menu opened (true) or closed (false), on main (§2.4, X-12; best effort: AXMenuOpened and
     /// AXMenuClosed on the Dock's application element).
     var onDockMenu: (@MainActor (Bool) -> Void)?
+    /// `stats.read` or `stats.ladderEnded` changed, on main (A7: the page's row 5 and the menu's attention mark).
+    var onReadChanged: (@MainActor () -> Void)?
     /// The item frames the observer last read, and the screens main last set (A4a, §R4 K3).
     let geometry = DockGeometryStore()
 
@@ -41,7 +44,8 @@ import SnapticShims
             geometry: geometry,
             deliver: { [weak self] selection in self?.onSelection?(selection) },
             menu: { [weak self] open in self?.onDockMenu?(open) },
-            needsPID: { [weak self] in self?.refreshPID() })
+            needsPID: { [weak self] in self?.refreshPID() },
+            readChanged: { [weak self] in self?.onReadChanged?() })
         self.session = session
         dockPID = Self.findDockPID()
         session.start(pid: dockPID, apps: Self.runningApps(), primaryHeight: Self.primaryHeight)
@@ -77,8 +81,17 @@ import SnapticShims
         session.settle(done)
     }
 
-    /// Try Again (§4.17 state 5): attach at once, with the same Dock or not.
+    /// Try Again (§4.17 state 5): attach at once, with the same Dock or not. In a debug build it also ends M47's
+    /// forced failure (`DockObserverDebug`).
     func retry() {
+        #if DEBUG
+        DockObserverDebug.forceUnreadable = false
+        #endif
+        reattach()
+    }
+
+    /// Attach at once, as Try Again does but leaving M47's forced failure alone: Accessibility was just granted.
+    func reattach() {
         guard let session else { return }
         dockPID = Self.findDockPID()
         session.retry(pid: dockPID, apps: Self.runningApps(), primaryHeight: Self.primaryHeight)
@@ -192,6 +205,7 @@ private final class DockObserverSession: @unchecked Sendable {
     private let deliverHandler: @MainActor (DockSelection?) -> Void
     private let menuHandler: @MainActor (Bool) -> Void
     private let needsPID: @MainActor () -> Void
+    private let readChanged: @MainActor () -> Void
     private let geometry: DockGeometryStore
     private let loginUptime: Double?
     private var box: Unmanaged<CallbackTarget<DockObserverSession>>?   // set on main, released on `thread`
@@ -221,12 +235,14 @@ private final class DockObserverSession: @unchecked Sendable {
     private var deliveryScheduled = false
 
     init(loginUptime: Double?, geometry: DockGeometryStore, deliver: @escaping @MainActor (DockSelection?) -> Void,
-         menu: @escaping @MainActor (Bool) -> Void, needsPID: @escaping @MainActor () -> Void) {
+         menu: @escaping @MainActor (Bool) -> Void, needsPID: @escaping @MainActor () -> Void,
+         readChanged: @escaping @MainActor () -> Void) {
         self.loginUptime = loginUptime
         self.geometry = geometry
         deliverHandler = deliver
         menuHandler = menu
         self.needsPID = needsPID
+        self.readChanged = readChanged
     }
 
     /// §4.7's settle: at most this many reads…
@@ -345,10 +361,19 @@ private final class DockObserverSession: @unchecked Sendable {
         }
     }
 
+    /// A change to what the page reads (`read`, `ladderEnded`) is posted to main after the lock is released.
     private func updateStats(_ change: (inout DockObserverStats) -> Void) {
         stateLock.lock()
+        let before = (statsValue.read, statsValue.ladderEnded)
         change(&statsValue)
+        let changed = before != (statsValue.read, statsValue.ladderEnded)
         stateLock.unlock()
+        guard changed else { return }
+        let handler = readChanged
+        Task { @MainActor [weak self] in
+            guard let self, !self.isStopped else { return }
+            handler()
+        }
     }
 
     private func update(pid: pid_t?, apps: [DockRunningApp], primaryHeight: Double) {
@@ -389,6 +414,9 @@ private final class DockObserverSession: @unchecked Sendable {
     /// One attach: a fresh `AXObserver` on the list, then the current selection read and delivered.
     private func attach() -> Bool {
         guard observer == nil else { return true }
+        #if DEBUG
+        if DockObserverDebug.forceUnreadable { return false }
+        #endif
         guard let box, let pid, Self.isAlive(pid) else {
             askForPID()
             return false
@@ -654,3 +682,18 @@ private final class DockObserverSession: @unchecked Sendable {
         attachNow()
     }
 }
+
+#if DEBUG
+/// M47's test hook (A7): launching a debug build with `SNAPTIC_DEBUG_DOCK_UNREADABLE=1` makes every attach fail, as an
+/// unreadable Dock would, so §4.17 row 5 shows once the ladder ends. Try Again (`DockObserver.retry()`) clears it for
+/// the rest of the run. Read on the observer's thread, cleared on main.
+enum DockObserverDebug {
+    private static let forced = OSAllocatedUnfairLock(
+        initialState: ProcessInfo.processInfo.environment["SNAPTIC_DEBUG_DOCK_UNREADABLE"] == "1")
+
+    static var forceUnreadable: Bool {
+        get { forced.withLock { $0 } }
+        set { forced.withLock { $0 = newValue } }
+    }
+}
+#endif

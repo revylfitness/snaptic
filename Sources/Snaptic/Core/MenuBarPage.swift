@@ -58,8 +58,8 @@ private struct MenuBarPageContent: View {
                                symbol: "menubar.rectangle", tint: .graphite)
             Section {
                 // 0.4 A7: Hidden Icons' row has its own pop-up titles (H2, `MenuPlacement.title(_:for:)`).
-                // 0.5 H1: Dock Previews has no row until A7 (`MenuBarPageControls.dockPresence`).
-                ForEach(ModuleID.allCases.filter { $0 != .dockPreviews }, id: \.self) { id in
+                // 0.5 A7: Dock Previews' row offers Show in Snaptic Menu and Don't Show only (§4.19, H1).
+                ForEach(ModuleID.allCases, id: \.self) { id in
                     moduleRows(id)
                 }
             } footer: {
@@ -224,7 +224,7 @@ private struct MenuBarPageContent: View {
         case .displays: return ControlID("menubar.page.displaysPresence")
         case .awake: return ControlID("menubar.page.awakePresence")
         case .hiddenIcons: return ControlID("menubar.page.iconsPresence")
-        case .dockPreviews: return nil
+        case .dockPreviews: return ControlID("menubar.page.dockPresence")
         }
     }
 
@@ -282,7 +282,12 @@ private struct MenuBarPageContent: View {
     @ViewBuilder private var warnings: some View {
         let config = modules.value
         let plan = config.statusItemPlan(running: host.runningModules)
-        if plan.everythingHidden {
+        if plan.everythingHidden, config.everythingHiddenWithoutShortcuts {
+            // 0.5 §4.19: Dock Previews alone has no shortcuts, and Show Snaptic Menu never moves it (H1).
+            Section {
+                StatusRow(L("No Snaptic icon is shown. Open Snaptic again to come back to Settings."), style: .warning)
+            }
+        } else if plan.everythingHidden {
             Section {
                 StatusRow(L("No Snaptic icon is shown. Open Snaptic again to come back to Settings; shortcuts keep working."),
                           style: .warning, actions: [

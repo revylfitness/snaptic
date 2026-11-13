@@ -19,9 +19,7 @@ struct SwitcherAdvancedSheet: View, ControlDeclaring {
 
     var body: some View {
         AdvancedSheet(L("Window Switcher Advanced Settings"),
-                      restoreDefaults: RestoreDefaults(scopeName: L("Window Switcher"), destructive: false) { [settings] in
-                          settings.reset()
-                      },
+                      restoreDefaults: restoreDefaults,
                       restoreControl: ControlID("switcher.advanced.restoreDefaults")) {
             Section {
                 ToggleSetting(L("Window thumbnails"), help: L("Live images of your windows. Needs Screen Recording."),
@@ -110,15 +108,26 @@ struct SwitcherAdvancedSheet: View, ControlDeclaring {
             } header: {
                 Text(L("Privacy"))
             } footer: {
-                Text(L("Thumbnails stay in memory, are never saved, and are cleared when your Mac locks or sleeps."))
+                Text(L("Thumbnails stay in memory and are never saved. They’re cleared after 30 minutes, and when your Mac locks or sleeps. These settings also apply to Dock Previews."))
                     .foregroundStyle(.secondary)
             }
             if settings.config.protectPrivateWindows {
                 AppListEditor(L("Never show thumbnails for"),
-                              help: L("These apps show their icon instead of a thumbnail."),
+                              help: L("These apps show their icon and name instead of a picture or window title, in the Window Switcher and Dock Previews."),
                               bundleIDs: SwitcherBinding.config(settings, \.privateBundleIDs),
                               anchor: ControlID("switcher.advanced.privateApps"))
             }
+        }
+    }
+
+    /// The sheet's rows only; never the privacy settings Dock Previews shares (PLAN 0.5 §4.10).
+    private var restoreDefaults: RestoreDefaults {
+        let settings = self.settings
+        return RestoreDefaults(title: L("Restore Window Switcher Defaults…"),
+                               question: L("Restore Window Switcher settings to their defaults?"),
+                               message: L("Window Switcher settings go back to their defaults. Protect private windows and its app list stay as they are, because Dock Previews uses them too."),
+                               button: L("Restore Defaults"), destructive: false) {
+            settings.reset()
         }
     }
 

@@ -402,6 +402,52 @@ final class ConfigDockTests: XCTestCase {
         XCTAssertEqual(KillSwitches.read(nil, prefix: "Dock", as: DockFeature.self), [])
     }
 
+    /// The sheet's Restore Defaults resets its own settings only; the page's restore is `DockConfig()` (§4.18).
+    func testRestoringAdvancedDefaultsKeepsThePageSettings() {
+        var c = DockConfig()
+        c.delay = 0.7
+        c.cardSize = .large
+        c.thumbnails = false
+        c.includeMinimizedAndHidden = false
+        c.otherSpaces = false
+        c.clickActions = .hideApp
+        c.restoreAllMinimized = true
+        c.sort = .title
+        c.keys = false
+        c.windowlessApps = false
+        c.runAlongsideOtherTools = true
+        c.showWithVoiceOver = true
+        c.hiddenBundleIDs = ["com.apple.Safari"]
+        let restored = c.restoringAdvancedDefaults()
+        var expected = DockConfig()
+        expected.delay = 0.7
+        expected.cardSize = .large
+        expected.thumbnails = false
+        expected.includeMinimizedAndHidden = false
+        expected.otherSpaces = false
+        expected.clickActions = .hideApp
+        expected.restoreAllMinimized = true
+        XCTAssertEqual(restored, expected)
+    }
+
+    /// “Show previews after” (§4.18; P3-7): “Immediately”, then “0.1 s” to “1 s”, one position per tenth.
+    func testDelayLabelsAndPositions() {
+        XCTAssertEqual(DockConfig.delayLabels(), ["Immediately", "0.1 s", "0.2 s", "0.3 s", "0.4 s", "0.5 s", "0.6 s",
+                                                  "0.7 s", "0.8 s", "0.9 s", "1 s"])
+        XCTAssertEqual(DockConfig.delayLabel(0.3, decimalSeparator: ","), "0,3 s")
+        XCTAssertEqual(DockConfig.delayPosition(DockConfig.defaultDelay), 2)
+        XCTAssertEqual(DockConfig.delayPosition(0.04), 0)
+        XCTAssertEqual(DockConfig.delayPosition(5), 10)
+        XCTAssertEqual(DockConfig.delayPosition(-1), 0)
+        XCTAssertEqual(DockConfig.delayPosition(.nan), 2)
+        XCTAssertEqual(DockConfig.delay(atPosition: 3), 0.3)
+        XCTAssertEqual(DockConfig.delay(atPosition: 12), 1)
+        XCTAssertEqual(DockConfig.delay(atPosition: -2), 0)
+        for position in 0...10 {
+            XCTAssertEqual(DockConfig.delayPosition(DockConfig.delay(atPosition: Double(position))), Double(position))
+        }
+    }
+
     func testRequiredPermissions() {
         var c = DockConfig()
         XCTAssertEqual(c.requiredPermissions, [.accessibility, .screenRecording])

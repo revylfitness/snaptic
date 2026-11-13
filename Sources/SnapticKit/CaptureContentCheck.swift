@@ -203,6 +203,16 @@ package enum WindowStopRows {
             + lasting.map { WindowStopRow(feature: $0, text: $0.poisonedRowText, action: nil) }
     }
 
+    /// The Dock Previews page's share (§4.17): only the features shown on both pages, in the same order and with the
+    /// same rule (a feature the crash guard stopped isn't listed as poisoned). `DockPageRules` builds the rows from
+    /// their display names.
+    package static func dockPage(crashGuard: Set<WindowFeature>,
+                                 poisoned: Set<WindowFeature>) -> (crashGuard: [WindowFeature], poisoned: [WindowFeature]) {
+        let shown = WindowFeature.allCases.filter { !$0.switcherPageOnly }
+        return (shown.filter { crashGuard.contains($0) },
+                shown.filter { poisoned.contains($0) && !crashGuard.contains($0) })
+    }
+
     /// The "⌘⇥ not given back" row (§4.12 step 6; X3-2, G3-2): on the Window Switcher page only, whatever the
     /// switcher's state, while `Windows.pendingGiveBack` holds a list. The text follows S0-5b's logout result.
     package static func giveBack(pending: Bool, comesBackAtLogout: Bool) -> WindowStopRow? {

@@ -168,8 +168,11 @@ package struct DockObserverStats: Equatable, Sendable {
     package private(set) var read: DockReadState = .starting
     /// The ladder ran out of steps without attaching (`DockPageFacts.loginLadderEnded`).
     package private(set) var ladderEnded = false
-    /// When the Dock was first found unreadable since the last attach (`DockPageFacts.unreadableSince`).
+    /// When the Dock was first found unreadable since the last attach.
     package private(set) var unreadableSince: Double?
+    /// When the ladder ended without attaching: §4.17 row 5 shows from then, and its attention mark waits 2 minutes
+    /// from then (X2-16; `DockPageFacts.unreadableSince`).
+    package private(set) var ladderEndedAt: Double?
     /// Attaches to a Dock process other than the one attached before (a Dock restart).
     package private(set) var reattaches = 0
     /// Re-attaches the health check started (`observer.silentReattach`).
@@ -193,6 +196,7 @@ package struct DockObserverStats: Equatable, Sendable {
         read = .attached
         ladderEnded = false
         unreadableSince = nil
+        ladderEndedAt = nil
     }
 
     /// The observer is gone (the Dock quit, or a rebuild is about to attach again).
@@ -205,6 +209,7 @@ package struct DockObserverStats: Equatable, Sendable {
         attached = false
         read = .unreadable
         if unreadableSince == nil { unreadableSince = now }
+        if ended && !ladderEnded { ladderEndedAt = now }
         if ended { ladderEnded = true }
     }
 

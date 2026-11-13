@@ -368,8 +368,22 @@ final class AppSettings: ObservableObject {
         save()
     }
 
-    /// Back to defaults (General → Backup & Reset).
-    func reset() { config = Config() }
+    /// Back to defaults (the sheet's Restore Defaults and General → Backup & Reset). Protect private windows and its
+    /// app list stay: Dock Previews uses them too (PLAN 0.5 §4.10). Only Reset All Settings clears them, through
+    /// `resetPrivacy()`.
+    func reset() {
+        var fresh = Config()
+        fresh.protectPrivateWindows = config.protectPrivateWindows
+        fresh.privateBundleIDs = config.privateBundleIDs
+        config = fresh
+    }
+
+    /// The shared privacy settings back to their defaults (General › Reset All Settings only; PLAN 0.5 §4.10).
+    func resetPrivacy() {
+        let fresh = Config()
+        config.protectPrivateWindows = fresh.protectPrivateWindows
+        config.privateBundleIDs = fresh.privateBundleIDs
+    }
 
     private func scheduleSave() {
         pendingSave?.cancel()

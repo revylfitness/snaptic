@@ -320,6 +320,13 @@ extension ModulesConfig {
                               sharedFooterInOwnMenus: !showShared && !(own.isEmpty && custom.isEmpty))
     }
 
+    /// 0.5 §4.19: the Menu Bar page's “No Snaptic icon is shown” warning while Dock Previews is the only module on.
+    /// It has no shortcuts and Show Snaptic Menu never moves it (H1), so the warning drops “shortcuts keep working”
+    /// and its button. Only meaningful when the plan's `everythingHidden` is true.
+    package var everythingHiddenWithoutShortcuts: Bool {
+        enabledModules == [.dockPreviews]
+    }
+
     /// The modules (not Awake, which builds its own item, nor Hidden Icons, whose arrow and dividers aren't module
     /// icons, H2, nor Dock Previews, which never has one whatever is stored, 0.5 H1) shown with an icon of their own
     /// now: running, Always Show, or Show When Active while it is active (only Displays offers it; anywhere else it is

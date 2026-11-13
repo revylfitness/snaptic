@@ -598,6 +598,20 @@ final class MenuLayoutTests: XCTestCase {
         XCTAssertEqual(p.ownIcon, [.windowSwitcher, .displays])
     }
 
+    /// §4.19: Dock Previews alone and Don't Show hides every Snaptic icon, and there's no shortcut to fall back on.
+    func testEverythingHiddenWithDockPreviewsAloneHasNoShortcuts() {
+        let alone = withDock(.hidden, base: config(enabled: []))
+        XCTAssertEqual(alone.enabledModules, [.dockPreviews])
+        XCTAssertTrue(plan(alone).everythingHidden)
+        XCTAssertTrue(alone.everythingHiddenWithoutShortcuts)
+        // Shown in the Snaptic menu: the one section, so nothing is hidden.
+        XCTAssertFalse(plan(withDock(base: config(enabled: []))).everythingHidden)
+        // With another module hidden too, that module's shortcuts still work.
+        let both = withDock(.hidden, base: config(switcher: .hidden, enabled: [.windowSwitcher]))
+        XCTAssertTrue(plan(both).everythingHidden)
+        XCTAssertFalse(both.everythingHiddenWithoutShortcuts)
+    }
+
     func testDockPreviewsNotRunningIsInNoList() {
         let p = plan(withDock(), running: [.windowSwitcher, .displays, .awake])
         XCTAssertFalse(p.shared.contains(.dockPreviews))

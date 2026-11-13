@@ -183,6 +183,8 @@ final class DockPageRulesTests: XCTestCase {
                               poisoned: ["Dock click actions"])
         let notes = DockPageRules.status(f).notes
         XCTAssertEqual(notes.map(\.action), [.openPrivacy, .relaunch, .relaunch, .tryAgain, nil])
+        // A stopped feature's row names it, so [Try Again] tries that feature.
+        XCTAssertEqual(notes.map(\.feature), [nil, nil, nil, "Window thumbnails", "Dock click actions"])
         XCTAssertEqual(notes.map(\.text), [
             "Window thumbnails need Screen Recording. Until then, previews show window titles.",
             "Dock click actions stopped because macOS turned them off 3 times. Relaunch Snaptic to use them again.",
@@ -287,5 +289,18 @@ final class DockPageRulesTests: XCTestCase {
         for row in [DockPageRow.safeMode, .starting, .otherTool, .voiceOver, .pausedByCommand] {
             XCTAssertFalse(DockPageRules.attention(only(row)), "\(row)")
         }
+    }
+
+    /// The menu is rebuilt when row 5's mark comes due: only in row 5, and only while it's still to come.
+    func testAttentionDue() {
+        XCTAssertEqual(DockPageRules.attentionDue(DockPageFacts(read: .unreadable, unreadableSince: 10, now: 20)), 130)
+        XCTAssertNil(DockPageRules.attentionDue(DockPageFacts(read: .unreadable, unreadableSince: 10, now: 130)))
+        XCTAssertNil(DockPageRules.attentionDue(DockPageFacts(read: .unreadable, unreadableSince: nil, now: 20)))
+        // Still in the login ladder (Starting), or another row wins: nothing to wait for.
+        XCTAssertNil(DockPageRules.attentionDue(DockPageFacts(read: .unreadable, loginLadderEnded: false,
+                                                               unreadableSince: 10, now: 20)))
+        XCTAssertNil(DockPageRules.attentionDue(DockPageFacts(accessibility: false, read: .unreadable,
+                                                               unreadableSince: 10, now: 20)))
+        XCTAssertNil(DockPageRules.attentionDue(DockPageFacts(read: .attached, unreadableSince: 10, now: 20)))
     }
 }

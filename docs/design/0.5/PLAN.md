@@ -2321,3 +2321,17 @@ changed, and why.
 | A5 | The click tap takes the module's pause and the VoiceOver pause doesn't stop it; it starts and stops with `startEngine`/`stopEngine` (merge) | §4.16; A6b's engine split |
 | A5 | `DockLive.keys` counts from the first show with keys on until the module stops | The tap is kept, disabled, between shows |
 | A5 | Diagnostics add "Keys breaker", "Click tap", "Click actions" and "Click skips", counts and enums only; Kit `DockPanelHit` gives the key target | §4.22; the key target needs pure tests |
+| A7 | No `Permission.inputMonitoring` on the Permissions page; Dock Previews is listed under Accessibility only | §4.14 makes Input Monitoring conditional on S0-9, which hasn't run; A5's click tap needs Accessibility |
+| A7 | The switcher half of §4.10 (`reset()` keeps the privacy fields, `resetPrivacy()`, the switcher's footer, list help and restore message) and the §4.18 Window thumbnails detail land in A7 | A2b didn't take them, and the Dock sheet's restore text depends on the switcher keeping privacy |
+| A7 | The canonical list also holds the ⌘⇥ give-back rows and the generic " (⌘\(keyIndex))" sidebar tooltip; "Dock Previews (⌘n)" has no literal of its own | They are §4.17 and §4.19 strings; `MenuLayout` builds the tooltip generically |
+| A7 | The Delay slider steps through positions labelled by `delayLabels`; "0.1 s" is the locale's decimal separator plus `L(" s")` | Locale-correct labels without one string per position |
+| A7 | `DockObserver` gains `onReadChanged`, `retry`, `reattach` and `ladderEndedAt`; it re-attaches when Accessibility is granted | Row 5's 2-minute attention wait and Try Again need them; row 4 clears without a relaunch |
+| A7 | DEBUG `SNAPTIC_DEBUG_DOCK_UNREADABLE=1` makes every attach fail; Try Again clears it for the run | M47 needs a way to reach row 5 on a working Dock |
+| A7 | The controller reports `onKeysBreakerTripped` to the module | The breaker row and the attention mark need it |
+| A7 | `everythingHiddenWithoutShortcuts` adds a Dock-only "Everything hidden" warning with no Show Snaptic Menu button | That button never moves Dock, so it would do nothing |
+| A7 | The host asks for Accessibility with "Dock Previews needs it to read the Dock." and never asks for Screen Recording for Dock | §4.14 and G-7: Screen Recording comes only from onboarding or the page's row |
+| A7 | Row 1 (kill switch) shows only the lock row, without highlights | The module can't be turned on, so the highlights would sell nothing |
+| A7 | `syncPause` refreshes Settings every time | Rows 6–8 name a tool or a clock that can change while the pause stays the same |
+| A7 | The keys lock row under the toggle is unanchored; the same key's Diagnostics row keeps the anchor | One anchor per key |
+| A7 | Menu Bar help for Dock shows only while it's on Don't Show | Matches `MenuPlacement.help(.hidden, .dockPreviews)` |
+| A7 | Gap: §4.10's "`--selftest-controls` checks both on values" is left to A9's `dockCases` | It belongs with the CLI self-test cases |

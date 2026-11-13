@@ -25,11 +25,12 @@ package enum DockPauseRules {
     }
 
     /// The Dock read the page and `dock status` see. `stats` is nil while a pause keeps the observer down: nothing
-    /// is read then, so Starting and row 5 can't apply and the pause's own row shows.
+    /// is read then, so Starting and row 5 can't apply and the pause's own row shows. `unreadableSince` is when row 5
+    /// first showed (the ladder's end), for its 2-minute attention wait (X2-16).
     package static func read(_ stats: DockObserverStats?) -> (read: DockReadState, ladderEnded: Bool,
                                                              unreadableSince: Double?) {
         guard let stats else { return (.attached, true, nil) }
-        return (stats.read, stats.ladderEnded, stats.unreadableSince)
+        return (stats.read, stats.ladderEnded, stats.ladderEndedAt)
     }
 
     // MARK: EventLog (§4.22)

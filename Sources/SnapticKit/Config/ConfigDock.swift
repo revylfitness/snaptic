@@ -118,6 +118,52 @@ package struct DockConfig: ConfigModel {
         return c
     }
 
+    /// The Advanced sheet's Restore Defaults (§4.18): the sheet's own settings go back to their defaults; the page's
+    /// stay. The page's Restore Defaults is `DockConfig()`. Neither touches privacy, which lives in the switcher's
+    /// `Config` (§4.10).
+    package func restoringAdvancedDefaults() -> DockConfig {
+        let d = DockConfig()
+        var c = self
+        c.sort = d.sort
+        c.keys = d.keys
+        c.windowlessApps = d.windowlessApps
+        c.runAlongsideOtherTools = d.runAlongsideOtherTools
+        c.showWithVoiceOver = d.showWithVoiceOver
+        c.hiddenBundleIDs = d.hiddenBundleIDs
+        return c
+    }
+
+    /// “Show previews after” moves in these steps (§4.18): 0 to 1 s in 0.1 s, so the slider's positions are tenths.
+    package static let delayStep = 0.1
+
+    /// The slider's position for a delay: its tenths, 0…10.
+    package static func delayPosition(_ seconds: Double) -> Double {
+        guard seconds.isFinite else { return (defaultDelay / delayStep).rounded() }
+        let clamped = min(max(seconds, delayRange.lowerBound), delayRange.upperBound)
+        return (clamped / delayStep).rounded()
+    }
+
+    /// The delay a slider position stands for, without binary noise (3 → 0.3).
+    package static func delay(atPosition position: Double) -> Double {
+        let count = (delayRange.upperBound - delayRange.lowerBound) / delayStep
+        let tenths = position.isFinite ? min(max(position.rounded(), 0), count.rounded()) : 0
+        return tenths / 10
+    }
+
+    /// “Immediately” at 0, else at most one decimal and `L(" s")` (“0.1 s” to “1 s”; P3-7).
+    package static func delayLabel(_ seconds: Double, decimalSeparator: String = ".") -> String {
+        let tenths = Int(delayPosition(seconds))
+        guard tenths > 0 else { return L("Immediately") }
+        let whole = String(tenths / 10)
+        let number = tenths % 10 == 0 ? whole : whole + decimalSeparator + String(tenths % 10)
+        return number + L(" s")
+    }
+
+    /// The slider's named positions, one per tenth from 0 to 1 s.
+    package static func delayLabels(decimalSeparator: String = ".") -> [String] {
+        (0...Int(delayPosition(delayRange.upperBound))).map { delayLabel(Double($0) / 10, decimalSeparator: decimalSeparator) }
+    }
+
     /// What the module needs for these settings (§4.14): Accessibility, plus Screen Recording while Window thumbnails
     /// is on.
     package var requiredPermissions: Set<Permission> {

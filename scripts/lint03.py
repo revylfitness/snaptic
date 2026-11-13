@@ -1599,11 +1599,11 @@ def without_string_text(code):
 # 0.4 K5: Hidden Icons' tables land before their views (A1, A6, A7). While no app file declares
 # `typealias Controls = <table>` for one of these, "declared but no view or builder uses it" is skipped for it; every
 # other L15 check applies. Once a view declares the alias, the entry must go (reported below). R checks it is empty.
-# 0.5 K5: Dock Previews' three tables, until A7's views (PLAN 0.5 §3 L15). A7 empties it again.
-L15_PENDING = {"DockPageControls", "DockAdvancedSheetControls", "DockMenuRowsControls"}
-# 0.5 K5: single ids added to a table a view already uses, skipped the same way until that view uses them. The Menu
-# Bar page has no Dock Previews row until A7 (`MenuBarPage.swift`). Reported once used; A7 empties it.
-L15_PENDING_IDS = {"menubar.page.dockPresence"}
+# 0.5 K5 listed Dock Previews' three tables here until A7's views (PLAN 0.5 §3 L15); A7 emptied it again.
+L15_PENDING = set()
+# 0.5 K5: single ids added to a table a view already uses, skipped the same way until that view uses them. Reported
+# once used. A7 emptied it (the Menu Bar page's Dock Previews row).
+L15_PENDING_IDS = set()
 
 
 def l15():

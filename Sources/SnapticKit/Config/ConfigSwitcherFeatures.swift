@@ -112,7 +112,7 @@ package struct SwitcherFeaturesConfig: ConfigModel {
     package static func detail(_ feature: SwitcherFeature) -> String {
         switch feature {
         case .thumbnails:
-            return L("Off: every shortcut shows app icons, with no live preview. Snaptic then never asks for Screen Recording.")
+            return L("Off: every shortcut shows app icons, with no live preview. The Window Switcher then never asks for Screen Recording.")
         case .preview: return L("Shows the selected window full size behind the switcher.")
         case .otherSpaces: return L("Off: only windows on the current Space are listed.")
         case .windowlessApps: return L("Off: apps without windows are hidden from every shortcut.")

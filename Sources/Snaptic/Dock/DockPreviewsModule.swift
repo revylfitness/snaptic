@@ -18,6 +18,9 @@ import SnapticKit
 /// - A6b: while a Window Switcher session is open (`WindowServices.switcherSessionActive`) nothing shows or swaps.
 /// - `Dock.disable.<DockFeature>` kill switches are read once per start (H6).
 /// - The live counters are Kit `DockLive` (§4.22); A3, A4a and A5 count up and down through `liveCount(_:up:)`.
+/// - A7: the Settings page (`DockPage`), the Snaptic menu section (`DockMenuRows`) and the attention mark, all from Kit
+///   `DockPageRules` over `pageFacts()`. A change to the observer's read state, a permission, a stopped window
+///   feature or a breaker rebuilds the menu; row 5's mark comes from a one-shot timer two minutes after it shows.
 @MainActor final class DockPreviewsModule: SnapticModule {
     let id: ModuleID = .dockPreviews
     let title = L("Dock Previews")
@@ -53,6 +56,8 @@ import SnapticKit
     /// latest selection, raw, for a tap made mid-run.
     private var clickTap: DockClickTap?
     private var dockSelection: DockSelection?
+    /// A7: fires when row 5's attention mark is due (X2-16), to rebuild the menu; counted in `.timers`.
+    private var attentionTimer: Timer?
 
     /// §4.14: Accessibility, plus Screen Recording while Window thumbnails is on.
     var requiredPermissions: Set<Permission> { config.value.requiredPermissions }
@@ -87,6 +92,16 @@ import SnapticKit
             .receive(on: DispatchQueue.main)
             .sink { [weak self] value in self?.configChanged(value) }
             .store(in: &sinks)
+        // A7: the page's and menu's rows follow a stopped window feature and a permission (§4.17).
+        NotificationCenter.default.publisher(for: PrivateWindowAPI.stopsChanged)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.readChanged() }
+            .store(in: &sinks)
+        context.permissions.observe(lifetime: context.lifetime) { [weak self] permission, granted in
+            // Row 4 ends: attach now rather than at the ladder's next step.
+            if permission == .accessibility, granted { self?.observer?.reattach() }
+            self?.readChanged()
+        }
         state = .running
         EventLog.shared.record(.dock, "dock.started")
         // The engine starts here unless a pause holds already.
@@ -131,6 +146,7 @@ import SnapticKit
         let observer = DockObserver()
         observer.onSelection = { [weak self] selection in self?.selectionChanged(selection) }
         observer.onDockMenu = { [weak self] open in self?.controller?.dockMenu(open) }
+        observer.onReadChanged = { [weak self] in self?.readChanged() }   // A7
         self.observer = observer
         observer.start()
         Self.liveCount(.observer, up: true)
@@ -138,6 +154,7 @@ import SnapticKit
                                                keysKilled: killSwitches.contains(.keys),
                                                onFreshness: { [weak self] pid in self?.freshnessChanged(pid) },
                                                onCapture: { [weak self] count in self?.captures += count })
+        controller.onKeysBreakerTripped = { [weak self] in self?.readChanged() }   // A7
         self.controller = controller
         // Before any selection arrives: the VoiceOver pause the engine runs under, and an open switcher session.
         if let pause { controller.pauseChanged(pause) }
@@ -147,6 +164,7 @@ import SnapticKit
 
     /// Everything `startEngine()` made, at once and with no fade. A3, A4a and A5 tear down here.
     private func stopEngine() {
+        cancelAttentionTimer()   // A7
         stopClickTap()   // A5
         dockSelection = nil   // A5
         controller?.stop()
@@ -185,6 +203,8 @@ import SnapticKit
             stopEngine()
         }
         if new != old { context?.requestMenuRebuild() }
+        // A7: rows 6 to 8 name the tool or the clock, which can change while the pause stays the same.
+        context?.requestSettingsRefresh()
     }
 
     /// A click action or Restore All is on, `Dock.disable.clickActions` isn't set (§4.11) and the click breaker
@@ -208,12 +228,16 @@ import SnapticKit
         pauseSources?.resume() ?? false
     }
 
-    /// §4.17's facts as the module sees them now: for the pause, `dock status`, and A7's page and menu. Crash-guard
-    /// stops are A7's to add.
-    func pageFacts() -> DockPageFacts {
+    /// §4.17's facts as the module sees them now: for the pause, `dock status`, the page and the menu. The page passes
+    /// rows 1 and 2's facts; while the module runs neither holds. The stopped window features are the ones shown on
+    /// both pages (`WindowStopRows.dockPage`).
+    func pageFacts(killSwitch: Bool = false, enabled: Bool = true) -> DockPageFacts {
         let value = config.value
         let read = DockPauseRules.read(observer?.stats)
-        return DockPageFacts(safeMode: pausedInSafeMode, accessibility: PermissionFlow.isGranted(.accessibility),
+        let stopped = PrivateWindowAPI.stoppedFeatures()
+        let shown = WindowStopRows.dockPage(crashGuard: stopped.crashGuard, poisoned: stopped.poisoned)
+        return DockPageFacts(killSwitch: killSwitch, enabled: enabled, safeMode: pausedInSafeMode,
+                             accessibility: PermissionFlow.isGranted(.accessibility),
                              read: read.read, loginLadderEnded: read.ladderEnded, unreadableSince: read.unreadableSince,
                              now: ProcessInfo.processInfo.systemUptime,
                              runningBundleIDs: pauseSources?.runningToolIDs ?? [],
@@ -223,7 +247,9 @@ import SnapticKit
                              commandPause: pauseSources?.commandPause, paneName: PermissionFlow.paneName(.accessibility),
                              thumbnailsOn: value.thumbnails, screenRecording: PermissionFlow.isGranted(.screenRecording),
                              clickBreakerTripped: Self.clickBreakerTripped,
-                             keysBreakerTripped: Self.keysBreakerTripped)
+                             keysBreakerTripped: Self.keysBreakerTripped,
+                             crashGuardStops: shown.crashGuard.map(\.displayName),
+                             poisoned: shown.poisoned.map(\.displayName))
     }
 
     /// `dock status`'s facts (§4.21); nil while the module is off.
@@ -256,14 +282,87 @@ import SnapticKit
     }
     #endif
 
-    func menuSection() -> [NSMenuItem] { [] }
+    // MARK: Menu and Settings (A7; §4.17, §4.18, §4.19)
 
-    func settingsRoot() -> SettingsRoot {
-        let module = self
-        return SettingsRoot(id: SettingsRootID.dockPreviews, title: title, symbol: symbolName, tint: tint) {
-            AnyView(DockShellPage(title: module.title, summary: module.summary, symbol: module.symbolName,
-                                  tint: module.tint))
+    /// §4.19: built fresh on each open; empty while the module is off.
+    func menuSection() -> [NSMenuItem] {
+        guard context != nil else { return [] }
+        return DockMenuRows(module: self).items()
+    }
+
+    /// Row 4, row 5 two minutes after it shows, or a tripped breaker (§4.17).
+    var menuAttention: Bool {
+        context != nil && DockPageRules.attention(pageFacts())
+    }
+
+    var highlights: [FeatureHighlight] { DockPage.highlights }
+
+    func settingsRoot() -> SettingsRoot { DockPage.settingsRoot(module: self) }
+
+    func settingsIndex() -> [SettingsSearchEntry] { DockPage.searchEntries() }
+
+    /// Row 4's and the Screen Recording row's [Open Privacy Settings…], and the menu's Open … Settings….
+    func openPrivacy(_ permission: Permission) {
+        guard let context else { return }
+        if permission == .accessibility {
+            context.permissions.presentGuide(.accessibility, reason: L("Dock Previews needs it to read the Dock."))
+        } else {
+            context.permissions.presentGuide(permission)
         }
+    }
+
+    /// Row 5's [Try Again]: the observer attaches again at once (and a debug build's M47 hook ends).
+    func tryAgain() {
+        observer?.retry()
+        readChanged()
+    }
+
+    /// A stopped window feature's [Try Again] (§4.17): clears that feature's disabled builds.
+    func tryAgain(_ feature: WindowFeature) {
+        PrivateWindowAPI.tryAgain(feature)
+    }
+
+    /// A breaker row's [Relaunch Snaptic].
+    func relaunch() {
+        context?.relauncher.relaunch(reason: "dock breaker")
+    }
+
+    func openSettings(_ page: String) {
+        context?.openSettings(page)
+    }
+
+    /// The observer's read state, a permission, a stopped window feature or a breaker changed: the menu (its rows and
+    /// attention mark) and the page follow, and row 5's attention timer is set again (§4.17, X2-16).
+    private func readChanged() {
+        guard let context else { return }
+        syncAttentionTimer()
+        context.requestMenuRebuild()
+        context.requestSettingsRefresh()
+    }
+
+    private func syncAttentionTimer() {
+        cancelAttentionTimer()
+        guard state == .running, observer != nil, let due = DockPageRules.attentionDue(pageFacts()) else { return }
+        let wait = max(0, due - ProcessInfo.processInfo.systemUptime)
+        let timer = Timer(fire: Date(timeIntervalSinceNow: wait), interval: 0, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.attentionTimerFired() }
+        }
+        timer.tolerance = 1
+        RunLoop.main.add(timer, forMode: .common)
+        attentionTimer = timer
+        Self.liveCount(.timers, up: true)
+    }
+
+    private func attentionTimerFired() {
+        cancelAttentionTimer()
+        context?.requestMenuRebuild()
+    }
+
+    private func cancelAttentionTimer() {
+        guard let attentionTimer else { return }
+        attentionTimer.invalidate()
+        self.attentionTimer = nil
+        Self.liveCount(.timers, up: false)
     }
 
     /// §4.22: counts, booleans and enums only; no bundle id, app name or window title.
@@ -380,10 +479,11 @@ import SnapticKit
         clickTap = DockClickTap(config: value,
                                 geometry: { geometry?.snapshot ?? DockGeometrySnapshot() },
                                 killSwitch: { Self.readKillSwitches(defaults).contains(.clickActions) },
-                                onStopped: { [weak self] _ in
+                                onStopped: { [weak self] tripped in
                                     // A tripped breaker can end the VoiceOver pause's reason to run (§4.17).
                                     self?.clickTap = nil
                                     self?.syncPause()
+                                    if tripped { self?.readChanged() }   // A7: its row and attention mark
                                 })
         clickTap?.selection = dockSelection
         clickTap?.pause = pause
@@ -424,20 +524,6 @@ import SnapticKit
         case .stopped: return "stopped"
         case .running: return "running"
         case .degraded: return "paused"
-        }
-    }
-}
-
-/// The K1 placeholder page; A7 replaces it with `DockPage`.
-private struct DockShellPage: View {
-    let title: String
-    let summary: String
-    let symbol: String
-    let tint: SettingsTint
-
-    var body: some View {
-        SettingsPageScaffold(route: SettingsRoute(SettingsRootID.dockPreviews)) {
-            SettingsPageHeader(title, summary: summary, symbol: symbol, tint: tint)
         }
     }
 }

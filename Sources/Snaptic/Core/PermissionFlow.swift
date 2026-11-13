@@ -273,7 +273,7 @@ enum PermissionStatus: Equatable { case granted, denied, unknown }
     static func purpose(_ permission: Permission) -> String {
         switch permission {
         case .accessibility:
-            return L("Lets Snaptic see its shortcuts, list and switch windows, and read display keys.")
+            return L("Lets Snaptic see its shortcuts, list and switch windows, read display keys, and read the Dock.")
         case .screenRecording:
             return L("Lets Snaptic show window thumbnails and previews, and Picture in Picture.")
         }

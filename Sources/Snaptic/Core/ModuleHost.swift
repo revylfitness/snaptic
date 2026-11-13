@@ -729,14 +729,20 @@ import SnapticKit
 
     private func requestPermissions(for ids: [ModuleID]) {
         var reasons: [Permission: [String]] = [:]
-        for id in ModuleID.allCases where ids.contains(id) {
+        // 0.5 §4.14: Dock Previews asks for Accessibility in its own words, and for Screen Recording only from
+        // onboarding or its page's row.
+        for id in ModuleID.allCases where ids.contains(id) && id != .dockPreviews {
             let m = self.module(id)
             for permission in m.requiredPermissions { reasons[permission, default: []].append(m.title) }
         }
-        for permission in Permission.allCases {
-            guard let names = reasons[permission], permissions.state(permission) != .granted else { continue }
-            permissions.request(permission, reason: L("Needed by ") + names.joined(separator: L(" and ")) + ".",
-                                lifetime: lifetime)
+        for permission in Permission.allCases where permissions.state(permission) != .granted {
+            if let names = reasons[permission] {
+                permissions.request(permission, reason: L("Needed by ") + names.joined(separator: L(" and ")) + ".",
+                                    lifetime: lifetime)
+            }
+            if permission == .accessibility, ids.contains(.dockPreviews) {
+                permissions.request(permission, reason: L("Dock Previews needs it to read the Dock."), lifetime: lifetime)
+            }
         }
     }
 
@@ -773,6 +779,7 @@ import SnapticKit
         // 0.5 H10 (A6a): Dock Previews' settings, hidden apps included. The protected apps are the switcher's.
         dockStore.value = DockConfig()
         switcherSettings.reset()
+        switcherSettings.resetPrivacy()   // 0.5 §4.10: the switcher's Restore Defaults keeps them; this doesn't.
         // 0.3.1 E4: Sparkle's own keys go too (the update consent is asked again).
         for key in UpdateDefaultsKeys.all { UserDefaults.standard.removeObject(forKey: key) }
         modulesStore.flush()

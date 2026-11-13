@@ -212,6 +212,20 @@ final class CaptureContentCheckTests: XCTestCase {
         XCTAssertEqual(both.first?.action, .tryAgain)
     }
 
+    /// The Dock page lists only the “Both pages” features, in table order; a crash-guard stop isn't also poisoned.
+    func testDockPageShowsOnlyTheSharedFeatures() {
+        let all = Set(WindowFeature.allCases)
+        let rows = WindowStopRows.dockPage(crashGuard: all, poisoned: all)
+        XCTAssertEqual(rows.crashGuard, [.hwCapture, .axWindowID, .raise, .spaces])
+        XCTAssertEqual(rows.poisoned, [])
+        let mixed = WindowStopRows.dockPage(crashGuard: [.spaces, .layoutType], poisoned: [.raise, .hwCapture, .spaces,
+                                                                                            .symbolicHotKeys])
+        XCTAssertEqual(mixed.crashGuard, [.spaces])
+        XCTAssertEqual(mixed.poisoned, [.hwCapture, .raise])
+        let none = WindowStopRows.dockPage(crashGuard: [.symbolicHotKeys], poisoned: [.layoutType])
+        XCTAssertTrue(none.crashGuard.isEmpty && none.poisoned.isEmpty)
+    }
+
     func testGiveBackRow() {
         XCTAssertNil(WindowStopRows.giveBack(pending: false, comesBackAtLogout: false))
         let stays = WindowStopRows.giveBack(pending: true, comesBackAtLogout: false)

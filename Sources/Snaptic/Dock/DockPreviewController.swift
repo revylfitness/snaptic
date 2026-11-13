@@ -60,6 +60,8 @@ final class DockPreviewController {
     private var config: DockConfig
     private let onFreshness: @MainActor (Int32?) -> Void
     private let onCapture: @MainActor (Int) -> Void
+    /// A7: the keys breaker tripped, so the module rebuilds the menu for its attention mark (§4.17).
+    var onKeysBreakerTripped: (@MainActor () -> Void)?
     private var policy: DockPreviewPolicy
     private let timers = DockTimers()
     private let model = DockPreviewModel()
@@ -1166,9 +1168,10 @@ final class DockPreviewController {
                         },
                         onAction: { [weak self] action, context in self?.performKey(action, context) },
                         onNotInTable: { [weak self] in self?.send(.keyNotHandled) },
-                        onStopped: { [weak self] _ in
+                        onStopped: { [weak self] tripped in
                             self?.keys = nil
                             self?.syncKeysAvailable()
+                            if tripped { self?.onKeysBreakerTripped?() }
                         })
     }
 
