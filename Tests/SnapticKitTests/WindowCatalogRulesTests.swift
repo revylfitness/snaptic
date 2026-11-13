@@ -9,7 +9,7 @@ import XCTest
 // windows), Stage Manager (S0-11), the owner check without Screen Recording (S0-18), and the untitled other-Space and
 // no-Screen-Recording legs (S0-23).
 
-private let big = DockRect(x: 0, y: 0, w: 800, h: 600)
+private let big = DockRect(x: 0, y: 0, width: 800, height: 600)
 
 /// A window AX reports.
 private func ax(_ id: UInt32, pid: Int32 = 10, hasTitle: Bool = true, minimized: Bool = false, hidden: Bool = false,
@@ -116,11 +116,11 @@ final class WindowCatalogRulesTests: XCTestCase {
     }
 
     func testAnythingUnder100PointsIsLeftOutOfTheDock() {
-        XCTAssertNil(leftOut(ax(1, bounds: DockRect(x: 0, y: 0, w: 100, h: 100))))
-        XCTAssertEqual(leftOut(ax(1, bounds: DockRect(x: 0, y: 0, w: 99.5, h: 600))), .tooSmall)
-        XCTAssertEqual(leftOut(ax(1, bounds: DockRect(x: 0, y: 0, w: 600, h: 99))), .tooSmall)
-        XCTAssertEqual(leftOut(listOnly(1, bounds: DockRect(x: 0, y: 0, w: 99, h: 600))), .tooSmall)
-        XCTAssertNil(leftOut(listOnly(1, bounds: DockRect(x: 0, y: 0, w: 100, h: 100))))
+        XCTAssertNil(leftOut(ax(1, bounds: DockRect(x: 0, y: 0, width: 100, height: 100))))
+        XCTAssertEqual(leftOut(ax(1, bounds: DockRect(x: 0, y: 0, width: 99.5, height: 600))), .tooSmall)
+        XCTAssertEqual(leftOut(ax(1, bounds: DockRect(x: 0, y: 0, width: 600, height: 99))), .tooSmall)
+        XCTAssertEqual(leftOut(listOnly(1, bounds: DockRect(x: 0, y: 0, width: 99, height: 600))), .tooSmall)
+        XCTAssertNil(leftOut(listOnly(1, bounds: DockRect(x: 0, y: 0, width: 100, height: 100))))
     }
 
     func testTheDesktopWindowAndGoneAppsAndIDsAreLeftOut() {
@@ -236,7 +236,7 @@ final class WindowCatalogRulesTests: XCTestCase {
         XCTAssertFalse(needs(listOnly(1, onScreen: true)))
         XCTAssertFalse(needs(listOnly(1, layer: 3)))
         XCTAssertFalse(needs(listOnly(1, alpha: 0)))
-        XCTAssertFalse(needs(listOnly(1, bounds: DockRect(x: 0, y: 0, w: 50, h: 50))))
+        XCTAssertFalse(needs(listOnly(1, bounds: DockRect(x: 0, y: 0, width: 50, height: 50))))
         XCTAssertFalse(needs(.windowless(id: CatalogWindow.firstSyntheticID, pid: 10, hidden: false)))
         XCTAssertFalse(WindowCatalogRules.needsSpaceCheck(listOnly(1), appListed: false, options: .switcher))
     }
@@ -485,10 +485,10 @@ final class WindowCatalogRulesTests: XCTestCase {
     // MARK: The switcher's cases, moved from the app (§4.23)
 
     func testTheSwitcherKeepsItsAXThresholdAndUntitledDialogs() {
-        XCTAssertEqual(leftOut(ax(1, bounds: DockRect(x: 0, y: 0, w: 39, h: 500)), .switcher), .tooSmall)
-        XCTAssertEqual(leftOut(ax(1, bounds: DockRect(x: 0, y: 0, w: 500, h: 39)), .switcher), .tooSmall)
-        XCTAssertNil(leftOut(ax(1, bounds: DockRect(x: 0, y: 0, w: 40, h: 40)), .switcher))
-        XCTAssertEqual(leftOut(ax(1, bounds: DockRect(x: 0, y: 0, w: 40, h: 40))), .tooSmall, "the Dock uses 100")
+        XCTAssertEqual(leftOut(ax(1, bounds: DockRect(x: 0, y: 0, width: 39, height: 500)), .switcher), .tooSmall)
+        XCTAssertEqual(leftOut(ax(1, bounds: DockRect(x: 0, y: 0, width: 500, height: 39)), .switcher), .tooSmall)
+        XCTAssertNil(leftOut(ax(1, bounds: DockRect(x: 0, y: 0, width: 40, height: 40)), .switcher))
+        XCTAssertEqual(leftOut(ax(1, bounds: DockRect(x: 0, y: 0, width: 40, height: 40))), .tooSmall, "the Dock uses 100")
         XCTAssertNil(leftOut(ax(1, hasTitle: false, kind: .dialog), .switcher))
         XCTAssertNil(WindowCatalogRules.sizeLeftOut(width: 40, height: 40, minimum: CatalogInclusion.switcher.minAXSide))
     }
@@ -496,8 +496,8 @@ final class WindowCatalogRulesTests: XCTestCase {
     func testTheSwitchersCGWindowListOnlyRules() {
         XCTAssertEqual(verdict(listOnly(1, layer: 3), .switcher), CatalogVerdict(leftOut: .notNormalLayer, appHasWindow: false))
         XCTAssertEqual(verdict(listOnly(1, onScreen: true), .switcher), CatalogVerdict(leftOut: .onScreen, appHasWindow: false))
-        XCTAssertEqual(verdict(listOnly(1, bounds: DockRect(x: 0, y: 0, w: 99, h: 600)), .switcher).leftOut, .tooSmall)
-        XCTAssertNil(leftOut(listOnly(1, bounds: DockRect(x: 0, y: 0, w: 100, h: 100)), .switcher))
+        XCTAssertEqual(verdict(listOnly(1, bounds: DockRect(x: 0, y: 0, width: 99, height: 600)), .switcher).leftOut, .tooSmall)
+        XCTAssertNil(leftOut(listOnly(1, bounds: DockRect(x: 0, y: 0, width: 100, height: 100)), .switcher))
         XCTAssertEqual(verdict(listOnly(1, alpha: 0), .switcher), CatalogVerdict(leftOut: .transparent, appHasWindow: false))
         XCTAssertEqual(verdict(listOnly(1, hasTitle: false), .switcher), CatalogVerdict(leftOut: .untitled, appHasWindow: true))
         XCTAssertEqual(verdict(listOnly(1), .switcher), CatalogVerdict(leftOut: nil, appHasWindow: true))
@@ -537,11 +537,11 @@ final class WindowCatalogRulesTests: XCTestCase {
     }
 
     func testTheCurrentScreenScopeUsesEachWindowsCentre() {
-        let screen = DockRect(x: 0, y: 0, w: 1000, h: 800)
+        let screen = DockRect(x: 0, y: 0, width: 1000, height: 800)
         let windows: [CatalogWindow] = [
-            ax(1, bounds: DockRect(x: -100, y: 0, w: 400, h: 300)),  // centre (100, 150)
-            ax(2, bounds: DockRect(x: 900, y: 0, w: 400, h: 300)),   // centre (1100, 150)
-            ax(3, bounds: DockRect(x: 800, y: 0, w: 400, h: 300)),   // centre (1000, 150): the far edge is outside
+            ax(1, bounds: DockRect(x: -100, y: 0, width: 400, height: 300)),  // centre (100, 150)
+            ax(2, bounds: DockRect(x: 900, y: 0, width: 400, height: 300)),   // centre (1100, 150)
+            ax(3, bounds: DockRect(x: 800, y: 0, width: 400, height: 300)),   // centre (1000, 150): the far edge is outside
             .windowless(id: CatalogWindow.firstSyntheticID, pid: 10, hidden: false),
         ]
         func scoped(_ frame: DockRect?) -> [UInt32] {

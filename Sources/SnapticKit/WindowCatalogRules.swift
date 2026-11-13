@@ -66,7 +66,7 @@ package struct CatalogWindow: Equatable, Sendable {
 
     package init(id: UInt32, pid: Int32, hasTitle: Bool = true, minimized: Bool = false, hidden: Bool = false,
                  onScreen: Bool = true, spaceKnown: Bool? = nil, fullscreen: Bool = false, layer: Int = 0,
-                 bounds: DockRect = DockRect(x: 0, y: 0, w: 800, h: 600), isPrivate: Bool = false,
+                 bounds: DockRect = DockRect(x: 0, y: 0, width: 800, height: 600), isPrivate: Bool = false,
                  hasAXElement: Bool = true, kind: CatalogWindowKind = .standard, alpha: Double = 1,
                  windowless: Bool = false, inStageStrip: Bool = false) {
         self.id = id
@@ -374,7 +374,7 @@ package enum WindowCatalogRules {
 
         if w.hasAXElement {
             if let reason = kindLeftOut(w.kind, hasTitle: w.hasTitle, options: options) { return out(reason) }
-            if let reason = sizeLeftOut(width: w.bounds.w, height: w.bounds.h, minimum: options.minAXSide) {
+            if let reason = sizeLeftOut(width: w.bounds.width, height: w.bounds.height, minimum: options.minAXSide) {
                 return out(reason)
             }
             // Native tabs that aren't the front tab are separate, off-screen windows on no Space: not windows to
@@ -388,7 +388,7 @@ package enum WindowCatalogRules {
         // Read only from `CGWindowList`: windows on other Spaces, which AX doesn't report.
         if w.layer != 0 { return out(.notNormalLayer) }
         if w.onScreen { return out(.onScreen) }
-        if let reason = sizeLeftOut(width: w.bounds.w, height: w.bounds.h, minimum: options.minListSide) {
+        if let reason = sizeLeftOut(width: w.bounds.width, height: w.bounds.height, minimum: options.minListSide) {
             return out(reason)
         }
         if !(w.alpha > 0) { return out(.transparent) }

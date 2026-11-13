@@ -177,7 +177,7 @@ private struct ServerSnapshot {
 fileprivate extension DockRect {
     /// A Cocoa-space rect (`Screens.cocoaRect(fromGlobal:)`).
     init(cocoa rect: CGRect) {
-        self.init(x: Double(rect.minX), y: Double(rect.minY), w: Double(rect.width), h: Double(rect.height))
+        self.init(x: Double(rect.minX), y: Double(rect.minY), width: Double(rect.width), height: Double(rect.height))
     }
 }
 

@@ -657,3 +657,5 @@ Sources/SnapticKit/WindowLeaseLedger.swift	lead	L	-	-
 Tests/SnapticKitTests/ThumbnailIndexTests.swift	lead	L	-	-
 Tests/SnapticKitTests/WindowCatalogRulesTests.swift	lead	L	-	-
 Tests/SnapticKitTests/WindowLeaseLedgerTests.swift	lead	L	-	-
+Sources/SnapticKit/DockGeometry.swift	lead	L	-	-
+Tests/SnapticKitTests/DockGeometryTests.swift	lead	L	-	-

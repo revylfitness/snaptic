@@ -268,7 +268,7 @@ final class SwitcherController {
         case .activeApp: scope = .app(list.frontPID)
         case .currentScreen:
             scope = .screen(screen.map {
-                DockRect(x: $0.frame.minX, y: $0.frame.minY, w: $0.frame.width, h: $0.frame.height)
+                DockRect(x: $0.frame.minX, y: $0.frame.minY, width: $0.frame.width, height: $0.frame.height)
             })
         }
         let spaces: CatalogSpaces
