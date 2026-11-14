@@ -513,7 +513,7 @@ Point at an app in the Dock, and its windows appear next to the Dock, including 
 ### Cards and actions
 
 - **Cards:** one per window, with its thumbnail and title. **Card size** is **Small**, **Medium** (default), or **Large**: 200, 280, or 360 points wide, with each thumbnail letterboxed in a fixed 16:10 frame. Cards sit in one row for a Dock at the bottom and in two columns for a Dock at the left or right. With more windows than fit, cards get smaller (down to Small), then the preview scrolls. If an app is slow to list its windows, the preview shows the ones it has and a “More windows…” row that lists the rest.
-- **Badges:** “Minimized”, “Full screen”, or “On another Space”, at most one per card, in that order. A hidden app says “Hidden” once, in the preview’s header.
+- **Badges:** “Minimized”, “Full screen”, “On another Space”, or, with more than one display, the name of the window’s display, at most one per card, in that order. A hidden app says “Hidden” once, in the preview’s header.
 - **What’s listed:** standard windows and titled dialogs. Floating panels, system dialogs, notification-style pop-ups, windows smaller than 100 × 100 points, and Finder’s desktop are left out. **Include minimized and hidden windows** (“Lists windows that are minimized or belong to hidden apps.”) and **Windows on other Spaces** (“Off: only windows on the current Space are shown.”) are both on by default. **Advanced… › Sort windows by** offers **Recently Used** (default), **Minimized and Hidden Last**, and **Title**.
 - **Small cards:** an app with no open windows shows “No open windows”; click it to switch to the app. When your settings leave out all of an app’s windows, it shows “No windows shown”, with the tooltip “Its windows are minimized, hidden, or on other Spaces.” Turn off **Advanced… › Apps with no open windows** (“Pointing at the app shows a small card instead of nothing.”) to show nothing for these apps. If an app doesn’t answer in time and Screen Recording is off, the preview says “Windows can’t be read right now”, and Snaptic tries that app again 30 seconds later.
 - **Click** a card to bring its window forward, whether it’s minimized, hidden, full screen, or on another Space. **Middle-click** closes it. Hovering a card shows **Close**, **Minimize**, and **Enter Full Screen** buttons at its top left (“Close (⌘W)”, “Minimize (⌘M)”).
@@ -613,7 +613,7 @@ This table compares how DockDoor and Dock Previews behave, with DockDoor at its 
 
 **Done differently on purpose.** Snaptic never posts clicks or key presses of its own, never takes over the Dock’s clicks, and watches the keyboard only while a preview is in use. Private windows show their app icon (see [Private windows](#private-windows)). If a private macOS function misbehaves, Snaptic stops using it and falls back (see [When a window feature stops](#when-a-window-feature-stops)). Without Screen Recording, it never takes a picture of a window.
 
-Quit DockDoor, or remove it from Login Items, then turn on Dock Previews. Snaptic doesn’t import DockDoor’s settings.
+Quit DockDoor and remove it from Login Items (System Settings › General › Login Items), then turn on Dock Previews. Snaptic doesn’t import DockDoor’s settings.
 
 ## Safety
 

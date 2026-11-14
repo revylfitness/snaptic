@@ -195,6 +195,11 @@ private struct AcknowledgementsSheet: View {
         Credit(name: "Hidden Bar", detail: L("Menu bar hiding design (MIT, no code used)")),
     ]
 
+    /// 0.5 D2: Dock Previews follows DockDoor's design (THIRD_PARTY_NOTICES.md), clean-room, none of its code.
+    private let dockReferences: [Credit] = [
+        Credit(name: "DockDoor", detail: L("Dock preview design (GPL-3.0, no code used)")),
+    ]
+
     var body: some View {
         VStack(spacing: 0) {
             Text(L("Acknowledgements"))
@@ -231,6 +236,17 @@ private struct AcknowledgementsSheet: View {
                     Text(L("Hidden Icons’ design follows"))
                 } footer: {
                     Text(L("Hidden Icons follows Hidden Bar’s design in Snaptic’s own code, with none of its code."))
+                }
+                Section {
+                    ForEach(dockReferences) { credit in
+                        LabeledContent(credit.name) {
+                            Text(credit.detail).foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text(L("Dock Previews’ design follows"))
+                } footer: {
+                    Text(L("Dock Previews follows DockDoor’s design in Snaptic’s own code, with none of its code."))
                 }
                 Section(L("License")) {
                     Text(Self.license)

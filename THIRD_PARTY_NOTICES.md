@@ -190,6 +190,16 @@ Hidden Icons (0.4) follows the design of Hidden Bar, from reading its source and
 
 Its MIT license asks for its notice in copies of its code. Snaptic includes none of it, so this credit is thanks rather than a license condition. It is also credited in Settings › About › Acknowledgements.
 
+## Dock preview reference (Dock Previews)
+
+Dock Previews (0.5) follows the design of DockDoor, from its documentation, release notes, public issues, and using the app. DockDoor is licensed under the GPL-3.0, and parts of it derive from AltTab (also GPL). Snaptic is MIT, so Dock Previews was built clean-room: **no DockDoor or AltTab source was opened while writing it, and none of their code is included or adapted**.
+
+| Project | License | What Snaptic follows | Where |
+|---|---|---|---|
+| [DockDoor](https://github.com/ejbills/DockDoor) | GPL-3.0 | Showing an app’s windows in a panel when you point at its Dock icon, by watching the Dock’s selected item through Accessibility; cards with a thumbnail, a title, and hover buttons; middle-click to close; Hide and Quit in the panel; keys while the pointer is in the panel; one row for a Dock at the bottom and columns for a side Dock; optional Dock click actions (hide the active app, restore minimized windows) | `Sources/SnapticKit/Dock*.swift`, `Sources/Snaptic/Dock/` |
+
+This is a design credit only. No GPL code is in Snaptic, so the GPL’s terms don’t apply to it. It is also credited in Settings › About › Acknowledgements.
+
 ## Standards and formats
 
 Snaptic implements these from their public descriptions. No specification text is included.
@@ -216,7 +226,8 @@ Snaptic refers to other products by name only to detect them or to describe comp
 
 - **BetterDisplay**, **MonitorControl**, and **Lunar** are detected by bundle-identifier prefix (`Sources/SnapticKit/OtherDisplayApps.swift`) so Snaptic can pause overlapping features while they run.
 - **Hidden Bar**, **Bartender**, **Ice**, and **Thaw** are detected by bundle identifier, and by team identifier where known (`Sources/SnapticKit/KnownMenuBarHiders.swift`), so Hidden Icons can pause while they run. Hidden Bar is also named in the README and Settings to explain how to switch.
-- **AltTab** is named in the README only to say Snaptic is not derived from it.
+- **DockDoor**, **DockDoor Pro**, **HyperDock**, **Dock Mate**, and **DockView 2** are detected by bundle identifier (`Sources/SnapticKit/KnownDockTools.swift`), so Dock Previews can pause while they run. DockDoor is also named in the README, the guide, and Settings to explain how to switch.
+- **AltTab** is named in the README and these notices only to say Snaptic is not derived from it.
 - **1Password, Bitwarden, Apple Passwords, Tor Browser**, and other password managers and private browsers appear in the default “never capture” list by bundle identifier. **Firefox, Edge, and Chrome** private-window titles are recognized so those windows are left out of captures.
 - **Parallels** and other virtual-machine and remote-desktop apps are matched by bundle identifier in the switcher’s exceptions.
 - **DisplayLink** and **LG** are named in user-facing text to describe hardware behavior.
