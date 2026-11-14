@@ -2344,3 +2344,10 @@ changed, and why.
 | A9 | Each `dock` command writes one `.control` EventLog line (verb and exit code only) | `KitControl.counterKey` counts only Awake's verbs |
 | A9 | `Config.restoringDefaults()` keeps the two privacy fields; `AppSettings.reset()` and the selftest's §4.10 check both use it | Closes A7's gap: `--selftest-controls` checks both on values survive both Restore Defaults |
 | A9 | A6b's DEBUG `dock status` is gone; `DockCLI` registers on both start paths, Safe Mode included, and ends with the module | §4.21: registered in Starting and rows 3–9, never in rows 1 and 2 |
+| D1 | The GUIDE's Switching from DockDoor table is written from §1 and §1.1 only; every DockDoor value in it is an R-time owner check against S0-32 | S0-32 hasn't run, and the plan is the only clean-room input |
+| D1 | Known limitations leaves out the M38 sentence (thumbnails of minimized and other-Space windows can appear in a share) and the S0-5, S0-6, S0-9 and S0-19 texts | Each depends on an owner result not in yet; added at R if the result calls for it |
+| D1 | H9's `MANUAL-CHECKS.md` row isn't done in D1: the 0.4 file is a dated record, and `docs/design/0.5/MANUAL-CHECKS.md` (§7) is written at R with "5 modules / 0 running" | Editing the 0.4 record would falsify a passed check |
+| D1 | `lint.sh` has no README or GUIDE rules; D1 checked headings, anchors and the 103 quoted strings with one-off scripts. The two links to `RELEASE-NOTES-0.5.0.md` resolve once D2 writes it | The done-when's lint can't fail on docs |
+| D1 | The guide calls the setting "Apps with no open windows" (§4.18 and the sources), not §4.3's "Show when an app has no open windows" | One name, the one users see |
+| D1 | `SettingsShellRulesTests.awaitingREADME` is empty | The README now has the Dock Previews heading |
+| D1 | Gaps to check at R: `WindowFallback.matchByTitleAndFrame` isn't wired though §4 and the guide describe title-and-position matching; the Diagnostics Report doesn't list the `Dock.disable.*` and `Windows.disable.*` switches; §4.15's "Quit DockDoor, or remove it from Login Items" may need "and" | Found while writing the docs |

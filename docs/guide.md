@@ -2,13 +2,13 @@
 
 The complete manual for Snaptic: every setting, command, safety rule, and limitation. For a quick overview, see the [README](../README.md).
 
-A free, open-source menu bar toolkit for macOS: a Windows-style **window switcher**, a set of **display utilities**, **Awake**, which keeps your Mac awake when you want it to, and **Hidden Icons**, which tucks the menu bar icons you don’t need behind an arrow. Turn on only the parts you want; everything else stays off and costs nothing.
+A free, open-source menu bar toolkit for macOS: a Windows-style **window switcher**, a set of **display utilities**, **Awake**, which keeps your Mac awake when you want it to, **Hidden Icons**, which tucks the menu bar icons you don’t need behind an arrow, and **Dock Previews**, which shows an app’s windows when you point at it in the Dock. Turn on only the parts you want; everything else stays off and costs nothing.
 
 **Website:** [snaptic.dev](https://snaptic.dev)
 
-Snaptic is MIT-licensed and written from scratch in Swift by revyl fitness technology, Inc. It isn’t affiliated with or derived from AltTab, BetterDisplay, MonitorControl, Lunar, Amphetamine, or Insomnia; it’s an independent take on the same ideas, with everything included and nothing behind a paywall. Hidden Icons follows the design of [Hidden Bar](https://github.com/dwarvesf/hidden) (MIT) in its own code, and isn’t affiliated with it either. Third-party credits are in [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md). What changed is in the release notes for [0.4.0](design/0.4/RELEASE-NOTES-0.4.0.md), [0.3.1](design/0.3.1/RELEASE-NOTES-0.3.1.md), and [0.3](design/0.3/RELEASE-NOTES-0.3.md).
+Snaptic is MIT-licensed and written from scratch in Swift by revyl fitness technology, Inc. It isn’t affiliated with or derived from AltTab, BetterDisplay, MonitorControl, Lunar, Amphetamine, or Insomnia; it’s an independent take on the same ideas, with everything included and nothing behind a paywall. Hidden Icons follows the design of [Hidden Bar](https://github.com/dwarvesf/hidden) (MIT) in its own code, and isn’t affiliated with it either. Dock Previews follows ideas from [DockDoor](https://github.com/ejbills/DockDoor) (GPL-3.0) in its own code; it shares no code with it and isn’t affiliated with it. Third-party credits are in [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md). What changed is in the release notes for [0.5.0](design/0.5/RELEASE-NOTES-0.5.0.md), [0.4.0](design/0.4/RELEASE-NOTES-0.4.0.md), [0.3.1](design/0.3.1/RELEASE-NOTES-0.3.1.md), and [0.3](design/0.3/RELEASE-NOTES-0.3.md).
 
-- [Modules](#modules) · [Settings](#settings) · [Window Switcher](#window-switcher) · [Displays](#displays) · [Awake](#awake) · [Hidden Icons](#hidden-icons) · [Safety](#safety)
+- [Modules](#modules) · [Settings](#settings) · [Window Switcher](#window-switcher) · [Displays](#displays) · [Awake](#awake) · [Hidden Icons](#hidden-icons) · [Dock Previews](#dock-previews) · [Safety](#safety)
 - [Permissions](#permissions) · [Command line](#command-line) · [Hidden kill switches](#hidden-kill-switches) · [Install and build](#install-and-build) · [Updates](#updates)
 - [Privacy and security](#privacy-and-security) · [Upgrading and downgrading](#upgrading-and-downgrading) · [Troubleshooting](#troubleshooting) · [Known limitations](#known-limitations) · [Not included](#not-included) · [How it works](#how-it-works)
 
@@ -20,18 +20,19 @@ Snaptic is MIT-licensed and written from scratch in Swift by revyl fitness techn
 | **Displays** | Brightness and volume for external displays, resolutions and HiDPI, color, arrangement, virtual displays, Picture in Picture, and more. |
 | **Awake** | Keeps your Mac awake for a while, until a time, while an app runs, until downloads and tasks finish, or automatically when conditions you choose are met. A free replacement for Amphetamine and Insomnia that needs no administrator password, except for opt-in lid-closed mode, which asks for one each time. |
 | **Hidden Icons** | Hide the menu bar icons you don’t need behind an arrow. Click the arrow to hide the icons to its left, click again to show them, or open one from the Snaptic menu without showing them all. A free replacement for Hidden Bar. |
+| **Dock Previews** | Point at an app in the Dock to see its windows, including minimized and hidden ones, and click one to bring it forward. Close, minimize, hide, or quit from the preview, with the pointer or with ⌘W, ⌘M, ⌘H, and ⌘Q. |
 
-Each module can be turned on or off on its own: in **Settings › General › Choose what Snaptic does**, or with the switch at the top of the module’s own page (“Use Window Switcher”, “Use Displays”, “Use Awake”, “Use Hidden Icons”). A module that is off runs nothing: no event taps, timers, observers, IOKit handles, power assertions, private-API calls, helper processes, or permission prompts. Inside Displays and Awake, each feature has its own switch where the feature is used, and anything that’s off costs nothing either.
+Each module can be turned on or off on its own: in **Settings › General › Choose what Snaptic does**, or with the switch at the top of the module’s own page (“Use Window Switcher”, “Use Displays”, “Use Awake”, “Use Hidden Icons”, “Use Dock Previews”). A module that is off runs nothing: no event taps, timers, observers, IOKit handles, power assertions, private-API calls, helper processes, or permission prompts. Inside Displays and Awake, each feature has its own switch where the feature is used, and anything that’s off costs nothing either.
 
 - **First launch:** onboarding asks which modules you want, then asks only for the permissions those need, and whether Snaptic should keep itself up to date (**Check Automatically** or **Not Now**). It picks up where it left off if macOS makes Snaptic relaunch.
-- **Upgrading from 0.3.2 or later:** Snaptic updates itself and nothing changes until you turn on Hidden Icons (a “New: Hidden Icons” card in General). The app has a new icon.
+- **Upgrading from 0.3.2 or later:** Snaptic updates itself, and none of your settings change. You’ll see Dock Previews as a new, off module. A “New: Dock Previews” card in General offers **Turn On Dock Previews**; coming from 0.3.x, a “New: Hidden Icons” card shows too, and the app has a new icon. The Window Switcher now also shows thumbnails of minimized windows and windows on other Spaces where macOS allows it (see [Upgrading and downgrading](#upgrading-and-downgrading)).
 - **Upgrading from 0.3.1 or earlier:** download the latest release by hand one last time (0.3.0 and earlier have no updater, and 0.3.1 doesn’t start); from then on Snaptic updates itself. Because releases from 0.3.1 on are signed by their developer, macOS asks you to allow Accessibility and Screen Recording again once, and a “Welcome to Snaptic 0.3.1” card in General walks you through it (see [Upgrading and downgrading](#upgrading-and-downgrading)).
 - **Upgrading from 0.2:** Window Switcher and Displays stay as they were. Awake starts off, with a “New: Awake” card in General, unless you used Displays’ display sleep prevention in 0.2; then Awake is on and keeps doing that job (see [Upgrading and downgrading](#upgrading-and-downgrading)). As for 0.3.0, it’s one last manual download, and the “Welcome to Snaptic 0.3.1” card shows too.
 - **Upgrading from 0.1:** the switcher stays on; Displays and Awake start off, each with its own card. As for 0.3.0, it’s one last manual download, and the “Welcome to Snaptic 0.3.1” card shows too.
 
 ## Settings
 
-Settings has eight pages in its sidebar: [General](#general), [Menu Bar](#menu-bar), [Window Switcher](#window-switcher), [Displays](#displays) (with its own sub-pages), [Awake](#awake), [Hidden Icons](#hidden-icons), [Permissions](#permissions), and About. The search field at the top of the sidebar finds any setting, including the ones in **Advanced…** sheets, and highlights it on its page. Every page that has a (?) button links to its section of the README, which links on to the matching section here.
+Settings has nine pages in its sidebar: [General](#general), [Menu Bar](#menu-bar), [Window Switcher](#window-switcher), [Displays](#displays) (with its own sub-pages), [Awake](#awake), [Hidden Icons](#hidden-icons), [Dock Previews](#dock-previews), [Permissions](#permissions), and About. The search field at the top of the sidebar finds any setting, including the ones in **Advanced…** sheets, and highlights it on its page. Every page that has a (?) button links to its section of the README, which links on to the matching section here.
 
 Most pages show the settings people change often and keep the rest in an **Advanced…** sheet at the bottom. Every slider has a value field you can type into, and a reset button when it has a default. **Restore Defaults…** on a page or sheet resets only that page’s settings.
 
@@ -42,26 +43,26 @@ Most pages show the settings people change often and keep the rest in an **Advan
 - **Command-line control:** lets scripts and other apps control Snaptic with the `snaptic` command (off by default). **Copy Install Command** copies the Terminal command that installs it; see [Command line](#command-line).
 - **Backup:** **Export Settings…** and **Import Settings…** (see [Privacy and security](#privacy-and-security) for what an export leaves out).
 - **Advanced…:** “Commands can skip confirmation” (a display change sent with `--yes` applies without asking first), the exit codes the `snaptic` command uses, **Restart in Safe Mode…**, and **Reset All Settings…**.
-- New-module cards (“New: Hidden Icons”, “New: Awake”, “New: Displays”) and the “Welcome to Snaptic 0.3.1” card appear here once after an upgrade.
+- New-module cards (“New: Dock Previews”, “New: Hidden Icons”, “New: Awake”, “New: Displays”) and the “Welcome to Snaptic 0.3.1” card appear here once after an upgrade.
 
 ## Menu Bar
 
 Everything about Snaptic’s menu bar icons lives on this page.
 
-- **Where each module appears:** one pop-up per module with the same choices Control Center uses: **Always Show in Menu Bar**, **Show When Active**, **Show in Snaptic Menu**, and **Don’t Show**. Window Switcher has no “Show When Active”. For Displays it means “while an external display is connected”; for Awake, “while your Mac is being kept awake” (Awake’s default). Hidden Icons has its own two choices, **Arrow and Snaptic Menu** (default) and **Arrow Only**: “The arrow is always in the menu bar. Arrow and Snaptic Menu also lists hidden icons in the Snaptic menu, so you can open one without showing them all.” Its pop-up is dimmed with “Off” while Hidden Icons is off.
+- **Where each module appears:** one pop-up per module with the same choices Control Center uses: **Always Show in Menu Bar**, **Show When Active**, **Show in Snaptic Menu**, and **Don’t Show**. Window Switcher has no “Show When Active”. For Displays it means “while an external display is connected”; for Awake, “while your Mac is being kept awake” (Awake’s default). Hidden Icons has its own two choices, **Arrow and Snaptic Menu** (default) and **Arrow Only**: “The arrow is always in the menu bar. Arrow and Snaptic Menu also lists hidden icons in the Snaptic menu, so you can open one without showing them all.” Its pop-up is dimmed with “Off” while Hidden Icons is off. Dock Previews has only **Show in Snaptic Menu** (default) and **Don’t Show**; with **Don’t Show**, its help reads “Previews show when you point at the Dock. Change them in Settings.”
 - **Icons:** a choice of icon for each module that has its own item and for the Snaptic icon.
 - **Awake time:** **Don’t Show** (default), **Time Remaining**, or **End Time** next to Awake’s icon, in your system’s 12- or 24-hour setting, with seconds only in the last minute.
 - **Show Keep Awake with the Lid Closed in the Awake menu** (Macs with a battery; dimmed while Awake is off): lets you turn on [lid-closed mode](#keeping-awake-with-the-lid-closed) from the Awake menu, which asks for an administrator password each time. It’s the same switch as on the Awake page, and like that one it’s locked while lid-closed mode is on.
 - **Displays menu:** **Standard** or **Compact** style (one slider per display), “Scroll over a slider to adjust it”, and **Customize Displays Menu…**, where every optional menu item can be shown, moved into a submenu, or hidden.
 - **Restore Menu Bar Defaults…** resets where each module appears (Hidden Icons’ choice too), the icons, Awake’s time, and the Displays menu. The lid-closed switch is Awake’s setting, so it stays; **Awake › Advanced… › Restore Awake Defaults…** resets it (not while lid-closed mode is on; it then stays on and Snaptic says so).
 
-**Tabs in the Snaptic menu.** The Snaptic icon appears when a module is set to Show in Snaptic Menu, or Hidden Icons to Arrow and Snaptic Menu. With two or more, the Snaptic menu shows a tab for each, in the order Window Switcher, Displays, Awake, Icons (the first three out of the box; Icons once Hidden Icons is on), and only the selected module’s items below the tabs. With one module the menu has no tabs and shows that module’s section as before.
+**Tabs in the Snaptic menu.** The Snaptic icon appears when a module is set to Show in Snaptic Menu, or Hidden Icons to Arrow and Snaptic Menu. With two or more, the Snaptic menu shows a tab for each, in the order Window Switcher, Displays, Awake, Icons, Dock (the first three out of the box; Icons once Hidden Icons is on, and Dock once Dock Previews is on), and only the selected module’s items below the tabs. With one module the menu has no tabs and shows that module’s section as before.
 
-- **Switching:** click a tab, or, while the menu is open, ⌘1–⌘4 choose a tab (one key per tab, by position). A keyboard choice closes the menu, and the next open shows that tab. Each tab’s tooltip names its shortcut.
+- **Switching:** click a tab, or, while the menu is open, ⌘1, ⌘2, and so on choose a tab (one key per tab, by position). A keyboard choice closes the menu, and the next open shows that tab. Each tab’s tooltip names its shortcut.
 - **Remembered:** the menu opens on the tab you last chose, also after a relaunch. If that module isn’t in the menu right now, the first tab shows, and your choice comes back when the module does. No reset clears it.
-- **Nothing hidden:** Safe Mode and “Sleep Is Turned Off” rows stay above the tabs, whichever tab is showing. A tab whose module needs attention (Displays is degraded, paused after Restore All Displays, or unprotected, or Window Switcher is missing Accessibility; “Paused while … runs” doesn’t count, except for Hidden Icons, whose tab is marked while it needs permission, is unavailable, or is paused) shows a small exclamation mark, and VoiceOver adds “needs attention”. While Awake keeps your Mac awake, VoiceOver reads its tab as “Awake, on”.
+- **Nothing hidden:** Safe Mode and “Sleep Is Turned Off” rows stay above the tabs, whichever tab is showing. A tab whose module needs attention (Displays is degraded, paused after Restore All Displays, or unprotected, or Window Switcher is missing Accessibility; “Paused while … runs” doesn’t count, except for Hidden Icons, whose tab is marked while it needs permission, is unavailable, or is paused; Dock Previews’ tab is marked while it needs Accessibility, after it couldn’t read the Dock for 2 minutes, or after macOS turned off its Dock click actions or keyboard shortcuts) shows a small exclamation mark, and VoiceOver adds “needs attention”. While Awake keeps your Mac awake, VoiceOver reads its tab as “Awake, on”.
 - **Awake’s tab** has the full Awake menu rows except Awake Settings…. The compact Awake section is used only when Awake is the only module in the Snaptic menu.
-- **Keyboard and VoiceOver:** the tabs are one segmented control, so VoiceOver users reach it and pick a segment with VO-Space. While VoiceOver, Switch Control, or Full Keyboard Access is on, the menu also lists **Show Window Switcher Tab**, **Show Displays Tab**, **Show Awake Tab**, and **Show Hidden Icons Tab** above Snaptic Settings…, with the same shortcuts. Type-select reaches only the visible tab.
+- **Keyboard and VoiceOver:** the tabs are one segmented control, so VoiceOver users reach it and pick a segment with VO-Space. While VoiceOver, Switch Control, or Full Keyboard Access is on, the menu also lists **Show Window Switcher Tab**, **Show Displays Tab**, **Show Awake Tab**, **Show Hidden Icons Tab**, and **Show Dock Previews Tab** above Snaptic Settings…, with the same shortcuts. Type-select reaches only the visible tab.
 - **Size:** the menu is as wide as its widest tab from the start, so a tab never moves under the pointer; its height changes when you switch.
 - The footer is unchanged: More Display Features… (while Displays is off), Recent Notices, an update row when one is waiting (see [Updates](#updates)), Snaptic Settings… (⌘,), and Quit Snaptic (⌘Q).
 
@@ -73,7 +74,7 @@ A running Awake session is never invisible: whenever Awake keeps your Mac awake,
 |---|---|
 | **Every window** | Each window gets its own tile: several windows of one app, minimized and hidden windows, and windows on other Spaces, each with a badge. Optionally, apps with no open windows too. |
 | **Recently used order** | The window you’re in comes first, then windows in the order you last used them, so a quick ⌥⇥ goes back to the previous window. |
-| **Thumbnails** | Previews of each window, captured with ScreenCaptureKit each time the switcher opens. |
+| **Thumbnails** | Previews of each window, captured with ScreenCaptureKit each time the switcher opens. Minimized windows and windows on other Spaces get them too, when macOS allows it; otherwise they show the last one Snaptic saw, then the app icon. The switcher opens with the thumbnails from the last 30 minutes and refreshes them in place. |
 | **Full-size preview** | The selected window is shown at its real size and position while you choose. |
 | **Three styles** | Thumbnails, app icons, or a compact list of titles. |
 | **Search** | Press S (or /) while the switcher is open, then type to filter by window title or app name. |
@@ -92,9 +93,35 @@ A running Awake session is never invisible: whenever Awake keeps your Mac awake,
 | ⌥ ⇥ | All windows, thumbnails |
 | ⌥ (key above Tab) | Windows of the app you’re in |
 
-The Window Switcher page has the main shortcut, **More Shortcuts…**, “Switch when you release the keys”, what to show, the style, the preview, thumbnail size, minimized and hidden windows, and which Spaces and screens to list. Its **Advanced…** sheet has the rest: thumbnails on or off, where the switcher opens, apps without windows, one window per app, search, the window action keys, hover buttons, selecting on hover, ⌘⇥ takeover, apps that keep the shortcut, hidden apps, and apps that are never captured.
+The Window Switcher page has the main shortcut, **More Shortcuts…**, “Switch when you release the keys”, what to show, the style, the preview, thumbnail size, minimized and hidden windows, and which Spaces and screens to list. Its **Advanced…** sheet has the rest: thumbnails on or off, where the switcher opens, apps without windows, one window per app, search, the window action keys, hover buttons, selecting on hover, ⌘⇥ takeover, apps that keep the shortcut, hidden apps, and the Privacy section it shares with Dock Previews (see [Private windows](#private-windows)). **Window thumbnails** is the switcher’s own setting, separate from Dock Previews’ one: with it off, every shortcut shows app icons and no live preview, and the Window Switcher never asks for Screen Recording.
 
 “Key above Tab” is detected for both US (ANSI) and European (ISO) keyboards. You can add ⌘⇥ to replace the built-in macOS switcher. Snaptic gives it back whenever it quits, whenever it can’t see key presses, and on the next launch if Snaptic ever crashed. If you had already turned that shortcut off yourself, Snaptic leaves it off.
+
+### Private windows
+
+The Window Switcher and Dock Previews share one **Privacy** section, in each one’s **Advanced…** sheet: a change on one sheet shows on the other.
+
+- **Protect private windows** (on by default): “Password managers and private browsing windows show their app icon instead.”
+- **Never show thumbnails for** (shown while **Protect private windows** is on): “These apps show their icon and name instead of a picture or window title, in the Window Switcher and Dock Previews.”
+- **The footer** in the switcher’s sheet: “Thumbnails stay in memory and are never saved. They’re cleared after 30 minutes, and when your Mac locks or sleeps. These settings also apply to Dock Previews.” Dock Previews’ sheet ends with “These settings also apply to the Window Switcher.”
+- **Restore Defaults… leaves them alone**, on either sheet: “Window Switcher settings go back to their defaults. Protect private windows and its app list stay as they are, because Dock Previews uses them too.” Only **General › Advanced… › Reset All Settings…** resets them. Importing settings can add apps to the list, but never removes one.
+- **In Dock Previews**, a private browsing window’s card shows its app icon and “Private window”, and a protected app’s card shows its icon and name. Neither has a title or a thumbnail, and neither is captured or kept.
+- **Hidden apps are separate:** **Apps hidden from the switcher** and **Apps hidden from Dock previews** each affect only their own module. The second says “Pointing at these apps in the Dock shows nothing. The Window Switcher isn’t affected.”
+
+### When a window feature stops
+
+The Window Switcher and Dock Previews share a few private macOS functions (see [Undocumented APIs](#undocumented-apis)). If one of them makes Snaptic crash, Snaptic stops using it on that macOS version and falls back, and the page names the feature: “… stopped after a problem in macOS. Snaptic tries again after a macOS update.”, with **Try Again**. If macOS answers in a way Snaptic didn’t expect, it says “… stopped because macOS answered in a way Snaptic didn’t expect. Quit and reopen Snaptic to try again.”, with no button.
+
+| Feature | Without it |
+|---|---|
+| Thumbnails of minimized windows and windows on other Spaces | The last thumbnail Snaptic saw, then the app icon |
+| Matching cards to their windows | Cards are matched by title and position; a card without a match offers only **Bring Forward** |
+| Bringing windows forward from other Spaces | Windows are raised with Accessibility; a window on another Space only switches to its app |
+| Showing windows on other Spaces | Windows on other Spaces aren’t listed |
+| Using ⌘⇥ for the Window Switcher | macOS keeps ⌘⇥ (Window Switcher only) |
+| Reading the keyboard layout | The key above Tab is found as on a US (ANSI) keyboard (Window Switcher only) |
+
+To turn one of these off yourself, see [Hidden kill switches](#hidden-kill-switches).
 
 ## Displays
 
@@ -466,6 +493,128 @@ Quit Hidden Bar and remove it from Login Items (System Settings › General › 
 | Right-click ‹ for Notch Overflow | The Snaptic menu’s Hidden Icons section, or right-click the arrow |
 | `defaults write … hoverToExpand` | Advanced… › Show icons on hover |
 
+## Dock Previews
+
+Point at an app in the Dock, and its windows appear next to the Dock, including minimized and hidden ones. Click a window to bring it forward. Dock Previews is off until you turn it on with **Use Dock Previews** at the top of its page (or in General, or the “New: Dock Previews” card). It works with the Dock at the bottom, left, or right, magnified or hidden automatically, on any display.
+
+**Permissions.** Dock Previews needs **Accessibility** (**Device Control and Data Access** on macOS 27) to read the Dock. Turning it on without it opens the permission window once (“Dock Previews needs it to read the Dock.”); until you allow it, the page says “Dock Previews needs Accessibility to read the Dock.”, with **Open Privacy Settings…**. **Window thumbnails** also need **Screen Recording**, which Snaptic asks for only in onboarding or on the Permissions page, never when you point at the Dock. Until you allow it, previews show window titles, and the page says “Window thumbnails need Screen Recording. Until then, previews show window titles.”, with **Open Privacy Settings…**. With **Window thumbnails** off, previews show titles only and Screen Recording isn’t needed.
+
+### Showing and hiding previews
+
+- **Showing:** point at a running app in the Dock. **Show previews after** (“How long you point at an app before its windows appear.”) is 0.2 seconds by default, from “Immediately” to 1 second. Moving to another app swaps the preview at once, unless the pointer is on its way into the preview.
+- **Nothing shows** for a folder, the Trash, a stack, a separator, a minimized window’s own Dock tile, an app that isn’t running, or an app on **Advanced… › Apps hidden from Dock previews**. An app with no open windows shows a small card instead (see [Cards and actions](#cards-and-actions)). Moving the pointer away from the Dock, or pressing the mouse button on the Dock, before the preview appears cancels it.
+- **Hiding:** the preview stays while the pointer moves from the icon into it, and hides a quarter second after the pointer leaves the icon and the preview; once the pointer is outside the Dock and the preview, it always hides within a second. A click outside the preview or on the app’s Dock icon, the Dock’s own menu opening, or starting a drag hides it too, and so do switching apps, changing Spaces or displays, locking the screen, sleep, switching users, and the app quitting. Previews never show while the Window Switcher is open.
+- **After a preview is dismissed** by a click, Esc, Hide, or Quit, the same app’s preview doesn’t show again until you point at another item or move the pointer away from the Dock and back. After **Hide** or **Quit**, the next preview waits until the pointer moves a little, and the header ignores clicks for 0.3 seconds after a preview shows or swaps, so a double click can’t land on the next app’s **Quit**.
+- **Menus:** while a card’s or the header’s menu is open, the preview stays.
+- **Placement:** the preview appears 6 points from the Dock and doesn’t follow the Dock’s magnification. It fades in and out in 0.15 seconds and never slides. With Increase Contrast, cards and the preview get 1-point borders and the header a separator line; with Reduce Transparency, the preview is opaque.
+- **A Dock that hides automatically:** Snaptic never keeps it shown. If the Dock hides while the pointer is in the preview, the preview stays until you dismiss it; otherwise it hides with the Dock.
+- **Command line:** `snaptic dock pause` and `snaptic dock resume` (see [Dock Previews commands](#dock-previews-commands)).
+
+### Cards and actions
+
+- **Cards:** one per window, with its thumbnail and title. **Card size** is **Small**, **Medium** (default), or **Large**: 200, 280, or 360 points wide, with each thumbnail letterboxed in a fixed 16:10 frame. Cards sit in one row for a Dock at the bottom and in two columns for a Dock at the left or right. With more windows than fit, cards get smaller (down to Small), then the preview scrolls. If an app is slow to list its windows, the preview shows the ones it has and a “More windows…” row that lists the rest.
+- **Badges:** “Minimized”, “Full screen”, or “On another Space”, at most one per card, in that order. A hidden app says “Hidden” once, in the preview’s header.
+- **What’s listed:** standard windows and titled dialogs. Floating panels, system dialogs, notification-style pop-ups, windows smaller than 100 × 100 points, and Finder’s desktop are left out. **Include minimized and hidden windows** (“Lists windows that are minimized or belong to hidden apps.”) and **Windows on other Spaces** (“Off: only windows on the current Space are shown.”) are both on by default. **Advanced… › Sort windows by** offers **Recently Used** (default), **Minimized and Hidden Last**, and **Title**.
+- **Small cards:** an app with no open windows shows “No open windows”; click it to switch to the app. When your settings leave out all of an app’s windows, it shows “No windows shown”, with the tooltip “Its windows are minimized, hidden, or on other Spaces.” Turn off **Advanced… › Apps with no open windows** (“Pointing at the app shows a small card instead of nothing.”) to show nothing for these apps. If an app doesn’t answer in time and Screen Recording is off, the preview says “Windows can’t be read right now”, and Snaptic tries that app again 30 seconds later.
+- **Click** a card to bring its window forward, whether it’s minimized, hidden, full screen, or on another Space. **Middle-click** closes it. Hovering a card shows **Close**, **Minimize**, and **Enter Full Screen** buttons at its top left (“Close (⌘W)”, “Minimize (⌘M)”).
+- **The card’s menu** (right-click): **Close Window**, **Minimize Window** (or **Restore Window**), **Enter Full Screen** (or **Exit Full Screen**), **Hide Safari** (or **Show Safari**), and **Quit Safari** (never for Finder), named for the app.
+- **The header** shows the app’s icon and name, its window count (“1 window”, “3 windows”), and **Minimize All**, **Hide** (**Show Safari** while the app is hidden), and **Quit** (never for Finder). The header’s menu adds **Close All**.
+- **Quit** asks the app to quit, like ⌘Q, and never force quits it.
+- **After an action:** bringing a window forward, Hide, and Quit hide the preview; Close and Minimize update it in place.
+- **Cards that offer only Bring Forward:** when Snaptic can’t match a card to its window through Accessibility (for example some windows on other Spaces), the card offers only **Bring Forward**. An untitled one reads “Window on another Space”.
+- **Thumbnails** of windows on screen come from ScreenCaptureKit. For minimized windows and windows on other Spaces, Snaptic uses a private macOS capture, only on macOS versions it has been checked on; otherwise the card shows the last thumbnail Snaptic saw, then the app icon. Thumbnails are taken only for the cards in view, once the preview has been up for 0.15 seconds, at most 8 a second, and for each window at most once every 30 seconds unless it changed. In Stage Manager, a window in the side strip gets a picture of the window itself, never of its strip tile. The page notes: “macOS may show its screen-recording indicator or a reminder while thumbnails are taken.”
+
+### Keys in previews
+
+A preview is in use once you’ve moved the pointer at least 4 points inside it within the last 1.5 seconds and kept it there for a quarter second, or clicked in it. A 2-point ring in your accent color shows the card under the pointer, and these keys work on it:
+
+- **⌘W** closes the window, **⌘M** minimizes it (or restores it), and **⌘H** hides its app (or shows it).
+- **⌘Q** quits what’s under the pointer. It never quits Finder.
+- **Esc** dismisses the preview.
+
+While a preview is in use, these five keys always go to the preview, even with nothing under the pointer, so they never reach the app you’re in. Holding a key acts once, and the keys do nothing for 0.3 seconds after a close or minimize, while the cards move. Every other key, arrows, Return, and letters included, goes to the app you’re in. The keys are off while secure input is on (for example in a password field).
+
+- **Advanced… › Keyboard shortcuts in previews** (on by default): “Press ⌘W to close, ⌘M to minimize, ⌘H to hide, or ⌘Q to quit what’s under the pointer. Esc dismisses the preview.”
+- If macOS turns the keys off 3 times within a minute, they stop until you relaunch Snaptic: “Keyboard shortcuts in previews stopped because macOS turned them off 3 times. Relaunch Snaptic to use them again.”, with **Relaunch Snaptic**.
+- Snaptic watches the keyboard only while a preview is in use.
+
+### Dock click actions
+
+Two optional actions on the Dock Previews page, both off by default:
+
+- **When you click the active app in the Dock:** **Do Nothing** (default), **Hide the App**, or **Minimize Its Windows**. “Hide works like pressing ⌘H. Minimize sends each of its windows to the Dock.”
+- **Restore all minimized windows:** “When all of an app’s windows are minimized, clicking its Dock icon brings them all back.” When every window of the app is minimized, this wins over Hide and Minimize.
+- **When a click counts:** the app was already active before you pressed the button (for at least 0.15 seconds), and you release the button on the same icon within half a second. Hide and Minimize also need one of the app’s windows visible on the current Space. The action runs 0.1 seconds after you release the button, and Hide is skipped if the click opened a new window. If another app becomes active in the meantime, the click does nothing.
+- **The Dock stays in charge:** “Snaptic only watches Dock clicks. The Dock still handles every click as usual.” Snaptic never changes the Dock’s preferences, and watches Dock clicks only while one of these actions is on.
+- If macOS turns off Snaptic’s watching 3 times within a minute, the actions stop until you relaunch Snaptic: “Dock click actions stopped because macOS turned them off 3 times. Relaunch Snaptic to use them again.”, with **Relaunch Snaptic**.
+- The actions keep working while previews are paused for VoiceOver. Any other pause stops them too.
+
+### The Dock Previews page
+
+- **Status:** shown only when something needs attention (see [When previews pause](#when-previews-pause)), and “Starting…” while Snaptic first reads the Dock.
+- **Previews:** **Show previews after**, **Card size**, **Window thumbnails** (“Pictures of your windows. Off: titles only, and no Screen Recording needed.”), **Include minimized and hidden windows**, and **Windows on other Spaces**.
+- **Dock click actions:** the two settings above, with the footer “Snaptic only watches Dock clicks. The Dock still handles every click as usual.”
+- **Restore Defaults…** and **Advanced…** (both while Dock Previews is on), and (?).
+- **Advanced…** (“Dock Previews Advanced Settings”): **Sort windows by**, **Keyboard shortcuts in previews**, **Apps with no open windows**, **When another app shows Dock previews** (see [Other Dock preview apps](#other-dock-preview-apps)), **Show previews while VoiceOver is on**, the **Privacy** section it shares with the Window Switcher (see [Private windows](#private-windows)), **Apps hidden from Dock previews**, and **Diagnostics** when a Dock or window kill switch is set (see [Hidden kill switches](#hidden-kill-switches)).
+- **Restore Defaults…** on the page asks “Restore Dock Previews settings to their defaults?”: “Preview, Dock click, and Advanced settings go back to their defaults. Dock Previews stays on. Protect private windows and its app list stay as they are, because the Window Switcher uses them too.” The Advanced sheet’s own asks “Restore Dock Previews’ Advanced settings to their defaults?”: “Advanced settings go back to their defaults. Protect private windows and its app list stay as they are, because the Window Switcher uses them too.”
+- **The Snaptic menu:** Dock Previews’ section (the Dock tab) shows its status when it isn’t working, “Open Accessibility Settings…” while it needs permission, **Pause Dock Previews for 1 Hour** (or **Resume Dock Previews**), and **Dock Previews Settings…**. It’s in the Snaptic menu by default (see [Menu Bar](#menu-bar)).
+
+### When previews pause
+
+The page’s status row and the Snaptic menu say why previews don’t show:
+
+- **Safe Mode:** “Paused in Safe Mode” (see [Safety](#safety)).
+- **No Accessibility:** “Dock Previews needs Accessibility to read the Dock.”, with **Open Privacy Settings…**; the menu says “Needs Permission”.
+- **The Dock can’t be read:** “Dock Previews can’t read the Dock. It tries again when the Dock restarts.”, with **Try Again**; the menu says “Can’t read the Dock”.
+- **Another Dock preview app:** “Paused while DockDoor runs”, with **Advanced…** (see [Other Dock preview apps](#other-dock-preview-apps)).
+- **VoiceOver:** “Paused while VoiceOver is on”, with **Advanced…**, or, while a Dock click action is on, “Previews are paused while VoiceOver is on. Dock click actions still work.” (see [VoiceOver and the keyboard](#voiceover-and-the-keyboard)).
+- **Paused by you:** “Paused until …”, with **Resume**, after **Pause Dock Previews for 1 Hour** in the menu or `snaptic dock pause`. A pause isn’t kept when Snaptic quits.
+
+Below the status row, the page can also show that Window thumbnails need Screen Recording (see above), that Dock click actions or keyboard shortcuts stopped (see [Dock click actions](#dock-click-actions) and [Keys in previews](#keys-in-previews)), or that a window feature stopped (see [When a window feature stops](#when-a-window-feature-stops)). Dock Previews’ tab in the Snaptic menu is marked while it needs Accessibility, after it couldn’t read the Dock for 2 minutes, or after macOS turned off its Dock click actions or keyboard shortcuts.
+
+### Other Dock preview apps
+
+While DockDoor, HyperDock, or another Dock preview app runs, Dock Previews pauses (“Paused while DockDoor runs”), so the two don’t show previews on top of each other. The pause covers previews, their keys, and Dock click actions. **Advanced… › When another app shows Dock previews** is **Pause Dock Previews** by default, or **Run Both Anyway**: “Both apps show a preview when you point at the Dock, and the previews may cover each other.”
+
+### VoiceOver and the keyboard
+
+- **VoiceOver:** while it’s on, previews are paused by default; Dock click actions keep working. **Advanced… › Show previews while VoiceOver is on** (off by default): “Previews appear as VoiceOver moves through the Dock.”
+- **What VoiceOver says:** a preview is announced with the app and its window count (“Safari, 3 windows”), and its cards are one group (“Safari windows”). Each card reads its title, then its app, and its state, such as minimized. A private card reads “Private window, Safari”, never its title.
+- **The keyboard alone:** moving through the Dock with ⌃F3 or Full Keyboard Access never shows a preview, unless VoiceOver and **Show previews while VoiceOver is on** are both on. Use the Window Switcher instead.
+
+### Switching from DockDoor
+
+This table compares how DockDoor and Dock Previews behave, with DockDoor at its default settings. While DockDoor runs, Dock Previews pauses (see [Other Dock preview apps](#other-dock-preview-apps)).
+
+| DockDoor | Snaptic Dock Previews |
+|---|---|
+| A short hover delay you can change | **Show previews after**: 0.2 seconds by default, from “Immediately” to 1 second |
+| Moving to another app’s icon swaps the preview after a delay | Swaps at once, unless the pointer is on its way into the preview |
+| Cards 300 × 187.5, with dynamic sizing off | **Card size**: **Small**, **Medium** (default, 280 points wide), or **Large**, letterboxed in a fixed 16:10 frame |
+| One row for a Dock at the bottom, two columns for a Dock at the side | The same; with many windows, cards get smaller (down to Small), then the preview scrolls |
+| A 0.4-second fade | A 0.15-second fade; nothing slides |
+| An app with no open windows shows nothing | A small “No open windows” card that switches to the app (**Advanced… › Apps with no open windows**, on by default) |
+| Restoring all minimized windows on a Dock click is on | **Restore all minimized windows**: off by default |
+| Hiding the app on a Dock click is off | **When you click the active app in the Dock**: **Do Nothing** (default), **Hide the App**, or **Minimize Its Windows** |
+| Middle-click closes a window, and can be changed | Middle-click always closes a window |
+| ⌘W, ⌘M, and ⌘Q while the pointer is over a preview | ⌘W, ⌘M, ⌘H, ⌘Q, and Esc once you’ve moved the pointer in the preview or clicked in it (see [Keys in previews](#keys-in-previews)) |
+| Traffic-light buttons on each card | **Close**, **Minimize**, and **Enter Full Screen** buttons at the top left of each card |
+| A right-click menu with window snapping and bringing a window to this Space | Close, Minimize, Full Screen, Hide, and Quit; no snapping or moving windows between Spaces |
+| Card swipe gestures (on) | No gestures |
+| ⌘-right-click on a Dock icon quits the app (on) | Not included; use **Quit** or ⌘Q in the preview |
+| Shift-click on a Dock icon opens a new window | Not included |
+| Takes over Dock clicks and scrolls | Snaptic only watches Dock clicks; the Dock handles every click as usual |
+| “Prevent dock hide” (on) | Nothing keeps a Dock that hides automatically shown; with the pointer in the preview, the preview stays until you dismiss it |
+| Watches the keyboard all the time | Only while a preview is in use |
+| Folder previews (off) | Not included |
+| Window previews in the macOS ⌘⇥ switcher (off) | Not included; the Window Switcher can take over ⌘⇥ |
+| Media and Calendar widgets | Not included |
+| A text-only mode without Screen Recording | The same, and Snaptic never asks for Screen Recording when you point at the Dock |
+
+**Done differently on purpose.** Snaptic never posts clicks or key presses of its own, never takes over the Dock’s clicks, and watches the keyboard only while a preview is in use. Private windows show their app icon (see [Private windows](#private-windows)). If a private macOS function misbehaves, Snaptic stops using it and falls back (see [When a window feature stops](#when-a-window-feature-stops)). Without Screen Recording, it never takes a picture of a window.
+
+Quit DockDoor, or remove it from Login Items, then turn on Dock Previews. Snaptic doesn’t import DockDoor’s settings.
+
 ## Safety
 
 Display changes can leave you without a usable screen. Snaptic is built so that never sticks.
@@ -474,10 +623,11 @@ Display changes can leave you without a usable screen. Snaptic is built so that 
 - **A separate safety helper.** Before a risky change, Snaptic arms a small helper process. If Snaptic hangs, crashes, or is killed, the helper reverts the change on its own, re-enables displays Snaptic turned off, and restores color. If the helper isn’t running, risky changes are refused; anything already applied is badged “Unprotected — restart Snaptic”.
 - **Never the last screen.** Changes that would leave no visible display are refused. Dimming to black, disconnecting, and mirroring always keep at least one display you can see.
 - **Restore All Displays: ⌃⌥⌘⎋** (⌃⌥⌘⇧⎋ if the first is taken; also in Display Tools and as `snaptic panic`). It undoes resolution changes from the last minute, reconnects displays Snaptic turned off, removes dimming and overlays, resets color tables, stops virtual displays and streams, and pauses automation (layouts, protection, hooks, re-creation) until you choose Resume. Rotation and HDR aren’t touched; they always go through the confirm panel. The shortcut can’t be turned off while a display is disconnected, mirrored to a virtual display, or dimmed to black. Awake isn’t affected: keeping your Mac awake isn’t a display hazard.
-- **Safe Mode: hold ⇧ while Snaptic starts** (or start it with `--safe-mode`, or choose General › Advanced… › Restart in Safe Mode…). It also starts automatically after two launches in a row that ended within a minute. Safe Mode skips brightness and color restore, virtual displays and Smart HiDPI, protection, layouts, remembered resolutions, hooks, automatic DDC writes, XDR, and reconnection planning. In Awake it pauses rules, appear active, pointer movement, and Drive Alive; sessions you start, holds, and guards still work. Hidden Icons doesn’t start in Safe Mode, so your icons are shown. It still undoes unfinished display changes from the last run, and the switcher and your shortcuts keep working. **Leave Safe Mode…** relaunches normally.
+- **Safe Mode: hold ⇧ while Snaptic starts** (or start it with `--safe-mode`, or choose General › Advanced… › Restart in Safe Mode…). It also starts automatically after two launches in a row that ended within a minute. Safe Mode skips brightness and color restore, virtual displays and Smart HiDPI, protection, layouts, remembered resolutions, hooks, automatic DDC writes, XDR, and reconnection planning. In Awake it pauses rules, appear active, pointer movement, and Drive Alive; sessions you start, holds, and guards still work. Hidden Icons doesn’t start in Safe Mode, so your icons are shown. Dock Previews starts paused (“Paused in Safe Mode”), and the Window Switcher’s minimized windows and windows on other Spaces show their last thumbnail or the app icon. It still undoes unfinished display changes from the last run, and the switcher and your shortcuts keep working. **Leave Safe Mode…** relaunches normally.
 - **Journals.** Before a risky change Snaptic writes what it would take to undo it. If the Mac or Snaptic goes down mid-change, the next launch puts things back (and says so).
 - **Awake can’t drain your battery or cook your Mac:** the 5% floor and the heat guard have no setting and no kill switch (see [Guards](#guards)). Lid-closed mode adds its own battery limit (at least 10%), heat cutoff, and 24-hour limit, enforced both by Snaptic and by its root watchdog, and turns sleep back on if Snaptic stops responding (see [Keeping awake with the lid closed](#keeping-awake-with-the-lid-closed)).
 - **Hidden Icons fails safe:** whenever Snaptic can’t be sure hiding is safe, or it quits, crashes, or is force quit, your menu bar icons are shown (see [When icons stay shown](#when-icons-stay-shown)).
+- **Dock Previews never takes over the Dock:** Snaptic only watches Dock clicks, so the Dock handles every click as usual, its preferences are never changed, and preview keys work only while you use a preview (see [Dock Previews](#dock-previews)).
 
 ## Permissions
 
@@ -485,11 +635,11 @@ Snaptic asks only for what the features you turned on need, and only when you tu
 
 | Permission | Asked for when | Used for |
 |---|---|---|
-| **Accessibility** (called **Device Control and Data Access** on macOS 27) | Window Switcher is on; Brightness keys or Volume keys; Gather windows on first use; Awake’s pointer movement; Hidden Icons is on (macOS 27), or its hidden-icon list or Sections (macOS 14–26) | Seeing the switcher shortcut and media keys, listing and focusing windows, moving the pointer 1 point, and seeing where menu bar icons are and opening a hidden icon’s menu. |
-| **Screen Recording** (Screen & System Audio Recording) | Switcher thumbnails or preview; Picture in Picture | Thumbnails, the full-size preview, titles of windows on other Spaces, and Picture in Picture captures. |
+| **Accessibility** (called **Device Control and Data Access** on macOS 27) | Window Switcher is on; Brightness keys or Volume keys; Gather windows on first use; Awake’s pointer movement; Hidden Icons is on (macOS 27), or its hidden-icon list or Sections (macOS 14–26); Dock Previews is on | Seeing the switcher shortcut and media keys, listing and focusing windows, moving the pointer 1 point, seeing where menu bar icons are and opening a hidden icon’s menu, and reading the Dock. |
+| **Screen Recording** (Screen & System Audio Recording) | Switcher thumbnails or preview; Dock Previews’ Window thumbnails (only in onboarding or on the Permissions page); Picture in Picture | Switcher and Dock Previews thumbnails, the switcher’s full-size preview, titles of windows on other Spaces, and Picture in Picture captures. |
 | **Removable Volumes** (Files & Folders) | The first time Drive Alive writes to a drive | Rewriting `.snaptic-keepalive` on the drives you chose. |
 
-Accessibility and Screen Recording are in **System Settings › Privacy & Security**. The permission window shows the exact app path, with “Show Snaptic in Finder” so you add *this* copy. On macOS 27 a grant often takes effect only after a relaunch; Snaptic offers **Relaunch Snaptic**. Without Accessibility the switcher stays idle, Awake only appears active instead of moving the pointer, and Hidden Icons shows your icons on macOS 27 (on macOS 14–26 it still hides them, without the list). Without Screen Recording the switcher shows app icons and only windows on the current Space. macOS Sequoia and later re-confirm Screen Recording about once a month; that prompt comes from macOS.
+Accessibility and Screen Recording are in **System Settings › Privacy & Security**. The permission window shows the exact app path, with “Show Snaptic in Finder” so you add *this* copy. On macOS 27 a grant often takes effect only after a relaunch; Snaptic offers **Relaunch Snaptic**. Without Accessibility the switcher stays idle, Awake only appears active instead of moving the pointer, and Hidden Icons shows your icons on macOS 27 (on macOS 14–26 it still hides them, without the list), and Dock Previews waits (“Dock Previews needs Accessibility to read the Dock.”). Without Screen Recording the switcher shows app icons and only windows on the current Space, and Dock Previews shows window titles; it never asks for the permission when you point at the Dock. macOS Sequoia and later re-confirm Screen Recording about once a month; that prompt comes from macOS.
 
 Most Displays features need no permission at all. Awake needs none for sessions, rules, guards, holds, appear active, history, or the menu bar: its conditions read only system state that macOS gives any app without asking (no Location, Bluetooth, Microphone, Input Monitoring, Local Network, or Downloads folder access). Lid-closed mode needs no permission either; instead it asks for an administrator password each time you turn it on.
 
@@ -507,9 +657,9 @@ sudo ln -sf '/Applications/Snaptic.app/Contents/MacOS/Snaptic' /usr/local/bin/sn
 
 Without installing: `/Applications/Snaptic.app/Contents/MacOS/Snaptic cli help`.
 
-**Usage.** `snaptic [--json] [--yes] <command> [arguments]`. `snaptic help` lists the commands available right now (a command appears only while its feature is on); `snaptic help <command>` narrows it, for example `snaptic help awake` or `snaptic help icons`. `--` ends options, so `-10` is read as a value.
+**Usage.** `snaptic [--json] [--yes] <command> [arguments]`. `snaptic help` lists the commands available right now (a command appears only while its feature is on); `snaptic help <command>` narrows it, for example `snaptic help awake`, `snaptic help icons`, or `snaptic help dock`. `--` ends options, so `-10` is read as a value.
 
-- `--json`: machine-readable output. Lists and `get`, `set`, `ddc`, `mode`, `layout`, `virtual`, `pip list`, and `awake status` print JSON arrays or objects; any other command prints `{"ok": true}` (with `"output"` when it has text). Errors, including the client’s own (an unknown option, Snaptic not running), print `{"exitCode": …, "error": …}`.
+- `--json`: machine-readable output. Lists and `get`, `set`, `ddc`, `mode`, `layout`, `virtual`, `pip list`, `awake status`, and `dock status` print JSON arrays or objects; any other command prints `{"ok": true}` (with `"output"` when it has text). Errors, including the client’s own (an unknown option, Snaptic not running), print `{"exitCode": …, "error": …}`.
 - `--yes`: skips the “Keep this change?” panel, but only if you also turned on “Commands can skip confirmation” (General › Advanced…). The change is then kept right after the displays settle; the safety helper and the undo journal protect it exactly as they protect a confirmed change. Otherwise the panel shows and the command waits for your answer.
 - Commands that change displays (`mode …`, `match-ui`, `mirror`, `rotate`, `disconnect`, `layout apply`) wait for the outcome: exit 0 when the change was applied or kept, 6 when it was declined in the panel or timed out.
 - Values can be absolute (`60`), relative (`+10`, `-5`), or percentages (`50%`, `+10%`).
@@ -521,7 +671,7 @@ Without installing: `/Applications/Snaptic.app/Contents/MacOS/Snaptic cli help`.
 | Command | Feature | Notes |
 |---|---|---|
 | `version`, `modules`, `safe-mode` | — | Always available |
-| `module disable <windowSwitcher\|displays\|awake\|hiddenIcons>` | — | Off only |
+| `module disable <windowSwitcher\|displays\|awake\|hiddenIcons\|dockPreviews>` | — | Off only |
 | `open-settings [page]` | — | Optionally at a page id, e.g. `displays.brightness` or `awake` |
 | `list`, `features` | Displays | Displays: number, key, name, size, state. Features: on or off |
 | `feature disable <feature>` | Displays | Off only |
@@ -554,7 +704,7 @@ Verbs are case-insensitive, so `toggle nightShift` and `toggle smartHiDPI` work 
 
 **`prevent-sleep` is gone.** Display sleep prevention moved to Awake in 0.3 (your 0.2 setting became a rule; see [Upgrading and downgrading](#upgrading-and-downgrading)), and 0.4 removed the old verb: it is now an unknown command (exit 2). Use `snaptic awake start`, `snaptic awake hold`, or a rule instead.
 
-**Never from the command line:** turning on anything off-only, and changing hooks, actions, command-line settings, disconnect, auto-disconnect, dim to black, DDC unlocks, “allow without asking” choices, layout trust, or any Awake setting (rules, sessions in the menu, guards, Drive Alive, appear active, pointer movement), Hidden Icons’ settings and per-app choices, and turning on lid-closed mode. Accessibility-using actions (Gather windows, pointer movement) are never command-line actions.
+**Never from the command line:** turning on anything off-only, and changing hooks, actions, command-line settings, disconnect, auto-disconnect, dim to black, DDC unlocks, “allow without asking” choices, layout trust, or any Awake setting (rules, sessions in the menu, guards, Drive Alive, appear active, pointer movement), Hidden Icons’ settings and per-app choices, Dock Previews’ settings and app lists, and turning on lid-closed mode. Accessibility-using actions (Gather windows, pointer movement) are never command-line actions.
 
 ### Awake commands
 
@@ -618,6 +768,24 @@ Available while Hidden Icons is on and command-line control is on (otherwise `sn
 - Anything else, such as `snaptic icons hide --all` or an unknown flag, is a usage error: “Usage error. Run “snaptic help icons”.” (exit 2).
 - The commands do only what the arrow does: nothing moves an icon, changes a setting, or names an app.
 
+### Dock Previews commands
+
+Available while Dock Previews is on and command-line control is on, including in Safe Mode, while it needs permission, and while it’s paused (otherwise `snaptic` answers “Unknown command.”, exit 2, or exits 5 if Snaptic isn’t running).
+
+| Command | What it does |
+|---|---|
+| `snaptic dock status [--json]` | One line: `state=<…> reason=<…\|-> until=<ISO\|-> thumbnails=<…> clickActions=<…> keys=<…> cacheEntries=<n> cacheBytes=<n>`. `--json` prints one object with the same keys in the same order, then `observerAttached` and live counters; a missing value is `null`. Always exits 0. |
+| `snaptic dock pause [duration]` | Pauses Dock Previews and its Dock click actions, for 1 hour if you give no time. |
+| `snaptic dock resume` | Resumes Dock Previews and its Dock click actions. |
+
+- **Values:** `state` is `on`, `starting`, `paused`, `needsPermission`, or `unavailable`; `reason` is `safeMode`, `otherTool`, `voiceOver`, `command`, or `dockUnreadable`; `thumbnails` is `on`, `off`, or `noPermission`; `clickActions` and `keys` are `on`, `off`, `paused`, `stopped` (macOS turned them off 3 times), or `disabled` (a kill switch), each as it applies right now. `until` and the reply times are UTC ISO 8601.
+- **Durations:** `30m`, `2h`, `1h30m`, or `90` (minutes), from 1 minute to 24 hours. `forever`, `idle`, `until …`, `0`, and anything over 24 hours are usage errors.
+- **A pause never gets shorter:** pausing again keeps the later end. A pause isn’t saved, so relaunching Snaptic resumes.
+- **Replies:** “Dock Previews is paused until ….” with the end, and for `resume` “Dock Previews is on again.”, “Dock Previews’ pause is cleared.”, or “Dock Previews isn’t paused.” (exit 0).
+- **Refusals exit 5**, for `pause` and `resume` only: “Dock Previews is paused in Safe Mode.”, “Dock Previews needs Accessibility. Open Snaptic Settings › Permissions.” (`pause` only), “Dock Previews is paused while another Dock preview app runs. Choose Run Both Anyway in Dock Previews’ Advanced settings to use both.”, or “Dock Previews is paused while VoiceOver is on.”
+- Anything else is a usage error: “Usage error. Run “snaptic help dock”.” (exit 2).
+- The commands never change a setting or name an app or window.
+
 ### Exit codes
 
 | Code | Meaning |
@@ -626,14 +794,14 @@ Available while Hidden Icons is on and command-line control is on (otherwise `sn
 | 2 | Usage error, unknown command, or a name that matches several displays or items |
 | 3 | Nothing matched (display, action, layout, configuration, Awake session in the menu) |
 | 4 | Refused by policy: off-only, a protected setting, the safety rules, or an Awake refusal (a guard, a session you started in Snaptic is running, 8 holds, a session without an end, extending a lid-closed session, a caller Snaptic couldn’t identify) |
-| 5 | Unavailable: Snaptic isn’t running or quit, command-line control is off, the feature is off or unsupported, too many Awake requests, or a Hidden Icons refusal (paused, needs permission, unavailable, or the arrangement) |
+| 5 | Unavailable: Snaptic isn’t running or quit, command-line control is off, the feature is off or unsupported, too many Awake requests, a Hidden Icons refusal (paused, needs permission, unavailable, or the arrangement), or a Dock Previews refusal (Safe Mode, needs permission, another Dock preview app, or VoiceOver) |
 | 6 | Cancelled or timed out (the confirmation was declined or expired; the client waits up to 90 s: the longest panel plus 30 s) |
 
-**Recipes.** A Stream Deck “Run shell” or Raycast script command can call `snaptic set brightness +10 mouse`, `snaptic input "HDMI 1" 2`, `snaptic layout apply Office`, `snaptic awake start 2h`, or `snaptic icons toggle`.
+**Recipes.** A Stream Deck “Run shell” or Raycast script command can call `snaptic set brightness +10 mouse`, `snaptic input "HDMI 1" 2`, `snaptic layout apply Office`, `snaptic awake start 2h`, `snaptic icons toggle`, or `snaptic dock pause 30m`.
 
 ## Hidden kill switches
 
-Kill switches turn a module or a feature off for this Mac, whatever Settings says. They are Boolean keys in Snaptic’s own preferences (`app.snaptic.Snaptic`), they only ever turn things off, and pages show what they turned off as “Turned off for this Mac by an administrator or a Terminal command.” with the command that undoes it. Quit and reopen Snaptic to apply a change (Hidden Icons’ switches also apply while it runs, see below). The Diagnostics Report lists the Displays, Awake, and Hidden Icons feature switches that are set; a module turned off this way says so on its page, and a turned-off private API shows as unavailable.
+Kill switches turn a module or a feature off for this Mac, whatever Settings says. They are Boolean keys in Snaptic’s own preferences (`app.snaptic.Snaptic`), they only ever turn things off, and pages show what they turned off as “Turned off for this Mac by an administrator or a Terminal command.” with the command that undoes it. Quit and reopen Snaptic to apply a change (Hidden Icons’, Dock Previews’, and window feature switches also apply while it runs, see below). The Diagnostics Report lists the Displays, Awake, and Hidden Icons feature switches that are set, and Dock Previews’ **Advanced…** sheet lists the Dock and window feature switches that are set; a module turned off this way says so on its page, and a turned-off private API shows as unavailable.
 
 ```bash
 defaults write app.snaptic.Snaptic Modules.disable.awake -bool true                # a whole module
@@ -641,13 +809,28 @@ defaults write app.snaptic.Snaptic Modules.disable.hiddenIcons -bool true       
 defaults write app.snaptic.Snaptic Awake.disable.pointerNudge -bool true           # one Awake feature
 defaults write app.snaptic.Snaptic Displays.disable.xdr -bool true                 # one Displays feature
 defaults write app.snaptic.Snaptic Displays.disable.symbol.MPDisplay -bool true    # one private API
+defaults write app.snaptic.Snaptic Modules.disable.dockPreviews -bool true         # Dock Previews, at the next launch
+defaults write app.snaptic.Snaptic Dock.disable.keys -bool true                    # one Dock Previews feature
+defaults write app.snaptic.Snaptic Windows.disable.hwCapture -bool true            # one window feature
 defaults delete app.snaptic.Snaptic Awake.disable.pointerNudge                     # undo
 ```
 
-- **Modules:** `Modules.disable.windowSwitcher`, `Modules.disable.displays`, `Modules.disable.awake`, `Modules.disable.hiddenIcons`. A module turned off this way never starts, its page shows why with its switch disabled, Awake also releases its assertion and doesn’t resume a session at the next launch, and Hidden Icons shows your icons.
+- **Modules:** `Modules.disable.windowSwitcher`, `Modules.disable.displays`, `Modules.disable.awake`, `Modules.disable.hiddenIcons`, `Modules.disable.dockPreviews`. A module turned off this way never starts, its page shows why with its switch disabled, Awake also releases its assertion and doesn’t resume a session at the next launch, Hidden Icons shows your icons, and Dock Previews stays off.
 - **Awake features:** `presets` (sessions in the menu), `triggers` (rules), `activity` (appear active, and so pointer movement), `pointerNudge` (pointer movement), `driveAlive`, `history`, `shortcuts`, `commandLine` (the `snaptic awake` commands), and `lidClosed` (lid-closed mode). `sessions`, `batteryGuard`, `thermalGuard`, and `indicator` are ignored, so the guards and a visible indicator always stay; use `Modules.disable.awake` to turn Awake off entirely.
 - **Displays features** (ids as in `snaptic features`): `resolution`, `hiddenModes`, `scaleMatch`, `brightness`, `brightnessApple`, `brightnessDDC`, `brightnessGamma`, `brightnessOverlay`, `brightnessRestore`, `dimToBlack`, `dimOnLock`, `nits`, `xdr`, `sync`, `autoBrightness`, `color`, `colorProfiles`, `nightShift`, `applePresets`, `ddcControls`, `ddcInput`, `ddcPower`, `ddcCustom`, `brightnessKeys`, `volumeKeys`, `shortcuts`, `osd`, `osdBroadcast`, `mainDisplay`, `arrangement`, `mirroring`, `rotation`, `underscan`, `hdrToggle`, `disconnect`, `autoDisconnectBuiltin`, `protection`, `layouts`, `virtualScreens`, `smartHiDPI`, `hdrVirtual`, `pip`, `pipFilters`, `menuBarOverlays`, `hooks`, and `customActions`. `Displays.disable.symbol.<name>` turns off one private API.
 - **Hidden Icons features** (`Icons.disable.<id>`): `native` (the macOS 27 method, so Hidden Icons is unavailable there), `length` (the macOS 14–26 method, likewise), `inventory` (reading where menu bar icons are: on macOS 27 Hidden Icons is then unavailable; on 14–26 hiding still works, without the hidden-icon list, Sections, or new-icon notices), `hover` (Show icons on hover), and `axpress` (opening a hidden icon’s menu from the list; the rows stay, dimmed). Snaptic reads these every second, and turning on the switch for the method in use shows your icons at once.
+- **Dock Previews and window features** (`Dock.disable.<id>` and `Windows.disable.<id>`): Snaptic reads these each time it uses the feature, so they apply while it runs. Window feature switches affect the Window Switcher and Dock Previews, except `symbolicHotKeys` and `layoutType`, which affect only the Window Switcher.
+
+| Switch | Effect |
+|---|---|
+| `Dock.disable.clickActions` | Dock clicks are left entirely to the Dock. |
+| `Dock.disable.keys` | Keys pass through to the active app; the pointer still works in previews. |
+| `Windows.disable.hwCapture` | Minimized windows and windows on other Spaces show the last thumbnail Snaptic saw, then the app icon. |
+| `Windows.disable.axWindowID` | Cards are matched to their windows by title and position; a card without a match offers only **Bring Forward**. |
+| `Windows.disable.raise` | Windows are raised with Accessibility; a window on another Space only switches to its app. |
+| `Windows.disable.spaces` | Windows on other Spaces aren’t listed. |
+| `Windows.disable.symbolicHotKeys` | macOS keeps ⌘⇥; the Window Switcher can’t take it over. Giving ⌘⇥ back always works. |
+| `Windows.disable.layoutType` | The key above Tab is found as on a US (ANSI) keyboard. |
 
 ### Deploying kill switches in an organization
 
@@ -842,9 +1025,11 @@ In every case, a note goes in the README and on the Releases page.
 - *Hooks and custom actions* (opt-in) run programs you chose, with a minimal environment (`SNAPTIC_EVENT`, `SNAPTIC_DISPLAY_NAME`, `SNAPTIC_DISPLAY_KEY`), without Snaptic’s permissions, stopped after 30 seconds. Programs must be absolute paths owned by you or root and not writable by others. Never in Safe Mode or while automation is paused.
 - *Awake’s power assertion* is visible to every app (`pmset -g assertions`), as all assertions are. Its name is always “Snaptic: keeping your Mac awake” and its details only say `manual` or `automatic`: never an app, rule, or condition.
 
-**On disk.** Settings (in Snaptic’s preferences), and under `~/Library/Application Support/Snaptic/` (0700): the single-instance lock, the command-line socket, undo journals for display changes, copies of imported LUTs, and, while lid-closed mode is on or its recovery is pending, a small journal (`awake/lid.json`, 0600). Lid-closed mode also keeps two empty files in a private folder (0700) of your temporary folder for its watchdog. The remembered Snaptic menu tab is a plain preference. Release builds add Sparkle’s update cache, `~/Library/Caches/app.snaptic.Snaptic/org.sparkle-project.Sparkle`, and Sparkle’s `SU…` keys in Snaptic’s preferences; **Reset All Settings…** clears those keys. Drive Alive’s only trace is the 8-byte `.snaptic-keepalive` file on drives you turned on. Hidden Icons’ per-app choices, known apps, and new-icon list (app bundle identifiers, never names) are stored apart from your other settings and never exported. Backup export leaves out hooks, actions, command-line settings, the salts, DDC unlocks, “allow without asking” choices, layout trust, sensitive switches (disconnect, auto-disconnect, dim to black), Awake’s history, Drive Alive drives, pointer movement, lid-closed mode (import keeps this Mac’s choice), the update settings, the remembered menu tab, the apps you used recently, and Hidden Icons’ per-app choices, new-icon list, and icon positions; Awake rules are included only if you tick “Include automatic-session rules”. Import strips the same things even if present, and can only make Awake’s guards stricter.
+**On disk.** Settings (in Snaptic’s preferences), and under `~/Library/Application Support/Snaptic/` (0700): the single-instance lock, the command-line socket, undo journals for display changes, copies of imported LUTs, and, while lid-closed mode is on or its recovery is pending, a small journal (`awake/lid.json`, 0600). Lid-closed mode also keeps two empty files in a private folder (0700) of your temporary folder for its watchdog. The remembered Snaptic menu tab is a plain preference. Release builds add Sparkle’s update cache, `~/Library/Caches/app.snaptic.Snaptic/org.sparkle-project.Sparkle`, and Sparkle’s `SU…` keys in Snaptic’s preferences; **Reset All Settings…** clears those keys. Drive Alive’s only trace is the 8-byte `.snaptic-keepalive` file on drives you turned on. Hidden Icons’ per-app choices, known apps, and new-icon list (app bundle identifiers, never names) are stored apart from your other settings and never exported. Backup export leaves out hooks, actions, command-line settings, the salts, DDC unlocks, “allow without asking” choices, layout trust, sensitive switches (disconnect, auto-disconnect, dim to black), Awake’s history, Drive Alive drives, pointer movement, lid-closed mode (import keeps this Mac’s choice), the update settings, the remembered menu tab, the apps you used recently, and Hidden Icons’ per-app choices, new-icon list, and icon positions; Awake rules are included only if you tick “Include automatic-session rules”. Dock Previews’ settings, “Apps hidden from Dock previews” included, are exported. Import strips the same things even if present, can only make Awake’s guards stricter, and can only add apps to “Never show thumbnails for”, never remove one.
 
 **Hidden Icons.** To know which icons are where, Snaptic reads other apps’ menu bar icon positions and app identities with Accessibility; on macOS 14–26 it does so only for the hidden-icon list and Sections. App names and bundle identifiers never go into the event log, diagnostics (which keep counts only), or the command line. Snaptic never moves, clicks, or changes another app’s icon, except opening one’s menu when you choose it in the hidden-icon list.
+
+**Dock Previews.** To show previews, Snaptic reads the Dock’s items and other apps’ windows with Accessibility. App names, window titles, and bundle identifiers never go into the event log, diagnostics, or the command line (`snaptic dock status` gives states and counts only). Thumbnails stay in memory. Snaptic never changes the Dock’s preferences and never posts clicks or key presses: it watches Dock clicks only while a Dock click action is on, and the keyboard only while a preview is in use.
 
 **Command line.** Only your user account can connect, through a private socket (directory 0700, socket 0600); Snaptic never listens on the network. Requests are size-, rate-, and time-limited. See [Command line](#command-line) for what it can never change.
 
@@ -858,8 +1043,8 @@ In every case, a note goes in the README and on the Releases page.
 - **Keys.** Snaptic’s keyboard tap reacts only to its own shortcuts. While the switcher is open it also reads the keys you press there (to search and for the action keys); search text is cleared when the switcher closes. Password fields use macOS Secure Event Input, which Snaptic can’t see; while it’s active, or whenever Snaptic’s tap is off, ⌘⇥ goes back to macOS. If Snaptic ever hangs, a background guard hands ⌘⇥ back within about two seconds, and quitting Snaptic by any normal means or signal restores it.
 - **Never stuck.** The switcher closes if you click elsewhere, switch apps, or change Spaces, and switches as soon as the modifier key is up even if Snaptic missed the release. If it stays open after release (searching, or “switch on release” turned off), it closes after 30 seconds without input. If the window list takes more than 2 seconds to load, it gives up.
 - **Slow or hostile apps.** Accessibility requests to other apps time out after 0.15 seconds, each app gets at most half a second and 100 windows, and listing gives up on stragglers after 1.2 seconds. Window titles and app names from other apps are length-limited and stripped of control and text-direction characters.
-- **Thumbnails** are kept in memory only (at most 40, for at most 5 minutes), never captured after the switcher closes, and cleared when the Mac sleeps, locks, or switches user. Snaptic’s panels ask macOS to keep them out of screen sharing and screenshots, though some capture methods may not honor that.
-- **Sensitive windows.** Windows of apps on the “never capture” list (by default 1Password, Bitwarden, Apple Passwords, Tor Browser, and others) are never captured and show their app icon and name instead of their title. Safari and Chrome don’t mark private windows, so add them to the list if you don’t want any of their windows captured.
+- **Thumbnails** are kept in memory only and never saved: at most 120 thumbnails and 96 MB, for at most 30 minutes, shared by the Window Switcher and Dock Previews. They’re taken only while the switcher or a preview is showing, and cleared when the Mac sleeps, locks, or switches user, when Screen Recording is turned off, and when neither module needs them any more. Snaptic’s panels ask macOS to keep them out of screen sharing and screenshots, though some capture methods may not honor that.
+- **Sensitive windows.** Windows of apps on the “Never show thumbnails for” list (by default 1Password, Bitwarden, Apple Passwords, Tor Browser, and others) are never captured and show their app icon and name instead of their title, in the Window Switcher and Dock Previews (see [Private windows](#private-windows)). Safari and Chrome don’t mark private windows, so add them to the list if you don’t want any of their windows captured.
 - **No hijacking ⌘.** ⌘ can’t be combined with letters or digits, so Snaptic can never take over ⌘C, ⌘V, ⌘Q, and the like.
 - **App identity.** App lists match bundle identifiers, which apps declare themselves. An app could pretend to be on the “keep the shortcut” list; at worst it would receive your switcher shortcut while it’s in front.
 
@@ -876,6 +1061,12 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
 **Startup checks.** Snaptic accepts only its own launch arguments, refuses to start with code-injection-style environment variables (`DYLD_*`, `OBJC_*`, `NS*`, `CF*`, `Malloc*`, and similar) or a `HOME` that isn’t your account’s, reads settings only from its own preferences (not command-line or managed overrides), and runs one copy at a time.
 
 ## Upgrading and downgrading
+
+**0.4.0 → 0.5.0.** Snaptic updates itself, and no setting is lost. Dock Previews starts off: a “New: Dock Previews” card in General offers **Turn On Dock Previews** or **Not Now**.
+
+- **Window Switcher:** minimized windows and windows on other Spaces get thumbnails too, where macOS allows it; otherwise they show the last one Snaptic saw, then the app icon. Thumbnails now stay in memory for up to 30 minutes, so the switcher opens with them and refreshes them in place. Its **Advanced…** sheet has the new Privacy footer and list help, and **Window thumbnails** says what turning it off does.
+- **Privacy:** **Protect private windows** and “Never show thumbnails for” now apply to Dock Previews too, and **Restore Defaults…** leaves them as they are (see [Private windows](#private-windows)).
+- **Going back to 0.4.0:** every setting stays, including your protected apps.
 
 **0.3.4 → 0.4.0.** Snaptic updates itself, and no setting is lost. Hidden Icons starts off (a “New: Hidden Icons” card in General). The app has a new icon. `snaptic prevent-sleep` is gone (it has answered “Moved to Awake” since 0.3).
 
@@ -921,14 +1112,18 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
 - **`awake hold` ended at once, or kept holding after the work.** See [the parent-shell pitfall](#awake-hold).
 - **Hidden icons came back by themselves.** That’s Hidden Icons failing safe; the status row on its page says why and offers the fix (see [When icons stay shown](#when-icons-stay-shown)).
 - **I can’t find the arrow.** The page offers **Show Arrow** when macOS hid it; otherwise use **Advanced… › Reset Arrow Position…**, which puts the arrow and dividers back next to the Snaptic icon.
-- **`snaptic` says it isn’t running, or doesn’t know `awake` or `icons`.** Turn on Settings › General › Command-line control, and make sure Awake or Hidden Icons is on. Exit code 5 means Snaptic isn’t running, control is off, the feature is off, or you sent Awake requests faster than once a second.
+- **No Dock preview appears.** Look at the status row on the Dock Previews page: it says when previews are paused or need Accessibility (see [When previews pause](#when-previews-pause)). Nothing shows for folders, the Trash, apps that aren’t running, or apps on **Apps hidden from Dock previews**, and after you dismiss a preview the same app’s doesn’t show again until you point at another item.
+- **Previews show titles instead of pictures.** Turn on **Window thumbnails** on the Dock Previews page and allow Screen Recording on the Permissions page. Private windows always show their app icon.
+- **“Paused while DockDoor runs”.** Quit the other app, or choose **Run Both Anyway** in **Dock Previews › Advanced… › When another app shows Dock previews**.
+- **⌘W or ⌘Q went to the app instead of the preview.** The keys work once the preview is in use: move the pointer a little inside it, or click in it (see [Keys in previews](#keys-in-previews)).
+- **`snaptic` says it isn’t running, or doesn’t know `awake`, `icons`, or `dock`.** Turn on Settings › General › Command-line control, and make sure Awake, Hidden Icons, or Dock Previews is on. Exit code 5 means Snaptic isn’t running, control is off, the feature is off, or you sent Awake requests faster than once a second.
 - **Lid-closed mode won’t turn on.** The notice says why: battery too low (connect power), too hot, a Start Anyway session, Snaptic running from a temporary location (move it to Applications), or sleep still turned off from an earlier session. If the password dialog doesn’t appear, check whether security software blocks `osascript`.
 - **No update arrives.** Look at Settings › About › Updates: automatic checks may be off, the copy may be built from source, or an update may be waiting for lid-closed mode or a display change to finish. **Check for Updates…** checks now.
 - **Filing an issue.** Copy the report from Displays › Display Information (or `snaptic diagnostics`). It has no window titles, app names, or serial numbers; Awake contributes only counts.
 
 ## Known limitations
 
-- **Switcher:** windows on other Spaces show their app icon rather than a thumbnail, say “Other Space” rather than which Space, and can’t be closed or minimized from the switcher. Each shortcut uses one modifier (⌥, ⌘, or ⌃) plus one key. If you close a window that asks to save first, or quit an app that asks to confirm, it disappears from the switcher until the next time you open it. Minimized and hidden windows show their app icon. Minimized and hidden windows share one toggle, and “switch on release” is global.
+- **Switcher:** minimized windows and windows on other Spaces get a thumbnail only where macOS allows it, otherwise the last one Snaptic saw, then the app icon. Windows on other Spaces say “Other Space” rather than which Space, and can’t be closed or minimized from the switcher. Each shortcut uses one modifier (⌥, ⌘, or ⌃) plus one key. If you close a window that asks to save first, or quit an app that asks to confirm, it disappears from the switcher until the next time you open it. Windows of hidden apps show the last thumbnail Snaptic saw, or the app icon. Minimized and hidden windows share one toggle, and “switch on release” is global.
 - **Displays:** EDID-based display names are read on Intel Macs only. The panic confirmation is a notice, not a full HUD. A display “captured” by another app (a full-screen game) refuses changes and the confirm panel. Brightness sync notices changes made with a display’s own buttons only when readback is on. Auto-disconnect reads the lid state when it plans, and can’t detect a display in standby or on another input. “Disconnect on lock” ignores the screen saver. Virtual-display primaries come from EDID only (no ICC fallback). “Stream onto” associations ask rather than start. On macOS 27 the system’s own HUD also shows at the top right, so the two indicators can overlap; Snaptic’s defaults to top center there.
 - **Picture in Picture:** Safari doesn’t mark private windows (add Safari to the protected apps). Window sources are picked in the system picker each time, so they can’t start automatically or from the command line. Imported LUTs aren’t included in Backup. The cursor can’t be excluded from streams, and filters can’t be applied to a stream of the display itself.
 - **Awake:**
@@ -947,6 +1142,14 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
   - Always Show and Always Hide work on macOS 27 only; on 14–26 they’re kept but unused.
   - On macOS 27 the list has no behind-the-notch rows.
   - On macOS 27, with **Run Both Anyway**, an icon stays shown unless both apps hide it.
+- **Dock Previews:**
+  - Dock Previews works with the pointer, or with VoiceOver when “Show previews while VoiceOver is on” is on. With the keyboard alone, use the Window Switcher.
+  - Moving through the Dock with ⌃F3 or Full Keyboard Access never shows a preview.
+  - A Dock click while another app is becoming active, or one held longer than half a second, does nothing.
+  - Where Snaptic can’t bring a window forward from another Space, it switches to the app instead.
+  - Some cards offer only **Bring Forward** (see [Cards and actions](#cards-and-actions)).
+  - The preview doesn’t follow the Dock’s magnification.
+  - An app that doesn’t answer in time shows window titles only, for 30 seconds.
 - **General:** English only (all text is ready for translation, but no translations exist yet) and no trackpad gesture. Updates need a release build: copies built from source don’t update themselves, and 0.3.1 and earlier need one manual download to reach the latest release.
 
 ### Needs testing on hardware
@@ -965,6 +1168,7 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
 - **Lid-closed mode (0.3.1):** the password dialog from Developer ID and ad-hoc builds (its title, icon, text, Touch ID, Cancel); the output of `pmset`, `ioreg`, and `notifyutil` on Apple silicon and Intel, macOS 14 to 27; the lid closed on battery with and without an external display and with `caffeinate -d` running (staying awake, the built-in display going dark, Sleep grayed out, waking on lid open, the keyboard backlight, the icon); the watchdog surviving the dialog and restoring sleep after a quit, `kill -9`, a stopped Snaptic, the stop file, the 24-hour limit, a deleted heartbeat, a script error, and `sudo kill`; a restart while it’s on and both recovery buttons; the battery limit while Snaptic is stopped; the Mac sleeping within 30 seconds after each limit with the lid closed; the watchdog’s wakeups.
 - **Updates (0.3.1):** Sparkle loading in a Developer ID build; updating from a user-owned and a root-owned copy; permissions and Open at login surviving; no Gatekeeper prompt after relaunch; refusing a wrong signature, a non-Developer-ID build, and an edited feed; a root-owned copy staying `root:wheel`; waiting while lid-closed mode or a display change is pending; the menu row; no Sparkle window during onboarding or Safe Mode; a manual check in Safe Mode; installing at quit; the 0.3.0 → 0.3.1 permission re-grant; an ad-hoc build without Sparkle opening the Releases page.
 - **Hidden Icons (0.4):** icons showing while the camera or microphone is on and hiding again after, and the location indicator, on macOS 27; ⌘-dragging icons while hidden; Live Activities and other macOS 27 system items; an exam session in Safari or an assessment app; seeding the dividers on a fresh macOS 15 account and the 10 000-point divider on the widest displays; running beside Hidden Bar, Bartender, Ice, and Thaw.
+- **Dock Previews (0.5):** the Dock at the bottom, left, and right, hidden automatically and magnified, on several displays; Stage Manager; sleep, wake, and Dock restarts; running beside DockDoor and HyperDock; VoiceOver; thumbnails of minimized windows and windows on other Spaces, and the screen-recording indicator; Dock click actions.
 - **Hidden-config abuse:** pointer movement, Drive Alive, a battery floor of zero, and forged session state written with `defaults` while Snaptic is quit, stopped, and running: none of them may move the pointer, skip the 5% floor, or write to ineligible drives.
 - **From 0.2:** confirmed changes persisting across quit, relaunch, and reboot; the safety helper reverting after `kill -9` with virtual displays and a pending change; rotation and HDR reverts after a reboot; XDR extra brightness on M1–M5 XDR panels; gamma on virtual displays on M5; DDC over Apple silicon USB-C and HDMI, MCDP adapters, and Intel, and standby and wake through DDC; brightness and volume keys on Apple silicon laptops on macOS 26 and 27, and global shortcuts while a password field is focused; virtual displays and Smart HiDPI (HiDPI at creation, live mode changes, lock, sleep, Fast User Switching, lid closed with no external display, EDID colors on Apple silicon); Picture in Picture capture filters, window crop orientation, and the content-sharing picker on 14, 15, and 26; helper signature checks with ad-hoc and Developer ID builds and after an in-place update; Accessibility grants and relaunch on macOS 27; detecting password windows on macOS 26 without Screen Recording; Identify labels over full-screen apps and AirPlay.
 
@@ -973,28 +1177,33 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
 **Deferred** (may come later):
 - **Displays:** system display overrides (scaled resolutions, display names, TV roles), connection color mode and direct XDR control, framebuffer grayscale and invert and keyboard-backlight keys, 3D LUTs on displays and compositor filters, HDMI-CEC, network TVs and receivers, DisplayLink control, HTTP-based Stream Deck plugins, True Tone and Dark Mode control, nits-normalized sync, SDR/HDR automatic profile switching, ranged custom controls with readback, Picture in Picture tabs and magnification above 100%, virtual-display identity editing, swapping identical displays, Sidecar management, and detachable menus.
 - **Awake:** a “while a file is downloading” condition that watches the Downloads folder (Until Downloads and Tasks Finish and Network activity cover it), other Bluetooth devices, locking the screen after inactivity, screen saver control and exceptions, sounds, a condition on background processes by name (`awake hold` covers scripts), and `awake hold -- <command>` (Snaptic never runs commands).
+- **Dock Previews:** moving a window to the current Space, live and pinned previews, card swipe gestures, showing previews only while ⌥ is held, leaving single windows out of a preview, pausing while the screen is shared, and a Space number badge.
+- **Window Switcher:** Vim keys, mouse follows focus, and a swipe to open the switcher.
 - **Everywhere:** App Intents and Shortcuts actions, AppleScript, Control Center and widget controls (the command line covers Shortcuts), localization, and opening a Settings page from outside Snaptic.
 
 **Excluded by design:**
 - **Displays:** EDID writing or overrides (can brick or blank a display); reinitializing displays, VMM7100 resets, forced HDR, dithering, and similar private framebuffer tricks (blank screens); NVRAM resets and factory profile removal (destructive, need root); model-specific adaptations.
 - **Awake:** keeping a closed laptop awake without asking each time (sudoers rules, Power Protect, an installed privileged helper, or undocumented clamshell calls: lasting root that any program running as you could use; lid-closed mode asks for a password each time instead); launch agents; turning Low Power Mode on or off (needs root); a Wi-Fi network name condition (Location access); a DNS-server condition; brand-specific VPN conditions; spawning `caffeinate`; synthetic key presses or clicks of any kind; Insomnia’s lid-close extras (freezing apps, muting, writing other apps’ settings, hotspot failover, typing into terminals, relaunching browsers); macOS notifications (Snaptic uses its own notices); custom menu bar images.
+- **Dock Previews:** media and calendar widgets; window previews in the macOS ⌘⇥ switcher; window snapping; Dock clicks and gestures that would need Snaptic to take over the Dock or post input (⌘-right-click to quit, Shift-click for a new window, scrolling on Dock icons or title bars, locking the Dock); an active-app indicator; click or modifier-click to preview; hover actions; quitting an app when its last window closes; opening a new window for an app with none; folder previews; “Only this display” and “Only this Space” filters; importing DockDoor’s settings; Liquid Glass styling.
 - **Everywhere:** a `snaptic://` URL scheme (any web page could fire it), an HTTP server or distributed-notification commands (unauthenticated), telemetry, analytics, crash upload, licensing, and any network connection other than the update checks you allow.
 
 ## How it works
 
 | Path | Responsibility |
 |---|---|
-| `Sources/SnapticKit/` | Pure logic with unit tests that also run on Linux: the feature graphs, configuration and migrations, safety invariants, DDC and EDID parsing, the command-line protocol, Awake’s sessions, guards, rules, clock, and command grammar, Hidden Icons’ layout, engine, and command logic, and the control tables that map every 0.2 setting to its 0.3 home. |
-| `Sources/SnapticShims/` | Small Objective-C wrappers for private display and menu bar APIs, each checked before use. |
+| `Sources/SnapticKit/` | Pure logic with unit tests that also run on Linux: the feature graphs, configuration and migrations, safety invariants, DDC and EDID parsing, the command-line protocol, Awake’s sessions, guards, rules, clock, and command grammar, Hidden Icons’ layout, engine, and command logic, Dock Previews’ hover, layout, key, click, and command rules, the window catalog, capture, and privacy rules both window modules share, the private-API crash guard, and the control tables that map every 0.2 setting to its 0.3 home. |
+| `Sources/SnapticShims/` | Small Objective-C wrappers for private display, menu bar, and window server APIs, each checked before use. |
 | `Sources/Snaptic/Core/` | The host: modules, menus, permissions, onboarding, Safe Mode, the command-line server and client, helper spawning, and the General, Menu Bar, Permissions, and About pages. |
 | `Sources/Snaptic/SettingsUI/` | The shared Settings components (rows, sliders with value fields, sheets, search). |
-| `Sources/Snaptic/Switcher/` | The window switcher (event tap, window list, thumbnails, switcher UI). |
+| `Sources/Snaptic/Switcher/` | The window switcher (event tap, window list, thumbnails, switcher UI), using the window services it shares with Dock Previews. |
+| `Sources/Snaptic/Windows/` | The window services the switcher and Dock Previews share: reading windows, thumbnails and their cache, and window actions. |
+| `Sources/Snaptic/Dock/` | The Dock Previews module: reading the Dock, the preview panel, its keys, Dock click actions, the command-line verbs, its menu section, and its pages. |
 | `Sources/Snaptic/Displays/` | The Displays module: services, one controller per feature group, the safety helper, transactions and journals, settings pages. |
 | `Sources/Snaptic/Awake/` | The Awake module: the assertion, sessions, guards, rules, activity, Drive Alive, history, the command-line verbs, the condition sources, its menu, and its pages. |
 | `Sources/Snaptic/Icons/` | The Hidden Icons module: the two engines (macOS 27 and 14–26), the arrow and dividers, the icon inventory and hidden-icon list, the command-line verbs, its menu section, and its pages. |
 | `site/` | The project website at [snaptic.dev](https://snaptic.dev), deployed by Vercel on every push to `main`. |
 | `Sources/Snaptic/Core/UpdaterController.swift` | The only file that uses Sparkle; in a build without Sparkle it’s never reached. |
-| `docs/design/` | The 0.2, 0.3, 0.3.1, and 0.4 plans, their release notes, and platform research. |
+| `docs/design/` | The 0.2, 0.3, 0.3.1, 0.4, and 0.5 plans, their release notes, and platform research. |
 
 ### How Awake keeps your Mac awake
 
@@ -1010,7 +1219,7 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
 
 Snaptic uses private macOS functions where no public one exists. Every one is looked up at runtime (never linked), checked for the expected signature, behind a kill switch, and fails safe: if Apple removes or changes one, the feature that needs it becomes unavailable instead of crashing (for Hidden Icons, your icons are shown). This also means Snaptic can’t be sold through the Mac App Store.
 
-- **Switcher:** `_AXUIElementGetWindow`, `_SLPSSetFrontProcessWithOptions` and `SLPSPostEventRecordTo`, `SLSMainConnectionID` and `SLSCopySpacesForWindows`, `SLSSetSymbolicHotKeyEnabled` and `SLSIsSymbolicHotKeyEnabled`, and the deprecated `GetProcessForPID`. The focusing technique follows public reverse-engineering documented by [yabai](https://github.com/koekeishiya/yabai) (MIT).
+- **Switcher and Dock Previews:** `_AXUIElementGetWindow`, `_SLPSSetFrontProcessWithOptions` and `SLPSPostEventRecordTo`, `SLSMainConnectionID` and `SLSCopySpacesForWindows` (or `CGSMainConnectionID` and `CGSCopySpacesForWindows`), `SLSSetSymbolicHotKeyEnabled` and `SLSIsSymbolicHotKeyEnabled` (or their `CGS` names), `CGSHWCaptureWindowList` for thumbnails of minimized windows and windows on other Spaces (only on macOS versions it has been checked on), `KBGetLayoutType` and `LMGetKbdType` for the keyboard layout, and the deprecated `GetProcessForPID`. If one of them makes Snaptic crash, Snaptic stops using it on that macOS version (see [When a window feature stops](#when-a-window-feature-stops)). The focusing technique follows public reverse-engineering documented by [yabai](https://github.com/koekeishiya/yabai) (MIT).
 - **Displays:** DisplayServices (Apple brightness, auto-brightness), CoreBrightness (Night Shift), MonitorPanel (rotation, underscan, HDR, Apple presets), CoreGraphics `CGS…` calls (hidden modes, disconnect, HDR state), `CGVirtualDisplay` (virtual displays), `IOAVService` (DDC on Apple silicon), CoreDisplay (display info), the OSD framework, and libsystem’s process-responsibility calls for helpers.
 - **Hidden Icons:** on macOS 27, MenuBarClientCore’s `MBAssessmentModeConfiguration` and `MBAssessmentModeAssertion` (the mechanism macOS uses for exam sessions), through a small wrapper in `SnapticShims` that checks the classes and method encodings first; on macOS 14–26, only public `NSStatusItem` lengths.
 - **Awake:** no private functions. It reads undocumented keys with public calls: `CGSSessionScreenIsLocked` from `CGSessionCopyCurrentDictionary`, to know whether the screen is locked; the `SleepDisabled` power setting (`SystemPowerSettings` in the `com.apple.PowerManagement` preferences, through `CFPreferencesCopyValue`) and the kernel’s `SleepDisabled` and `AppleClamshellState` properties on `IOPMrootDomain` (through IOKit), to tell you when sleep is turned off and whether the lid is closed. It changes `SleepDisabled` only in lid-closed mode, and only through `pmset` after you enter an administrator password.

@@ -6,20 +6,20 @@
 
 **A free, open-source menu bar toolkit for macOS.**
 
-Switch between windows, not apps · Take charge of every display · Keep your Mac awake · Tidy up the menu bar
+Switch between windows, not apps · Take charge of every display · Keep your Mac awake · Tidy up the menu bar · Preview windows from the Dock
 
 [![Latest release](https://img.shields.io/github/v/release/revylfitness/snaptic?label=release&color=0a84ff)](https://github.com/revylfitness/snaptic/releases/latest)
 [![macOS 14+](https://img.shields.io/badge/macOS-14%2B-111111?logo=apple&logoColor=white)](#install)
 [![License: MIT](https://img.shields.io/badge/license-MIT-34c759)](LICENSE)
 [![Downloads](https://img.shields.io/github/downloads/revylfitness/snaptic/total?color=8e8e93)](https://github.com/revylfitness/snaptic/releases)
 
-[**Download**](https://github.com/revylfitness/snaptic/releases/latest/download/Snaptic.dmg) · [Website](https://snaptic.dev) · [Guide](docs/guide.md) · [What’s new in 0.4](docs/design/0.4/RELEASE-NOTES-0.4.0.md)
+[**Download**](https://github.com/revylfitness/snaptic/releases/latest/download/Snaptic.dmg) · [Website](https://snaptic.dev) · [Guide](docs/guide.md) · [What’s new in 0.5](docs/design/0.5/RELEASE-NOTES-0.5.0.md)
 
 </div>
 
 <br>
 
-Snaptic puts four everyday Mac utilities into one small, native app. Each one is optional: turn on only what you want, and a module that’s off runs nothing at all. No event taps, no timers, no permission prompts.
+Snaptic puts five everyday Mac utilities into one small, native app. Each one is optional: turn on only what you want, and a module that’s off runs nothing at all. No event taps, no timers, no permission prompts.
 
 | Module | What it does |
 |---|---|
@@ -27,6 +27,7 @@ Snaptic puts four everyday Mac utilities into one small, native app. Each one is
 | **[Displays](#displays)** | Brightness and volume for external displays, resolutions and HiDPI, color, arrangement, virtual displays, Picture in Picture, and more. |
 | **[Awake](#awake)** | Keeps your Mac awake for a while, until a time, while an app runs, or until downloads finish. No administrator password. |
 | **[Hidden Icons](#hidden-icons)** | Tucks the menu bar icons you don’t need behind an arrow. |
+| **[Dock Previews](#dock-previews)** | Point at an app in the Dock to see its windows, and click one to bring it forward. |
 
 Everything is included and nothing is behind a paywall. No accounts, telemetry, or analytics.
 
@@ -45,7 +46,7 @@ Snaptic runs on **macOS 14 Sonoma or later**, on Apple silicon and Intel. Releas
 
 A Windows-style switcher that shows every window, not just every app.
 
-- **Every window gets a tile.** That includes several windows of one app, minimized and hidden windows, and windows on other Spaces, in the order you last used them. A quick ⌥⇥ goes back to the previous window.
+- **Every window gets a tile.** That includes several windows of one app, minimized and hidden windows, and windows on other Spaces, in the order you last used them. A quick ⌥⇥ goes back to the previous window. Minimized windows and windows on other Spaces get thumbnails too, when macOS allows it.
 - **Thumbnails, icons, or a list.** Choose live thumbnails with a full-size preview, app icons, or a compact list of titles.
 - **Search.** Press **S** or **/** and type to filter by window title or app name.
 - **Window actions.** Press **W** to close, **M** to minimize, **F** for full screen, **Q** to quit, and **H** to hide.
@@ -189,6 +190,20 @@ On macOS 27, Snaptic asks macOS itself to hide icons and needs Accessibility. On
 
 [Read more in the Hidden Icons guide →](docs/guide.md#hidden-icons) · [Switching from Hidden Bar →](docs/guide.md#switching-from-hidden-bar)
 
+## Dock Previews
+
+Point at an app in the Dock, and its windows appear next to the Dock, including minimized and hidden ones. Click a window to bring it forward. Dock Previews is off until you turn it on, and works with the Dock at the bottom, left, or right, magnified or hidden automatically, on any display.
+
+- **A card for every window**, with a thumbnail and its title. Minimized windows, full-screen windows, and windows on other Spaces are marked, and a hidden app says so in the preview’s header.
+- **Close, minimize, or quit from the preview.** Each card has Close, Minimize, and Enter Full Screen buttons on hover, a middle-click closes a window, and the card’s menu and the header can hide or quit the app.
+- **Keys:** press **⌘W** to close, **⌘M** to minimize, **⌘H** to hide, **⌘Q** to quit, and **Esc** to dismiss, while the pointer is in the preview. Every other key goes to the app you’re in.
+- **Optional Dock click actions.** Click the active app in the Dock to hide it or minimize its windows, or click an app whose windows are all minimized to bring them all back. Both are off until you turn them on. Snaptic only watches Dock clicks, and never changes the Dock’s own preferences.
+- **Private windows stay private.** Password managers and private browsing windows show their app icon instead, as in the Window Switcher, and you can hide an app from Dock previews altogether.
+
+Dock Previews needs Accessibility to read the Dock. Window thumbnails also need Screen Recording; without it, previews show window titles instead of pictures, and Snaptic never asks for it when you point at the Dock. While DockDoor, HyperDock, or another Dock preview app runs, Dock Previews pauses.
+
+[Read more in the Dock Previews guide →](docs/guide.md#dock-previews) · [Switching from DockDoor →](docs/guide.md#switching-from-dockdoor)
+
 ## Settings
 
 Settings has a page for each module, plus General, Menu Bar, Permissions, and About. The search field finds any setting, even the ones tucked into **Advanced…** sheets. Every slider has a value field, and each page’s **Restore Defaults…** resets only that page. [More →](docs/guide.md#settings)
@@ -199,7 +214,7 @@ A switch for each module, Open at login, command-line control, and export and im
 
 ### Menu Bar
 
-For each module, choose whether it’s always in the menu bar, shown only while it’s active, kept in the Snaptic menu, or hidden. You can also choose each icon. With two or more modules in the Snaptic menu, each one gets its own tab (⌘1–⌘4). [More →](docs/guide.md#menu-bar)
+For each module, choose whether it’s always in the menu bar, shown only while it’s active, kept in the Snaptic menu, or hidden. You can also choose each icon. With two or more modules in the Snaptic menu, each one gets its own tab (⌘1, ⌘2, and so on). [More →](docs/guide.md#menu-bar)
 
 ## Permissions
 
@@ -207,8 +222,8 @@ Snaptic asks only for what the features you turned on need, and only when you tu
 
 | Permission | Needed for |
 |---|---|
-| **Accessibility** (Device Control and Data Access on macOS 27) | The window switcher, brightness and volume keys, Awake’s pointer movement, and Hidden Icons on macOS 27 (on 14–26, only its hidden-icon list). |
-| **Screen Recording** | Switcher thumbnails and preview, and Picture in Picture. |
+| **Accessibility** (Device Control and Data Access on macOS 27) | The window switcher, Dock Previews, brightness and volume keys, Awake’s pointer movement, and Hidden Icons on macOS 27 (on 14–26, only its hidden-icon list). |
+| **Screen Recording** | Switcher and Dock Previews thumbnails, the switcher’s preview, and Picture in Picture. |
 | **Removable Volumes** | Drive Alive, the first time it writes to a drive. |
 
 Most Displays features need no permission at all, and Awake needs none for sessions, rules, or guards. Lid-closed mode asks for an administrator password each time instead. [More →](docs/guide.md#permissions)
@@ -230,6 +245,7 @@ Display changes can leave you without a usable screen. Snaptic is built so that 
 
 - **No telemetry, analytics, or crash uploads.** The only network traffic is the update check, once a day and only if you allow it. GitHub sees your IP address, Snaptic’s version, and your macOS version.
 - **Window pixels, window titles, app names, and key presses never leave the process.** They stay out of logs, diagnostics, and the command line.
+- **Thumbnails stay in memory and are never saved.** They’re cleared after 30 minutes, and when your Mac locks or sleeps. The Window Switcher and Dock Previews share them, and take them only while one of them is showing.
 - **The command line is private.** It’s a socket only your account can reach, and Snaptic never listens on the network.
 
 [Read more about privacy and security →](docs/guide.md#privacy-and-security)
@@ -245,6 +261,7 @@ snaptic layout apply Office             # apply a saved layout
 snaptic awake start 2h                  # keep awake for two hours
 snaptic awake hold --pid $$             # keep awake while this script runs
 snaptic icons toggle                    # show or hide menu bar icons
+snaptic dock pause 30m                  # no Dock previews for half an hour
 ```
 
 `snaptic help` lists the commands available right now, and `--json` gives machine-readable output. [Full command reference →](docs/guide.md#command-line)
@@ -269,12 +286,12 @@ The **[Guide](docs/guide.md)** covers every setting, command, and safety rule. G
 - [Troubleshooting](docs/guide.md#troubleshooting) · [Known limitations](docs/guide.md#known-limitations) · [Not included](docs/guide.md#not-included)
 - [Updates](docs/guide.md#updates) · [Upgrading and downgrading](docs/guide.md#upgrading-and-downgrading) · [Hidden kill switches](docs/guide.md#hidden-kill-switches)
 - [How it works](docs/guide.md#how-it-works) · [Undocumented APIs](docs/guide.md#undocumented-apis) · [If a release key leaks](docs/guide.md#if-a-release-key-leaks)
-- Release notes: [0.4.0](docs/design/0.4/RELEASE-NOTES-0.4.0.md) · [0.3.1](docs/design/0.3.1/RELEASE-NOTES-0.3.1.md) · [0.3](docs/design/0.3/RELEASE-NOTES-0.3.md)
+- Release notes: [0.5.0](docs/design/0.5/RELEASE-NOTES-0.5.0.md) · [0.4.0](docs/design/0.4/RELEASE-NOTES-0.4.0.md) · [0.3.1](docs/design/0.3.1/RELEASE-NOTES-0.3.1.md) · [0.3](docs/design/0.3/RELEASE-NOTES-0.3.md)
 
 Found a bug? Copy the report from **Displays › Display Information** (or run `snaptic diagnostics`) and [open an issue](https://github.com/revylfitness/snaptic/issues). The report leaves out window titles, app names, and serial numbers.
 
 ## Credits and license
 
-Snaptic is written from scratch in Swift by revyl fitness technology, Inc. It isn’t affiliated with or derived from AltTab, BetterDisplay, MonitorControl, Lunar, Amphetamine, or Insomnia; it’s an independent take on the same ideas. Hidden Icons follows the design of [Hidden Bar](https://github.com/dwarvesf/hidden) (MIT) in its own code, and isn’t affiliated with it either. Third-party credits are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Snaptic is written from scratch in Swift by revyl fitness technology, Inc. It isn’t affiliated with or derived from AltTab, BetterDisplay, MonitorControl, Lunar, Amphetamine, or Insomnia; it’s an independent take on the same ideas. Hidden Icons follows the design of [Hidden Bar](https://github.com/dwarvesf/hidden) (MIT) in its own code, and isn’t affiliated with it either. Dock Previews follows ideas from [DockDoor](https://github.com/ejbills/DockDoor) (GPL-3.0) in its own code; it shares no code with it and isn’t affiliated with it. Third-party credits are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 Released under the [MIT License](LICENSE).
