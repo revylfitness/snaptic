@@ -151,8 +151,11 @@ package enum PrivateCaptureDiagnostics {
         }
     }
 
-    package static func lines(hwCapture: String, privateCaptures: Int) -> [String] {
-        ["hwCapture: " + hwCapture, L("Private captures") + ": " + String(privateCaptures)]
+    /// The report's window lines, with the `Windows.disable.*` switches that are set, in table order.
+    package static func lines(hwCapture: String, privateCaptures: Int, killSwitches: Set<WindowFeature>) -> [String] {
+        let set = WindowFeature.allCases.filter(killSwitches.contains).map(\.rawValue)
+        return ["hwCapture: " + hwCapture, L("Private captures") + ": " + String(privateCaptures),
+                L("Kill switches") + ": " + (set.isEmpty ? "none" : set.joined(separator: ", "))]
     }
 }
 

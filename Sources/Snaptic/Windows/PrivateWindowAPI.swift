@@ -530,12 +530,26 @@ enum PrivateWindowAPI {
 
     /// The CGWindowID behind an AX window element (`axWindowID`). Nil is the fallback.
     static func windowID(of element: AXUIElement) -> CGWindowID? {
-        guard let axGetWindowFn, let ticket = admit(.axGetWindow) else { return nil }
+        if case .id(let windowID) = lookUpWindowID(of: element) { return windowID }
+        return nil
+    }
+
+    enum WindowIDLookup {
+        case id(CGWindowID)
+        /// The call ran and gave no id.
+        case noAnswer
+        /// The call wasn't made (missing, kill switch, crash guard, poisoning, a probe not yet passed): the caller
+        /// matches by title and frame (§4.12, `WindowCatalogRules.matchByTitleAndFrame`).
+        case refused
+    }
+
+    static func lookUpWindowID(of element: AXUIElement) -> WindowIDLookup {
+        guard let axGetWindowFn, let ticket = admit(.axGetWindow) else { return .refused }
         var windowID: CGWindowID = 0
         let error = axGetWindowFn(element, &windowID)
         let result = WindowResults.ax(error: error.rawValue, windowID: windowID)
         finish(ticket, result)
-        return result == .answer ? windowID : nil
+        return result == .answer ? .id(windowID) : .noAnswer
     }
 
     /// The window server connection; nil is the fallback.
@@ -578,8 +592,11 @@ enum PrivateWindowAPI {
         guard let getPSNFn, let setFrontFn, let postEventFn else { return false }
         let now = uptime
         let trio: [WindowSymbolID] = [.getProcessForPID, .setFrontProcess, .postEventRecord]
-        // All three first, so a refusal never leaves a raise half done.
-        guard guards.withLockUnchecked({ g in trio.allSatisfy { usable($0, g, now: now) } }) else { return false }
+        // All three first, so a refusal never leaves a raise half done. Safe Mode never calls the trio (§4.13): the
+        // caller falls back to activate and kAXRaiseAction.
+        guard guards.withLockUnchecked({ g in !g.safeMode && trio.allSatisfy { usable($0, g, now: now) } }) else {
+            return false
+        }
         var psn = ProcessSerialNumberRaw()
         return withUnsafeMutablePointer(to: &psn) { psnPointer -> Bool in
             let raw = UnsafeMutableRawPointer(psnPointer)
@@ -858,16 +875,17 @@ enum PrivateWindowAPI {
         }
     }
 
-    /// The Diagnostics report's window lines: `hwCapture: <state>` and the private-capture count (M1, M33).
+    /// The Diagnostics report's window lines: `hwCapture: <state>`, the private-capture count (M1, M33) and the
+    /// `Windows.disable.*` switches that are set.
     static func diagnosticsLines() -> [String] {
-        readKillSwitches()
+        let killSwitches = readKillSwitches()
         let (value, count) = guards.withLockUnchecked { g -> (String, Int) in
             let phase = g.health[.hwCapture]?.phase ?? .needsProbe
             let value = PrivateCaptureDiagnostics.hwCapture(safeMode: g.safeMode, state: state(.hwCapture, g),
                                                             phase: phase)
             return (value, g.privateCaptures)
         }
-        return PrivateCaptureDiagnostics.lines(hwCapture: value, privateCaptures: count)
+        return PrivateCaptureDiagnostics.lines(hwCapture: value, privateCaptures: count, killSwitches: killSwitches)
     }
 
     // MARK: Diagnostics, selftest, Try Again

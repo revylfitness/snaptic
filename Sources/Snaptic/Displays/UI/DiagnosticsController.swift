@@ -77,6 +77,16 @@ struct DiagnosticsReport {
             }
             // 0.3 §3.6: Awake's own lines (already free of names and identifiers), only while Awake runs.
             if let awake = DiagnosticsText.awakeSection(ctx.awakeDiagnosticsLines()) { sections.append(awake) }
+            // 0.5: Hidden Icons, Dock Previews and the shared window lines, in HostReport's order, so this report
+            // (Display Information and `snaptic diagnostics`) has their kill switches and states too.
+            for (id, title) in [(ModuleID.hiddenIcons, L("Hidden Icons")), (.dockPreviews, L("Dock Previews"))] {
+                if let section = DiagnosticsText.moduleSection(title: title, ctx.moduleDiagnosticsLines(id)) {
+                    sections.append(section)
+                }
+            }
+            if let windows = DiagnosticsText.moduleSection(title: L("Windows"), PrivateWindowAPI.diagnosticsLines()) {
+                sections.append(windows)
+            }
         }
         // No display name (system, custom or remembered) leaves in a copied or exported report.
         let names = displayNames(context: context, runtime: runtime)

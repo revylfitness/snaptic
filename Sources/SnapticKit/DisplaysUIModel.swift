@@ -872,8 +872,15 @@ extension DiagnosticsText {
     /// Awake's diagnostics lines (`DisplaysContext.awakeDiagnosticsLines()`) as the report's "Awake" section, or nil
     /// when Awake has nothing to say (it isn't running).
     package static func awakeSection(_ lines: [String]) -> DiagnosticsSection? {
+        moduleSection(title: "Awake", lines)
+    }
+
+    /// Another module's diagnostics lines (already free of names and identifiers) as a report section titled as in
+    /// `HostReport.sections`, or nil when it has nothing to say (0.5: Hidden Icons, Dock Previews and Windows join
+    /// Awake, so the report Displays gives has them too).
+    package static func moduleSection(title: String, _ lines: [String]) -> DiagnosticsSection? {
         let rows = lines.compactMap(HostReport.row).map { scrub(label: $0.label, value: $0.value) }
-        return rows.isEmpty ? nil : DiagnosticsSection(title: "Awake", rows: rows)
+        return rows.isEmpty ? nil : DiagnosticsSection(title: title, rows: rows)
     }
 }
 

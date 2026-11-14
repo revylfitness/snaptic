@@ -184,11 +184,14 @@ final class CaptureContentCheckTests: XCTestCase {
     }
 
     func testDiagnosticsLinesBecomeRows() {
-        let lines = PrivateCaptureDiagnostics.lines(hwCapture: "safeMode", privateCaptures: 0)
-        XCTAssertEqual(lines, ["hwCapture: safeMode", "Private captures: 0"])
+        let lines = PrivateCaptureDiagnostics.lines(hwCapture: "safeMode", privateCaptures: 0, killSwitches: [])
+        XCTAssertEqual(lines, ["hwCapture: safeMode", "Private captures: 0", "Kill switches: none"])
         let rows = lines.compactMap(HostReport.row)
-        XCTAssertEqual(rows.map(\.label), ["hwCapture", "Private captures"])
-        XCTAssertEqual(rows.map(\.value), ["safeMode", "0"])
+        XCTAssertEqual(rows.map(\.label), ["hwCapture", "Private captures", "Kill switches"])
+        XCTAssertEqual(rows.map(\.value), ["safeMode", "0", "none"])
+        let set = PrivateCaptureDiagnostics.lines(hwCapture: "passed", privateCaptures: 3,
+                                                  killSwitches: [.raise, .hwCapture])
+        XCTAssertEqual(set.last, "Kill switches: hwCapture, raise", "table order")
     }
 
     // MARK: Stopped rows (§4.17)

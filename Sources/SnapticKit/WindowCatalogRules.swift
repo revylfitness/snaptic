@@ -31,6 +31,23 @@ package enum CatalogWindowKind: String, Equatable, Sendable {
     }
 }
 
+/// One window-server window of an app, for `WindowCatalogRules.matchByTitleAndFrame`. `frame` is in global
+/// coordinates with a top-left origin, as Accessibility reports a window's; `title` is nil when the window server
+/// doesn't report it.
+package struct WindowFrameCandidate: Equatable, Sendable {
+    package let id: UInt32
+    package let title: String?
+    package let frame: DockRect
+    package let layer: Int
+
+    package init(id: UInt32, title: String?, frame: DockRect, layer: Int) {
+        self.id = id
+        self.title = title
+        self.frame = frame
+        self.layer = layer
+    }
+}
+
 /// One window as both modules see it (§2.1). Window ids at or above `firstSyntheticID` are made up for a window
 /// without a trusted id, and for an app's "no windows" entry.
 package struct CatalogWindow: Equatable, Sendable {
@@ -323,6 +340,24 @@ package enum WindowCatalogRules {
     package static func trustedWindowID(claimed: UInt32?, pid: Int32, owners: [UInt32: Int32]) -> UInt32? {
         guard let claimed, owners[claimed] == pid else { return nil }
         return claimed
+    }
+
+    /// `WindowFallback.matchByTitleAndFrame` (§4.12): while `axWindowID` is refused, an AX window takes the id of the
+    /// one window of its own app (the candidates) on layer 0, not yet taken, whose frame is within a point of its own
+    /// and whose title matches where both are known (the window server reports titles only with Screen Recording).
+    /// No match, or more than one, gives nil, so a card is never matched to the wrong window.
+    package static func matchByTitleAndFrame(title: String, frame: DockRect, candidates: [WindowFrameCandidate],
+                                             taken: Set<UInt32>) -> UInt32? {
+        let tolerance = 1.0
+        let matches = candidates.filter { c in
+            guard c.layer == 0, c.id < CatalogWindow.firstSyntheticID, !taken.contains(c.id),
+                  abs(c.frame.x - frame.x) <= tolerance, abs(c.frame.y - frame.y) <= tolerance,
+                  abs(c.frame.width - frame.width) <= tolerance, abs(c.frame.height - frame.height) <= tolerance
+            else { return false }
+            if let other = c.title, !other.isEmpty, !title.isEmpty { return other == title }
+            return true
+        }
+        return matches.count == 1 ? matches[0].id : nil
     }
 
     /// Dock items of apps on "Apps hidden from Dock previews" never show a panel (G2-4, D2-24). Exact bundle ids.

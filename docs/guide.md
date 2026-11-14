@@ -184,7 +184,7 @@ Adjustments show in screenshots and don’t reach AirPlay, DisplayLink, or Sidec
 
 ### Display Information
 
-- **Report:** a live report about your displays, with **Copy Report** and **Export…**. It has no display names, serial numbers, window titles, or app names, and identifiers are masked. It lists private-API availability, kill switches, helpers, and recent events.
+- **Report:** a live report about your displays, with **Copy Report** and **Export…**. It has no display names, serial numbers, window titles, or app names, and identifiers are masked. It lists private-API availability, kill switches, helpers, and recent events, then a section for each of Awake, Hidden Icons, and Dock Previews that’s on, and the window lines.
 - **Safety helper** and **undo journal** status, with **Restart Snaptic** (which restarts the helper) when it stopped.
 - **EDID:** export the data a display reports about itself (Export EDID…).
 - **Remembered displays** (forget one, or all that aren’t connected) and **remembered resolutions**.
@@ -801,7 +801,7 @@ Available while Dock Previews is on and command-line control is on, including in
 
 ## Hidden kill switches
 
-Kill switches turn a module or a feature off for this Mac, whatever Settings says. They are Boolean keys in Snaptic’s own preferences (`app.snaptic.Snaptic`), they only ever turn things off, and pages show what they turned off as “Turned off for this Mac by an administrator or a Terminal command.” with the command that undoes it. Quit and reopen Snaptic to apply a change (Hidden Icons’, Dock Previews’, and window feature switches also apply while it runs, see below). The Diagnostics Report lists the Displays, Awake, and Hidden Icons feature switches that are set, and Dock Previews’ **Advanced…** sheet lists the Dock and window feature switches that are set; a module turned off this way says so on its page, and a turned-off private API shows as unavailable.
+Kill switches turn a module or a feature off for this Mac, whatever Settings says. They are Boolean keys in Snaptic’s own preferences (`app.snaptic.Snaptic`), they only ever turn things off, and pages show what they turned off as “Turned off for this Mac by an administrator or a Terminal command.” with the command that undoes it. Quit and reopen Snaptic to apply a change (Hidden Icons’, Dock Previews’, and window feature switches also apply while it runs, see below). Both reports list the feature switches that are set: Settings › About › **Diagnostics Report…** (while Displays is off) and Displays › Display Information (or `snaptic diagnostics`) give Awake’s, Hidden Icons’, and Dock Previews’ for each module that’s on and the window feature switches always, and Display Information gives Displays’ too. Dock Previews’ **Advanced…** sheet lists the Dock and window ones as well; a module turned off this way says so on its page, and a turned-off private API shows as unavailable.
 
 ```bash
 defaults write app.snaptic.Snaptic Modules.disable.awake -bool true                # a whole module
@@ -826,7 +826,7 @@ defaults delete app.snaptic.Snaptic Awake.disable.pointerNudge                  
 | `Dock.disable.clickActions` | Dock clicks are left entirely to the Dock. |
 | `Dock.disable.keys` | Keys pass through to the active app; the pointer still works in previews. |
 | `Windows.disable.hwCapture` | Minimized windows and windows on other Spaces show the last thumbnail Snaptic saw, then the app icon. |
-| `Windows.disable.axWindowID` | Cards are matched to their windows by title and position; a card without a match offers only **Bring Forward**. |
+| `Windows.disable.axWindowID` | Windows are matched by title and position. One Snaptic can’t match shows its app icon instead of a thumbnail, and a card for a window it finds only in the window list offers only **Bring Forward**. |
 | `Windows.disable.raise` | Windows are raised with Accessibility; a window on another Space only switches to its app. |
 | `Windows.disable.spaces` | Windows on other Spaces aren’t listed. |
 | `Windows.disable.symbolicHotKeys` | macOS keeps ⌘⇥; the Window Switcher can’t take it over. Giving ⌘⇥ back always works. |
@@ -1119,7 +1119,7 @@ Nothing Awake reads leaves your Mac, and none of it needs a permission.
 - **`snaptic` says it isn’t running, or doesn’t know `awake`, `icons`, or `dock`.** Turn on Settings › General › Command-line control, and make sure Awake, Hidden Icons, or Dock Previews is on. Exit code 5 means Snaptic isn’t running, control is off, the feature is off, or you sent Awake requests faster than once a second.
 - **Lid-closed mode won’t turn on.** The notice says why: battery too low (connect power), too hot, a Start Anyway session, Snaptic running from a temporary location (move it to Applications), or sleep still turned off from an earlier session. If the password dialog doesn’t appear, check whether security software blocks `osascript`.
 - **No update arrives.** Look at Settings › About › Updates: automatic checks may be off, the copy may be built from source, or an update may be waiting for lid-closed mode or a display change to finish. **Check for Updates…** checks now.
-- **Filing an issue.** Copy the report from Displays › Display Information (or `snaptic diagnostics`). It has no window titles, app names, or serial numbers; Awake contributes only counts.
+- **Filing an issue.** Copy the report from Displays › Display Information (or `snaptic diagnostics`), or Settings › About › **Diagnostics Report…** while Displays is off. It has no window titles, app names, or serial numbers; Awake, Hidden Icons, and Dock Previews contribute only states and counts.
 
 ## Known limitations
 

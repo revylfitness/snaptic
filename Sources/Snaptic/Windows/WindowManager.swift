@@ -116,7 +116,7 @@ enum Screens {
 struct RawWindow: @unchecked Sendable {
     let pid: pid_t
     let element: AXUIElement
-    let windowID: CGWindowID?
+    var windowID: CGWindowID?
     let kind: CatalogWindowKind
     let title: String
     let hasPrivateMarker: Bool
@@ -502,6 +502,7 @@ final class WindowManager {
             list = AX.read(appElement, kAXWindowsAttribute)
         }
         var result: [RawWindow] = []
+        var refused: [Int] = []
         for window in AX.elements(in: list.value).prefix(maxWindowsPerApp) {
             if outOfTime() { break }
             AXUIElementSetMessagingTimeout(window, WindowServices.axTimeout)
@@ -514,8 +515,11 @@ final class WindowManager {
                                                  minimum: options.minAXSide) == nil,
                   !outOfTime() else { continue }
 
-            let windowID = WindowCatalogRules.trustedWindowID(claimed: PrivateWindowAPI.windowID(of: window),
-                                                              pid: pid, owners: owners)
+            let lookup = PrivateWindowAPI.lookUpWindowID(of: window)
+            var claimed: CGWindowID?
+            if case .id(let id) = lookup { claimed = id }
+            if case .refused = lookup { refused.append(result.count) }
+            let windowID = WindowCatalogRules.trustedWindowID(claimed: claimed, pid: pid, owners: owners)
             let fullTitle = outOfTime() ? "" : (AX.string(window, kAXTitleAttribute) ?? "")
 
             result.append(RawWindow(
@@ -530,7 +534,38 @@ final class WindowManager {
                 isFullscreen: AX.bool(window, "AXFullScreen") ?? false
             ))
         }
+        if !refused.isEmpty { matchByTitleAndFrame(&result, refused, pid: pid) }
         return AppRead(windows: result, ranOut: ranOut, listTimedOut: list.error == .cannotComplete)
+    }
+
+    /// `axWindowID` was refused for the windows at `indices`: each takes the id of the one window-server window of
+    /// its app with the same frame and title (§4.12), so it gets its thumbnail and isn't listed twice.
+    nonisolated private static func matchByTitleAndFrame(_ windows: inout [RawWindow], _ indices: [Int], pid: pid_t) {
+        let list = (CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]]) ?? []
+        let candidates = list.compactMap { info -> WindowFrameCandidate? in
+            guard (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid,
+                  let id = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
+                  let layer = (info[kCGWindowLayer as String] as? NSNumber)?.intValue,
+                  let boundsInfo = info[kCGWindowBounds as String] as? NSDictionary,
+                  let bounds = CGRect(dictionaryRepresentation: boundsInfo as CFDictionary)
+            else { return nil }
+            let title = (info[kCGWindowName as String] as? String).map {
+                TextSanitizer.clean($0, maxScalars: maxTitleLength)
+            }
+            return WindowFrameCandidate(id: id, title: title, frame: DockRect(x: bounds.minX, y: bounds.minY,
+                                        width: bounds.width, height: bounds.height), layer: layer)
+        }
+        var taken = Set(windows.compactMap(\.windowID))
+        for index in indices {
+            let frame = windows[index].frame
+            guard let id = WindowCatalogRules.matchByTitleAndFrame(
+                title: windows[index].title,
+                frame: DockRect(x: frame.minX, y: frame.minY, width: frame.width, height: frame.height),
+                candidates: candidates, taken: taken) else { continue }
+            windows[index].windowID = id
+            taken.insert(id)
+        }
     }
 
     nonisolated private static func focusedWindowID(pid: pid_t) -> CGWindowID? {

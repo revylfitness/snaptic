@@ -40,10 +40,9 @@ Both modules share one window service, so the **Window Switcher** gets these upg
   app icon.
 - Its thumbnail cache stays in memory between openings for up to 30 minutes, so thumbnails appear at once and
   refresh in place.
-- The shared window rules (§4.8):
-  - tiny windows and notification-style pop-ups are left out;
-  - a "Minimized and hidden last" sort option;
-  - a display badge when there is more than one display.
+- The shared window inclusion rules (§4.8): tiny windows and notification-style pop-ups are left out. The
+  "Minimized and hidden last" sort and the display badge (shown when there is more than one display) are Dock
+  Previews' own (R, §R4).
 - Its private symbols get the C-symbol contract (§4.12): presence and image checks, a probe, result checks,
   poisoning, a crash guard, kill switches and selftest lines.
 
@@ -1146,7 +1145,7 @@ One model, used in §4.17, §4.19, §4.21 and M31/M33: **in Safe Mode the module
   and the previews may cover each other.” (G2-10, D2-29).
 - Row 6's [Advanced…] opens the sheet at that pop-up, through the row's anchor.
 - **Guide**: “Other Dock preview apps” and “Switching from DockDoor”. The second is a behaviour-only table (D1),
-  including every S0-32 default that differs from Snaptic's. It ends: “Quit DockDoor, or remove it from Login Items,
+  including every S0-32 default that differs from Snaptic's. It ends: “Quit DockDoor and remove it from Login Items,
   then turn on Dock Previews. Snaptic doesn’t import DockDoor’s settings.”
 
 ### 4.16 Accessibility and VoiceOver (G-11, X-32)
@@ -1418,7 +1417,8 @@ live preview. The Window Switcher then never asks for Screen Recording.”
   - the Privacy footer and list help (§4.10), and the Window thumbnails detail (§4.18).
 - Turning the switcher's Window thumbnails off drops its `.thumbnails` lease condition, which purges its entries at
   once, as in 0.4 (§2.3; X2-11).
-- Shared rules: inclusion (§4.8), privacy (§4.10), the “Minimized and Hidden Last” sort, and the display badge.
+- Shared rules: inclusion (§4.8) and privacy (§4.10). The “Minimized and Hidden Last” sort and the display badge are
+  Dock Previews' only (R, §R4).
 - §9 records what's left for later: Vim keys, mouse follows focus, the swipe trigger and more sort orders.
 
 ### 4.24 Canonical strings (G2-13)
@@ -2363,3 +2363,9 @@ changed, and why.
 | D3 | Beyond H9, as 0.4 D3 did: the two meta descriptions add “Dock previews”; “Say yes.” and the footer add Dock Previews to what Accessibility is for; the affiliation line adds DockDoor and HyperDock and says Dock Previews follows DockDoor’s design in Snaptic’s own code | Without these, the site's permission and affiliation lines would leave out a module that reads the Dock with Accessibility and is modelled on DockDoor |
 | D3 | Not done: the hero lede still names four tools, and the site has no Dock Previews section like “Fewer icons.” | H9 doesn't list them, and the owner has asked to keep the hero lean. Offered to the owner at R |
 | D3 | The site is one static file with no build step; D3 checked that its tags balance with a parser and that the CSS is unchanged. Nothing was deployed | “The site builds” has nothing to run. Deploying to production is the owner's call |
+| R | `bringToFront` skips the private raise trio in Safe Mode and returns false before any call, so the caller falls back to activation and `kAXRaiseAction`. The check sits in the same lock as the trio's usability check, so a raise is never half done | A2b's gap: §4.13 says Safe Mode never calls the private symbols, and the raise was the one path that didn't check |
+| R | `WindowCatalogRules.matchByTitleAndFrame` is wired: while `axWindowID` is refused, `WindowManager.read` gives each AX window the id of the one layer-0 window-server window of that app with the same frame (within a point) and, when both have one, the same title. An ambiguous or missing match keeps the synthetic id. The switcher and the Dock share `read`, and matched ids join `seen`, so a window isn't listed twice. Kit tests cover the tolerance, titles, ambiguity, taken ids, the layer and synthetic ids | D1's gap: §4.12 and the guide describe title-and-position matching (the `Windows.disable.axWindowID` row). The plan's `WindowFallback` name became a `WindowCatalogRules` function, beside `trustedWindowID` |
+| R | `focusedWindowID(pid:)` and the other-Space `raise(windowID:pid:)` still read the id without matching: the focused window falls back to most-recently-used order, and an other-Space raise to app activation. The match costs one window-list call per app read, and only while the symbol is refused | Both have a fallback that already works, and matching there would add a window-list call to every focus change |
+| R | The Windows lines in both reports add “Kill switches: …” with the `Windows.disable.*` switches that are set, in table order (`PrivateCaptureDiagnostics.lines`). Displays' report (Display Information and `snaptic diagnostics`) adds Hidden Icons, Dock Previews and Windows sections after Awake's, through `DiagnosticsText.moduleSection(title:_:)`, so a bug report taken while Displays runs has them too. The guide's kill-switch, Display Information and Filing an issue lines say which report has what | D1's gap: neither report listed the window switches, and Displays' report had only Displays and Awake, though it's the one the guide says to attach |
+| R | “What 0.5 adds” and §4.23 now say the shared rules are inclusion and privacy; the “Minimized and Hidden Last” sort and the display badge are Dock Previews' only. §4.15's DockDoor step reads “Quit DockDoor and remove it from Login Items” | The build gives the switcher neither (D2's row), and D2 changed the guide's “or” to “and” but not the plan's |
+| R | Left for owner results: `KnownDockTools` team ids (S0-15; needs `codesign -dv` on DockDoor and HyperDock, which aren't on the build Mac), the “· 2 instances” header (S0-2), `Permission.inputMonitoring` (S0-9), and the M38, S0-5, S0-6, S0-9 and S0-19 Known limitations texts (D1's row) | Each depends on an owner check that hasn't run; MANUAL-CHECKS.md lists them |

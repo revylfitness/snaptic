@@ -511,6 +511,33 @@ final class WindowCatalogRulesTests: XCTestCase {
         XCTAssertNil(WindowCatalogRules.trustedWindowID(claimed: nil, pid: 10, owners: owners))
     }
 
+    func testWithoutTheAXWindowIDAWindowIsMatchedByTitleAndFrame() {
+        let frame = DockRect(x: 100, y: 50, width: 800, height: 600)
+        func candidate(_ id: UInt32, _ title: String? = "Notes", x: Double = 100, width: Double = 800,
+                       layer: Int = 0) -> WindowFrameCandidate {
+            WindowFrameCandidate(id: id, title: title, frame: DockRect(x: x, y: 50, width: width, height: 600),
+                                 layer: layer)
+        }
+        func match(_ candidates: [WindowFrameCandidate], title: String = "Notes",
+                   taken: Set<UInt32> = []) -> UInt32? {
+            WindowCatalogRules.matchByTitleAndFrame(title: title, frame: frame, candidates: candidates, taken: taken)
+        }
+        XCTAssertEqual(match([candidate(7), candidate(8, x: 140)]), 7)
+        XCTAssertEqual(match([candidate(7, x: 100.6, width: 799.5)]), 7, "within a point")
+        XCTAssertNil(match([candidate(7, x: 102)]), "more than a point off")
+        XCTAssertNil(match([candidate(7, "Other")]), "a title the window server reports must match")
+        XCTAssertEqual(match([candidate(7, nil)]), 7, "no title without Screen Recording: the frame decides")
+        XCTAssertEqual(match([candidate(7, "")]), 7)
+        XCTAssertEqual(match([candidate(7)], title: ""), 7, "an AX title not read in time: the frame decides")
+        XCTAssertEqual(match([candidate(7, "Other"), candidate(8)]), 8, "the title tells two same-frame windows apart")
+        XCTAssertNil(match([candidate(7, nil), candidate(8, nil)]), "two possible windows: none, never a guess")
+        XCTAssertNil(match([candidate(7)], taken: [7]), "another AX window already has it")
+        XCTAssertEqual(match([candidate(7), candidate(8)], taken: [7]), 8)
+        XCTAssertNil(match([candidate(7, layer: 3)]), "only layer 0")
+        XCTAssertNil(match([candidate(CatalogWindow.firstSyntheticID)]), "never a synthetic id")
+        XCTAssertNil(match([]))
+    }
+
     func testWhichAppsTheSwitcherLists() {
         func lists(regular: Bool = true, own: Bool = false, _ bundleID: String?, _ excluded: [String] = []) -> Bool {
             WindowCatalogRules.listsApp(regular: regular, isOwnProcess: own, bundleID: bundleID, excluded: excluded)

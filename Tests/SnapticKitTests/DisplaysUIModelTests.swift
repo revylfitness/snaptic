@@ -698,6 +698,11 @@ final class DisplaysRootModelTests: XCTestCase {
         XCTAssertEqual(section?.rows.first, DiagnosticsRow("State", "running"))
         XCTAssertEqual(section?.rows[1].value, "••••0E")
         XCTAssertEqual(section?.rows[2], DiagnosticsRow("Note", "Keeping your Mac awake"))
+        // 0.5: the same rows under another module's title, for Hidden Icons, Dock Previews and Windows.
+        XCTAssertNil(DiagnosticsText.moduleSection(title: "Dock Previews", []))
+        let dock = DiagnosticsText.moduleSection(title: "Dock Previews", ["Kill switches: none", "hwCapture: safeMode"])
+        XCTAssertEqual(dock?.title, "Dock Previews")
+        XCTAssertEqual(dock?.rows, [DiagnosticsRow("Kill switches", "none"), DiagnosticsRow("hwCapture", "safeMode")])
     }
 
     func testRememberedDisplaysAndTexts() {
