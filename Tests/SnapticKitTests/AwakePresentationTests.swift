@@ -702,7 +702,7 @@ extension AwakePresentationTests {
             XCTAssertEqual(AwakeLidText.endToast(end, floor: 20), toasts[end], "\(end)")
         }
         XCTAssertEqual(AwakeLidText.capSpan, "24 hours")
-        XCTAssertEqual(AwakeCountdown.unit(1, "hour", "hours"), "1 hour", "the singular rule stays")
+        XCTAssertEqual(SentenceText.unit(1, "hour", "hours"), "1 hour", "the singular rule stays")
         XCTAssertEqual(AwakeLidText.capWarning,
                        "Lid-closed mode turns off in 5 minutes. If the lid is closed then, your Mac goes to sleep.")
         XCTAssertEqual(AwakeLidText.verifying, "Turning on lid-closed mode…")

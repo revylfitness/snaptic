@@ -32,9 +32,14 @@ enum KeyCode {
 
     /// "Key above Tab" has a different key code on ISO (European) keyboards;
     /// on those, code 50 is the extra key next to left Shift instead.
-    static func matches(_ pressed: Int, shortcutKey: Int) -> Bool {
+    static func matches(_ pressed: Int, shortcutKey: Int, iso: Bool) -> Bool {
         guard shortcutKey == backtick else { return pressed == shortcutKey }
-        return pressed == (PrivateAPIs.isISOKeyboard ? isoSection : backtick)
+        return pressed == (iso ? isoSection : backtick)
+    }
+
+    /// Whether the keyboard that sent `event` is ISO (`KBGetLayoutType`, cached off the key path).
+    static func isISO(_ event: CGEvent) -> Bool {
+        WindowServices.layout(for: event.getIntegerValueField(.keyboardEventKeyboardType)) == WindowResults.layoutISO
     }
 }
 
@@ -132,7 +137,7 @@ enum Keys {
     static func shortLabel(for code: Int) -> String {
         switch code {
         case KeyCode.tab: return "⇥"
-        case KeyCode.backtick: return PrivateAPIs.isISOKeyboard ? "§" : "`"
+        case KeyCode.backtick: return WindowServices.lastLayout == WindowResults.layoutISO ? "§" : "`"
         case KeyCode.space: return L("Space")
         default: return label(for: code)
         }
@@ -194,22 +199,9 @@ struct Config: Codable, Equatable {
         "com.p5sys.jump.mac.viewer",
     ]
 
-    /// Browsers (matched by plain prefix, so betas and nightlies count) whose
-    /// windows are treated as private when the title can't be read.
-    static let browserPrefixes = [
-        "com.apple.Safari", "com.google.Chrome", "org.mozilla.", "com.microsoft.edgemac",
-        "com.brave.Browser", "company.thebrowser.", "com.operasoftware.", "com.vivaldi.",
-        "org.torproject.", "com.duckduckgo.", "com.kagi.", "app.zen-browser.",
-    ]
-
-    static func isBrowser(_ bundleID: String?) -> Bool {
-        guard let bundleID else { return false }
-        return browserPrefixes.contains { bundleID.hasPrefix($0) }
-    }
-
+    /// The id itself, or anything under it. One rule for every list (`PIPPrivacy.matches`).
     static func bundleID(_ bundleID: String?, matchesAny entries: [String]) -> Bool {
-        guard let bundleID else { return false }
-        return entries.contains { bundleID == $0 || bundleID.hasPrefix($0 + ".") }
+        PIPPrivacy.matches(bundleID, prefixes: entries)
     }
 
     /// A plausible reverse-DNS bundle identifier (at least two parts), so an
@@ -336,6 +328,15 @@ struct Config: Codable, Equatable {
         guard isOn(.thumbnails) else { return false }
         return isOn(.preview) || shortcuts.contains { $0.style == .thumbnails }
     }
+
+    /// The defaults, keeping Protect private windows and its app list: Dock Previews uses them too (PLAN 0.5 §4.10).
+    /// `AppSettings.reset()`, and `--selftest-controls`' check of it.
+    func restoringDefaults() -> Config {
+        var fresh = Config()
+        fresh.protectPrivateWindows = protectPrivateWindows
+        fresh.privateBundleIDs = privateBundleIDs
+        return fresh
+    }
 }
 
 @MainActor
@@ -376,8 +377,19 @@ final class AppSettings: ObservableObject {
         save()
     }
 
-    /// Back to defaults (General → Backup & Reset).
-    func reset() { config = Config() }
+    /// Back to defaults (the sheet's Restore Defaults and General → Backup & Reset). Protect private windows and its
+    /// app list stay: Dock Previews uses them too (PLAN 0.5 §4.10). Only Reset All Settings clears them, through
+    /// `resetPrivacy()`.
+    func reset() {
+        config = config.restoringDefaults()
+    }
+
+    /// The shared privacy settings back to their defaults (General › Reset All Settings only; PLAN 0.5 §4.10).
+    func resetPrivacy() {
+        let fresh = Config()
+        config.protectPrivateWindows = fresh.protectPrivateWindows
+        config.privateBundleIDs = fresh.privateBundleIDs
+    }
 
     private func scheduleSave() {
         pendingSave?.cancel()

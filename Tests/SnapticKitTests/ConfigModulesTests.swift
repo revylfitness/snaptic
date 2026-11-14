@@ -12,10 +12,12 @@ final class ConfigModulesTests: XCTestCase {
 
     func testFreshDefaultsEnableEveryModuleInTheSharedMenu() {
         let c = ModulesConfig()
-        // 0.4: Hidden Icons is off until the user turns it on (H2).
-        XCTAssertEqual(c.enabledModules, ModuleID.allCases.filter { $0 != .hiddenIcons })
+        // 0.4: Hidden Icons is off until the user turns it on (H2); 0.5: so is Dock Previews (H7).
+        XCTAssertEqual(c.enabledModules, ModuleID.allCases.filter { $0 != .hiddenIcons && $0 != .dockPreviews })
         XCTAssertFalse(c.isEnabled(.hiddenIcons))
         XCTAssertEqual(c.presence(.hiddenIcons), .inSnapticMenu)
+        XCTAssertFalse(c.isEnabled(.dockPreviews))
+        XCTAssertEqual(c.presence(.dockPreviews), .inSnapticMenu)
         // 0.3: per-id defaults; Awake is shown when active (C11), so placement(.awake) is no longer .shared.
         for id in [ModuleID.windowSwitcher, .displays] { XCTAssertEqual(c.placement(id), .shared) }
         XCTAssertEqual(c.presence(.awake), .ownIconWhenActive)
@@ -89,10 +91,14 @@ final class ConfigModulesTests: XCTestCase {
         var c = ModulesConfig.upgradeDefaults()
         c.setPlacement(.hidden, for: .windowSwitcher)
         c.sharedSymbol = "display"
+        c.setPresence(.hidden, for: .dockPreviews)
         c.resetMenu()
         XCTAssertEqual(c.placement(.windowSwitcher), .shared)
         XCTAssertEqual(c.sharedSymbol, "")
         XCTAssertFalse(c.isEnabled(.displays))
+        // 0.5 G2-7: Dock Previews' presence goes back to Show in Snaptic Menu, and it stays off.
+        XCTAssertEqual(c.presence(.dockPreviews), .inSnapticMenu)
+        XCTAssertFalse(c.isEnabled(.dockPreviews))
     }
 
     func testSanitizeRejectsUncuratedSymbols() {
@@ -318,7 +324,7 @@ final class ConfigModulesTests: XCTestCase {
         XCTAssertTrue(stored.needsOnboarding)
         XCTAssertEqual(stored.resumeStep, .welcome)
         XCTAssertFalse(stored.showNewDisplaysCard)
-        XCTAssertEqual(stored.enabledModules, ModuleID.allCases.filter { $0 != .hiddenIcons })
+        XCTAssertEqual(stored.enabledModules, ModuleID.allCases.filter { $0 != .hiddenIcons && $0 != .dockPreviews })
     }
 
     func testFirstRunOfAnEarlierUserIsTheUpgrade() {
@@ -366,6 +372,13 @@ final class ConfigModulesTests: XCTestCase {
         c.setEnabled(true, for: .displays)
         c.setPlacement(.hidden, for: .displays)
         XCTAssertFalse(c.iconsNeedExternalDisplay)       // everything hidden has its own notice
+        // 0.5 H1: Dock Previews counts like any module (ConfigDockTests has its two cases).
+        c.setPresence(.ownIconWhenActive, for: .displays)
+        XCTAssertTrue(c.iconsNeedExternalDisplay)
+        c.setEnabled(true, for: .dockPreviews)
+        XCTAssertFalse(c.iconsNeedExternalDisplay)       // its tab keeps the Snaptic icon
+        c.setPresence(.hidden, for: .dockPreviews)
+        XCTAssertTrue(c.iconsNeedExternalDisplay)        // Don't Show adds nothing
     }
 
     // MARK: 0.3 presence (M2)
@@ -374,6 +387,8 @@ final class ConfigModulesTests: XCTestCase {
         XCTAssertEqual(ModulesConfig.defaultPreferences(.windowSwitcher), ModulePreferences(enabled: true, presence: .inSnapticMenu))
         XCTAssertEqual(ModulesConfig.defaultPreferences(.displays), ModulePreferences(enabled: true, presence: .inSnapticMenu))
         XCTAssertEqual(ModulesConfig.defaultPreferences(.awake), ModulePreferences(enabled: true, presence: .ownIconWhenActive))
+        XCTAssertEqual(ModulesConfig.defaultPreferences(.hiddenIcons), ModulePreferences(enabled: false, presence: .inSnapticMenu))
+        XCTAssertEqual(ModulesConfig.defaultPreferences(.dockPreviews), ModulePreferences(enabled: false, presence: .inSnapticMenu))
     }
 
     func testM2MapsStoredPlacementsWhilePresenceIsAbsent() throws {

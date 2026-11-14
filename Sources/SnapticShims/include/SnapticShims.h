@@ -18,3 +18,4 @@
 #import "SNOSD.h"
 #import "SNVirtualDisplay.h"
 #import "SNMenuBarVisibility.h"
+#import "SNWindowServer.h"

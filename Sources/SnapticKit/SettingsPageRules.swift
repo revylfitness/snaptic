@@ -11,6 +11,7 @@ package enum GeneralCardRules {
         case .displays: return .displays
         case .awake, .awakeMigrated: return .awake
         case .hiddenIcons: return .hiddenIcons
+        case .dockPreviews: return .dockPreviews
         }
     }
 
@@ -26,6 +27,7 @@ package enum GeneralCardRules {
             case .awake: return !enabled.contains(.awake) && !cards.contains(.awakeMigrated)
             case .awakeMigrated: return true
             case .hiddenIcons: return !enabled.contains(.hiddenIcons)
+            case .dockPreviews: return !enabled.contains(.dockPreviews)
             }
         }
     }
@@ -95,7 +97,8 @@ package enum HostReport {
     /// nil otherwise; it becomes an "Awake" section.
     package static func sections(version: String, system: String, safeMode: Bool, modules: [Module],
                                  granted: Set<Permission>, commandLine: String,
-                                 awake: [String]? = nil, icons: [String]? = nil) -> [DiagnosticsSection] {
+                                 awake: [String]? = nil, icons: [String]? = nil,
+                                 dock: [String]? = nil, windows: [String]? = nil) -> [DiagnosticsSection] {
         var result = [
             DiagnosticsSection(title: L("Snaptic"), rows: [
                 DiagnosticsRow(L("Version"), version),
@@ -111,6 +114,10 @@ package enum HostReport {
         if let awake { result.append(DiagnosticsSection(title: L("Awake"), rows: awake.compactMap(row))) }
         // 0.4 H12: Hidden Icons, after Awake.
         if let icons { result.append(DiagnosticsSection(title: L("Hidden Icons"), rows: icons.compactMap(row))) }
+        // 0.5 H10: Dock Previews, after Hidden Icons.
+        if let dock { result.append(DiagnosticsSection(title: L("Dock Previews"), rows: dock.compactMap(row))) }
+        // 0.5 A2b: the private window capture both window modules share (§4.12 step 4, §4.13), last.
+        if let windows { result.append(DiagnosticsSection(title: L("Windows"), rows: windows.compactMap(row))) }
         return result
     }
 

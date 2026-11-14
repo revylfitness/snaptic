@@ -196,8 +196,17 @@ package enum KitControl {
     ]
 
     /// The host's rule for a verb, if it has one.
+    /// 0.5 §4.21: the Dock Previews verbs. `status` reads; `pause` only turns previews off, as `awake pause` does;
+    /// `resume` clears a command pause.
+    package static let dockVerbRules: [ControlVerbRule] = [
+        ControlVerbRule("dock status", .read),
+        ControlVerbRule("dock pause", .low, offOnly: true),
+        ControlVerbRule("dock resume", .low),
+    ]
+
     package static func verbRule(_ verb: String) -> ControlVerbRule? {
         awakeVerbRules.first { $0.verb == verb } ?? iconsVerbRules.first { $0.verb == verb }
+            ?? dockVerbRules.first { $0.verb == verb }
     }
 
     /// Security S-4 (0.3 §3.6): what dispatch may remember about an Awake verb. These

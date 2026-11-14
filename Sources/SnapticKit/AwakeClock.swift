@@ -171,12 +171,12 @@ package enum AwakeCountdown {
     /// "1 hour 42 minutes remaining", "42 seconds remaining" (VoiceOver, tooltip).
     package static func spoken(_ remaining: Double) -> String {
         let secs = wholeSeconds(remaining)
-        if secs < 60 { return L("\(unit(secs, "second", "seconds")) remaining") }
+        if secs < 60 { return L("\(SentenceText.unit(secs, "second", "seconds")) remaining") }
         let m = wholeMinutes(remaining)
-        if m < 60 { return L("\(unit(m, "minute", "minutes")) remaining") }
+        if m < 60 { return L("\(SentenceText.unit(m, "minute", "minutes")) remaining") }
         let h = m / 60, mm = m % 60
-        if mm == 0 { return L("\(unit(h, "hour", "hours")) remaining") }
-        return L("\(unit(h, "hour", "hours")) \(unit(mm, "minute", "minutes")) remaining")
+        if mm == 0 { return L("\(SentenceText.unit(h, "hour", "hours")) remaining") }
+        return L("\(SentenceText.unit(h, "hour", "hours")) \(SentenceText.unit(mm, "minute", "minutes")) remaining")
     }
 
     /// "5:00 PM" or "17:00" from local hour and minute (the app converts the instant with Calendar).
@@ -205,9 +205,6 @@ package enum AwakeCountdown {
         let delta = r - threshold
         return delta > 0 ? delta : 1
     }
-
-    /// "1 hour", "2 minutes".
-    package static func unit(_ n: Int, _ one: String, _ many: String) -> String { "\(n) " + (n == 1 ? one : many) }
 }
 
 /// CLI and the "Custom…" panel. "until 17:30" stays a clock request; the app resolves it with Calendar (DST-correct).

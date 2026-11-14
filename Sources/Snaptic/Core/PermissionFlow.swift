@@ -35,10 +35,14 @@ enum PermissionStatus: Equatable { case granted, denied, unknown }
     private var observerSerial: UInt64 = 0
     private var activationToken: NSObjectProtocol?
 
-    /// `readsGrants: false` (0.3.1 `--selftest-launch` only): starts with nothing granted and never asks macOS, so
-    /// the self-test touches no TCC-guarded API (R5.5).
+    /// False only in a self-test's instance: `state(_:)` answers `.denied` without asking macOS.
+    private let readsGrants: Bool
+
+    /// `readsGrants: false` (0.3.1 `--selftest-launch`, 0.5 `--selftest-controls`' Dock Previews in Safe Mode only):
+    /// starts with nothing granted and never asks macOS, so the self-test touches no TCC-guarded API (R5.5).
     init(relauncher: Relauncher? = nil, readsGrants: Bool = true) {
         self.relauncher = relauncher
+        self.readsGrants = readsGrants
         granted = readsGrants ? Set(Permission.allCases.filter { Self.isGranted($0) }) : []
         activationToken = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
@@ -50,7 +54,7 @@ enum PermissionStatus: Equatable { case granted, denied, unknown }
     // MARK: API
 
     func state(_ permission: Permission) -> PermissionStatus {
-        Self.isGranted(permission) ? .granted : .denied
+        readsGrants && Self.isGranted(permission) ? .granted : .denied
     }
 
     /// Coalesced per permission; never blocks. The guide opens at most once per launch by
@@ -89,6 +93,7 @@ enum PermissionStatus: Equatable { case granted, denied, unknown }
 
     /// Re-reads both permissions (cheap); called by polling, app activation and menus.
     func refresh() {
+        guard readsGrants else { return }
         let now = Set(Permission.allCases.filter { Self.isGranted($0) })
         guard now != granted else { return }
         let changed = now.symmetricDifference(granted)
@@ -273,7 +278,7 @@ enum PermissionStatus: Equatable { case granted, denied, unknown }
     static func purpose(_ permission: Permission) -> String {
         switch permission {
         case .accessibility:
-            return L("Lets Snaptic see its shortcuts, list and switch windows, and read display keys.")
+            return L("Lets Snaptic see its shortcuts, list and switch windows, read display keys, and read the Dock.")
         case .screenRecording:
             return L("Lets Snaptic show window thumbnails and previews, and Picture in Picture.")
         }

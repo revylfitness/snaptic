@@ -67,7 +67,7 @@ import SnapticKit
             }.value
             guard let self else { return }
             self.running = false
-            EventLog.shared.record(.switcher, "Gathered \(moved) windows")
+            EventLog.shared.record(.switcher, "Gathered windows")
             self.toasts.show(moved == 1 ? L("Moved 1 window.") : L("Moved ") + String(moved) + L(" windows."))
         }
     }
@@ -83,10 +83,10 @@ import SnapticKit
             let appDeadline = min(deadline, now + UInt64(perAppBudget * 1_000_000_000))
             func outOfTime() -> Bool { DispatchTime.now().uptimeNanoseconds > appDeadline }
             let app = AXUIElementCreateApplication(pid)
-            AXUIElementSetMessagingTimeout(app, WindowManager.axTimeout)
+            AXUIElementSetMessagingTimeout(app, WindowServices.axTimeout)
             for window in AX.elements(app, kAXWindowsAttribute).prefix(maxWindowsPerApp) {
                 if outOfTime() { break }
-                AXUIElementSetMessagingTimeout(window, WindowManager.axTimeout)
+                AXUIElementSetMessagingTimeout(window, WindowServices.axTimeout)
                 guard AX.string(window, kAXSubroleAttribute) == kAXStandardWindowSubrole,
                       AX.bool(window, kAXMinimizedAttribute) != true,
                       AX.bool(window, "AXFullScreen") != true,

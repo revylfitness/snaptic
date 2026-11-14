@@ -196,6 +196,8 @@ final class SettingsIndexTests: XCTestCase {
         XCTAssertEqual(SettingsIndex.masterSwitch(root: SettingsRootID.displays, in: tables), "displays.root.useDisplays")
         XCTAssertEqual(SettingsIndex.masterSwitch(root: SettingsRootID.hiddenIcons, in: tables),
                        "icons.page.useHiddenIcons")
+        XCTAssertEqual(SettingsIndex.masterSwitch(root: SettingsRootID.dockPreviews, in: tables),
+                       "dock.page.useDockPreviews")
         XCTAssertNil(SettingsIndex.masterSwitch(root: SettingsRootID.general, in: tables))
         XCTAssertNil(SettingsIndex.masterSwitch(root: SettingsRootID.permissions, in: tables))
     }

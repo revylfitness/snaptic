@@ -28,6 +28,14 @@ PLAN 0.4 (K1, H11 / §4.15) adds L20: under Icons/, `NSLog`/`os_log`/`print`/`de
 literal (no interpolation, no format arguments), `Logger` isn't used, and an `EventLog` `record(…)` interpolates only
 `….rawValue` (a reason code), so no bundle id, app name, AX title or error text reaches a log.
 
+PLAN 0.5 (K1, H8) widens L20 to Dock/, Windows/ and Switcher/; L13 adds Dock/UI/DockMenuRows.swift; L14 adds Dock/
+and Windows/ (Windows/ObserverThread.swift exempt: it only moves, P2-10); L17 adds Dock/, Windows/ and the Dock
+Previews and window-services Kit files; Dock/UI/ joins the Settings views.
+
+PLAN 0.5 (B1a, H8 and ground rule 4) widens L2: `CGEventPost…`, `postToPid`/`postToPSN` and `IOHIDPostEvent` are
+banned outside Awake's ActivitySimulator, in the Obj-C shims too, and `SLPSPostEventRecordTo` (the raise path's
+activation record) appears only in Windows/PrivateWindowAPI.swift.
+
 PLAN 0.4 (A4, H9) adds L21: `setActivationPolicy(` and activating Snaptic itself (`NSApp.activate(`,
 `NSApplication.shared.activate(`, `NSRunningApplication.current.activate(`) only in
 Core/ActivationPolicyController.swift and Core/SnapticEntry.swift (the launch default and the refusal alert).
@@ -258,6 +266,8 @@ def self_check():
             problems.append(f"self-check: menu contributors found {sorted(got)} in {source!r}, expected {sorted(expected)}")
     problems += self_check_031()
     problems += self_check_04()
+    problems += self_check_05()
+    problems += self_check_05_b1a()
     return problems
 
 
@@ -301,6 +311,82 @@ def self_check_04():
     for path, source, flagged in l21_cases:
         if bool(l21_file(path, source)) != flagged:
             problems.append(f"self-check: l21_file {'missed' if flagged else 'wrongly reported'} {source!r} in {path}")
+    return problems
+
+
+def self_check_05():
+    """Pins the 0.5 H8 K1 rows: L20's wider scope, L14's and L17's new paths."""
+    q = '"'
+    problems = []
+    l20_cases = [
+        ("Sources/Snaptic/Dock/DockPreviewsModule.swift", f"print({q}x \\(title){q})", True),
+        ("Sources/Snaptic/Windows/WindowServices.swift", f"EventLog.shared.record(.dock, {q}app \\(name){q})", True),
+        ("Sources/Snaptic/Switcher/WindowGatherer.swift", f"EventLog.shared.record(.switcher, {q}Gathered \\(moved) windows{q})", True),
+        ("Sources/Snaptic/Switcher/WindowGatherer.swift", f"EventLog.shared.record(.switcher, {q}Gathered windows{q})", False),
+        ("Sources/Snaptic/Dock/DockPreviewsModule.swift", f"EventLog.shared.record(.dock, {q}dock.pause.\\(reason.rawValue){q})", False),
+        ("Sources/Snaptic/Windows/X.swift", "let log = Logger(subsystem: s, category: c)", True),
+        ("Sources/Snaptic/Displays/X.swift", f"print({q}\\(x){q})", False),
+    ]
+    for path, source, flagged in l20_cases:
+        if bool(l20_file(path, source)) != flagged:
+            problems.append(f"self-check: l20_file {'missed' if flagged else 'wrongly reported'} {source!r} in {path}")
+    l17_cases = [
+        ("Sources/Snaptic/Dock/DockPanel.swift", True),
+        ("Sources/Snaptic/Windows/WindowServices.swift", True),
+        ("Sources/SnapticKit/DockGeometry.swift", True),
+        ("Sources/SnapticKit/KnownDockTools.swift", True),
+        ("Sources/SnapticKit/WindowCatalogRules.swift", True),
+        ("Sources/SnapticKit/ThumbnailIndex.swift", True),
+        ("Sources/SnapticKit/WindowSymbolContract.swift", True),
+        ("Sources/SnapticKit/WindowLeaseLedger.swift", True),
+        ("Sources/SnapticKit/CrashGuard.swift", True),
+        ("Sources/SnapticKit/Config/ConfigDock.swift", True),
+        ("Sources/SnapticKit/Config/ConfigModules.swift", False),
+        ("Sources/Snaptic/Displays/UI/DockLike.swift", False),
+    ]
+    for path, inside in l17_cases:
+        if l17_scope(path) != inside:
+            problems.append(f"self-check: l17_scope {'missed' if inside else 'wrongly included'} {path}")
+    l14_cases = [
+        ("Sources/Snaptic/Dock/DockHoverController.swift", True),
+        ("Sources/Snaptic/Windows/WindowServices.swift", True),
+        (L14_OBSERVER_THREAD, False),
+        ("Sources/Snaptic/Switcher/WindowGatherer.swift", False),
+    ]
+    for path, inside in l14_cases:
+        if l14_scope(path) != inside:
+            problems.append(f"self-check: l14_scope {'missed' if inside else 'wrongly included'} {path}")
+    if not under("Sources/Snaptic/Dock/UI/DockPage.swift", *SETTINGS_VIEWS):
+        problems.append("self-check: SETTINGS_VIEWS misses Dock/UI/")
+    return problems
+
+
+def self_check_05_b1a():
+    """Pins the 0.5 B1a L2 row on cases it must report or let pass."""
+    q = '"'
+    windows = "Sources/Snaptic/Windows/WindowServices.swift"
+    shim = "Sources/SnapticShims/SNWindowServer.m"
+    cases = [
+        (windows, "event.postToPid(pid)", True),
+        (windows, "event.post(tap: .cghidEventTap)", True),
+        ("Sources/Snaptic/Dock/DockKeys.swift", "CGEventPostToPid(pid, e)", True),
+        (shim, "CGEventPost(kCGHIDEventTap, e);", True),
+        (shim, "CGEventPostToPSN(&psn, e);", True),
+        (shim, "IOHIDPostEvent(c, t, l, &d, 0, 0, 0);", True),
+        (shim, f"void *f = dlsym(h, {q}SLPSPostEventRecordTo{q});", True),
+        ("Sources/Snaptic/Switcher/X.swift", f"let f = lookup({q}SLPSPostEventRecordTo{q})", True),
+        (L2_RAISE_HOME, f"let f = lookup({q}SLPSPostEventRecordTo{q}, in: skyLight, as: F.self)", False),
+        (L2_RAISE_HOME, "event.postToPid(pid)", True),
+        (L2_SIMULATOR, "out.post(tap: .cghidEventTap)", False),
+        (L2_SIMULATOR, "event.postToPid(pid)", False),
+        (windows, "postToPidList(); let cgEventPoster = 1", False),
+    ]
+    problems = []
+    for path, source, flagged in cases:
+        if bool(l2_count(path, strip_comments(source))) != flagged:
+            problems.append(f"self-check: l2_count {'missed' if flagged else 'wrongly reported'} {source!r} in {path}")
+    if "Sources/SnapticShims/SNDDC.m" not in SHIMS:
+        problems.append("self-check: L2 doesn't scan the shims")
     return problems
 
 
@@ -482,6 +568,9 @@ def load(path):
 SOURCES = sorted(list(swift_files("Sources/Snaptic")) + list(swift_files("Sources/SnapticKit")))
 APP = [p for p in SOURCES if p.startswith("Sources/Snaptic/")]
 TEXT = {p: load(p) for p in SOURCES}
+# The Obj-C shims, for L2 only (0.5 B1a: the C names of the event-post calls are reachable only from there).
+SHIMS = sorted(os.path.join(d, f) for d, _, fs in os.walk("Sources/SnapticShims") for f in fs
+               if f.endswith((".m", ".h")))
 
 
 def count(pattern, text):
@@ -496,9 +585,51 @@ def is_menu_file(path):
     return "Menu" in os.path.basename(path)
 
 
-SETTINGS_VIEWS = ("Displays/UI/", "Awake/UI/", "Icons/UI/", "SettingsUI/", "Switcher/SettingsView.swift", "Switcher/SwitcherPages.swift",
+# 0.5 H8 L14: moved by B1a from Switcher/ unchanged (P2-10), so the new Windows/ scope doesn't count it.
+L14_OBSERVER_THREAD = "Sources/Snaptic/Windows/ObserverThread.swift"
+def l14_scope(p):
+    return (under(p, "Awake/", "Icons/", "Dock/") or (under(p, "Windows/") and p != L14_OBSERVER_THREAD)
+            or is_menu_file(p))
+
+
+# 0.5 H8 L17: the Kit files of Awake, Hidden Icons, Dock Previews and the window services.
+L17_KIT = ("Awake", "Icons", "KnownMenuBarHiders", "Dock", "KnownDockTools", "WindowCatalogRules", "ThumbnailIndex",
+           "WindowSymbolContract", "WindowLeaseLedger", "CrashGuard")
+L17_CONFIG = ("ConfigAwake", "ConfigIcons", "ConfigDock")
+
+
+def l17_scope(p):
+    base = os.path.basename(p)
+    return (under(p, "Awake/", "Icons/", "Dock/", "Windows/")
+            or (p.startswith("Sources/SnapticKit/") and base.startswith(L17_KIT))
+            or (p.startswith("Sources/SnapticKit/Config/") and base.startswith(L17_CONFIG)))
+
+
+SETTINGS_VIEWS = ("Displays/UI/", "Awake/UI/", "Icons/UI/", "Dock/UI/", "SettingsUI/", "Switcher/SettingsView.swift", "Switcher/SwitcherPages.swift",
                   "Core/GeneralPages.swift", "Core/Onboarding.swift", "Core/SettingsWindowHost.swift",
                   "Core/MenuBarPage.swift", "Core/CustomizeMenuSheet.swift")
+
+
+L2_SIMULATOR = "Sources/Snaptic/Awake/Sources/ActivitySimulator.swift"
+L2_RAISE_HOME = "Sources/Snaptic/Windows/PrivateWindowAPI.swift"
+
+
+def l2_count(p, t):
+    """L2: user activity and posted events only in Awake's ActivitySimulator (0.3; no keyboard or scroll events in
+    Awake/ at all). 0.5 B1a (H8, ground rule 4): CGEventPost…, postToPid/postToPSN and IOHIDPostEvent are banned
+    outside ActivitySimulator too, shims included, and the raise path's SLPSPostEventRecordTo appears only in
+    Windows/PrivateWindowAPI.swift."""
+    n = 0
+    if p != L2_SIMULATOR:
+        n += count(r"IOPMAssertionDeclareUserActivity|\.post\(tap:|CGEvent\(mouseEventSource", t)
+        n += count(r"\bCGEventPost\w*|\bpostTo(?:Pid|PSN)\b|\bIOHIDPostEvent\b", t)
+    else:
+        n += count(r"mouseType:\s*\.(?!mouseMoved\b)\w+", t)
+    if under(p, "Awake/"):
+        n += count(r"keyboardEventSource|CGEvent\(keyboardEvent|CGEvent\(scrollWheelEvent", t)
+    if p != L2_RAISE_HOME:
+        n += count(r"\bSLPSPostEventRecordTo\b", t)
+    return n
 
 
 def ratcheted_counts():
@@ -518,13 +649,8 @@ def ratcheted_counts():
         if p not in (assertion, simulator):
             add("L1", p, count(r"IOPMAssertionRelease\b", t))
         add("L1", p, count(r"IOPMAssertionSetProperty", t))
-        # L2 activity and events only in ActivitySimulator.
-        if p != simulator:
-            add("L2", p, count(r"IOPMAssertionDeclareUserActivity|\.post\(tap:|CGEvent\(mouseEventSource", t))
-        else:
-            add("L2", p, count(r"mouseType:\s*\.(?!mouseMoved\b)\w+", t))
-        if under(p, "Awake/"):
-            add("L2", p, count(r"keyboardEventSource|CGEvent\(keyboardEvent|CGEvent\(scrollWheelEvent", t))
+        # L2 activity and events only in ActivitySimulator; the raise record only in PrivateWindowAPI.
+        add("L2", p, l2_count(p, t))
         # L4 banned everywhere.
         add("L4", p, count(r'UNUserNotificationCenter|import\s+CoreWLAN|import\s+IOBluetooth|CLLocationManager|"pmset"|"sudo"', t))
         # L9 only AwakeLogEvent cases reach the .awake category (through EventLog's overload).
@@ -566,13 +692,16 @@ def ratcheted_counts():
         if ((under(p, "Core/") and (base.startswith("Menu") or base == "StatusMenu.swift"))
                 or (under(p, "Displays/UI/") and "Menu" in base)
                 or p in ("Sources/Snaptic/Awake/UI/AwakeMenuRows.swift", "Sources/Snaptic/Awake/UI/IndicatorController.swift",
-                         "Sources/Snaptic/Icons/UI/IconsMenuRows.swift")):
+                         "Sources/Snaptic/Icons/UI/IconsMenuRows.swift", "Sources/Snaptic/Dock/UI/DockMenuRows.swift")):
             add("L13", p, count(r"NSHostingView", t))
-        # L14 .common run-loop modes in menus, Awake and Hidden Icons (0.4 H11).
-        if under(p, "Awake/") or under(p, "Icons/") or is_menu_file(p):
+        # L14 .common run-loop modes in menus, Awake, Hidden Icons (0.4 H11), Dock Previews and the window services
+        # (0.5 H8; ObserverThread only moves, P2-10).
+        if l14_scope(p):
             add("L14", p, count(r"scheduledTimer\(|RunLoop\.main\.perform(?!\(inModes:)|receive\(on:\s*RunLoop\.main|"
                                 r"scheduler:\s*RunLoop\.main|forMode:\s*(?:\.default|RunLoop\.Mode\.default)\b|"
                                 r"\bin:\s*(?:\.default|RunLoop\.Mode\.default)\b|\.defaultRunLoopMode\b", t))
+    for p in SHIMS:
+        add("L2", p, l2_count(p, load(p)))
     return found
 
 
@@ -587,14 +716,11 @@ def unratcheted_problems():
         if p == "Sources/Snaptic/Core/CLIClient.swift" and re.search(r"\bshutdown\(", t):
             problems.append(f"{p}: L16 shutdown( is banned (the client never half-closes)")
     problems += l16_lid()
-    # L17 duplicate keys never trap in Awake or Hidden Icons (0.4).
+    # L17 duplicate keys never trap in Awake, Hidden Icons (0.4), Dock Previews or the window services (0.5 H8).
     for p in SOURCES:
-        base = os.path.basename(p)
-        awake = (p.startswith("Sources/Snaptic/Awake/") or p.startswith(ICONS_DIR)
-                 or (p.startswith("Sources/SnapticKit/") and base.startswith(("Awake", "Icons", "KnownMenuBarHiders")))
-                 or (p.startswith("Sources/SnapticKit/Config/") and base.startswith(("ConfigAwake", "ConfigIcons"))))
-        if awake and "uniqueKeysWithValues" in TEXT[p]:
-            problems.append(f"{p}: L17 uniqueKeysWithValues is banned in Awake and Hidden Icons (use uniquingKeysWith: {{ first, _ in first }})")
+        if l17_scope(p) and "uniqueKeysWithValues" in TEXT[p]:
+            problems.append(f"{p}: L17 uniqueKeysWithValues is banned in Awake, Hidden Icons, Dock Previews and the "
+                            f"window services (use uniquingKeysWith: {{ first, _ in first }})")
     problems += l15()
     problems += l18()
     problems += l19()
@@ -719,8 +845,10 @@ def l19_file(p, t):
     return sorted(set(problems)), imported
 
 
-# PLAN 0.4 L20 (H11, §4.15): nothing that names an app reaches a log from Hidden Icons.
-ICONS_DIR = "Sources/Snaptic/Icons/"
+# PLAN 0.4 L20 (H11, §4.15): nothing that names an app reaches a log from Hidden Icons; 0.5 H8 adds Dock Previews,
+# the window services and the Window Switcher.
+L20_DIRS = ("Icons/", "Dock/", "Windows/", "Switcher/")
+L20_WHERE = "under Icons/, Dock/, Windows/ or Switcher/"
 L20_LOG = re.compile(r"(?<![\w.])(NSLog|os_log|print|debugPrint|dump)\(")
 L20_RECORD = re.compile(r"\.record\(")
 
@@ -744,21 +872,21 @@ def l20_interpolations(args):
 
 
 def l20_file(p, t):
-    if not p.startswith(ICONS_DIR):
+    if not under(p, *L20_DIRS):
         return []
     problems = []
     for m in L20_LOG.finditer(t):
         args = t[m.end():code_end(t, m.end()) - 1].strip()
         single = bool(args) and starts_string(args, 0) and string_end(args, 0) == len(args)
         if not single or l20_interpolations(args):
-            problems.append(f"{p}: L20 {m.group(1)}(…) under Icons/ takes one plain string literal (§4.15)")
+            problems.append(f"{p}: L20 {m.group(1)}(…) {L20_WHERE} takes one plain string literal (§4.15)")
     if re.search(r"(?<![\w.])Logger\(", t):
-        problems.append(f"{p}: L20 Logger isn't used under Icons/ (§4.15)")
+        problems.append(f"{p}: L20 Logger isn't used {L20_WHERE} (§4.15)")
     for m in L20_RECORD.finditer(t):
         args = t[m.end():code_end(t, m.end()) - 1]
         for expr in l20_interpolations(args):
             if not re.fullmatch(r"\s*[A-Za-z_][\w.]*\.rawValue\s*", expr):
-                problems.append(f"{p}: L20 record(…) under Icons/ interpolates only a reason code’s rawValue, "
+                problems.append(f"{p}: L20 record(…) {L20_WHERE} interpolates only a reason code’s rawValue, "
                                 f"not {expr.strip()!r} (§4.15)")
     return sorted(set(problems))
 
@@ -1340,7 +1468,7 @@ RULE2_TOP = re.compile(r"^(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|package|interna
                        r"(?:class|struct|enum|extension|actor)\s+([\w.]+)", re.M)
 # Types whose observers deliberately touch no main-actor state (path, top-level type): reason.
 RULE2_EXEMPT = {
-    ("Sources/Snaptic/Switcher/WindowManager.swift", "FocusSession"):
+    ("Sources/Snaptic/Windows/WindowServices.swift", "FocusSession"):
         "@unchecked Sendable; its workspace observers only hop to the session's own AX thread",
 }
 
@@ -1471,7 +1599,11 @@ def without_string_text(code):
 # 0.4 K5: Hidden Icons' tables land before their views (A1, A6, A7). While no app file declares
 # `typealias Controls = <table>` for one of these, "declared but no view or builder uses it" is skipped for it; every
 # other L15 check applies. Once a view declares the alias, the entry must go (reported below). R checks it is empty.
+# 0.5 K5 listed Dock Previews' three tables here until A7's views (PLAN 0.5 §3 L15); A7 emptied it again.
 L15_PENDING = set()
+# 0.5 K5: single ids added to a table a view already uses, skipped the same way until that view uses them. Reported
+# once used. A7 emptied it (the Menu Bar page's Dock Previews row).
+L15_PENDING_IDS = set()
 
 
 def l15():
@@ -1526,10 +1658,19 @@ def l15():
             problems.append(f"scripts/lint03.py: L15 {table} has a view now; remove it from L15_PENDING")
         elif table not in tables:
             problems.append(f"scripts/lint03.py: L15 L15_PENDING names {table}, which is no table")
+    all_used = set().union(*used.values()) if used else set()
+    all_ids = {i for ids in tables.values() for i in ids}
+    for i in sorted(L15_PENDING_IDS):
+        if i in all_used:
+            problems.append(f"scripts/lint03.py: L15 {i} has a view now; remove it from L15_PENDING_IDS")
+        elif i not in all_ids:
+            problems.append(f"scripts/lint03.py: L15 L15_PENDING_IDS names {i}, which is in no table")
     for table, ids in tables.items():
         if table in L15_PENDING and table not in aliased:
             continue
         for i in ids:
+            if i in L15_PENDING_IDS:
+                continue
             if i not in used.get(table, set()):
                 problems.append(f"{controls_dir}/{table}.swift: L15 {i} is declared but no view or builder uses it")
     return problems

@@ -224,7 +224,8 @@ private struct OnboardingView: View {
                 .accessibilityHidden(true)
             Text(L("Welcome to Snaptic"))
                 .font(.largeTitle.weight(.semibold))
-            Text(L("A window switcher, display controls, Keep Awake, and hidden menu bar icons, in your menu bar. Turn on only what you want; everything else stays off."))
+            // 0.5 §4.20 (A8): Dock previews joins the list.
+            Text(L("A window switcher, display controls, Keep Awake, hidden menu bar icons, and Dock previews. Turn on only what you want; everything else stays off."))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 420)
@@ -250,7 +251,7 @@ private struct OnboardingView: View {
                 }
             }
             .formStyle(.grouped)
-            // 0.4 H5: four rows fit at the default text size; at the largest the form scrolls (this step only).
+            // 0.4 H5, 0.5 M29: five rows fit at the default text size; at the largest the form scrolls (this step only).
         }
     }
 
@@ -287,10 +288,11 @@ private struct OnboardingView: View {
         }
     }
 
-    /// What the chosen modules and display features need (Hidden Icons: Accessibility on macOS 27, H4).
+    /// What the chosen modules and display features need (Hidden Icons: Accessibility on macOS 27, H4; Dock Previews:
+    /// Accessibility, and Screen Recording while thumbnails are on, 0.5 §4.20, D2-30).
     private var needed: [Permission] {
         var set = Set(store.value.onboardingPermissions)
-        for module in [host.switcher as any SnapticModule, host.icons]
+        for module in [host.switcher as any SnapticModule, host.icons, host.dock]
         where store.value.isEnabled(module.id) && !host.disabledByDefaults.contains(module.id) {
             set.formUnion(module.requiredPermissions)
         }

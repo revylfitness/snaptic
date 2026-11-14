@@ -89,11 +89,11 @@ extension AwakePresetKind {
     /// "1 Hour", "30 Minutes", "1 Hour 30 Minutes", "2 Days" (title case, rounded up to the minute).
     package static func spanTitle(_ seconds: Int) -> String {
         let minutes = max(1, (AwakeMath.clamp(seconds, 0...AwakeClock.maxSessionSeconds) + 59) / 60)
-        if minutes % 1_440 == 0 { return AwakeCountdown.unit(minutes / 1_440, L("Day"), L("Days")) }
+        if minutes % 1_440 == 0 { return SentenceText.unit(minutes / 1_440, L("Day"), L("Days")) }
         let h = minutes / 60, m = minutes % 60
-        if h == 0 { return AwakeCountdown.unit(m, L("Minute"), L("Minutes")) }
-        if m == 0 { return AwakeCountdown.unit(h, L("Hour"), L("Hours")) }
-        return AwakeCountdown.unit(h, L("Hour"), L("Hours")) + " " + AwakeCountdown.unit(m, L("Minute"), L("Minutes"))
+        if h == 0 { return SentenceText.unit(m, L("Minute"), L("Minutes")) }
+        if m == 0 { return SentenceText.unit(h, L("Hour"), L("Hours")) }
+        return SentenceText.unit(h, L("Hour"), L("Hours")) + " " + SentenceText.unit(m, L("Minute"), L("Minutes"))
     }
 }
 

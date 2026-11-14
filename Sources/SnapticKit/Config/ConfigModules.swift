@@ -220,12 +220,13 @@ package struct ModulesConfig: ConfigModel {
     // MARK: Defaults
 
     /// A fresh install, per module: Window Switcher and Displays on in the shared menu, Awake on and shown when
-    /// active (0.3 C11), Hidden Icons off with a Snaptic-menu section (0.4 H2, H10).
+    /// active (0.3 C11), Hidden Icons off with a Snaptic-menu section (0.4 H2, H10), Dock Previews off with a
+    /// Snaptic-menu tab (0.5 H1).
     package static func defaultPreferences(_ id: ModuleID) -> ModulePreferences {
         switch id {
         case .windowSwitcher, .displays: return ModulePreferences(enabled: true, presence: .inSnapticMenu)
         case .awake: return ModulePreferences(enabled: true, presence: .ownIconWhenActive)
-        case .hiddenIcons: return ModulePreferences(enabled: false, presence: .inSnapticMenu)
+        case .hiddenIcons, .dockPreviews: return ModulePreferences(enabled: false, presence: .inSnapticMenu)
         }
     }
 
@@ -276,6 +277,8 @@ package struct ModulesConfig: ConfigModel {
         }
         // 0.4 H10: turning Hidden Icons on clears its "New: Hidden Icons" card.
         if id == .hiddenIcons && enabled { newModuleCards.removeAll { $0 == .hiddenIcons } }
+        // 0.5 §4.20: turning Dock Previews on clears its "New: Dock Previews" card. Its presence never changes (D2-29).
+        if id == .dockPreviews && enabled { newModuleCards.removeAll { $0 == .dockPreviews } }
     }
 
     package func presence(_ id: ModuleID) -> MenuPresence { preferences(id).presence }
@@ -419,7 +422,8 @@ extension ModulesConfig {
     /// external display is connected": without an external display nothing shows in the
     /// menu bar (General → Menu warns). "Everything hidden" has its own notice.
     /// Awake shown only when active doesn't count: it isn't there at rest either. Hidden Icons' arrow always shows
-    /// while it's on, whatever its presence (0.4 H2), so then the bar is never empty.
+    /// while it's on, whatever its presence (0.4 H2), so then the bar is never empty. Dock Previews counts like any
+    /// module: in the Snaptic menu its tab keeps the Snaptic icon there, and with Don't Show it adds nothing (0.5 H1).
     package var iconsNeedExternalDisplay: Bool {
         guard !isEnabled(.hiddenIcons) else { return false }
         let shown = enabledModules.filter { id in
@@ -486,6 +490,20 @@ extension ModulesConfig {
         }
         var c = self
         c.newModuleCards.append(.hiddenIcons)
+        return c
+    }
+
+    /// 0.5 §4.20: an upgrader with Dock Previews off gets its "New: Dock Previews" card, once, by the rules of
+    /// `insertingIconsCard`, under its own marker `dockCard.v1`. A 0.1–0.4 install that reaches 0.5 is an upgrader.
+    /// Pure; ModuleHost runs it from A8.
+    package func insertingDockCard(upgrader: Bool, ledger: inout MigrationLedger) -> ModulesConfig {
+        guard !ledger.has(.dockCard) else { return self }
+        ledger.record(.dockCard)
+        guard upgrader, !needsOnboarding, !isEnabled(.dockPreviews), !newModuleCards.contains(.dockPreviews) else {
+            return self
+        }
+        var c = self
+        c.newModuleCards.append(.dockPreviews)
         return c
     }
 }

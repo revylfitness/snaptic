@@ -51,6 +51,8 @@ import SnapticKit
     let openSettings: @MainActor (String?) -> Void
     /// 0.3: Awake's lines for the shared diagnostics report (empty while Awake isn't running; §3.6).
     let awakeDiagnosticsLines: @MainActor () -> [String]
+    /// 0.5: any module's lines for the same report (empty while it isn't running).
+    let moduleDiagnosticsLines: @MainActor (ModuleID) -> [String]
     /// 0.3: the one live-value writer every page, panel and menu row shares (C's DisplayLiveController, §4.5).
     let live: DisplayLiveController
     /// Ends when the Displays module stops.
@@ -104,6 +106,7 @@ import SnapticKit
         openSettings = module.openSettings
         let moduleDiagnostics = module.moduleDiagnostics
         awakeDiagnosticsLines = { moduleDiagnostics(.awake) }
+        moduleDiagnosticsLines = moduleDiagnostics
         live = DisplayLiveController()
         self.lifetime = lifetime
         live.context = self

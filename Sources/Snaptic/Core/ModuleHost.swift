@@ -20,6 +20,7 @@ import SnapticKit
     static let ledgerKey = MigrationLedger.key
     static let iconsKey = IconsConfig.key
     static let iconsAppsKey = IconsAppsState.key
+    static let dockKey = DockConfig.key
     /// 0.3.1 E1a: `CFBundleVersion`, written at every launch so later versions can tell an upgrade apart. Navigation
     /// state: not backed up and not cleared by Reset.
     static let lastRunVersionKey = "SnapticLastRunVersion"
@@ -37,6 +38,8 @@ import SnapticKit
     let ledgerStore: ConfigStore<MigrationLedger>
     let iconsStore: ConfigStore<IconsConfig>
     let iconsAppsStore: ConfigStore<IconsAppsState>
+    /// 0.5 H10 (A6a): Dock Previews' settings, `SnapticDockV1`.
+    let dockStore: ConfigStore<DockConfig>
     let switcherSettings = AppSettings.shared
     let signals = HostSignals()
     /// Modules turned off by `Modules.disable.<id>`, read once at launch (N14).
@@ -54,6 +57,8 @@ import SnapticKit
     let displays: DisplaysModule
     let awake: AwakeModule
     let icons: IconsModule
+    /// 0.5 H1, A6a: the real module, still drawing nothing until A3, A4a and A5.
+    let dock: DockPreviewsModule
 
     /// 0.3.1 B3.4: sleep left off by an earlier lid-closed session (host level: whatever Awake's state, also in Safe
     /// Mode). StatusMenu and IndicatorController draw its rows; T-lid-app fills it in.
@@ -124,12 +129,13 @@ import SnapticKit
         let ledger = ConfigStore<MigrationLedger>(key: Self.ledgerKey)
         let iconsConfig = ConfigStore<IconsConfig>(key: Self.iconsKey)
         let iconsApps = ConfigStore<IconsAppsState>(key: Self.iconsAppsKey)
+        let dockConfig = ConfigStore<DockConfig>(key: Self.dockKey)
         let disabled = KillSwitches.read(domain, prefix: "Modules", as: ModuleID.self)
         let v031Upgrader = MigrationLedger.isV031Upgrader(modulesExisted: modulesExisted, launchedBefore: launchedBefore)
         let firstV031 = !ledger.value.has(.v031Welcome) && v031Upgrader
         let m1 = Self.runMigrations(modules: store, modulesExisted: modulesExisted, v031Upgrader: v031Upgrader,
                                     displays: displaysConfig, awake: awakeConfig, icons: iconsConfig,
-                                    iconsApps: iconsApps, ledger: ledger, toasts: toasts)
+                                    iconsApps: iconsApps, dock: dockConfig, ledger: ledger, toasts: toasts)
         isFirstV031Launch = firstV031
         if let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String {
             UserDefaults.standard.set(build, forKey: Self.lastRunVersionKey)
@@ -148,11 +154,13 @@ import SnapticKit
         ledgerStore = ledger
         iconsStore = iconsConfig
         iconsAppsStore = iconsApps
+        dockStore = dockConfig
         disabledByDefaults = disabled
         switcher = WindowSwitcherModule()
         displays = DisplaysModule(config: displaysConfig)
         awake = AwakeModule(config: awakeConfig, state: awakeState, history: awakeHistory)
         icons = IconsModule(config: iconsConfig, apps: iconsApps)
+        dock = DockPreviewsModule(config: dockConfig)
         m1Toast = Self.pendingM1Toast(m1, ledger: ledger, awake: awakeConfig)
         // H9 (P-24): Snaptic doesn't activate over the Window Switcher panel.
         let signals = self.signals
@@ -176,13 +184,15 @@ import SnapticKit
 
     /// The one-time migrations, in the R5-2 order: ledger → M3 (modules) → M4, M5, M10 (displays) → Awake
     /// inserted off for upgraders (§2.13, once: marker `awakeUpgrade.v1`) → 0.3.1 welcome → "New: Hidden Icons"
-    /// for upgraders (0.4 H10, once: marker `iconsCard.v1`) → M1 → forced saves: modules, displays, Awake, then the
-    /// ledger last (the commit point; a crash before it re-runs migrations that are idempotent over what that run
-    /// wrote). Returns M1's result when it ran in this launch.
+    /// for upgraders (0.4 H10, once: marker `iconsCard.v1`) → "New: Dock Previews" for upgraders (0.5 §4.20, once:
+    /// marker `dockCard.v1`) → M1 → forced saves: modules, displays, Awake, Hidden
+    /// Icons, Dock Previews, then the ledger last (the commit point; a crash before it re-runs migrations that are
+    /// idempotent over what that run wrote). Returns M1's result when it ran in this launch.
     private static func runMigrations(modules: ConfigStore<ModulesConfig>, modulesExisted: Bool, v031Upgrader: Bool,
                                       displays: ConfigStore<DisplaysConfig>, awake: ConfigStore<AwakeConfig>,
                                       icons: ConfigStore<IconsConfig>, iconsApps: ConfigStore<IconsAppsState>,
-                                      ledger: ConfigStore<MigrationLedger>, toasts: ToastPresenter) -> AwakeMigrationResult? {
+                                      dock: ConfigStore<DockConfig>, ledger: ConfigStore<MigrationLedger>,
+                                      toasts: ToastPresenter) -> AwakeMigrationResult? {
         var marks = ledger.value
         modules.value = modules.value.migrated(ledger: &marks)
         displays.value = displays.value.migrated(ledger: &marks)
@@ -192,6 +202,8 @@ import SnapticKit
         marks.recordV031Welcome(upgrader: v031Upgrader, canAsk: UpdaterController.gate == .ready)
         // 0.4 H10: "New: Hidden Icons" for upgraders with it off, once (marker `iconsCard.v1`).
         modules.value = modules.value.insertingIconsCard(upgrader: v031Upgrader, ledger: &marks)
+        // 0.5 §4.20 (A8): "New: Dock Previews" for upgraders with it off, once (marker `dockCard.v1`).
+        modules.value = modules.value.insertingDockCard(upgrader: v031Upgrader, ledger: &marks)
         // M1 (§4.6, R5-12): G's pure migration over the raw 0.2 JSON; the marker is recorded whatever it found.
         var m1: AwakeMigrationResult?
         if !marks.has(.fromDisplays) {
@@ -220,6 +232,8 @@ import SnapticKit
         // 0.4 A5: Hidden Icons' stores, sanitized on load, written back before the ledger commits.
         icons.save(force: true)
         iconsApps.save(force: true)
+        // 0.5 H10 (A6a): Dock Previews' store, sanitized on load, written back before the ledger commits.
+        dock.save(force: true)
         ledger.save(force: true)
         return m1
     }
@@ -408,6 +422,7 @@ import SnapticKit
         awakeHistoryStore.flush()
         iconsStore.flush()
         iconsAppsStore.flush()
+        dockStore.flush()
         ledgerStore.flush()
         switcherSettings.flush()
         lifetime.end()
@@ -423,12 +438,33 @@ import SnapticKit
         case .displays: return displays
         case .awake: return awake
         case .hiddenIcons: return icons
+        case .dockPreviews: return dock
         }
     }
 
     var runningModules: Set<ModuleID> { Set(running.keys) }
 
     func isRunning(_ id: ModuleID) -> Bool { running[id] != nil }
+
+    #if DEBUG
+    /// G3-5 (0.5 A6a): Dock Previews' Safe Mode path, read through its DEBUG state hook. Starts the module with a
+    /// Safe Mode context, reads its state, its diagnostics and the live leases, and stops it again. Nil while the
+    /// module runs (it's for `--selftest-launch`, where no module starts).
+    func debugDockSafeModeProbe() -> (state: ModuleState, diagnostics: [String], liveLeases: Int)? {
+        guard running[.dockPreviews] == nil else { return nil }
+        let life = lifetime.child()
+        defer { life.end() }
+        let context = ModuleContext(
+            safeMode: SafeModeState(isActive: true, reason: L("Started with --safe-mode.")), hotkeys: hotkeys,
+            commands: commands, toasts: toasts, permissions: permissions, spawner: spawner, relauncher: relauncher,
+            otherApps: otherApps, lifetime: life, requestMenuRebuild: {}, hostSignals: signals)
+        dock.start(context)
+        let read = dock.debugState
+        let leases = WindowServices.shared.liveLeases
+        dock.stop()
+        return (read.state, read.diagnostics, leases)
+    }
+    #endif
 
     func setEnabled(_ enabled: Bool, _ id: ModuleID) {
         modulesStore.value.setEnabled(enabled, for: id)
@@ -561,12 +597,13 @@ import SnapticKit
             return .ok(rows.map { $0.0 + "\t" + $0.1 }.joined(separator: "\n"))
         }
         commands.register("module disable", policy: .low, offOnly: true, cliAllowed: true,
-                          summary: L("Turn a module off: module disable <windowSwitcher|displays|awake|hiddenIcons>"),
+                          summary: L("Turn a module off: module disable <windowSwitcher|displays|awake|hiddenIcons|dockPreviews>"),
                           lifetime: lifetime) { [weak self] request, _ in
             guard let self else { return .failure(ControlExit.unavailable, "") }
             guard let name = request.arguments.first?.lowercased(),
                   let id = ModuleID.allCases.first(where: { $0.rawValue.lowercased() == name
-                      || (name == "switcher" && $0 == .windowSwitcher) || (name == "icons" && $0 == .hiddenIcons) })
+                      || (name == "switcher" && $0 == .windowSwitcher) || (name == "icons" && $0 == .hiddenIcons)
+                      || (name == "dock" && $0 == .dockPreviews) })
             else { return .failure(ControlExit.notFound, L("No such module.")) }
             self.setEnabled(false, id)
             return .ok()
@@ -695,14 +732,20 @@ import SnapticKit
 
     private func requestPermissions(for ids: [ModuleID]) {
         var reasons: [Permission: [String]] = [:]
-        for id in ModuleID.allCases where ids.contains(id) {
+        // 0.5 §4.14: Dock Previews asks for Accessibility in its own words, and for Screen Recording only from
+        // onboarding or its page's row.
+        for id in ModuleID.allCases where ids.contains(id) && id != .dockPreviews {
             let m = self.module(id)
             for permission in m.requiredPermissions { reasons[permission, default: []].append(m.title) }
         }
-        for permission in Permission.allCases {
-            guard let names = reasons[permission], permissions.state(permission) != .granted else { continue }
-            permissions.request(permission, reason: L("Needed by ") + names.joined(separator: L(" and ")) + ".",
-                                lifetime: lifetime)
+        for permission in Permission.allCases where permissions.state(permission) != .granted {
+            if let names = reasons[permission] {
+                permissions.request(permission, reason: L("Needed by ") + names.joined(separator: L(" and ")) + ".",
+                                    lifetime: lifetime)
+            }
+            if permission == .accessibility, ids.contains(.dockPreviews) {
+                permissions.request(permission, reason: L("Dock Previews needs it to read the Dock."), lifetime: lifetime)
+            }
         }
     }
 
@@ -736,7 +779,10 @@ import SnapticKit
         iconsStore.value = IconsConfig()
         iconsAppsStore.value = IconsAppsState()
         Self.removeIconsDefaults()
+        // 0.5 H10 (A6a): Dock Previews' settings, hidden apps included. The protected apps are the switcher's.
+        dockStore.value = DockConfig()
         switcherSettings.reset()
+        switcherSettings.resetPrivacy()   // 0.5 §4.10: the switcher's Restore Defaults keeps them; this doesn't.
         // 0.3.1 E4: Sparkle's own keys go too (the update consent is asked again).
         for key in UpdateDefaultsKeys.all { UserDefaults.standard.removeObject(forKey: key) }
         modulesStore.flush()
@@ -746,6 +792,7 @@ import SnapticKit
         awakeHistoryStore.flush()
         iconsStore.flush()
         iconsAppsStore.flush()
+        dockStore.flush()
         switcherSettings.flush()
         EventLog.shared.record(.modules, "All settings reset")
         relauncher.relaunch(reason: "settings reset")

@@ -39,7 +39,11 @@ package enum KitBackup {
     /// 0.4 H7: Hidden Icons' settings (`SnapticIconsV1` without `arranged`). `SnapticIconsAppsV1` (bundle ids) is
     /// never written or read.
     package static let iconsSection = "icons"
-    package static let sections = [switcherSection, modulesSection, displaysSection, awakeSection, iconsSection]
+    /// 0.5 H10: Dock Previews' settings (`DockConfig`, every field). The privacy fields it shares with the switcher stay
+    /// in the `switcher` section (§4.10).
+    package static let dockSection = "dock"
+    package static let sections = [switcherSection, modulesSection, displaysSection, awakeSection, iconsSection,
+                                   dockSection]
 
     /// Sections whose backups are an allowlist (0.3 §3.6): only these paths (below the section, "*" = any one key)
     /// are written or read; everything else in the section (history, runtime state, salts, a newer Snaptic's fields)
@@ -59,6 +63,7 @@ package enum KitBackup {
             ["shortcuts"],
         ],
         iconsSection: IconsConfig.exportedKeys.map { [$0] },
+        dockSection: DockConfig.exportedKeys.map { [$0] },
     ]
 
     /// Keys removed at any depth inside one section (exact names). Awake: the salted router, Bluetooth and USB
@@ -99,6 +104,8 @@ package enum KitBackup {
     /// (current entries first), so a backup can't unprotect an app from captures.
     package static let unionPaths: [[String]] = [
         [displaysSection, "pip", "protectedBundlePrefixes"],
+        // 0.5 §4.10: the protected apps both the switcher and Dock Previews read (D2-1).
+        [switcherSection, "privateBundleIDs"],
     ]
 
     /// Changes the import preview lists first and in full ("*" = any one key; a pattern
@@ -136,6 +143,13 @@ package enum KitBackup {
         [iconsSection, "shortcut"],
         [iconsSection, "otherHiders"],
         [iconsSection, "showDuringCapture"],
+        // 0.5 §4.10, H10: protecting private windows (shared by the switcher and Dock Previews); Dock click actions,
+        // the keys tap, running alongside another Dock preview tool, and previews while VoiceOver is on.
+        [switcherSection, "protectPrivateWindows"],
+        [dockSection, "clickActions"],
+        [dockSection, "keys"],
+        [dockSection, "runAlongsideOtherTools"],
+        [dockSection, "showWithVoiceOver"],
     ]
 
     /// Keys removed at any depth (case-insensitive substrings): the DisplayKey salt, DDC
@@ -298,6 +312,31 @@ package enum KitBackup {
               let merged = merge(current: before, imported: overlay, section: iconsSection),
               var decoded = try? JSONDecoder().decode(IconsConfig.self, from: merged) else { return nil }
         decoded.arranged = current.arranged
+        return decoded.sanitized()
+    }
+
+    // MARK: Dock Previews (0.5 H10)
+
+    /// The `dock` section of an export: every setting, through the allowlist.
+    package static func dockSectionData(_ config: DockConfig) -> Data? {
+        guard let data = try? JSONEncoder().encode(config.sanitized()),
+              let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        let stripped = strip(object, section: dockSection)
+        guard JSONSerialization.isValidJSONObject(stripped) else { return nil }
+        return try? JSONSerialization.data(withJSONObject: stripped, options: [.sortedKeys])
+    }
+
+    /// The Dock Previews settings an import of the `dock` section results in: stripped again, laid over `current`,
+    /// decoded lossily and sanitized. Nil when the result isn't usable.
+    package static func importDock(current: DockConfig, imported: Data) -> DockConfig? {
+        guard nestingDepth(imported, limit: maxDepth) != nil,
+              let object = try? JSONSerialization.jsonObject(with: imported), object is [String: Any] else { return nil }
+        let stripped = strip(object, section: dockSection)
+        guard JSONSerialization.isValidJSONObject(stripped),
+              let overlay = try? JSONSerialization.data(withJSONObject: stripped, options: [.sortedKeys]),
+              let before = try? JSONEncoder().encode(current),
+              let merged = merge(current: before, imported: overlay, section: dockSection),
+              let decoded = try? JSONDecoder().decode(DockConfig.self, from: merged) else { return nil }
         return decoded.sanitized()
     }
 

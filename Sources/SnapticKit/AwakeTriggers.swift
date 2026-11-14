@@ -651,12 +651,12 @@ extension AwakeTrigger {
         let s = AwakeMath.clamp(seconds, delayRange)
         if s == 0 { return L("None") }
         if s % 3_600 == 0 {
-            return AwakeCountdown.unit(s / 3_600, titleCase ? L("Hour") : L("hour"), titleCase ? L("Hours") : L("hours"))
+            return SentenceText.unit(s / 3_600, titleCase ? L("Hour") : L("hour"), titleCase ? L("Hours") : L("hours"))
         }
         if s % 60 == 0 {
-            return AwakeCountdown.unit(s / 60, titleCase ? L("Minute") : L("minute"), titleCase ? L("Minutes") : L("minutes"))
+            return SentenceText.unit(s / 60, titleCase ? L("Minute") : L("minute"), titleCase ? L("Minutes") : L("minutes"))
         }
-        return AwakeCountdown.unit(s, titleCase ? L("Second") : L("second"), titleCase ? L("Seconds") : L("seconds"))
+        return SentenceText.unit(s, titleCase ? L("Second") : L("second"), titleCase ? L("Seconds") : L("seconds"))
     }
 
     /// A new rule from the editor's + : one condition, or the default display condition.

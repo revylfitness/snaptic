@@ -425,6 +425,13 @@ final class MenuLayoutTests: XCTestCase {
             XCTAssertEqual(p.shared.contains(.hiddenIcons),
                            live.contains(.hiddenIcons) && c.presence(.hiddenIcons) != .hidden)
             if live.contains(.hiddenIcons) { XCTAssertFalse(p.everythingHidden) }
+            // 0.5 K5: Dock Previews never has an icon of its own whatever is stored (H1), and joins the Snaptic
+            // item exactly when it runs (its only presence is Show in Snaptic Menu; Don't Show hides its section).
+            XCTAssertFalse(p.ownIcon.contains(.dockPreviews))
+            XCTAssertFalse(c.ownIconIDs(running: running, displaysActive: displaysActive).contains(.dockPreviews))
+            XCTAssertFalse(p.custom.contains(.dockPreviews))
+            XCTAssertEqual(p.shared.contains(.dockPreviews),
+                           live.contains(.dockPreviews) && c.effectivePresence(.dockPreviews) == .inSnapticMenu)
             XCTAssertTrue(p.custom.allSatisfy { $0 == .awake } && Set(p.custom).isSubset(of: live))
             XCTAssertEqual(p.awakeCompactInShared, p.shared.contains(.awake))
             XCTAssertEqual(p.noModulesEnabled, c.enabledModules.isEmpty)
@@ -537,5 +544,77 @@ final class MenuLayoutTests: XCTestCase {
     func testHiddenIconsNotRunningIsInNoList() {
         let p = plan(withIcons(.inSnapticMenu), running: [.windowSwitcher, .displays, .awake])
         XCTAssertFalse(p.shared.contains(.hiddenIcons))
+    }
+    // MARK: Dock Previews (0.5 K5)
+
+    private func withDock(_ presence: MenuPresence = .inSnapticMenu, base: ModulesConfig = ModulesConfig())
+        -> ModulesConfig {
+        var c = base
+        c.modules[.dockPreviews] = ModulePreferences(enabled: true, presence: presence)
+        return c
+    }
+
+    func testDockPreviewsIsOffByDefaultAndChangesNothing() {
+        XCTAssertFalse(ModulesConfig().isEnabled(.dockPreviews))
+        let p = plan(ModulesConfig())
+        XCTAssertFalse(p.shared.contains(.dockPreviews))
+        XCTAssertEqual(p.shared, [.windowSwitcher, .displays, .awake])
+    }
+
+    func testDockPreviewsJoinsTheSnapticItemAsTheFifthTab() {
+        var c = withDock()
+        c.modules[.hiddenIcons] = ModulePreferences(enabled: true, presence: .inSnapticMenu)
+        let p = plan(c)
+        XCTAssertEqual(p.shared, [.windowSwitcher, .displays, .awake, .hiddenIcons, .dockPreviews])
+        XCTAssertEqual(p.ownIcon, [])
+        XCTAssertEqual(MenuTabs.tabs(plan: p), p.shared)
+        XCTAssertEqual(MenuTabs.tabs(plan: p).count, 5)
+    }
+
+    func testDockPreviewsShortTitle() {
+        XCTAssertEqual(ModuleID.dockPreviews.shortTitle, "Dock")
+        XCTAssertEqual(ModuleID.allCases.map(\.shortTitle), ["Switcher", "Displays", "Awake", "Icons", "Dock"])
+    }
+
+    /// H1: whatever is stored, Dock Previews never gets an icon of its own; an own-icon value reads as its fallback.
+    func testDockPreviewsNeverHasAnOwnIconEvenUnsanitized() {
+        for raw in [MenuPresence.ownIcon, .ownIconWhenActive] {
+            let c = withDock(raw)
+            XCTAssertNotEqual(c.effectivePresence(.dockPreviews), raw, "\(raw)")
+            for displaysActive in [false, true] {
+                XCTAssertFalse(c.ownIconIDs(running: all, displaysActive: displaysActive).contains(.dockPreviews),
+                               "\(raw)")
+                let p = plan(c, displaysActive: displaysActive)
+                XCTAssertFalse(p.ownIcon.contains(.dockPreviews), "\(raw)")
+                XCTAssertFalse(p.custom.contains(.dockPreviews), "\(raw)")
+            }
+            XCTAssertEqual(plan(c), plan(c.sanitized()), "\(raw)")
+        }
+        // Alone with every other module on its own icon: Dock Previews is the one section, without tabs.
+        let alone = withDock(base: config(switcher: .ownIcon, displays: .ownIcon, awake: .ownIcon))
+        let p = plan(alone)
+        XCTAssertEqual(p.shared, [.dockPreviews])
+        XCTAssertEqual(MenuTabs.tabs(plan: p), [])
+        XCTAssertEqual(p.ownIcon, [.windowSwitcher, .displays])
+    }
+
+    /// §4.19: Dock Previews alone and Don't Show hides every Snaptic icon, and there's no shortcut to fall back on.
+    func testEverythingHiddenWithDockPreviewsAloneHasNoShortcuts() {
+        let alone = withDock(.hidden, base: config(enabled: []))
+        XCTAssertEqual(alone.enabledModules, [.dockPreviews])
+        XCTAssertTrue(plan(alone).everythingHidden)
+        XCTAssertTrue(alone.everythingHiddenWithoutShortcuts)
+        // Shown in the Snaptic menu: the one section, so nothing is hidden.
+        XCTAssertFalse(plan(withDock(base: config(enabled: []))).everythingHidden)
+        // With another module hidden too, that module's shortcuts still work.
+        let both = withDock(.hidden, base: config(switcher: .hidden, enabled: [.windowSwitcher]))
+        XCTAssertTrue(plan(both).everythingHidden)
+        XCTAssertFalse(both.everythingHiddenWithoutShortcuts)
+    }
+
+    func testDockPreviewsNotRunningIsInNoList() {
+        let p = plan(withDock(), running: [.windowSwitcher, .displays, .awake])
+        XCTAssertFalse(p.shared.contains(.dockPreviews))
+        XCTAssertFalse(p.ownIcon.contains(.dockPreviews))
     }
 }

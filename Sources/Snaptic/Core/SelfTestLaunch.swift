@@ -5,7 +5,9 @@ import SnapticKit
 /// the host the way the app does (ModuleHost: stores, migrations, modules) and checks the updater gate, without
 /// starting a module or a run loop, and without touching a TCC-guarded API (R5.5). It also runs `startUpdater()`: with
 /// the gate closed it can't reach Sparkle; with it open (the signed app) it creates Sparkle's updater, whose first
-/// update cycle is dispatched to the main queue, which never runs here, so nothing is checked or scheduled.
+/// update cycle is dispatched to the main queue, which never runs here, so nothing is checked or scheduled. A DEBUG
+/// build also starts Dock Previews once with a Safe Mode context, after the `dock live` line; that start creates
+/// nothing (0.5 A6a, G3-5).
 ///
 /// ModuleHost's init writes the user's settings (migrations, the first-run modules value), so this takes the instance
 /// lock first (never beside a running Snaptic) and puts Snaptic's whole defaults domain back afterwards.
@@ -69,6 +71,11 @@ enum SelfTestLaunch {
         // 0.4 A1: building the modules creates no Hidden Icons item; only start() does.
         report.append("selftest-launch: icons items \(IconsItems.liveCount)")
         if IconsItems.liveCount != 0 { problems.append("IconsModule created \(IconsItems.liveCount) status items before start()") }
+        // 0.5 §4.22 (A1a, A6a): building the modules takes no WindowServices lease and creates no Dock observer, tap,
+        // panel or timer; only start() does.
+        let leases = WindowServices.shared.liveLeases
+        report.append(DockPreviewsModule.live.launchLine(leases: leases))
+        problems += DockPreviewsModule.live.launchProblems(leases: leases)
 
         // 0.4 H8: the Native shim's encodings, without activating an assertion or touching Accessibility.
         let shim = PrivateMenuBarAPI.verify()
@@ -81,6 +88,32 @@ enum SelfTestLaunch {
         let forced = PrivateMenuBarAPI.forcePoisonForSelfTest()
         problems += IconsShimContract.poisonProblems(poisoned: forced.poisoned, available: forced.available)
         report.append("selftest-launch: icons shim poison path " + (forced.poisoned && !forced.available ? "ok" : "failed"))
+        // 0.5 A6a (G3-5, P3-2): Dock Previews in Safe Mode is paused and creates nothing. Its verbs are checked by
+        // `--selftest-controls` (A9).
+        if let probe = host.debugDockSafeModeProbe() {
+            let (line, found) = dockSafeModeCheck(probe)
+            report.append(line)
+            problems += found
+        } else {
+            problems.append("the Dock Previews Safe Mode probe didn't run")
+        }
+        #endif
+
+        // 0.5 B1b (PLAN §4.12): one line per window symbol from the lookups, the gate, the image check, the crash
+        // guard and the kill switches, then secure input. No private call and no Accessibility request runs here.
+        problems += PrivateWindowAPI.tableProblems()
+        let windowReports = PrivateWindowAPI.launchReports()
+        let secureInput = PrivateWindowAPI.secureInputState
+        report += WindowSymbolContract.launchLines(windowReports, secureInput: secureInput)
+        problems += WindowSymbolContract.selfTestProblems(
+            windowReports, secureInput: secureInput,
+            expect: ProcessInfo.processInfo.environment[WindowSymbolContract.expectVariable])
+        #if DEBUG
+        // The poison path. Every window symbol stays poisoned for the rest of this process; nothing after this uses one.
+        let poisonedReports = PrivateWindowAPI.forcePoisonForSelfTest()
+        let poisonProblems = WindowSymbolContract.poisonProblems(poisonedReports)
+        problems += poisonProblems
+        report.append(WindowSymbolContract.poisonLine(poisonProblems))
         #endif
 
         // The gate `UpdaterController.make()` uses (r1 C6, C8). When it is closed, `startUpdater()` runs for real (no
@@ -123,4 +156,43 @@ enum SelfTestLaunch {
         }
         return (problems, report)
     }
+
+    #if DEBUG
+    /// `selftest-launch: dock safe mode state=paused observer=no leases=0 captures=0`, and what's wrong with it.
+    @MainActor private static func dockSafeModeCheck(
+        _ probe: (state: ModuleState, diagnostics: [String], liveLeases: Int)
+    ) -> (line: String, problems: [String]) {
+        let rows = probe.diagnostics.compactMap(HostReport.row)
+        func value(_ label: String) -> String { rows.first { $0.label == label }?.value ?? "missing" }
+        let observer = value("Observer attached")
+        let leases = value("Leases")
+        let captures = value("Captures")
+        let state: String
+        switch probe.state {
+        case .stopped: state = "stopped"
+        case .running: state = "running"
+        case .degraded(let reason): state = reason == L("Paused in Safe Mode") ? "paused" : "degraded"
+        }
+        var problems: [String] = []
+        if probe.state != .degraded(L("Paused in Safe Mode")) {
+            problems.append("Dock Previews in Safe Mode is \(state), not paused")
+        }
+        if observer != "no" { problems.append("Dock Previews in Safe Mode reports its observer as \(observer)") }
+        if leases != "0" || probe.liveLeases != 0 {
+            problems.append("Dock Previews in Safe Mode holds a lease (\(leases), \(probe.liveLeases) live)")
+        }
+        if captures != "0" { problems.append("Dock Previews in Safe Mode reports \(captures) captures") }
+        // A6b, M33: the pause reason and the capture symbol read safeMode.
+        if value("Pause reason") != "safeMode" {
+            problems.append("Dock Previews in Safe Mode reports pause reason \(value("Pause reason"))")
+        }
+        if !value("hwCapture").hasPrefix("safeMode") {
+            problems.append("Dock Previews in Safe Mode reports hwCapture \(value("hwCapture"))")
+        }
+        if !DockPreviewsModule.live.isBalanced { problems.append("Dock Previews in Safe Mode created something") }
+        let line = "selftest-launch: dock safe mode state=\(state) observer=\(observer) leases=\(leases) "
+            + "captures=\(captures)"
+        return (line, problems)
+    }
+    #endif
 }

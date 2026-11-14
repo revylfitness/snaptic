@@ -54,23 +54,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lockRetry?.invalidate()
         lockRetry = nil
 
-        // 4. Give back ⌘⇥ if a previous run died holding it.
-        SystemHotkeys.recoverFromPreviousRun()
+        // 3b. Window symbols' crash markers (PLAN 0.5 §4.12 step 6): a marker from this macOS build, left by a run
+        // that didn't quit cleanly, stops that symbol on this build. Read before step 5 records this launch.
+        let previousHistory = KitLaunchStability.decode(
+            ConfigStore<ModulesConfig>.persistentData(forKey: LaunchStability.key))
+        InflightMarkers.atLaunch(previousRunCleanQuit: CrashGuard.previousRunCleanQuit(previousHistory))
+        PrivateWindowAPI.reloadGuards()
+        // 4. Give back ⌘⇥ if a previous run died holding it (or keep the list for Try Again, X3-2).
+        SystemHotkeys.atLaunch()
         // 5. Launch stability; 6. Safe Mode.
         let unstable = LaunchStability.evaluate()
         safeMode = SafeMode.detect(argument: launch.safeMode, unstableLaunches: unstable)
         if safeMode.isActive { EventLog.shared.record(.safety, "Started in Safe Mode") }
+        // PLAN 0.5 §4.13 (A2b): no private window capture this run, the probe included.
+        PrivateWindowAPI.setSafeMode(safeMode.isActive)
         // 7. Undo unfinished display changes from a previous run (runs in Safe Mode too).
         let recovery = RevertJournal.recoverAtLaunch(safeMode: safeMode)
         if let message = recovery.message { toasts.show(message) }
         // Sleep left off by an earlier lid-closed session (0.3.1 B3.4): whatever Awake's state, also in Safe Mode.
         lidLaunch = LidRecovery.atLaunch(safeMode: safeMode)
         // 8. Signals: give ⌘⇥ back and run emergency actions even if main is hung.
+        PrivateWindowAPI.prepareForSignals()
         handleTerminationSignals()
         // 9. Heartbeat (also the hang guard's beat) and helper preparation.
         HotkeyGuard.shared.start()
         HostHeartbeat.shared.start {
             if HotkeyGuard.shared.beat() { SystemHotkeys.reassert() }
+            SystemHotkeys.heartbeat()
         }
         // Helpers' code identity and canary run off main; modules start once that finished
         // (a few milliseconds), so their first helper spawn doesn't fail as "still
@@ -218,7 +228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Handled off the main thread, so ⌘⇥ comes back even if Snaptic is hung.
             let source = DispatchSource.makeSignalSource(signal: sig, queue: .global(qos: .userInitiated))
             source.setEventHandler {
-                HotkeyGuard.shared.releaseAll()
+                HotkeyGuard.shared.releaseAllFromSignal()
                 EmergencyActions.shared.runAll()
                 DispatchQueue.main.async { NSApp.terminate(nil) }
                 DispatchQueue.global().asyncAfter(deadline: .now() + 3) { exit(0) }

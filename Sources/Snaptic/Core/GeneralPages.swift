@@ -252,6 +252,7 @@ private struct NewModuleCardView: View {
         case .awake: return L("New: Awake")
         case .awakeMigrated: return L("Your display sleep setting moved to Awake.")
         case .hiddenIcons: return L("New: Hidden Icons")
+        case .dockPreviews: return L("New: Dock Previews")
         }
     }
 
@@ -261,6 +262,7 @@ private struct NewModuleCardView: View {
         case .awake: return L("Keep your Mac awake for a while, or whenever you choose.")
         case .awakeMigrated: return L("Awake now keeps your Mac awake while the displays you chose are connected.")
         case .hiddenIcons: return L("Hide the menu bar icons you don’t need behind an arrow, and open them from the Snaptic menu.")
+        case .dockPreviews: return L("See an app’s windows when you point at it in the Dock, and click one to bring it forward.")
         }
     }
 
@@ -270,6 +272,7 @@ private struct NewModuleCardView: View {
         case .awake: return L("Turn On Awake")
         case .awakeMigrated: return L("Show Awake")
         case .hiddenIcons: return L("Turn On Hidden Icons")
+        case .dockPreviews: return L("Turn On Dock Previews")
         }
     }
 

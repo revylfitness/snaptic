@@ -461,7 +461,7 @@ done
     /// (clamped to 10–50).
     package static func promptText(floor: Int) -> String {
         let f = AwakeMath.clamp(floor, floorRange)
-        let hours = AwakeCountdown.unit(capSeconds / 3_600, L("hour"), L("hours"))
+        let hours = SentenceText.unit(capSeconds / 3_600, L("hour"), L("hours"))
         return L("Snaptic wants to keep your Mac awake with the lid closed for up to ") + hours
             + L(". Sleep turns back on when the session ends, when Snaptic quits, at \(f)% battery, or if your Mac gets hot. Enter an administrator password to allow this.")
     }

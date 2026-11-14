@@ -193,7 +193,8 @@ final class IconsControlsTests: XCTestCase {
         #"New: Hidden Icons"#,
         #"Hide the menu bar icons you don’t need behind an arrow, and open them from the Snaptic menu."#,
         #"Turn On Hidden Icons"#,
-        #"A window switcher, display controls, Keep Awake, and hidden menu bar icons, in your menu bar. "#
+        // 0.5 §4.20 (A8; H7, P3-9): the welcome text now names Dock previews too.
+        #"A window switcher, display controls, Keep Awake, hidden menu bar icons, and Dock previews. "#
             + #"Turn on only what you want; everything else stays off."#,
         #"Arrange Your Icons"#,
         #"Nothing hides until you click the arrow for the first time."#,

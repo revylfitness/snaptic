@@ -76,7 +76,7 @@ struct AwakeAdvancedSheet: View, ControlDeclaring {
                 PickerSetting(L("Stop appearing active after"),
                               help: L("Counts from when Awake starts appearing active, also across back-to-back sessions."),
                               selection: SettingsBinding.store(env.config, \.activity.stopAfterHours),
-                              options: [1, 2, 4, 8].map { PickerOption($0, AwakeCountdown.unit($0, L("Hour"), L("Hours"))) },
+                              options: [1, 2, 4, 8].map { PickerOption($0, SentenceText.unit($0, L("Hour"), L("Hours"))) },
                               style: .popUp, defaultValue: AwakeActivityConfig().stopAfterHours,
                               anchor: ControlID("awake.advanced.stopAfter"), subordinate: true)
             }
@@ -137,7 +137,7 @@ struct AwakeAdvancedSheet: View, ControlDeclaring {
     private var lockedOptions: [PickerOption<Int?>] {
         var out: [PickerOption<Int?>] = [PickerOption(nil, L("Never"))]
         for hours in AwakeBehavior.lockedHoursChoices {
-            out.append(PickerOption(hours, AwakeCountdown.unit(hours, L("Hour"), L("Hours"))))
+            out.append(PickerOption(hours, SentenceText.unit(hours, L("Hour"), L("Hours"))))
         }
         return out
     }

@@ -210,7 +210,7 @@ final class ConfigIconsTests: XCTestCase {
     // MARK: Backup (H7)
 
     func testIconsIsABackupSection() {
-        XCTAssertEqual(KitBackup.sections, ["switcher", "modules", "displays", "awake", "icons"])
+        XCTAssertEqual(KitBackup.sections, ["switcher", "modules", "displays", "awake", "icons", "dock"])
         XCTAssertEqual(KitBackup.iconsSection, "icons")
         XCTAssertNotNil(KitBackup.allowedPaths["icons"])
     }

@@ -22,6 +22,9 @@ import SnapticShims
 /// `snaptic awake …` command line, both `awake hold` forms included, through the client's parsing and the real
 /// `ControlCommandRegistry.dispatch` to probe handlers that parse with `AwakeCommandGrammar`, and checks the exit
 /// codes, `holding`, which handler got the connection's hold, the host's verb rules, the shared 1/s window and help.
+/// Then (0.5 §4.21, A9) the real `DockCLI` on a Dock Previews module started in Safe Mode (P3-2) and on a stand-in in
+/// each §4.17 row: the verb × state table, every exit-5 refusal, the pause and resume sequences and M43; and (§4.10)
+/// that no Restore Defaults resets `protectPrivateWindows` or `privateBundleIDs`. No engine starts (§4.22).
 ///
 /// `--selftest-control-server <token-file>` (0.3 R5-5, token-gated): no modules, only a `ControlServer` with a test
 /// registry on SNAPTIC_SELFTEST_SOCKET (under the token file's directory). Before it says `listening` it checks both
@@ -95,7 +98,15 @@ enum SelfTest {
         let icons = runBounded(iconsVerbProblems)
         say("selftest-controls: \(KitControl.iconsVerbRules.count) Icons verbs, \(iconsCases.count) command lines\n")
         for problem in icons { say("selftest: icons verbs: " + problem + "\n") }
-        exit(problems.isEmpty && menu.isEmpty && awake.isEmpty && icons.isEmpty ? 0 : 1)
+        let dock = runBounded(dockVerbProblems)
+        say("selftest-controls: \(KitControl.dockVerbRules.count) Dock verbs, \(dockCaseCount) command lines in Safe "
+            + "Mode, \(DockCommandGrammar.table.count) rows\n")
+        for problem in dock { say("selftest: dock verbs: " + problem + "\n") }
+        let privacy = privacyRestoreProblems()
+        say("selftest-controls: \(privacyRestores.count) Restore Defaults keep the shared privacy settings\n")
+        for problem in privacy { say("selftest: privacy: " + problem + "\n") }
+        exit(problems.isEmpty && menu.isEmpty && awake.isEmpty && icons.isEmpty && dock.isEmpty && privacy.isEmpty
+             ? 0 : 1)
     }
 
     // MARK: Awake verbs (0.3 §2.10, §3.1)
@@ -345,6 +356,398 @@ enum SelfTest {
             if response.exitCode != ControlExit.usage || !response.output.hasPrefix(L("Unknown command.")) {
                 problems.append("icons \(verb) with the module off: exit \(response.exitCode)")
             }
+        }
+        return problems
+    }
+
+    // MARK: Dock verbs (0.5 §4.21, A9)
+
+    /// A command line and the exact reply the real `DockCLI` gives on a Dock Previews module started in Safe Mode
+    /// (P3-2, M31): `status` answers the Safe Mode pause, `pause` and `resume` refuse (exit 5), misuse is exit 2.
+    private struct DockCase {
+        let words: [String]
+        let exit: Int32
+        let output: String
+
+        init(_ words: [String], exit: Int32 = ControlExit.ok, _ output: String) {
+            self.words = words
+            self.exit = exit
+            self.output = output
+        }
+    }
+
+    /// `status` is Kit's status for the module's facts with nothing created: no cache, no observer, every counter 0.
+    @MainActor private static func dockCases(status: DockStatusFacts) -> [DockCase] {
+        let line = DockCommandGrammar.statusLine(status)
+        let json = DockCommandGrammar.statusJSON(status)
+        let refused = DockCLIRefusal.safeMode.message { PermissionFlow.paneName($0) }
+        let five = DockCLIRefusal.safeMode.exitCode
+        let usage = DockCommandGrammar.usage
+        let unknown = L("Unknown command. Run “snaptic help” for the list.")
+        return [
+            DockCase(["dock", "status"], line),
+            DockCase(["DOCK", "Status"], line),
+            DockCase(["dock", "status", "--json"], json),
+            DockCase(["--json", "dock", "status"], json),
+            DockCase(["dock", "pause"], exit: five, refused),
+            DockCase(["dock", "pause", "30m"], exit: five, refused),
+            DockCase(["dock", "pause", "1h30m"], exit: five, refused),
+            DockCase(["dock", "pause", "90"], exit: five, refused),
+            DockCase(["--json", "dock", "pause"], exit: five, refused),
+            DockCase(["dock", "resume"], exit: five, refused),
+            DockCase(["dock", "pause", "on"], exit: ControlExit.refused,
+                     L("From the command line this can only be turned off.")),
+            DockCase(["dock", "pause", "25h"], exit: ControlExit.usage, usage),
+            DockCase(["dock", "pause", "0"], exit: ControlExit.usage, usage),
+            DockCase(["dock", "pause", "forever"], exit: ControlExit.usage, usage),
+            DockCase(["dock", "pause", "idle"], exit: ControlExit.usage, usage),
+            DockCase(["dock", "pause", "until", "5:30", "pm"], exit: ControlExit.usage, usage),
+            DockCase(["dock", "status", "--all"], exit: ControlExit.usage, usage),
+            DockCase(["dock", "resume", "now"], exit: ControlExit.usage, usage),
+            DockCase(["dock"], exit: ControlExit.usage, unknown),
+            DockCase(["dock", "stop"], exit: ControlExit.usage, unknown),
+        ]
+    }
+
+    /// `runControls` runs on the main thread, as `runBounded` does.
+    private static var dockCaseCount: Int {
+        MainActor.assumeIsolated { dockCases(status: DockStatusFacts(state: .paused, reason: .safeMode)).count }
+    }
+
+    /// The real `DockCLI`, with no engine started (§4.22) and no grant read (R5.5):
+    /// - on a `DockPreviewsModule` started in Safe Mode (P3-2), as `--selftest-launch`'s probe starts one: the verbs are
+    ///   registered with the host's rules, answer `dockCases`, are in help and go when the module stops (rows 1, 2);
+    /// - on a stand-in target in each §4.17 row (Kit `DockPageFacts.reaching`) whose command pause is a real
+    ///   `DockPauseSources` that never starts: the §4.21 verb × state table, every exit-5 refusal, the pause and resume
+    ///   sequences, and M43 (a pause held while Accessibility is revoked).
+    @MainActor private static func dockVerbProblems() async -> [String] {
+        let peer = ControlPeer(pid: getpid(), uid: getuid(), startTime: SNProcess.startTime(for: getpid()))
+        var problems = await dockSafeModeProblems(peer: peer)
+        problems += await dockTableProblems(peer: peer)
+        problems += await dockSequenceProblems(peer: peer)
+        if !DockPreviewsModule.live.isBalanced { problems.append("a Dock Previews live counter isn't 0 at the end") }
+        return problems
+    }
+
+    @MainActor private static func dockSafeModeProblems(peer: ControlPeer) async -> [String] {
+        let lifetime = Lifetime()
+        defer { lifetime.end() }
+        let registry = ControlCommandRegistry()
+        let relauncher = Relauncher()
+        let context = ModuleContext(
+            safeMode: SafeModeState(isActive: true, reason: L("Started with --safe-mode.")), hotkeys: GlobalHotkeys(),
+            commands: registry, toasts: ToastPresenter(),
+            permissions: PermissionFlow(relauncher: relauncher, readsGrants: false), spawner: HelperSpawner(),
+            relauncher: relauncher, otherApps: OtherAppsMonitor(), lifetime: lifetime.child(), requestMenuRebuild: {},
+            hostSignals: HostSignals())
+        // A key nothing else uses; nothing is written (the module doesn't change its settings).
+        let store = ConfigStore<DockConfig>(key: "SnapticSelftestDockV1")
+        let module = DockPreviewsModule(config: store)
+        module.start(context)
+        var problems: [String] = []
+        if !DockPreviewsModule.live.isBalanced { problems.append("Safe Mode created something") }
+        if Set(DockCommandGrammar.verbs.map { "dock " + $0.verb }) != Set(KitControl.dockVerbRules.map(\.verb)) {
+            problems.append("DockCommandGrammar's verbs aren't KitControl.dockVerbRules'")
+        }
+        for rule in KitControl.dockVerbRules {
+            guard let entry = registry.entry(rule.verb) else {
+                problems.append(rule.verb + " isn't registered in Safe Mode")
+                continue
+            }
+            if entry.policy != rule.policy || entry.offOnly != rule.offOnly || entry.holds || !entry.cliAllowed {
+                problems.append(rule.verb + ": the host's rules weren't applied")
+            }
+        }
+        let facts = module.pageFacts()
+        if DockPageRules.row(facts) != .safeMode { problems.append("Safe Mode is row \(DockPageRules.row(facts))") }
+        // Nothing is created in Safe Mode, so the cache, the observer and every live counter are 0.
+        guard let status = DockPauseRules.status(facts, keysOn: store.value.keys, killed: [],
+                                                 clickBreakerTripped: facts.clickBreakerTripped,
+                                                 keysBreakerTripped: facts.keysBreakerTripped, cacheEntries: 0,
+                                                 cacheBytes: 0, observerAttached: false, live: DockStatusLiveCounts())
+        else {
+            module.stop()
+            return problems + ["Safe Mode has no status"]
+        }
+        let line = DockCommandGrammar.statusLine(status)
+        if !line.hasPrefix("state=paused reason=safeMode until=- ") { problems.append("Safe Mode's status is " + line) }
+        for item in dockCases(status: status) {
+            problems += await dockExpect(item.words, exit: item.exit, item.output, registry: registry, peer: peer)
+        }
+        let json = await dispatch(["dock", "status", "--json"], registry: registry, peer: peer)
+        problems += dockJSONProblems(json.output, "Safe Mode", state: .paused, reason: .safeMode, until: nil)
+        let help = await dispatch(["help"], registry: registry, peer: peer)
+        let topic = await dispatch(["help", "dock"], registry: registry, peer: peer)
+        for (verb, summary) in DockCommandGrammar.verbs {
+            let offOnly = KitControl.verbRule("dock " + verb)?.offOnly == true ? L(" (off only)") : ""
+            for (name, page) in [("help", help), ("help dock", topic)]
+            where page.exitCode != ControlExit.ok || !page.output.contains("  dock " + verb)
+                || !page.output.contains(summary + offOnly) {
+                problems.append(name + " doesn't list dock " + verb)
+            }
+        }
+        // §4.21: an off module (rows 1 and 2) registers nothing, so every verb is the house "Unknown command".
+        module.stop()
+        let unknown = L("Unknown command. Run “snaptic help” for the list.")
+        for words in [["dock", "status"], ["dock", "status", "--json"], ["dock", "pause"], ["dock", "resume"]] {
+            problems += await dockExpect(words, exit: ControlExit.usage, unknown, registry: registry, peer: peer)
+        }
+        problems += await dockExpect(["help", "dock"], exit: ControlExit.notFound, L("No such command."),
+                                     registry: registry, peer: peer)
+        return problems
+    }
+
+    /// Every row × held or not × `status`, `status --json`, `pause 30m` and `resume`, each from a fresh state, against
+    /// `DockCommandGrammar.table`. Row 8 always holds a pause and row 9 never does (a held pause makes row 8 apply).
+    @MainActor private static func dockTableProblems(peer: ControlPeer) async -> [String] {
+        let lifetime = Lifetime()
+        defer { lifetime.end() }
+        let registry = ControlCommandRegistry()
+        let target = DockRowTarget()
+        let cli = DockCLI(target: target)
+        cli.registerVerbs(on: registry, lifetime: lifetime)
+        var problems: [String] = []
+        for cells in DockCommandGrammar.table {
+            for held in [false, true] where held ? cells.row != .working : cells.row != .pausedByCommand {
+                problems += await dockCellProblems(cells, held: held, target: target, registry: registry, peer: peer)
+            }
+        }
+        cli.stop()
+        target.sources.stop()
+        if DockPreviewsModule.live[.timers] != 0 { problems.append("the table walk left a pause timer") }
+        return problems
+    }
+
+    @MainActor private static func dockCellProblems(_ cells: DockVerbCells, held: Bool, target: DockRowTarget,
+                                                    registry: ControlCommandRegistry, peer: ControlPeer) async
+        -> [String] {
+        let name = "row \(cells.row)" + (held ? " with a pause held" : "")
+        let unknown = L("Unknown command. Run “snaptic help” for the list.")
+        /// The row, and a fresh 1-hour pause when one is held; its end (nil when none is).
+        func reset() -> Double? {
+            target.base = .reaching(cells.row)
+            _ = target.sources.resume()
+            if held { _ = target.sources.pause(seconds: 3_600) }
+            return target.sources.commandPause?.untilUnix
+        }
+        var problems: [String] = []
+        let end = reset()
+        let row = DockPageRules.row(target.pageFacts(killSwitch: false, enabled: true))
+        if row != cells.row { return [name + ": the facts reach row \(row)"] }
+
+        let status = await dispatch(["dock", "status"], registry: registry, peer: peer)
+        let json = await dispatch(["--json", "dock", "status"], registry: registry, peer: peer)
+        switch cells.status {
+        case .unknownCommand:
+            for response in [status, json] where response.exitCode != ControlExit.usage || response.output != unknown {
+                problems.append(name + ": status exit \(response.exitCode) “\(response.output)”")
+            }
+        case .answers(let state, let reason):
+            let until = end.flatMap(AwakeCommandGrammar.isoUTC)
+            let prefix = "state=\(state.rawValue) reason=\(reason?.rawValue ?? "-") until=\(until ?? "-") "
+            if status.exitCode != ControlExit.ok || !status.output.hasPrefix(prefix) {
+                problems.append(name + ": status exit \(status.exitCode) “\(status.output)”, expected “\(prefix)…”")
+            }
+            problems += dockJSONProblems(json.output, name, state: state, reason: reason, until: until)
+        }
+
+        let pauseFrom = reset()
+        let now = Date().timeIntervalSince1970
+        let pause = await dispatch(["dock", "pause", "30m"], registry: registry, peer: peer)
+        let pauseTo = target.sources.commandPause?.untilUnix
+        switch cells.pause {
+        case .unknownCommand, .refused:
+            let refusal: DockCLIRefusal? = if case .refused(let r) = cells.pause { r } else { nil }
+            let expected = refusal.map { $0.message { PermissionFlow.paneName($0) } } ?? unknown
+            let exit = refusal?.exitCode ?? ControlExit.usage
+            if pause.exitCode != exit || pause.output != expected {
+                problems.append(name + ": pause 30m exit \(pause.exitCode) “\(pause.output)”, expected \(exit) “\(expected)”")
+            }
+            if pauseTo != pauseFrom { problems.append(name + ": a refused pause changed the held one") }
+        case .pauses:
+            guard let pauseTo else {
+                problems.append(name + ": pause 30m held nothing")
+                break
+            }
+            let expected = DockCommandGrammar.pausedReply(until: pauseTo) ?? ""
+            if pause.exitCode != ControlExit.ok || pause.output != expected {
+                problems.append(name + ": pause 30m exit \(pause.exitCode) “\(pause.output)”, expected “\(expected)”")
+            }
+            // G2-12: 30 minutes never shortens the held hour; with none held it ends 30 minutes from now.
+            if let pauseFrom, pauseTo != pauseFrom {
+                problems.append(name + ": pause 30m moved the held end by \(pauseTo - pauseFrom) s")
+            } else if pauseFrom == nil, abs(pauseTo - now - 1_800) > 5 {
+                problems.append(name + ": pause 30m ended \(pauseTo - now) s from now")
+            }
+        }
+
+        let resumeFrom = reset()
+        let cell = held ? cells.resumeHeld : cells.resume
+        let resume = await dispatch(["dock", "resume"], registry: registry, peer: peer)
+        let resumeTo = target.sources.commandPause?.untilUnix
+        let expected: (exit: Int32, output: String)
+        switch cell {
+        case .unknownCommand: expected = (ControlExit.usage, unknown)
+        case .refused(let refusal): expected = (refusal.exitCode, refusal.message { PermissionFlow.paneName($0) })
+        case .onAgain, .cleared, .notPaused: expected = (ControlExit.ok, DockCommandGrammar.resumeReply(cell) ?? "")
+        }
+        if resume.exitCode != expected.exit || resume.output != expected.output {
+            problems.append(name + ": resume exit \(resume.exitCode) “\(resume.output)”, expected \(expected.exit) "
+                            + "“\(expected.output)”")
+        }
+        if resumeTo != (cell.clearsPause ? nil : resumeFrom) {
+            problems.append(name + ": resume " + (resumeTo == nil ? "cleared" : "kept") + " the held pause")
+        }
+        return problems
+    }
+
+    /// `pause`, `pause 30m` (keeps the end), `pause 2h` (a later end extends it), `resume`, `resume` while not paused;
+    /// then M43: a pause held while Accessibility is revoked shows in `status`, `pause` refuses, `resume` clears it.
+    @MainActor private static func dockSequenceProblems(peer: ControlPeer) async -> [String] {
+        let lifetime = Lifetime()
+        defer { lifetime.end() }
+        let registry = ControlCommandRegistry()
+        let target = DockRowTarget()
+        let cli = DockCLI(target: target)
+        cli.registerVerbs(on: registry, lifetime: lifetime)
+        var problems: [String] = []
+        func end() -> Double? { target.sources.commandPause?.untilUnix }
+        func reply(_ until: Double?) -> String { until.flatMap(DockCommandGrammar.pausedReply) ?? "" }
+        func status(_ prefix: String) async -> [String] {
+            let response = await dispatch(["dock", "status"], registry: registry, peer: peer)
+            guard response.exitCode != ControlExit.ok || !response.output.hasPrefix(prefix) else { return [] }
+            return ["status “\(response.output)”, expected “\(prefix)…”"]
+        }
+        func pause(_ words: [String], seconds: Double, keeps: Double? = nil) async -> [String] {
+            let now = Date().timeIntervalSince1970
+            let response = await dispatch(["dock", "pause"] + words, registry: registry, peer: peer)
+            let line = (["dock", "pause"] + words).joined(separator: " ")
+            guard let until = end() else { return [line + ": held nothing (exit \(response.exitCode))"] }
+            var found: [String] = []
+            if response.exitCode != ControlExit.ok || response.output != reply(until) {
+                found.append("\(line): exit \(response.exitCode) “\(response.output)”, expected “\(reply(until))”")
+            }
+            if let keeps, until != keeps { found.append(line + ": moved the held end, which was later") }
+            if keeps == nil, abs(until - now - seconds) > 5 { found.append("\(line): ended \(until - now) s from now") }
+            return found
+        }
+        let iso = { (until: Double?) in until.flatMap(AwakeCommandGrammar.isoUTC) ?? "-" }
+        let resumeLine = { (cell: DockResumeCell) in DockCommandGrammar.resumeReply(cell) ?? "" }
+
+        problems += await status("state=on reason=- until=- ")
+        problems += await pause([], seconds: Double(DockCommandGrammar.defaultPauseSeconds))
+        let first = end()
+        problems += await status("state=paused reason=command until=\(iso(first)) ")
+        problems += await pause(["30m"], seconds: 1_800, keeps: first)
+        problems += await pause(["2h"], seconds: 7_200)
+        if let first, let later = end(), later <= first { problems.append("pause 2h didn't extend the held end") }
+        problems += await dockExpect(["dock", "resume"], resumeLine(.onAgain), registry: registry, peer: peer)
+        if end() != nil { problems.append("resume kept the held pause") }
+        problems += await status("state=on reason=- until=- ")
+        problems += await dockExpect(["dock", "resume"], resumeLine(.notPaused), registry: registry, peer: peer)
+
+        // M43 (G3-1): pause, then Accessibility is revoked (row 4).
+        problems += await pause(["5m"], seconds: 300)
+        let held = end()
+        target.base = .reaching(.needsPermission)
+        problems += await status("state=needsPermission reason=- until=\(iso(held)) ")
+        let needs = DockCLIRefusal.needsPermission
+        problems += await dockExpect(["dock", "pause"], exit: needs.exitCode,
+                                     needs.message { PermissionFlow.paneName($0) }, registry: registry, peer: peer)
+        if end() != held { problems.append("M43: a refused pause changed the held one") }
+        problems += await dockExpect(["dock", "resume"], resumeLine(.cleared), registry: registry, peer: peer)
+        if end() != nil { problems.append("M43: resume kept the held pause") }
+        problems += await dockExpect(["dock", "resume"], resumeLine(.notPaused), registry: registry, peer: peer)
+        target.base = .reaching(.working)
+        problems += await status("state=on reason=- until=- ")
+
+        cli.stop()
+        let unknown = L("Unknown command. Run “snaptic help” for the list.")
+        for (verb, _) in DockCommandGrammar.verbs {
+            problems += await dockExpect(["dock", verb], exit: ControlExit.usage, unknown, registry: registry, peer: peer)
+        }
+        target.sources.stop()
+        if DockPreviewsModule.live[.timers] != 0 { problems.append("the sequences left a pause timer") }
+        return problems
+    }
+
+    /// One command line and its exact reply; a problem when either differs.
+    @MainActor private static func dockExpect(_ words: [String], exit: Int32 = ControlExit.ok, _ output: String,
+                                              registry: ControlCommandRegistry, peer: ControlPeer) async -> [String] {
+        let response = await dispatch(words, registry: registry, peer: peer)
+        guard response.exitCode != exit || response.output != output else { return [] }
+        return ["\(words.joined(separator: " ")): exit \(response.exitCode) “\(response.output)”, expected \(exit) "
+                + "“\(output)”"]
+    }
+
+    /// `status --json`'s keys, in §4.21's order, then the row's state and reason, `until` as given and the six live
+    /// counters.
+    private static func dockJSONProblems(_ text: String, _ name: String, state: DockCLIState, reason: DockCLIReason?,
+                                         until: String?) -> [String] {
+        let keys = ["state", "reason", "until", "thumbnails", "clickActions", "keys", "cacheEntries", "cacheBytes",
+                    "observerAttached", "live"]
+        let liveKeys: Set<String> = ["observer", "clickTap", "keys", "panel", "timers", "leases"]
+        guard let object = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] else {
+            return [name + ": status --json isn't one JSON object: " + text]
+        }
+        var problems: [String] = []
+        // The first `"keys":` is the top-level one: `live` comes last.
+        let offsets = keys.compactMap { text.range(of: "\"\($0)\":")?.lowerBound }
+        if Set(object.keys) != Set(keys) || offsets.count != keys.count || offsets != offsets.sorted() {
+            problems.append(name + ": status --json keys are " + object.keys.sorted().joined(separator: ","))
+        }
+        if object["state"] as? String != state.rawValue || object["reason"] as? String != reason?.rawValue
+            || object["until"] as? String != until {
+            problems.append(name + ": status --json is " + text)
+        }
+        if let live = object["live"] as? [String: Any], Set(live.keys) == liveKeys {} else {
+            problems.append(name + ": status --json's live counters are " + text)
+        }
+        return problems
+    }
+
+    // MARK: Shared privacy settings (0.5 §4.10, A7)
+
+    /// Every Restore Defaults that must keep `protectPrivateWindows` and `privateBundleIDs`: the Dock page's and the
+    /// Dock sheet's (their keys are Dock Previews' own), and the switcher sheet's (`Config.restoringDefaults()`).
+    private static let privacyRestores = ["dock.page.restore", "dock.advanced.restore", "switcher.advanced.restoreDefaults"]
+
+    /// Pure, so nothing is saved: neither Dock Previews restore can reach the two fields (no Dock restore declares
+    /// them, and `DockConfig` has no such path: they live in the switcher's `Config`), and the switcher's keeps both,
+    /// on and with a custom list, while everything else goes back to its default.
+    private static func privacyRestoreProblems() -> [String] {
+        let privacy: Set<String> = ["protectPrivateWindows", "privateBundleIDs"]
+        let specs = ControlRegistry.tables.flatMap { $0.controls }
+        var problems: [String] = []
+        for id in privacyRestores {
+            guard let spec = specs.first(where: { $0.id.rawValue == id }) else {
+                problems.append(id + " isn't in the control tables")
+                continue
+            }
+            let reached = Set(spec.keys).intersection(privacy)
+            if !reached.isEmpty { problems.append(id + " restores " + reached.sorted().joined(separator: ", ")) }
+            if id.hasPrefix("dock."), !Set(spec.keys).isSubset(of: DockConfig.exportedKeys) {
+                problems.append(id + " names keys outside Dock Previews' settings")
+            }
+        }
+        let dockFields = Set(KitKeyPaths.paths(DockConfig()).map { String($0.split(separator: ".").first ?? "") })
+        if !dockFields.isDisjoint(with: privacy) { problems.append("DockConfig has a shared privacy field") }
+        let fresh = Config()
+        for (protect, apps) in [(true, Config.defaultPrivateApps + ["com.example.private"]),
+                                (true, ["com.example.private"]), (false, ["com.example.private"])] {
+            var config = Config()
+            config.protectPrivateWindows = protect
+            config.privateBundleIDs = apps
+            config.excludedBundleIDs = ["com.example.excluded"]
+            config.passthroughBundleIDs = ["com.example.passthrough"]
+            let restored = config.restoringDefaults()
+            if restored.protectPrivateWindows != protect || restored.privateBundleIDs != apps {
+                problems.append("the switcher's Restore Defaults changed protect \(protect) with \(apps.count) apps")
+            }
+            var rest = restored
+            rest.protectPrivateWindows = fresh.protectPrivateWindows
+            rest.privateBundleIDs = fresh.privateBundleIDs
+            if rest != fresh { problems.append("the switcher's Restore Defaults left another setting changed") }
         }
         return problems
     }
@@ -904,3 +1307,27 @@ private final class HoldClientResult: @unchecked Sendable {
     }
 }
 
+
+/// `--selftest-controls`' stand-in for a Dock Previews module in any §4.17 row (0.5 A9): Kit's facts for the row, with
+/// the command pause of a real `DockPauseSources` that never starts (no observer; only its pause timer, counted in
+/// `DockLive.timers`). Nothing is created, read from the Dock or asked of TCC (§4.22, R5.5).
+@MainActor private final class DockRowTarget: DockCLITarget {
+    var base = DockPageFacts.reaching(.working)
+    let sources = DockPauseSources()
+
+    /// The row's facts as they are; the arguments are the module's (the CLI always asks for an on module's).
+    func pageFacts(killSwitch: Bool, enabled: Bool) -> DockPageFacts {
+        var facts = base
+        facts.commandPause = sources.commandPause
+        return facts
+    }
+
+    func statusFacts() -> DockStatusFacts? {
+        DockPauseRules.status(pageFacts(killSwitch: false, enabled: true), keysOn: true, killed: [], cacheEntries: 0,
+                              cacheBytes: 0, observerAttached: false, live: DockStatusLiveCounts())
+    }
+
+    func pauseByCommand(seconds: Int) -> Double? { sources.pause(seconds: seconds) }
+
+    func resumeCommandPause() -> Bool { sources.resume() }
+}

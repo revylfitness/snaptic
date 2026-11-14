@@ -122,6 +122,25 @@ enum ConfigFixtures {
         return c
     }
 
+    /// Every Dock Previews setting away from its default (0.5 K1).
+    static func fullDock() -> DockConfig {
+        var c = DockConfig()
+        c.delay = 0.6
+        c.cardSize = .large
+        c.thumbnails = false
+        c.includeMinimizedAndHidden = false
+        c.otherSpaces = false
+        c.clickActions = .minimizeWindows
+        c.restoreAllMinimized = true
+        c.sort = .title
+        c.keys = false
+        c.windowlessApps = false
+        c.runAlongsideOtherTools = true
+        c.showWithVoiceOver = true
+        c.hiddenBundleIDs = ["com.example.Hidden", "com.example.Other"]
+        return c
+    }
+
     static func fullAwake() -> AwakeConfig {
         var c = AwakeConfig()
         for f in AwakeFeature.allCases { c.features[f] = true }

@@ -80,7 +80,7 @@ package enum AwakeEndText {
         case .systemSleep: return L("your Mac went to sleep")
         case .userSwitch: return L("you switched users")
         case .lockedTooLong:
-            if let h = lockedHours { return L("the screen was locked for ") + AwakeCountdown.unit(h, L("hour"), L("hours")) }
+            if let h = lockedHours { return L("the screen was locked for ") + SentenceText.unit(h, L("hour"), L("hours")) }
             return L("the screen was locked too long")
         case .moduleStopped: return L("Awake was turned off")
         case .safeMode: return L("Snaptic restarted in Safe Mode")
@@ -308,10 +308,10 @@ package enum AwakeDetail {
         // The mode ended under a session that goes on: say so first (idle, `lines` shows it after the idle note).
         if !i.lidModeOn && i.governing.isActive, let ended = i.lidLastEnd { out.append(ended) }
         if case .manual(let s) = i.governing, case .untilIdle(let spec, _) = s.kind {
-            let quiet = AwakeCountdown.unit(max(1, spec.sanitized().quietSeconds / 60), L("min"), L("min"))
+            let quiet = SentenceText.unit(max(1, spec.sanitized().quietSeconds / 60), L("min"), L("min"))
             var line = L("Ends after ") + quiet + L(" with no activity")
             if let q = i.quietFor, q >= 60 {
-                line += L(" · quiet for ") + AwakeCountdown.unit(Int(min(q, 1e9) / 60), L("min"), L("min"))
+                line += L(" · quiet for ") + SentenceText.unit(Int(min(q, 1e9) / 60), L("min"), L("min"))
             }
             out.append(line)
         }
@@ -328,7 +328,7 @@ package enum AwakeDetail {
             if let paused = i.backgroundPaused {
                 out.append(paused)
             } else if i.activityCapped {
-                let span = AwakeCountdown.unit(max(1, i.stopAfterHours), L("hour"), L("hours"))
+                let span = SentenceText.unit(max(1, i.stopAfterHours), L("hour"), L("hours"))
                 out.append(L("Stopped appearing active after ") + span + ".")
             } else if i.activity == .nudge {
                 out.append(L("Moving the pointer"))
@@ -973,8 +973,8 @@ package enum AwakeLidText {
             + capSpan + L(". Use it on a hard surface, not in a bag.")
     }
 
-    /// "24 hours" (`AwakeCountdown.unit`).
-    package static var capSpan: String { AwakeCountdown.unit(LidWatchdog.capSeconds / 3_600, L("hour"), L("hours")) }
+    /// "24 hours" (`SentenceText.unit`).
+    package static var capSpan: String { SentenceText.unit(LidWatchdog.capSeconds / 3_600, L("hour"), L("hours")) }
 
     // MARK: Status (B1)
 

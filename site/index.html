@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Snaptic</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<meta name="description" content="Snaptic is a free, open-source window switcher, set of display utilities, keep-awake tool, and menu bar icon hider for Mac. Turn on only what you want.">
+<meta name="description" content="Snaptic is a free, open-source window switcher, set of display utilities, keep-awake tool, menu bar icon hider, and Dock previews for Mac. Turn on only what you want.">
 <meta property="og:title" content="Snaptic">
-<meta property="og:description" content="Every window. Every display. Awake on demand. A free, open-source window switcher, display toolkit, keep-awake tool, and menu bar icon hider for Mac.">
+<meta property="og:description" content="Every window. Every display. Awake on demand. A free, open-source window switcher, display toolkit, keep-awake tool, menu bar icon hider, and Dock previews for Mac.">
 <meta name="theme-color" content="#0d0d0f">
 <link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
@@ -699,7 +699,7 @@ footer .links a:hover { color: var(--ink); }
     <div class="wrap">
       <h2 class="huge"><span style="display:block">Settings that</span><span class="gray" style="display:block">explain themselves.</span></h2>
       <div class="keytable">
-        <div><span class="k"><span class="key wide-key">8</span></span><span><strong>Eight pages.</strong> General, Menu Bar, one page per module, Permissions, and About.</span></div>
+        <div><span class="k"><span class="key wide-key">9</span></span><span><strong>Nine pages.</strong> General, Menu Bar, one page per module, Permissions, and About.</span></div>
         <div><span class="k"><span class="key wide-key">Search</span></span><span><strong>Find anything.</strong> Search by name, even for settings in Advanced sheets.</span></div>
         <div><span class="k"><span class="key">?</span></span><span><strong>Every option explained.</strong> Each one says what it does, and (?) opens its section of the guide.</span></div>
         <div><span class="k"><span class="key wide-key">Menu</span></span><span><strong>Live menus.</strong> Sliders, values, and countdowns update while a menu is open. Each module picks its own place in the menu bar, and the shared menu gives each one a tab.</span></div>
@@ -725,17 +725,17 @@ footer .links a:hover { color: var(--ink); }
       <h2 class="huge"><span style="display:block">Use only</span><span class="gray" style="display:block">what you want.</span></h2>
       <p class="lede">Turn each tool on or off, then each feature inside it. Anything that’s off costs nothing: no background work, no helpers, and no permission prompts.</p>
       <div class="bento">
-        <div class="card span-3">
+        <div class="card span-2">
           <div class="art"><span class="switch" aria-hidden="true"></span></div>
           <h3>Window Switcher.</h3>
           <p>Every window, one keystroke away.</p>
         </div>
-        <div class="card span-3">
+        <div class="card span-2">
           <div class="art"><span class="switch" aria-hidden="true"></span></div>
           <h3>Displays.</h3>
           <p>Brightness, resolution, color, and more.</p>
         </div>
-        <div class="card span-3">
+        <div class="card span-2">
           <div class="art"><span class="switch" aria-hidden="true"></span></div>
           <h3>Awake.</h3>
           <p>Keeps your Mac awake when you choose.</p>
@@ -744,6 +744,11 @@ footer .links a:hover { color: var(--ink); }
           <div class="art"><span class="switch off" aria-hidden="true"></span></div>
           <h3>Hidden Icons.</h3>
           <p>Tucks menu bar icons behind an arrow. Off until you turn it on.</p>
+        </div>
+        <div class="card span-3">
+          <div class="art"><span class="switch off" aria-hidden="true"></span></div>
+          <h3>Dock Previews.</h3>
+          <p>Shows an app’s windows when you point at it in the Dock. Off until you turn it on.</p>
         </div>
       </div>
     </div>
@@ -783,7 +788,7 @@ INSTALL=1 ./scripts/build-app.sh</code></pre></div>
         </li>
         <li>
           <h3>Say yes.</h3>
-          <p>Snaptic asks only for what your features need: Accessibility for the switcher and media keys, and Screen Recording for thumbnails and Picture in Picture. Awake needs no permission unless you turn on its pointer movement, and Hidden Icons needs Accessibility only on macOS 27 or for its list of hidden icons.</p>
+          <p>Snaptic asks only for what your features need: Accessibility for the switcher, media keys, and Dock Previews, and Screen Recording for thumbnails and Picture in Picture. Awake needs no permission unless you turn on its pointer movement, and Hidden Icons needs Accessibility only on macOS 27 or for its list of hidden icons.</p>
           <div class="code"><div class="bar"><span>Terminal</span><button class="copy" type="button">Copy</button></div><pre><code>open /Applications/Snaptic.app</code></pre></div>
         </li>
       </ol>
@@ -794,9 +799,9 @@ INSTALL=1 ./scripts/build-app.sh</code></pre></div>
 <footer>
   <div class="wrap">
     <p class="made">Made with &lt;/3 by revyl fitness technology, Inc.</p>
-    <p>Snaptic is free, open-source software under the MIT license. It asks for Accessibility access for the window switcher, media keys, Awake’s optional pointer movement, and Hidden Icons on macOS 27 or its list of hidden icons, and Screen Recording access for thumbnails and Picture in Picture, only when those features are on. It connects only to GitHub to check for updates, and only if you allow it. No analytics.</p>
+    <p>Snaptic is free, open-source software under the MIT license. It asks for Accessibility access for the window switcher, media keys, Awake’s optional pointer movement, Hidden Icons on macOS 27 or its list of hidden icons, and Dock Previews, and Screen Recording access for thumbnails and Picture in Picture, only when those features are on. It connects only to GitHub to check for updates, and only if you allow it. No analytics.</p>
     <p>Snaptic is an independent project, not affiliated with or endorsed by Apple Inc. Mac and macOS are trademarks of Apple Inc. App names and window contents in the demo are fictional.</p>
-    <p>Snaptic isn’t affiliated with BetterDisplay, MonitorControl, Lunar, Amphetamine, Insomnia, Hidden Bar, Bartender, Ice, or Thaw. Hidden Icons follows Hidden Bar’s design in Snaptic’s own code.</p>
+    <p>Snaptic isn’t affiliated with BetterDisplay, MonitorControl, Lunar, Amphetamine, Insomnia, Hidden Bar, Bartender, Ice, Thaw, DockDoor, or HyperDock. Hidden Icons follows Hidden Bar’s design, and Dock Previews follows DockDoor’s, in Snaptic’s own code.</p>
     <div class="links">
       <a href="https://github.com/revylfitness/snaptic">Source code</a>
       <a href="https://github.com/revylfitness/snaptic/blob/main/docs/guide.md">Guide</a>

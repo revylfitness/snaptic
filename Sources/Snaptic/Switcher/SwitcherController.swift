@@ -27,7 +27,12 @@ final class SwitcherController {
     /// Created on first use, so a switcher with previews off never builds the panel.
     private var preview: PreviewOverlay?
 
-    private var active: Shortcut?
+    private var active: Shortcut? {
+        // §2.4 (X-14, X2-15): Dock Previews holds back, and its keys tap stays off, while a session is active.
+        didSet {
+            if (active == nil) != (oldValue == nil) { WindowServices.shared.setSwitcherSessionActive(active != nil) }
+        }
+    }
     /// Sticky = stay open after the modifier is released (search mode, "release to switch"
     /// turned off, or opened from the menu, 0.3 C8). Return switches, Esc cancels.
     private var sticky = false
@@ -52,6 +57,8 @@ final class SwitcherController {
     /// Keys whose keyDown we swallowed; only their keyUp is swallowed too.
     private var swallowedKeys = Set<Int>()
     private var hiResPreview: (id: CGWindowID, image: NSImage)?
+    /// When the panel last appeared, in `ThumbnailStore.now` seconds: captures start 150 ms later (0.5 §4.9).
+    private var visibleSince: Double = 0
 
     private var loadTask: Task<Void, Never>?
     private var showTask: Task<Void, Never>?
@@ -69,20 +76,21 @@ final class SwitcherController {
         switch type {
         case .keyDown:
             let code = Int(event.getIntegerValueField(.keyboardEventKeycode))
+            let iso = KeyCode.isISO(event)
             if let shortcut = active {
                 // The switch is decided and only waiting for the window list:
                 // let everything through except Esc and the shortcut key.
-                let isShortcutKey = KeyCode.matches(code, shortcutKey: shortcut.keyCode)
+                let isShortcutKey = KeyCode.matches(code, shortcutKey: shortcut.keyCode, iso: iso)
                     && event.flags.contains(shortcut.modifier.flag)
                 if pendingCommit, code != KeyCode.escape, !isShortcutKey {
                     swallowedKeys.remove(code)
                     return false
                 }
                 swallowedKeys.insert(code)
-                handleKeyWhileOpen(code: code, event: event, shortcut: shortcut)
+                handleKeyWhileOpen(code: code, event: event, shortcut: shortcut, iso: iso)
                 return true
             }
-            guard let shortcut = matchingShortcut(code: code, flags: event.flags),
+            guard let shortcut = matchingShortcut(code: code, flags: event.flags, iso: iso),
                   !frontmostAppKeepsShortcuts() else {
                 // Clears a stale entry left by a keyUp the tap never saw.
                 swallowedKeys.remove(code)
@@ -107,10 +115,12 @@ final class SwitcherController {
         }
     }
 
-    private func matchingShortcut(code: Int, flags: CGEventFlags) -> Shortcut? {
+    private func matchingShortcut(code: Int, flags: CGEventFlags, iso: Bool) -> Shortcut? {
         let primary: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl]
         let held = flags.intersection(primary)
-        return config.activeShortcuts.first { KeyCode.matches(code, shortcutKey: $0.keyCode) && held == $0.modifier.flag }
+        return config.activeShortcuts.first {
+            KeyCode.matches(code, shortcutKey: $0.keyCode, iso: iso) && held == $0.modifier.flag
+        }
     }
 
     /// Virtual machines and remote desktops get the keys instead of Snaptic
@@ -121,20 +131,20 @@ final class SwitcherController {
         return !config.passthroughOnlyWhenFullscreen || Screens.isFullscreen(pid: app.processIdentifier)
     }
 
-    private func handleKeyWhileOpen(code: Int, event: CGEvent, shortcut: Shortcut) {
+    private func handleKeyWhileOpen(code: Int, event: CGEvent, shortcut: Shortcut, iso: Bool) {
         lastInteraction = Date()
         let flags = event.flags
         let shift = flags.contains(.maskShift)
 
         // While searching, the shortcut's key only cycles with its modifier held,
         // so a shortcut like ⌥Space still lets you type a space.
-        if KeyCode.matches(code, shortcutKey: shortcut.keyCode),
+        if KeyCode.matches(code, shortcutKey: shortcut.keyCode, iso: iso),
            !model.searching || flags.contains(shortcut.modifier.flag) {
             move(shift ? -1 : 1)
             return
         }
         // Another Snaptic shortcut while open: switch to it.
-        if let other = matchingShortcut(code: code, flags: flags), other.id != shortcut.id {
+        if let other = matchingShortcut(code: code, flags: flags, iso: iso), other.id != shortcut.id {
             dismiss()
             open(other, reverse: shift)
             return
@@ -250,41 +260,42 @@ final class SwitcherController {
     private func finishLoading(_ list: WindowList, shortcut: Shortcut, reverse: Bool, keepSelection: Int? = nil) {
         var items = list.items.map { markPrivacy($0) }
 
+        // The cache refuses private windows (0.5 §4.10): a window that turned private loses every client's thumbnails.
+        ThumbnailStore.shared.forget(windowIDs: Set(items.filter { $0.isPrivate && $0.hasRealWindowID }.map(\.id)))
+        // The window you're in has likely changed since its last capture (§4.9 "unless it's dirty").
+        if let focused = list.focusedID { ThumbnailStore.shared.markDirty([focused]) }
         if config.isOn(.thumbnails) {
-            // Drop cached images of windows that closed or may no longer be captured.
-            ThumbnailStore.shared.prune(keeping: Set(items.filter { capturePermitted($0) }.map { $0.id }))
+            // Drop cached images of windows that closed or may no longer be captured. A minimized, hidden or
+            // other-Space window keeps its last-seen image (0.5 §2.3, D2-14).
+            ThumbnailStore.shared.prune(keeping: Set(items.filter { mayKeepThumbnail($0) }.map { $0.id }),
+                                        client: .windowSwitcher)
         }
-        if !config.isOn(.otherSpaces) {
-            items = items.filter { !$0.isOnOtherSpace }
-        }
-
+        let scope: CatalogScope
         switch shortcut.scope {
-        case .allWindows:
-            break
-        case .activeApp:
-            items = items.filter { $0.pid == list.frontPID }
+        case .allWindows: scope = .allWindows
+        case .activeApp: scope = .app(list.frontPID)
         case .currentScreen:
-            if let frame = screen?.frame {
-                items = items.filter {
-                    if $0.isWindowless { return true }
-                    let rect = Screens.cocoaRect(fromGlobal: $0.frame)
-                    return frame.contains(CGPoint(x: rect.midX, y: rect.midY))
-                }
-            }
+            scope = .screen(screen.map {
+                DockRect(x: $0.frame.minX, y: $0.frame.minY, width: $0.frame.width, height: $0.frame.height)
+            })
         }
+        let spaces: CatalogSpaces
         switch shortcut.spaces {
-        case .all:
-            break
-        case .current:
-            items = items.filter { !$0.isOnOtherSpace }
-        case .others:
-            items = items.filter { $0.isOnOtherSpace || $0.isWindowless }
+        case .all: spaces = .all
+        case .current: spaces = .current
+        case .others: spaces = .others
         }
-        if !shortcut.includeMinimized {
-            items = items.filter { !$0.isMinimized && !$0.isHidden }
-        }
+        // "No windows" entries are already left out by `loadWindows` when the shortcut or the setting says so.
+        let filter = CatalogFilter(otherSpaces: config.isOn(.otherSpaces), spaces: spaces,
+                                   minimizedAndHidden: shortcut.includeMinimized, windowless: true, scope: scope)
+        items = WindowCatalogRules.filter(items.map(\.catalog), filter).map { items[$0] }
         if shortcut.oneWindowPerApp {
-            items = groupedByApp(items)
+            // One entry per app: its most recent window, with a window count.
+            items = WindowCatalogRules.groupedByApp(items.map(\.catalog)).map { entry in
+                var item = items[entry.index]
+                item.groupedCount = entry.count
+                return item
+            }
         }
 
         model.load(items)
@@ -322,32 +333,23 @@ final class SwitcherController {
     /// and browser windows whose title can't be read are never captured, and
     /// their titles are never shown, searched or read aloud.
     private func markPrivacy(_ item: WindowItem) -> WindowItem {
-        guard config.protectPrivateWindows, !item.isWindowless else { return item }
         var item = item
-        if Config.bundleID(item.bundleID, matchesAny: config.privateBundleIDs) {
+        switch WindowCatalogRules.privacy(bundleID: item.bundleID, hasTitle: !item.title.isEmpty,
+                                          hasPrivateMarker: item.hasPrivateMarker, windowless: item.isWindowless,
+                                          protect: WindowServices.shared.protectPrivateWindows,
+                                          protectedApps: WindowServices.shared.protectedApps) {
+        case .none:
+            break
+        case .protectedApp:
             item.isPrivate = true
             item.title = ""            // shows the app name instead
-        } else if item.hasPrivateMarker {
+        case .privateMarker:
             item.isPrivate = true
             item.title = L("Private window")
-        } else if item.title.isEmpty, Config.isBrowser(item.bundleID) {
+        case .untitledBrowser:
             item.isPrivate = true
         }
         return item
-    }
-
-    /// One entry per app: its most recent window, with a window count.
-    private func groupedByApp(_ items: [WindowItem]) -> [WindowItem] {
-        var counts: [pid_t: Int] = [:]
-        for item in items where !item.isWindowless { counts[item.pid, default: 0] += 1 }
-        var seen = Set<pid_t>()
-        var result: [WindowItem] = []
-        for var item in items where !seen.contains(item.pid) {
-            seen.insert(item.pid)
-            item.groupedCount = counts[item.pid] ?? 1
-            result.append(item)
-        }
-        return result
     }
 
     private func present() {
@@ -356,6 +358,7 @@ final class SwitcherController {
         relayout()
         window.show()
         visible = true
+        visibleSince = ThumbnailStore.now
         if model.loaded {
             loadThumbnails()
             selectionChanged()
@@ -429,7 +432,7 @@ final class SwitcherController {
         watchdog = nil
         previewTask = nil
         removeDismissMonitors()
-        ThumbnailStore.shared.invalidate()
+        WindowCapture.shared.stop(client: .windowSwitcher)
         window.hide()
         preview?.hide()
         model.reset()
@@ -531,13 +534,32 @@ final class SwitcherController {
         )
     }
 
+    /// A real, visible window on this Space that isn't private: the shared capture rule's SCK path. `WindowCapture`
+    /// checks consent once per batch, and the owner and the protected list again on each capture. The full-size
+    /// preview takes only these: it's drawn where the window is.
     private func capturePermitted(_ item: WindowItem) -> Bool {
-        item.isCapturable
+        WindowCatalogRules.capturePath(item.catalog, gate: .switcherList) == .screenCaptureKit
     }
 
-    private var blockedBundleIDs: [String] {
-        config.protectPrivateWindows ? config.privateBundleIDs : []
+    /// The list's captures (A2b): the SCK path, and minimized and other-Space windows while the private path is open.
+    /// `WindowCapture` checks the private path's gates again on each capture.
+    private func listCapturePermitted(_ item: WindowItem, gate: CaptureGate) -> Bool {
+        switch WindowCatalogRules.capturePath(item.catalog, gate: gate) {
+        case .screenCaptureKit, .privateCapture: return true
+        case .lastSeen, .icon: return false
+        }
     }
+
+    /// A real window that isn't private, wherever it is: its cached image may stay as its last-seen thumbnail.
+    private func mayKeepThumbnail(_ item: WindowItem) -> Bool {
+        WindowCatalogRules.captureRefusal(item.catalog, gate: .switcherList) == nil
+    }
+
+    /// The switcher's pixel buckets (0.5 §4.9): the list's thumbnails and the full-size preview.
+    private static let listPixels: CGFloat = 640
+    private static let previewPixels: CGFloat = 2400
+
+    private var blockedBundleIDs: [String] { WindowServices.shared.captureBlockedBundleIDs }
 
     private func updatePreview() {
         previewTask?.cancel()
@@ -559,12 +581,16 @@ final class SwitcherController {
         }
 
         // Then swap in a sharp, full-resolution capture.
-        let target = CaptureTarget(id: item.id, pid: item.pid)
+        let target = CaptureTarget(window: item.catalog)
         let blocked = blockedBundleIDs
+        let since = visibleSince
         previewTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(90))
             guard !Task.isCancelled,
-                  let image = await ThumbnailStore.shared.captureForPreview(target, blockedBundleIDs: blocked, maxPixels: 2400),
+                  let image = await WindowCapture.shared.captureForPreview(target, client: .windowSwitcher,
+                                                                           maxPixels: Self.previewPixels,
+                                                                           visibleSince: since,
+                                                                           protectedBundleIDs: blocked),
                   !Task.isCancelled,
                   let self, self.visible,
                   let current = self.model.selected, current.id == target.id else { return }
@@ -575,19 +601,41 @@ final class SwitcherController {
 
     private func loadThumbnails() {
         guard config.isOn(.thumbnails) else { return }
-        let eligible = model.allItems.filter { capturePermitted($0) }
-        model.thumbnails = ThumbnailStore.shared.cached(eligible.map { $0.id })
+        // Consent once per batch, never requested. Found off, the store is purged and the cards show text (§2.5).
+        guard WindowCapture.shared.screenRecordingAllowed() else {
+            dropThumbnails()
+            return
+        }
+        // A minimized, hidden or other-Space window shows its last-seen thumbnail, with its badge (M5).
+        let kept = model.allItems.filter { mayKeepThumbnail($0) }
+        model.thumbnails = ThumbnailStore.shared.cached(kept.map { $0.id }, maxPixels: Self.listPixels,
+                                                        client: .windowSwitcher)
         guard let shortcut = active, config.effectiveStyle(shortcut) == .thumbnails else { return }
-        ThumbnailStore.shared.refresh(
-            eligible.map { CaptureTarget(id: $0.id, pid: $0.pid) },
-            blockedBundleIDs: blockedBundleIDs,
-            maxPixels: 640,
-            priority: model.selected?.id
+        // Minimized and other-Space windows are captured too while the private path is open (§4.9); a suspect or
+        // refused one keeps the last-seen thumbnail above, or the icon.
+        var gate = CaptureGate.switcherList
+        gate.privatePath = WindowCapture.privatePathOpen
+        WindowCapture.shared.refresh(
+            model.allItems.filter { listCapturePermitted($0, gate: gate) }.map { CaptureTarget(window: $0.catalog) },
+            client: .windowSwitcher,
+            maxPixels: Self.listPixels,
+            priority: model.selected?.id,
+            visibleSince: visibleSince,
+            protectedBundleIDs: blockedBundleIDs
         ) { [weak self] id, image in
             guard let self, self.active != nil else { return }
             self.model.thumbnails[id] = image
             if self.model.selected?.id == id { self.updatePreview() }
         }
+    }
+
+    /// Screen Recording was found off: no thumbnail or preview stays on screen, and the open panel goes on with text.
+    func dropThumbnails() {
+        previewTask?.cancel()
+        previewTask = nil
+        hiResPreview = nil
+        model.thumbnails = [:]
+        preview?.hide()
     }
 
     // MARK: Window actions (keys and hover buttons)

@@ -231,7 +231,7 @@ private struct PresetRow: View {
     private static var atMostOptions: [PickerOption<Int>] {
         var out: [PickerOption<Int>] = [PickerOption(0, L("No Limit"))]
         for hours in AwakePresetKind.atMostHours {
-            out.append(PickerOption(hours, AwakeCountdown.unit(hours, L("Hour"), L("Hours"))))
+            out.append(PickerOption(hours, SentenceText.unit(hours, L("Hour"), L("Hours"))))
         }
         return out
     }
