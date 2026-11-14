@@ -17,6 +17,12 @@ final class ConfigDockTests: XCTestCase {
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
     }
 
+    /// One JSON value as sorted-key bytes, so two values compare without `NSObject.isEqual` (not on Linux).
+    private func json(_ value: Any?) -> Data? {
+        guard let value else { return nil }
+        return try? JSONSerialization.data(withJSONObject: [value], options: .sortedKeys)
+    }
+
     // MARK: ModuleID and presence (H1)
 
     func testIDOrderAndRawValue() throws {
@@ -278,7 +284,8 @@ final class ConfigDockTests: XCTestCase {
         let fullObject = object(try JSONEncoder().encode(full))
         let plainObject = object(try JSONEncoder().encode(DockConfig()))
         for key in DockConfig.exportedKeys {
-            XCTAssertFalse((fullObject[key] as AnyObject).isEqual(plainObject[key]), key)
+            XCTAssertNotNil(fullObject[key], key)
+            XCTAssertNotEqual(json(fullObject[key]), json(plainObject[key]), key)
         }
     }
 

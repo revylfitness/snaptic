@@ -183,11 +183,16 @@ final class WindowCatalogRulesTests: XCTestCase {
         // S0-10: 24 layer-0 windows not on screen, not in AX, not minimized or hidden, from six apps, with no other
         // Space in existence; 20 untitled, one with alpha 0 (which one isn't recorded, so every position is tried).
         // Carried: that `SLSCopySpacesForWindows` really says "no Space" for them.
+        // A loop with typed locals: one `map` closure over these literals is too slow for the CI compilers to check.
         func fixture(spaceKnown: Bool?, transparent: Int) -> [CatalogWindow] {
-            (0..<24).map { i in
-                listOnly(UInt32(100 + i), pid: Int32(500 + i % 6), hasTitle: i < 4, spaceKnown: spaceKnown,
-                         alpha: i == transparent ? 0 : 1)
+            var windows: [CatalogWindow] = []
+            for i in 0..<24 {
+                let id = UInt32(100 + i)
+                let pid = Int32(500 + i % 6)
+                let alpha: Double = i == transparent ? 0 : 1
+                windows.append(listOnly(id, pid: pid, hasTitle: i < 4, spaceKnown: spaceKnown, alpha: alpha))
             }
+            return windows
         }
         func count(_ windows: [CatalogWindow], _ options: CatalogInclusion) -> Int {
             windows.filter { listed($0, options) }.count
