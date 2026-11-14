@@ -2337,3 +2337,10 @@ changed, and why.
 | A7 | Gap: §4.10's "`--selftest-controls` checks both on values" is left to A9's `dockCases` | It belongs with the CLI self-test cases |
 | A8 | Most of A8 was already in place: `dockCard.v1`, `insertingDockCard` and its tests (A6a/K1), the card's title, text and button (A1a/B1a), and the onboarding summary (A7). A8 wires `insertingDockCard` into `runMigrations` after the icons card, adds `host.dock` to onboarding's `needed` loop, and changes the welcome text | Only the wiring and the one string were left |
 | A8 | `IconsControlsTests`' welcome entry now holds the 0.5 text | The 0.4 string no longer exists, so the Icons canonical test would fail (H7; P3-9) |
+| A9 | `--selftest-controls` reaches each exit-5 refusal and every §4.21 table row through a stand-in `DockCLITarget` fed by Kit `DockPageFacts.reaching(row)`, not DEBUG hooks; the real module is exercised in Safe Mode | §4.22: the selftest starts no engine, so the rows can't be reached on the real module there |
+| A9 | Kit `DockCommandGrammar.step(_:facts:)` holds the verb × state table as one function, with `DockResumeCell.clearsPause` | The CLI and the selftest apply the same step |
+| A9 | `statusFacts` passes the breaker flags | Otherwise `clickActions=stopped` and `keys=stopped` could never show |
+| A9 | `PermissionFlow.state` and `refresh` honour `readsGrants: false` | R5.5: a self-test never asks macOS about permissions |
+| A9 | Each `dock` command writes one `.control` EventLog line (verb and exit code only) | `KitControl.counterKey` counts only Awake's verbs |
+| A9 | `Config.restoringDefaults()` keeps the two privacy fields; `AppSettings.reset()` and the selftest's §4.10 check both use it | Closes A7's gap: `--selftest-controls` checks both on values survive both Restore Defaults |
+| A9 | A6b's DEBUG `dock status` is gone; `DockCLI` registers on both start paths, Safe Mode included, and ends with the module | §4.21: registered in Starting and rows 3–9, never in rows 1 and 2 |

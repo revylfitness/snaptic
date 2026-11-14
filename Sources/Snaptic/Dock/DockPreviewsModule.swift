@@ -10,8 +10,10 @@ import SnapticKit
 /// - On, it holds a `WindowServices` lease with `.thumbnails` and `.otherSpaces` as its settings say, never `.recency`
 ///   (§2.3), plus `.freshness(pid)` for the app whose preview is shown (M32). The idle lease registers
 ///   notification-centre observers only.
-/// - In Safe Mode `start()` sets `.degraded("Paused in Safe Mode")` and returns: no observer, tap, panel, capture or
-///   lease (§4.13). The three `dock` verbs are A9's; a DEBUG build registers `dock status` until then (A6b).
+/// - In Safe Mode `start()` sets `.degraded("Paused in Safe Mode")`, registers the `dock` verbs and returns: no
+///   observer, tap, panel, capture or lease (§4.13).
+/// - A9: `DockCLI`'s three `dock` verbs are registered whenever the module is on (Safe Mode included) and end with
+///   `stop()` (§4.21). The module is their `DockCLITarget`.
 /// - A6b: another Dock preview tool, VoiceOver and `dock pause` pause it (`DockPauseSources`, Kit `DockPauseRules`).
 ///   The state stays `.running`. A pause takes the engine (lease, observer, controller) down, except VoiceOver's
 ///   while Dock click actions work (§4.11, §4.16). Each pause change is one EventLog line, enums only (§4.22).
@@ -21,7 +23,7 @@ import SnapticKit
 /// - A7: the Settings page (`DockPage`), the Snaptic menu section (`DockMenuRows`) and the attention mark, all from Kit
 ///   `DockPageRules` over `pageFacts()`. A change to the observer's read state, a permission, a stopped window
 ///   feature or a breaker rebuilds the menu; row 5's mark comes from a one-shot timer two minutes after it shows.
-@MainActor final class DockPreviewsModule: SnapticModule {
+@MainActor final class DockPreviewsModule: SnapticModule, DockCLITarget {
     let id: ModuleID = .dockPreviews
     let title = L("Dock Previews")
     let symbolName = "dock.rectangle"
@@ -58,6 +60,8 @@ import SnapticKit
     private var dockSelection: DockSelection?
     /// A7: fires when row 5's attention mark is due (X2-16), to rebuild the menu; counted in `.timers`.
     private var attentionTimer: Timer?
+    /// A9: `snaptic dock …`, registered from `start()` to `stop()`.
+    private lazy var cli = DockCLI(target: self)
 
     /// §4.14: Accessibility, plus Screen Recording while Window thumbnails is on.
     var requiredPermissions: Set<Permission> { config.value.requiredPermissions }
@@ -76,9 +80,7 @@ import SnapticKit
             // §4.13: paused in Safe Mode. Nothing is created.
             state = .degraded(L("Paused in Safe Mode"))
             pause = .safeMode
-            #if DEBUG
-            registerDebugStatus(context)
-            #endif
+            cli.registerVerbs(on: context.commands, lifetime: context.lifetime)   // A9 (P3-2)
             return
         }
         killSwitches = Self.readKillSwitches(defaults)
@@ -106,15 +108,14 @@ import SnapticKit
         EventLog.shared.record(.dock, "dock.started")
         // The engine starts here unless a pause holds already.
         syncPause()
-        #if DEBUG
-        registerDebugStatus(context)
-        #endif
+        cli.registerVerbs(on: context.commands, lifetime: context.lifetime)   // A9
         context.requestMenuRebuild()
     }
 
     func stop() {
         guard let context else { return }
         let wasRunning = state == .running
+        cli.stop()   // A9: rows 1 and 2 have no verbs
         sinks.removeAll()
         WindowServices.shared.observeSwitcherSession(id, nil)
         stopEngine()
@@ -216,7 +217,8 @@ import SnapticKit
     }
 
     /// A9's `dock pause` and the menu's Pause for 1 Hour: holds a command pause, never shortening one (G2-12).
-    /// Returns its end in Unix seconds; nil while the module doesn't run or is in Safe Mode. A9 checks the row first.
+    /// Returns its end in Unix seconds; nil while the module doesn't run or is in Safe Mode. `DockCLI` checks the row
+    /// first.
     @discardableResult
     func pauseByCommand(seconds: Int) -> Double? {
         pauseSources?.pause(seconds: seconds)
@@ -237,7 +239,7 @@ import SnapticKit
         let stopped = PrivateWindowAPI.stoppedFeatures()
         let shown = WindowStopRows.dockPage(crashGuard: stopped.crashGuard, poisoned: stopped.poisoned)
         return DockPageFacts(killSwitch: killSwitch, enabled: enabled, safeMode: pausedInSafeMode,
-                             accessibility: PermissionFlow.isGranted(.accessibility),
+                             accessibility: granted(.accessibility),
                              read: read.read, loginLadderEnded: read.ladderEnded, unreadableSince: read.unreadableSince,
                              now: ProcessInfo.processInfo.systemUptime,
                              runningBundleIDs: pauseSources?.runningToolIDs ?? [],
@@ -245,11 +247,18 @@ import SnapticKit
                              voiceOverOn: pauseSources?.voiceOverOn ?? false, showWithVoiceOver: value.showWithVoiceOver,
                              clickActionOn: value.clickActions != .doNothing, restoreAllOn: value.restoreAllMinimized,
                              commandPause: pauseSources?.commandPause, paneName: PermissionFlow.paneName(.accessibility),
-                             thumbnailsOn: value.thumbnails, screenRecording: PermissionFlow.isGranted(.screenRecording),
+                             thumbnailsOn: value.thumbnails, screenRecording: granted(.screenRecording),
                              clickBreakerTripped: Self.clickBreakerTripped,
                              keysBreakerTripped: Self.keysBreakerTripped,
                              crashGuardStops: shown.crashGuard.map(\.displayName),
                              poisoned: shown.poisoned.map(\.displayName))
+    }
+
+    /// A permission now: through the context's `PermissionFlow` while on (a self-test's never asks macOS, R5.5),
+    /// else macOS's answer.
+    private func granted(_ permission: Permission) -> Bool {
+        guard let context else { return PermissionFlow.isGranted(permission) }
+        return context.permissions.state(permission) == .granted
     }
 
     /// `dock status`'s facts (§4.21); nil while the module is off.
@@ -260,27 +269,13 @@ import SnapticKit
                                           panel: live[.panel], timers: live[.timers],
                                           leases: WindowServices.shared.liveLeases)
         return DockPauseRules.status(pageFacts(), keysOn: config.value.keys, killed: killSwitches,
+                                     clickBreakerTripped: Self.clickBreakerTripped,
+                                     keysBreakerTripped: Self.keysBreakerTripped,
                                      cacheEntries: ThumbnailStore.shared.liveEntries,
                                      cacheBytes: ThumbnailStore.shared.liveBytes,
                                      observerAttached: live[.observer] > 0 && observer?.stats.attached == true,
                                      live: counts)
     }
-
-    #if DEBUG
-    /// A6b's `dock status` until A9 registers the real verbs (§4.21); it ends with the module's lifetime.
-    private func registerDebugStatus(_ context: ModuleContext) {
-        let summary = DockCommandGrammar.verbs.first { $0.verb == "status" }?.summary ?? ""
-        context.commands.register("dock status", policy: .read, offOnly: false, cliAllowed: true, summary: summary,
-                                  lifetime: context.lifetime) { [weak self] request, _ in
-            guard case .status(let json)? = DockCommandGrammar.parse(verb: "status", args: request.arguments),
-                  let facts = self?.statusFacts() else {
-                return .failure(ControlExit.usage, DockCommandGrammar.usage)
-            }
-            return .ok(json || request.json ? DockCommandGrammar.statusJSON(facts)
-                                            : DockCommandGrammar.statusLine(facts))
-        }
-    }
-    #endif
 
     // MARK: Menu and Settings (A7; §4.17, §4.18, §4.19)
 

@@ -139,6 +139,26 @@ package struct DockVerbCells: Equatable, Sendable {
     package let resumeHeld: DockResumeCell
 }
 
+/// What A9's `DockCLI` does with one parsed command: the table's cell for the row, as an action. The app only applies
+/// it (holds or clears the command pause, formats the reply).
+package enum DockCLIStep: Equatable, Sendable {
+    /// Rows 1 and 2, where nothing is registered: the house "Unknown command" (exit 2).
+    case unknownCommand
+    /// The refusal's line, exit `ControlExit.unavailable`.
+    case refuse(DockCLIRefusal)
+    /// The status line, or its JSON.
+    case status(json: Bool)
+    /// Hold a command pause for `seconds` (never shortening one held), then answer `pausedReply(until:)`.
+    case pause(seconds: Int)
+    /// Clear the held pause when `cell.clearsPause`, then answer `resumeReply(cell)`, exit 0.
+    case resume(DockResumeCell)
+}
+
+extension DockResumeCell {
+    /// `resume` clears the held command pause: row 8, and a pause held under Starting, row 4 or row 5 (G3-1).
+    package var clearsPause: Bool { self == .onAgain || self == .cleared }
+}
+
 /// The §4.22 live counters `status --json` adds (A6a's `DockLive` and `WindowServices.liveLeases`).
 package struct DockStatusLiveCounts: Equatable, Sendable {
     package var observer: Int
@@ -260,6 +280,35 @@ package enum DockCommandGrammar {
         table.first { $0.row == row } ?? table[0]
     }
 
+    /// A9: what `command` does in `row`, with or without a held command pause. `status` never refuses; `resume`
+    /// reads the held cell only while a pause is held.
+    package static func step(_ command: DockCLICommand, row: DockPageRow, held: Bool) -> DockCLIStep {
+        let cells = cells(row)
+        switch command {
+        case .status(let json):
+            guard case .answers = cells.status else { return .unknownCommand }
+            return .status(json: json)
+        case .pause(let seconds):
+            switch cells.pause {
+            case .unknownCommand: return .unknownCommand
+            case .refused(let refusal): return .refuse(refusal)
+            case .pauses: return .pause(seconds: seconds)
+            }
+        case .resume:
+            let cell = held ? cells.resumeHeld : cells.resume
+            switch cell {
+            case .unknownCommand: return .unknownCommand
+            case .refused(let refusal): return .refuse(refusal)
+            case .onAgain, .cleared, .notPaused: return .resume(cell)
+            }
+        }
+    }
+
+    /// The same, for the module's facts now: §4.17's row (`DockPageRules.row`) and whether a command pause is held.
+    package static func step(_ command: DockCLICommand, facts: DockPageFacts) -> DockCLIStep {
+        step(command, row: DockPageRules.row(facts), held: facts.commandPause != nil)
+    }
+
     // MARK: Replies
 
     /// The pause's new end: the later of the held one and now + seconds, so a pause never shortens one already
@@ -326,4 +375,26 @@ package enum DockCommandGrammar {
     }
 
     private static func count(_ n: Int) -> Int { max(0, n) }
+}
+
+extension DockPageFacts {
+    /// Facts in which `DockPageRules.row` is `row`, for walking the verb × state table without starting the module
+    /// (`--selftest-controls` starts none, §4.22). `commandPause` is held under every row but Working, where a held
+    /// pause would make row 8 apply; row 8 holds one with no end when none is given.
+    package static func reaching(_ row: DockPageRow, commandPause: DockCommandPause? = nil) -> DockPageFacts {
+        var f = DockPageFacts(commandPause: commandPause)
+        switch row {
+        case .killSwitch: f.killSwitch = true
+        case .off: f.enabled = false
+        case .safeMode: f.safeMode = true
+        case .needsPermission: f.accessibility = false
+        case .starting: f.read = .starting
+        case .dockUnreadable: f.read = .unreadable
+        case .otherTool: f.runningBundleIDs = KnownDockTools.all.prefix(1).map(\.bundleID)
+        case .voiceOver: f.voiceOverOn = true
+        case .pausedByCommand: f.commandPause = commandPause ?? DockCommandPause(untilUnix: 0, clock: "")
+        case .working: f.commandPause = nil
+        }
+        return f
+    }
 }

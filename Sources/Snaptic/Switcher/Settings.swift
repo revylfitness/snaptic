@@ -328,6 +328,15 @@ struct Config: Codable, Equatable {
         guard isOn(.thumbnails) else { return false }
         return isOn(.preview) || shortcuts.contains { $0.style == .thumbnails }
     }
+
+    /// The defaults, keeping Protect private windows and its app list: Dock Previews uses them too (PLAN 0.5 §4.10).
+    /// `AppSettings.reset()`, and `--selftest-controls`' check of it.
+    func restoringDefaults() -> Config {
+        var fresh = Config()
+        fresh.protectPrivateWindows = protectPrivateWindows
+        fresh.privateBundleIDs = privateBundleIDs
+        return fresh
+    }
 }
 
 @MainActor
@@ -372,10 +381,7 @@ final class AppSettings: ObservableObject {
     /// app list stay: Dock Previews uses them too (PLAN 0.5 §4.10). Only Reset All Settings clears them, through
     /// `resetPrivacy()`.
     func reset() {
-        var fresh = Config()
-        fresh.protectPrivateWindows = config.protectPrivateWindows
-        fresh.privateBundleIDs = config.privateBundleIDs
-        config = fresh
+        config = config.restoringDefaults()
     }
 
     /// The shared privacy settings back to their defaults (General › Reset All Settings only; PLAN 0.5 §4.10).

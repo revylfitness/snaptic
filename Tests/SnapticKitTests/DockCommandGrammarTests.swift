@@ -174,6 +174,147 @@ final class DockCommandGrammarTests: XCTestCase {
         }
     }
 
+    // MARK: A9: the table as `DockCLI` applies it
+
+    func testReachingFactsReachEachRow() {
+        let held = DockCommandPause(untilUnix: example, clock: "8:45 PM")
+        for row in DockPageRow.allCases {
+            XCTAssertEqual(DockPageRules.row(.reaching(row)), row, row.rawValue)
+            // A held pause doesn't change the row (G3-1), except that it makes row 8 apply over Working.
+            XCTAssertEqual(DockPageRules.row(.reaching(row, commandPause: held)), row, row.rawValue)
+            XCTAssertEqual(DockPageFacts.reaching(row, commandPause: held).commandPause, row == .working ? nil : held)
+        }
+        XCTAssertNotNil(DockPageFacts.reaching(.pausedByCommand).commandPause)
+        XCTAssertNil(DockPageFacts.reaching(.working).commandPause)
+    }
+
+    /// Each cell of §4.21's verb × state table, as the step `DockCLI` takes: rows 1 and 2 are "Unknown command"
+    /// (nothing is registered), Safe Mode, another tool and VoiceOver refuse `pause` and `resume`, row 4 refuses only
+    /// `pause`, and `resume` clears a pause held under Starting, row 4 or row 5.
+    func testStepFollowsTheTable() {
+        typealias Steps = (status: DockCLIStep, pause: DockCLIStep, resume: DockCLIStep, resumeHeld: DockCLIStep)
+        let pause = DockCLIStep.pause(seconds: 1_800)
+        func refused(_ r: DockCLIRefusal) -> Steps { (.status(json: false), .refuse(r), .refuse(r), .refuse(r)) }
+        let expected: [DockPageRow: Steps] = [
+            .killSwitch: (.unknownCommand, .unknownCommand, .unknownCommand, .unknownCommand),
+            .off: (.unknownCommand, .unknownCommand, .unknownCommand, .unknownCommand),
+            .starting: (.status(json: false), pause, .resume(.notPaused), .resume(.cleared)),
+            .safeMode: refused(.safeMode),
+            .needsPermission: (.status(json: false), .refuse(.needsPermission), .resume(.notPaused), .resume(.cleared)),
+            .dockUnreadable: (.status(json: false), pause, .resume(.notPaused), .resume(.cleared)),
+            .otherTool: refused(.otherTool),
+            .voiceOver: refused(.voiceOver),
+            .pausedByCommand: (.status(json: false), pause, .resume(.onAgain), .resume(.onAgain)),
+            .working: (.status(json: false), pause, .resume(.notPaused), .resume(.notPaused)),
+        ]
+        XCTAssertEqual(expected.count, DockPageRow.allCases.count)
+        for row in DockPageRow.allCases {
+            guard let want = expected[row] else { continue }
+            for held in [false, true] {
+                let name = "\(row.rawValue) held=\(held)"
+                XCTAssertEqual(DockCommandGrammar.step(.status(json: false), row: row, held: held), want.status, name)
+                XCTAssertEqual(DockCommandGrammar.step(.pause(seconds: 1_800), row: row, held: held), want.pause, name)
+                XCTAssertEqual(DockCommandGrammar.step(.resume, row: row, held: held),
+                               held ? want.resumeHeld : want.resume, name)
+                let json = DockCommandGrammar.step(.status(json: true), row: row, held: held)
+                XCTAssertEqual(json, row.registersVerbs ? .status(json: true) : .unknownCommand, name)
+            }
+            // The facts form reads the row and the held pause from the facts.
+            let pauseHeld = DockCommandPause(untilUnix: example, clock: "")
+            for facts in [DockPageFacts.reaching(row), .reaching(row, commandPause: pauseHeld)] {
+                let held = facts.commandPause != nil
+                for command in [DockCLICommand.status(json: false), .pause(seconds: 1_800), .resume] {
+                    XCTAssertEqual(DockCommandGrammar.step(command, facts: facts),
+                                   DockCommandGrammar.step(command, row: row, held: held), row.rawValue)
+                }
+            }
+        }
+    }
+
+    func testClearsPause() {
+        XCTAssertTrue(DockResumeCell.onAgain.clearsPause)
+        XCTAssertTrue(DockResumeCell.cleared.clearsPause)
+        XCTAssertFalse(DockResumeCell.notPaused.clearsPause)
+        XCTAssertFalse(DockResumeCell.unknownCommand.clearsPause)
+        for r in DockCLIRefusal.allCases { XCTAssertFalse(DockResumeCell.refused(r).clearsPause) }
+        // Every cell `step` hands to `resume` has a reply.
+        for cell in [DockResumeCell.onAgain, .cleared, .notPaused] { XCTAssertNotNil(DockCommandGrammar.resumeReply(cell)) }
+    }
+
+    /// P3-2: in Safe Mode `status` answers paused, safeMode, with no end, and `pause` and `resume` refuse (exit 5).
+    func testSafeModeStatusAndRefusals() {
+        let facts = DockPageFacts.reaching(.safeMode)
+        guard let status = DockPauseRules.status(facts, keysOn: true, killed: [], cacheEntries: 0, cacheBytes: 0,
+                                                 observerAttached: false, live: DockStatusLiveCounts()) else {
+            return XCTFail("Safe Mode has a status")
+        }
+        XCTAssertTrue(DockCommandGrammar.statusLine(status).hasPrefix("state=paused reason=safeMode until=- "))
+        XCTAssertTrue(DockCommandGrammar.statusJSON(status)
+            .hasPrefix("{\"state\":\"paused\",\"reason\":\"safeMode\",\"until\":null,"))
+        XCTAssertEqual(DockCommandGrammar.step(.pause(seconds: 3_600), facts: facts), .refuse(.safeMode))
+        XCTAssertEqual(DockCommandGrammar.step(.resume, facts: facts), .refuse(.safeMode))
+        XCTAssertEqual(DockCLIRefusal.safeMode.exitCode, 5)
+        // Rows 1 and 2 have no status at all.
+        for row in [DockPageRow.killSwitch, .off] {
+            XCTAssertNil(DockPauseRules.status(.reaching(row), keysOn: true, killed: [], cacheEntries: 0, cacheBytes: 0,
+                                               observerAttached: false, live: DockStatusLiveCounts()))
+        }
+    }
+
+    /// The command-line sequences A9's `dockCases` run, on facts: `pause`, `pause 30m`, a later end that extends and
+    /// an earlier one that doesn't, `resume`, `resume` while not paused, and M43 (a pause held when Accessibility is
+    /// revoked: `status` shows its end, `pause` refuses, `resume` clears it).
+    func testPauseResumeSequences() {
+        var facts = DockPageFacts.reaching(.working)
+        var now = example
+        func apply(_ command: DockCLICommand) -> DockCLIStep {
+            let step = DockCommandGrammar.step(command, facts: facts)
+            switch step {
+            case .pause(let seconds):
+                let end = DockCommandGrammar.pauseEnd(current: facts.commandPause?.untilUnix, now: now, seconds: seconds)
+                facts.commandPause = DockCommandPause(untilUnix: end, clock: "")
+            case .resume(let cell) where cell.clearsPause:
+                facts.commandPause = nil
+            default:
+                break
+            }
+            return step
+        }
+        XCTAssertEqual(apply(.pause(seconds: DockCommandGrammar.defaultPauseSeconds)), .pause(seconds: 3_600))
+        XCTAssertEqual(facts.commandPause?.untilUnix, example + 3_600)
+        XCTAssertEqual(DockPageRules.row(facts), .pausedByCommand)
+        XCTAssertEqual(apply(.resume), .resume(.onAgain))
+        XCTAssertEqual(DockCommandGrammar.resumeReply(.onAgain), "Dock Previews is on again.")
+        XCTAssertEqual(DockPageRules.row(facts), .working)
+        XCTAssertEqual(apply(.resume), .resume(.notPaused))
+        XCTAssertEqual(DockCommandGrammar.resumeReply(.notPaused), "Dock Previews isn’t paused.")
+        XCTAssertEqual(apply(.pause(seconds: 1_800)), .pause(seconds: 1_800))
+        XCTAssertEqual(facts.commandPause?.untilUnix, example + 1_800)
+        now += 60
+        XCTAssertEqual(apply(.pause(seconds: 7_200)), .pause(seconds: 7_200))
+        XCTAssertEqual(facts.commandPause?.untilUnix, example + 60 + 7_200, "a later end extends")
+        XCTAssertEqual(apply(.pause(seconds: 1_800)), .pause(seconds: 1_800))
+        XCTAssertEqual(facts.commandPause?.untilUnix, example + 60 + 7_200, "an earlier end doesn't shorten it")
+        // M43: Accessibility is revoked with the pause held.
+        facts.accessibility = false
+        XCTAssertEqual(DockPageRules.row(facts), .needsPermission)
+        XCTAssertEqual(DockPageRules.cli(facts)?.state, .needsPermission)
+        XCTAssertEqual(DockPageRules.cli(facts)?.until, AwakeCommandGrammar.isoUTC(example + 60 + 7_200))
+        XCTAssertEqual(apply(.pause(seconds: 1_800)), .refuse(.needsPermission))
+        XCTAssertEqual(apply(.resume), .resume(.cleared))
+        XCTAssertEqual(DockCommandGrammar.resumeReply(.cleared), "Dock Previews’ pause is cleared.")
+        XCTAssertNil(facts.commandPause)
+        XCTAssertNil(DockPageRules.cli(facts)?.until)
+        XCTAssertEqual(apply(.resume), .resume(.notPaused))
+        // Another tool and VoiceOver refuse both, and keep a held pause.
+        for row in [DockPageRow.otherTool, .voiceOver] {
+            facts = .reaching(row, commandPause: DockCommandPause(untilUnix: example, clock: ""))
+            XCTAssertEqual(apply(.resume), .refuse(row == .otherTool ? .otherTool : .voiceOver))
+            XCTAssertEqual(apply(.pause(seconds: 60)), .refuse(row == .otherTool ? .otherTool : .voiceOver))
+            XCTAssertEqual(facts.commandPause?.untilUnix, example)
+        }
+    }
+
     func testSeededParseNeverTraps() {
         var rng = SeededGenerator(seed: 0xD0C_5E)
         let words = ["status", "pause", "resume", "--json", "30m", "1h30m", "90", "24h", "25h", "0", "forever",

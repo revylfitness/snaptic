@@ -88,7 +88,8 @@ enum SelfTestLaunch {
         let forced = PrivateMenuBarAPI.forcePoisonForSelfTest()
         problems += IconsShimContract.poisonProblems(poisoned: forced.poisoned, available: forced.available)
         report.append("selftest-launch: icons shim poison path " + (forced.poisoned && !forced.available ? "ok" : "failed"))
-        // 0.5 A6a (G3-5, P3-2): Dock Previews in Safe Mode is paused and creates nothing. The verbs are A9's.
+        // 0.5 A6a (G3-5, P3-2): Dock Previews in Safe Mode is paused and creates nothing. Its verbs are checked by
+        // `--selftest-controls` (A9).
         if let probe = host.debugDockSafeModeProbe() {
             let (line, found) = dockSafeModeCheck(probe)
             report.append(line)

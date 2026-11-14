@@ -701,3 +701,4 @@ Tests/SnapticKitTests/DockPanelHitTests.swift	lead	L	-	-
 Sources/Snaptic/Dock/DockMenuRows.swift	lead	L	-	-
 Sources/Snaptic/Dock/UI/DockPage.swift	lead	L	-	-
 Sources/Snaptic/Dock/UI/DockAdvancedSheet.swift	lead	L	-	-
+Sources/Snaptic/Dock/DockCLI.swift	lead	L	-	-
