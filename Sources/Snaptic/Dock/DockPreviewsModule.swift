@@ -100,9 +100,14 @@ import SnapticKit
             .sink { [weak self] _ in self?.readChanged() }
             .store(in: &sinks)
         context.permissions.observe(lifetime: context.lifetime) { [weak self] permission, granted in
-            // Row 4 ends: attach now rather than at the ladder's next step.
-            if permission == .accessibility, granted { self?.observer?.reattach() }
-            self?.readChanged()
+            guard let self else { return }
+            // Row 4 ends: attach now rather than at the ladder's next step. The click tap that trust took (or never
+            // got) comes back too; the keys tap is made again at the next show.
+            if permission == .accessibility, granted {
+                self.observer?.reattach()
+                self.syncClickTap(self.config.value)
+            }
+            self.readChanged()
         }
         state = .running
         EventLog.shared.record(.dock, "dock.started")

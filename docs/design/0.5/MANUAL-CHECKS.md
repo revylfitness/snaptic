@@ -97,9 +97,9 @@ elsewhere. Each block ends with its own restore. The full steps are in its **Car
 | M21 | 10 min idle with the module on: the display sleeps | B | V | Pending | Pending | | |
 | M22 | VoiceOver on: paused by default. With the switch on, the announcement plays and cards are readable; with the pointer parked over a document, VoiceOver moves into the panel and the panel stays | B | | Pending | N/A | `DockPauseRulesTests` | |
 | M23 | Engaged ⌘W, ⌘M, ⌘H, ⌘Q and Esc act on what's under the pointer. Over the header or a gap, ⌘W and ⌘Q do nothing and reach no app. No handled key reaches the frontmost app; bare letters, arrows and Return do. Hold ⌘Q over the last card for 2 s: only the previewed app quits | B | V | Pending | Pending | `DockKeyRulesTests` | |
-| M24 | The keys tap is disabled while not engaged and gone with the module off (`CGGetEventTapList`) | B | | Pending | N/A | | |
+| M24 | The keys tap is disabled while not engaged and gone with the module off (`CGGetEventTapList`) | B | | Pending | N/A | | Also: show and hide previews more than three times in 60 s and the keys still work (a disable Snaptic makes isn't counted by the breaker) |
 | M25 | Dock click actions: Hide, Minimize and restore-all; a normal Dock click is never lost | B | V | Pending | Pending | `DockClickRulesTests` | |
-| M26 | Revoke Accessibility with each tap enabled: no freeze over 30 s; the feature stops with its row | B | | Pending | N/A | `DockPageRulesTests` | |
+| M26 | Revoke Accessibility with each tap enabled: no freeze over 30 s; the feature stops with its row | B | | Pending | N/A | `DockPageRulesTests` | Then grant it again without relaunching: click actions work at once, and keys at the next preview |
 | M27 | Settings page, Advanced, both Restore Defaults, Permissions rows | B | V | Pending | Pending | `DockControlsTests`, `DockPageRulesTests` | |
 | M28 | DockDoor running: paused with the row text; Run Both Anyway works | B | | Pending | N/A | `KnownDockToolsTests`, `DockPauseRulesTests` | |
 | M29 | Fresh install onboarding with Dock Previews on; five module rows fit at the default text size | B | V | Pending | Pending | | |

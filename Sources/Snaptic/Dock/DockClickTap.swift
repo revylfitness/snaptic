@@ -187,6 +187,9 @@ final class DockClickTap {
         guard let pid = hit.pid, config.restoreAllMinimized else { return }
         pressReading = true
         let id = pressID
+        // Fresh, not the 2 s cache: no freshness lease is held for an app without a preview, so a window minimized
+        // just before the click would be missed.
+        WindowManager.shared.markWindowsDirty(pid)
         Task { @MainActor [weak self] in
             let read = await WindowManager.shared.windows(for: pid)
             self?.pressRead(read.items.filter { !$0.isWindowless }, id: id)
